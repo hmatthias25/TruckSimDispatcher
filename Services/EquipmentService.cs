@@ -1,0 +1,442 @@
+using TruckSimDispatcher.Models;
+
+namespace TruckSimDispatcher.Services;
+
+/// <summary>One way the driver could get onto the trailer a load needs.</summary>
+public class SwapOption
+{
+    public string TrailerUnit { get; set; } = "";
+    public string TrailerType { get; set; } = "";
+    public string Length { get; set; } = "";
+    public double DamagePct { get; set; }
+    public string LocationLabel { get; set; } = "";
+    public string TerminalId { get; set; } = "";
+    /// <summary>True when the truck is already standing where this trailer is.</summary>
+    public bool HereNow { get; set; }
+    public bool AtCompanyYard { get; set; }
+    public string Note { get; set; } = "";
+}
+
+public class SwapPlan
+{
+    public bool Possible { get; set; }
+    public string Reason { get; set; } = "";
+    public string RequiredType { get; set; } = "";
+    public List<SwapOption> Options { get; set; } = new();
+}
+
+/// <summary>
+/// Trailer and tractor changes. Previously a load needing a different trailer was simply rejected,
+/// which named the fix and refused to let the driver do it. Dispatch should instead route the truck
+/// to a yard holding the right trailer and issue an equipment move.
+/// </summary>
+public static class EquipmentService
+{
+    /// <summary>Where the driver could pick up a trailer of the type a load needs.</summary>
+    public static SwapPlan PlanSwap(AppState s, string requiredType)
+    {
+        var plan = new SwapPlan { RequiredType = requiredType };
+        if (string.IsNullOrWhiteSpace(requiredType))
+        {
+            plan.Reason = "No trailer type given.";
+            return plan;
+        }
+
+        var here = $"{s.Status.LocationCity}, {s.Status.LocationState}";
+        var candidates = s.Trailers
+            .Where(t => t.Status == "InService"
+                        && t.Unit != s.Driver.AssignedTrailerUnit
+                        && TypeCovers(t.Type, requiredType))
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            plan.Reason = $"The company has no available {requiredType} trailer. " +
+                          "Buy one in ATS and add it on the Fleet tab, or take a market trailer with the job.";
+            return plan;
+        }
+
+        foreach (var t in candidates)
+        {
+            var yard = Migrations.TerminalOf(s, t.HomeTerminalId);
+            var where = !string.IsNullOrWhiteSpace(t.CurrentLocation)
+                ? t.CurrentLocation
+                : yard != null ? $"{yard.City}, {yard.State}" : "location unknown";
+
+            plan.Options.Add(new SwapOption
+            {
+                TrailerUnit = t.Unit,
+                TrailerType = t.Type,
+                Length = t.Length,
+                DamagePct = t.DamagePct,
+                LocationLabel = where,
+                TerminalId = t.HomeTerminalId,
+                HereNow = where.Equals(here, StringComparison.OrdinalIgnoreCase),
+                AtCompanyYard = yard != null && where.Equals($"{yard.City}, {yard.State}", StringComparison.OrdinalIgnoreCase),
+                Note = t.DamagePct >= s.Settings.Maintenance.MandatoryReviewPct
+                    ? $"At {t.DamagePct:0.#}% damage — needs shop attention before it earns anything."
+                    : ""
+            });
+        }
+
+        plan.Options = plan.Options
+            .OrderByDescending(o => o.HereNow)
+            .ThenByDescending(o => o.AtCompanyYard)
+            .ThenBy(o => o.DamagePct)
+            .ToList();
+        plan.Possible = true;
+        plan.Reason = plan.Options[0].HereNow
+            ? $"Trailer {plan.Options[0].TrailerUnit} is here — swap and go."
+            : $"Nearest company {requiredType} is {plan.Options[0].TrailerUnit} at {plan.Options[0].LocationLabel}. " +
+              "Run an equipment move to collect it.";
+        return plan;
+    }
+
+    /// <summary>A step deck covers flatbed freight and a reefer runs dry; nothing else substitutes.</summary>
+    public static bool TypeCovers(string have, string need)
+    {
+        if (string.IsNullOrWhiteSpace(have) || string.IsNullOrWhiteSpace(need)) return false;
+        have = have.Trim(); need = need.Trim();
+        if (have.Equals(need, StringComparison.OrdinalIgnoreCase)) return true;
+        if (have.Equals("Step Deck", StringComparison.OrdinalIgnoreCase) &&
+            need.Equals("Flatbed", StringComparison.OrdinalIgnoreCase)) return true;
+        if (have.Equals("Reefer", StringComparison.OrdinalIgnoreCase) &&
+            need.Equals("Dry Van", StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Hooks a different company trailer. Only legal where the trailer actually is — you cannot
+    /// drop a reefer in Denver and be under a flatbed in Tulsa.
+    /// </summary>
+    public static string SwapTrailer(AppState s, string trailerUnit, bool force)
+    {
+        var trailer = s.Trailers.FirstOrDefault(t => t.Unit.Equals(trailerUnit, StringComparison.OrdinalIgnoreCase))
+                      ?? throw new InvalidOperationException($"Trailer {trailerUnit} is not in the fleet.");
+        if (trailer.Status != "InService" && !force)
+            throw new InvalidOperationException($"Trailer {trailer.Unit} is {trailer.Status}.");
+
+        var open = s.Trips.FirstOrDefault(t => t.Status is "Authorized" or "InTransit");
+        if (open != null)
+            throw new InvalidOperationException($"{open.Number} is still open — you are hooked to freight. Close it first.");
+
+        var here = $"{s.Status.LocationCity}, {s.Status.LocationState}";
+        var trailerAt = !string.IsNullOrWhiteSpace(trailer.CurrentLocation)
+            ? trailer.CurrentLocation
+            : Migrations.TerminalOf(s, trailer.HomeTerminalId) is { } y ? $"{y.City}, {y.State}" : "";
+
+        if (!force && !trailerAt.Equals(here, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"Trailer {trailer.Unit} is at {trailerAt}; you are at {here}. Run an equipment move to collect it first.");
+
+        // Drop what we are on where we are standing.
+        var previous = s.Trailers.FirstOrDefault(t => t.Unit == s.Driver.AssignedTrailerUnit);
+        if (previous != null)
+        {
+            previous.AssignedTruckUnit = "";
+            previous.CurrentLocation = here;
+        }
+
+        trailer.AssignedTruckUnit = s.Driver.AssignedTruckUnit;
+        trailer.CurrentLocation = here;
+        s.Driver.AssignedTrailerUnit = trailer.Unit;
+        s.Status.TrailerDamagePct = trailer.DamagePct;
+
+        return previous == null
+            ? $"Hooked trailer {trailer.Unit} ({trailer.Length} {trailer.Type}) at {here}."
+            : $"Dropped {previous.Unit} and hooked {trailer.Unit} ({trailer.Length} {trailer.Type}) at {here}.";
+    }
+
+    /// <summary>
+    /// An empty move whose purpose is to go and collect equipment. Uses the maintenance number
+    /// series so it never consumes a freight number.
+    /// </summary>
+    public static Trip CreateEquipmentMove(AppState s, string trailerUnit, double miles, string reason)
+    {
+        var trailer = s.Trailers.FirstOrDefault(t => t.Unit.Equals(trailerUnit, StringComparison.OrdinalIgnoreCase))
+                      ?? throw new InvalidOperationException($"Trailer {trailerUnit} is not in the fleet.");
+
+        var yard = Migrations.TerminalOf(s, trailer.HomeTerminalId);
+        var dest = !string.IsNullOrWhiteSpace(trailer.CurrentLocation)
+            ? trailer.CurrentLocation
+            : yard != null ? $"{yard.City}, {yard.State}" : "";
+        var parts = dest.Split(',', StringSplitOptions.TrimEntries);
+
+        var move = DispatchEngine.CreateMaintenanceMove(
+            s, parts.ElementAtOrDefault(0) ?? "", parts.ElementAtOrDefault(1) ?? "", miles,
+            string.IsNullOrWhiteSpace(reason)
+                ? $"Equipment move — collect trailer {trailer.Unit} ({trailer.Type})"
+                : reason);
+        move.Cargo = $"Equipment move — trailer {trailer.Unit}";
+        move.Notes = $"On arrival, swap onto {trailer.Unit} ({trailer.Length} {trailer.Type}).";
+        return move;
+    }
+
+    // ---------------------------------------------------------------- equipment orders
+
+    private static EquipmentOrder Issue(AppState s, EquipmentOrder o)
+    {
+        var code = string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code;
+        o.Number = $"{code}-EQ-{s.EquipmentOrders.Count + 1:000}";
+        o.IssuedGameTime = s.Status.GameTime;
+        o.LoadCountAtIssue = s.Trips.Count(t => t.Status == "Delivered" && t.Kind == "Freight");
+        s.EquipmentOrders.Insert(0, o);
+        return o;
+    }
+
+    public static EquipmentOrder? OpenOrder(AppState s) =>
+        s.EquipmentOrders.FirstOrDefault(o => o.Status == "Open");
+
+    /// <summary>
+    /// Earned an upgrade. The best unassigned sleeper on the property is reserved and the driver is
+    /// told which yard to collect it from — they do the swap in ATS and confirm it here.
+    /// </summary>
+    public static EquipmentOrder? IssueUpgrade(AppState s, string reason)
+    {
+        var current = DispatchEngine.AssignedTruck(s);
+        var better = BestAvailableTruck(s);
+        if (better == null || (current != null && better.Unit == current.Unit)) return null;
+
+        // Only an actual improvement is worth moving a driver for.
+        if (current != null && better.Year <= current.Year && better.ServiceMiles >= current.ServiceMiles)
+            return null;
+
+        var yard = Migrations.TerminalOf(s, better.HomeTerminalId);
+        var label = yard != null ? $"{yard.City}, {yard.State}" : "the yard";
+        var home = Migrations.TerminalOf(s, s.Driver.HomeTerminalId)
+                   ?? s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters);
+        var homeLabel = home != null ? $"{home.City}, {home.State}" : "your home yard";
+        var remote = home != null && yard != null && home.Id != yard.Id;
+
+        return Issue(s, new EquipmentOrder
+        {
+            Kind = "Upgrade",
+            Reason = reason,
+            FromTruckUnit = current?.Unit ?? "",
+            ToTruckUnit = better.Unit,
+            TerminalId = better.HomeTerminalId,
+            TerminalLabel = label,
+            Instruction =
+                $"Report to the {label} yard and move into unit {better.Unit} — a {better.Year} {better.Make} " +
+                $"{better.Model}, {better.Engine}, {better.Transmission}. " +
+                (current != null
+                    ? remote
+                        ? $"Drop {current.Unit} there; it becomes a {label} unit and {better.Unit} comes onto your " +
+                          $"{homeLabel} book. A straight swap, so neither yard changes headcount. "
+                        : $"Leave {current.Unit} at the yard. "
+                    : "") +
+                "Do the swap in ATS, then mark this order complete and the fleet records update themselves."
+        });
+    }
+
+    /// <summary>
+    /// A discipline consequence short of suspension: out of the good truck and into the highest
+    /// mileage unit on the property, with a stated way to earn it back.
+    /// </summary>
+    public static EquipmentOrder? IssueDowngrade(AppState s, string reason, int restoreAfterLoads)
+    {
+        var current = DispatchEngine.AssignedTruck(s);
+        var worst = s.Trucks
+            .Where(t => t.Status == "InService" && t.CabConfig == "Sleeper"
+                        && t.Unit != s.Driver.AssignedTruckUnit
+                        && !s.HiredDrivers.Any(h => h.AssignedTruckUnit == t.Unit))
+            .OrderByDescending(t => t.ServiceMiles)
+            .ThenBy(t => t.Year)
+            .FirstOrDefault();
+        if (worst == null) return null;
+
+        var yard = Migrations.TerminalOf(s, worst.HomeTerminalId);
+        var label = yard != null ? $"{yard.City}, {yard.State}" : "the yard";
+
+        return Issue(s, new EquipmentOrder
+        {
+            Kind = "Downgrade",
+            Reason = reason,
+            FromTruckUnit = current?.Unit ?? "",
+            ToTruckUnit = worst.Unit,
+            TerminalId = worst.HomeTerminalId,
+            TerminalLabel = label,
+            RestoreAfterLoads = restoreAfterLoads,
+            Instruction =
+                $"Report to {label} and turn in {current?.Unit}. You are going into unit {worst.Unit} — " +
+                $"a {worst.Year} {worst.Make} {worst.Model} with {worst.ServiceMiles:N0} miles on it. " +
+                $"Run {restoreAfterLoads} clean loads and we will talk about putting you back in something better."
+        });
+    }
+
+    /// <summary>
+    /// The best tractor the driver could realistically be moved into. Prefers one already near where
+    /// they are — sending a driver across three states to collect a truck that is marginally newer is
+    /// not how a fleet is run, and the yard nearest them almost always wins.
+    /// </summary>
+    private static Truck? BestAvailableTruck(AppState s)
+    {
+        var candidates = s.Trucks
+            .Where(t => t.Status == "InService" && t.CabConfig == "Sleeper"
+                        && t.Unit != s.Driver.AssignedTruckUnit
+                        && !s.HiredDrivers.Any(h => h.AssignedTruckUnit == t.Unit))
+            .ToList();
+        if (candidates.Count == 0) return null;
+
+        return candidates
+            .OrderBy(t => Proximity(s, t))          // 0 = this city, 1 = this state, 2 = elsewhere
+            .ThenByDescending(t => t.Year)
+            .ThenBy(t => t.ServiceMiles)
+            .FirstOrDefault();
+    }
+
+    /// <summary>How far out of the driver's way a unit's yard is. Lower is closer.</summary>
+    private static int Proximity(AppState s, Truck t)
+    {
+        var yard = Migrations.TerminalOf(s, t.HomeTerminalId);
+        if (yard == null) return 3;
+        if (yard.City.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)) return 0;
+        if (yard.State.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase)) return 1;
+        return 2;
+    }
+
+    /// <summary>Records that the driver actually did the swap in the game.</summary>
+    public static string CompleteOrder(AppState s, string number)
+    {
+        var o = s.EquipmentOrders.FirstOrDefault(x => x.Number == number)
+                ?? throw new InvalidOperationException("No such equipment order.");
+        if (o.Status != "Open") throw new InvalidOperationException($"{o.Number} is already {o.Status.ToLowerInvariant()}.");
+
+        var messages = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(o.ToTruckUnit))
+        {
+            var newTruck = s.Trucks.FirstOrDefault(t => t.Unit == o.ToTruckUnit)
+                           ?? throw new InvalidOperationException($"Unit {o.ToTruckUnit} is no longer in the fleet.");
+            var old = s.Trucks.FirstOrDefault(t => t.Unit == s.Driver.AssignedTruckUnit);
+
+            // Where the exchange physically happened — the order's yard, or wherever the driver is.
+            var swapYard = Migrations.TerminalOf(s, o.TerminalId)
+                           ?? Migrations.TerminalOf(s, newTruck.HomeTerminalId);
+            var homeYard = Migrations.TerminalOf(s, s.Driver.HomeTerminalId)
+                           ?? s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters);
+
+            if (old != null)
+            {
+                old.AssignedDriver = "";
+                // The truck you hand in stays where you left it. It does not teleport home.
+                if (swapYard != null && old.HomeTerminalId != swapYard.Id)
+                {
+                    old.HomeTerminalId = swapYard.Id;
+                    messages.Add($"Unit {old.Unit} is now based at {swapYard.City}, {swapYard.State} — you left it there.");
+                }
+            }
+
+            newTruck.AssignedDriver = s.Driver.Name;
+            newTruck.InGameGarage = true;
+            // The truck you take on re-domiciles to your home yard, because you will be running it
+            // out of there. A 1-for-1 exchange keeps both yards at the same headcount.
+            if (homeYard != null && newTruck.HomeTerminalId != homeYard.Id)
+            {
+                newTruck.HomeTerminalId = homeYard.Id;
+                messages.Add($"Unit {newTruck.Unit} re-domiciled to {homeYard.City}, {homeYard.State}.");
+            }
+
+            s.Driver.AssignedTruckUnit = newTruck.Unit;
+            s.Settings.GovernedMph = newTruck.GovernedMph;
+            s.Status.TruckDamagePct = newTruck.DamagePct;
+            s.Status.AtsOdometer = newTruck.AtsOdometer;
+            messages.Insert(0, $"Now on unit {newTruck.Unit} ({newTruck.Year} {newTruck.Make} {newTruck.Model}).");
+        }
+
+        if (!string.IsNullOrWhiteSpace(o.ToTrailerUnit))
+            messages.Add(SwapTrailer(s, o.ToTrailerUnit, force: true));
+
+        o.Status = "Completed";
+        o.CompletedGameTime = s.Status.GameTime;
+        return string.Join(" ", messages);
+    }
+
+    public static string DeclineOrder(AppState s, string number, string why)
+    {
+        var o = s.EquipmentOrders.FirstOrDefault(x => x.Number == number)
+                ?? throw new InvalidOperationException("No such equipment order.");
+        o.Status = "Declined";
+        o.Notes = why;
+        return o.Kind == "Downgrade"
+            ? $"{o.Number} declined. Refusing a downgrade is a separate conversation with Safety."
+            : $"{o.Number} declined — you are staying on {o.FromTruckUnit}.";
+    }
+
+    /// <summary>
+    /// Whether a driver who was downgraded has now run the clean loads asked of them. Called after
+    /// each delivery so the offer comes to them rather than needing to be asked for.
+    /// </summary>
+    public static EquipmentOrder? CheckDowngradeRestoration(AppState s)
+    {
+        var downgrade = s.EquipmentOrders
+            .FirstOrDefault(o => o.Kind == "Downgrade" && o.Status == "Completed" && o.RestoreAfterLoads > 0);
+        if (downgrade == null) return null;
+
+        // Already made good on it?
+        if (s.EquipmentOrders.Any(o => o.Kind == "Upgrade" && o.Status != "Declined"
+                                       && string.CompareOrdinal(o.CreatedUtc, downgrade.CreatedUtc) > 0))
+            return null;
+
+        var loadsSince = s.Trips.Count(t => t.Status == "Delivered" && t.Kind == "Freight") - downgrade.LoadCountAtIssue;
+        if (loadsSince < downgrade.RestoreAfterLoads) return null;
+
+        // Clean means clean — a fresh driver-fault incident resets the clock.
+        var faultsSince = s.Incidents.Count(i => i.FaultAttribution == "Driver" && i.Preventable
+            && string.CompareOrdinal(i.CreatedUtc, downgrade.CreatedUtc) > 0);
+        if (faultsSince > 0) return null;
+
+        return IssueUpgrade(s,
+            $"{loadsSince} clean loads since {downgrade.Number}. Earned the better truck back.");
+    }
+
+    /// <summary>Yards that can actually do shop work, nearest-in-state first.</summary>
+    public static List<Terminal> ShopOptions(AppState s) =>
+        s.Company.Terminals
+            .Where(t => t.HasShop)
+            .OrderBy(t => t.State.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenByDescending(t => t.ShopLabourDiscount)
+            .ToList();
+
+    /// <summary>
+    /// Whether the assigned tractor is due a preventive service, and where it could be done in
+    /// house. PM in our own shop is cheaper than a roadside vendor, so it is worth routing for.
+    /// </summary>
+    public static PmAdvice PmCheck(AppState s)
+    {
+        var advice = new PmAdvice();
+        var truck = DispatchEngine.AssignedTruck(s);
+        if (truck == null) return advice;
+
+        var since = truck.ServiceMiles - truck.LastServiceMiles;
+        advice.MilesSinceService = since;
+        advice.IntervalMiles = truck.ServiceIntervalMiles;
+        advice.MilesRemaining = truck.ServiceIntervalMiles - since;
+        advice.Due = since >= truck.ServiceIntervalMiles;
+        advice.Soon = !advice.Due && since >= truck.ServiceIntervalMiles * 0.9;
+
+        if (!advice.Due && !advice.Soon) return advice;
+
+        var shops = ShopOptions(s);
+        advice.ShopYards = shops.Select(t => $"{t.City}, {t.State} ({t.ShopLabourDiscount * 100:0}% off labour)").ToList();
+        advice.Message = advice.Due
+            ? $"Unit {truck.Unit} is {since - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM."
+            : $"Unit {truck.Unit} is due a PM in {advice.MilesRemaining:N0} mi.";
+        if (shops.Count > 0)
+            advice.Message += $" Our own shops: {string.Join("; ", advice.ShopYards)}.";
+        else
+            advice.Message += " No company yard has a shop — you will be paying a vendor.";
+        return advice;
+    }
+}
+
+public class PmAdvice
+{
+    public bool Due { get; set; }
+    public bool Soon { get; set; }
+    public double MilesSinceService { get; set; }
+    public double IntervalMiles { get; set; }
+    public double MilesRemaining { get; set; }
+    public string Message { get; set; } = "";
+    public List<string> ShopYards { get; set; } = new();
+}

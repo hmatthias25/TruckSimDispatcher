@@ -1,0 +1,374 @@
+/* ============================================================================
+   TruckSim Dispatcher — visual language borrowed from real carrier operations:
+   DOT-amber signage accents, red/white conspicuity tape, ELD clock cards,
+   dense TMS data grids, and uppercase micro-labels like DOT paperwork.
+   ========================================================================== */
+:root{
+  --bg:#0d1116; --bg2:#131a21; --panel:#161e26; --panel2:#1c2530; --panel3:#222d39;
+  --line:#27333f; --line2:#33414f; --line3:#425263;
+  --ink:#e2e9ef; --ink2:#9dafbe; --ink3:#6d8090;
+
+  /* DOT signage amber — the trucking accent */
+  --amber:#ffb020; --amber2:#ffc350; --amber-dim:#3d2c05;
+  --green:#3fc55f; --green-dim:#0e2a17;
+  --red:#f8544b; --red-dim:#31100f;
+  --blue:#5aa9f8; --blue-dim:#0e1d2e;
+  --violet:#a97bf7; --violet-dim:#1d1430;
+  --steel:#7d94a8;
+
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+  --r:8px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:14px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;
+}
+.hidden{display:none !important}
+.boot{padding:88px 24px;text-align:center;color:var(--ink3);font:13px/1.6 var(--mono)}
+
+/* Conspicuity tape — the red/white DOT striping on every trailer */
+.tape{height:3px;background:repeating-linear-gradient(115deg,
+  #d8352c 0 11px,#e8e8e8 11px 22px)}
+
+/* ---------------------------------------------------------------- layout */
+.wrap{max-width:1340px;margin:0 auto;padding:20px}
+.wrap.narrow{max-width:880px}
+.hero{padding:34px 0 14px}
+.hero-kicker{
+  display:inline-block;font:700 10.5px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;
+  color:#1b1403;background:var(--amber);padding:5px 9px;border-radius:3px;
+}
+.hero h1{margin:13px 0 9px;font-size:27px;font-weight:680;letter-spacing:-.015em}
+.hero p{margin:0;color:var(--ink2);max-width:70ch}
+
+/* ---------------------------------------------------------------- top bar */
+.topbar{
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  padding:9px 20px;background:linear-gradient(#161e26,#121920);
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40;
+}
+.brand{display:flex;align-items:center;gap:11px;min-width:0}
+/* Door decal: how a unit number actually appears on a tractor door */
+.mark{
+  width:46px;height:44px;flex:0 0 46px;border-radius:4px;
+  background:var(--amber);color:#1b1403;border:2px solid #d99412;
+  display:grid;place-items:center;font:800 14px/1 var(--mono);letter-spacing:.03em;
+}
+.brand-name{font-weight:680;font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.005em}
+.brand-sub{font:11px/1.5 var(--mono);color:var(--ink3);letter-spacing:.02em}
+.topbar-actions{margin-left:auto}
+
+/* Gauge cluster */
+.statstrip{display:flex;gap:5px;flex-wrap:wrap;flex:1 1 340px}
+.stat{
+  background:var(--bg);border:1px solid var(--line2);border-radius:5px;
+  padding:4px 9px 5px;min-width:84px;position:relative;overflow:hidden;
+}
+.stat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--line3)}
+.stat .k{font:700 9px/1.4 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--ink3)}
+.stat .v{font:650 14px/1.4 var(--mono);color:var(--ink)}
+.stat.ok::before{background:var(--green)} .stat.ok .v{color:#7ee78d}
+.stat.warn::before{background:var(--amber)} .stat.warn .v{color:var(--amber2)}
+.stat.bad::before{background:var(--red)} .stat.bad .v{color:#ff9a94}
+
+/* ---------------------------------------------------------------- tabs */
+.tabs{
+  display:flex;gap:0;overflow-x:auto;padding:0 20px;
+  background:var(--bg2);border-bottom:1px solid var(--line);
+  position:sticky;top:62px;z-index:39;
+}
+.tabs button{
+  background:none;border:0;border-bottom:2px solid transparent;color:var(--ink2);
+  padding:10px 15px;cursor:pointer;white-space:nowrap;
+  font:600 11px/1.35 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+}
+.tabs button:hover{color:var(--ink);background:#1a232c}
+.tabs button.on{color:var(--amber);border-bottom-color:var(--amber);background:#1a222b}
+.tabs .pip{
+  display:inline-block;min-width:16px;padding:0 4px;margin-left:7px;border-radius:8px;
+  background:var(--red);color:#fff;font:700 9.5px/16px var(--mono);text-align:center;vertical-align:1px;
+}
+.tabs .pip.amber{background:var(--amber);color:#1b1403}
+
+.foot{
+  padding:18px 20px 32px;color:var(--ink3);
+  font:11.5px/1.6 var(--mono);max-width:1340px;margin:0 auto;display:flex;gap:8px;flex-wrap:wrap;
+}
+.sep{opacity:.35}
+
+/* ---------------------------------------------------------------- panels */
+.panel{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:15px 16px 16px;margin-bottom:15px;
+}
+.panel-head{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin:-2px 0 14px;padding-bottom:9px;border-bottom:1px solid var(--line);
+}
+.panel-head h2{
+  margin:0;font:600 12px/1.3 var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--ink);
+}
+.panel-head .sub{color:var(--ink3);font-size:12px}
+.panel-head .spacer{flex:1}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:15px;align-items:start}
+.cols3{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:15px;align-items:start}
+
+h3.sect{
+  margin:19px 0 9px;font:700 10px/1 var(--mono);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--amber);
+}
+h3.sect:first-child{margin-top:0}
+
+/* ---------------------------------------------------------------- forms */
+label{display:block;margin-bottom:11px;font:11px/1.5 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--ink3)}
+label.chk{
+  display:inline-flex;align-items:center;gap:7px;margin:0 16px 8px 0;
+  font:13px/1.4 inherit;letter-spacing:0;text-transform:none;color:var(--ink);cursor:pointer;
+}
+label.chk input{width:auto;margin:0}
+input,select,textarea{
+  width:100%;margin-top:4px;padding:7px 9px;
+  background:var(--bg);border:1px solid var(--line2);border-radius:5px;
+  color:var(--ink);font:14px/1.4 inherit;letter-spacing:0;text-transform:none;
+  font-variant-numeric:tabular-nums;
+}
+input[type=number],input[type=datetime-local]{font-family:var(--mono);font-size:13px}
+input.up{text-transform:uppercase}
+input[type=checkbox]{width:15px;height:15px;accent-color:var(--amber)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--amber);outline-offset:-1px;border-color:var(--amber)}
+input[readonly]{color:var(--ink3);background:var(--panel2)}
+textarea{min-height:74px;resize:vertical;font-family:inherit}
+select{cursor:pointer}
+fieldset{border:1px solid var(--line);border-radius:6px;padding:11px 13px 4px;margin:0 0 11px}
+legend{padding:0 6px;font:700 9.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:0 13px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:0 12px}
+.span2{grid-column:1/-1}
+.hint{margin:2px 0 9px;font:11.5px/1.5 inherit;color:var(--ink3)}
+.row-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:7px}
+.row-actions.end{justify-content:flex-end}
+
+@media (max-width:1080px){
+  /* Keep the door decal and company name on their own line so the gauge cluster
+     below it stays readable instead of interleaving with the brand. */
+  .brand{flex:1 1 100%}
+  .topbar-actions{margin-left:0}
+}
+@media (max-width:780px){
+  .grid2,.grid3,.grid4{grid-template-columns:1fr}
+  .tabs,.topbar{position:static}
+}
+
+/* ---------------------------------------------------------------- buttons */
+.btn{
+  padding:7px 14px;border-radius:5px;border:1px solid var(--line2);
+  background:var(--panel3);color:var(--ink);cursor:pointer;
+  font:600 11.5px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;
+}
+.btn:hover{border-color:var(--line3);background:#2a3745}
+.btn.primary{background:var(--amber);border-color:#d99412;color:#1b1403;font-weight:750}
+.btn.primary:hover{background:var(--amber2)}
+.btn.go{background:var(--green);border-color:#2f9c48;color:#04210c;font-weight:750}
+.btn.go:hover{background:#54d873}
+.btn.danger{background:var(--red-dim);border-color:#6b2622;color:#ffada6}
+.btn.danger:hover{background:#431917}
+.btn.ghost{background:transparent}
+.btn.tiny{padding:3px 8px;font-size:10.5px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.wide{width:100%}
+
+/* ---------------------------------------------------------------- TMS grids */
+.tablewrap{overflow-x:auto;margin:0 -16px;padding:0 16px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{
+  text-align:left;padding:6px 9px;background:var(--panel2);
+  border-top:1px solid var(--line2);border-bottom:1px solid var(--line2);
+  font:700 9.5px/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);
+  white-space:nowrap;position:sticky;top:0;
+}
+td{padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:#19222b}
+tbody tr:hover{background:#202c37}
+td.num,th.num{text-align:right;font-family:var(--mono);white-space:nowrap}
+td.mono{font-family:var(--mono)}
+.empty{padding:26px 4px;text-align:center;color:var(--ink3);font:12px/1.6 var(--mono)}
+
+/* Unit numbers read like door decals */
+.unit{
+  display:inline-block;padding:1px 6px;border-radius:3px;
+  background:var(--panel3);border:1px solid var(--line3);
+  font:700 11.5px/1.6 var(--mono);letter-spacing:.03em;color:var(--ink);
+}
+
+/* ---------------------------------------------------------------- badges */
+.badge{
+  display:inline-block;padding:2px 7px;border-radius:3px;
+  font:700 9.5px/1.6 var(--mono);letter-spacing:.09em;text-transform:uppercase;white-space:nowrap;
+  border:1px solid transparent;
+}
+.badge.ok{background:var(--green-dim);color:#7ee78d;border-color:#1f5c31}
+.badge.warn{background:var(--amber-dim);color:var(--amber2);border-color:#6b4f0c}
+.badge.bad{background:var(--red-dim);color:#ff9a94;border-color:#6b2622}
+.badge.info{background:var(--blue-dim);color:#8cc4ff;border-color:#22456b}
+.badge.mute{background:var(--panel3);color:var(--ink3);border-color:var(--line3)}
+.badge.violet{background:var(--violet-dim);color:#c9a3ff;border-color:#3f2a63}
+
+/* ---------------------------------------------------------------- callouts */
+.callout{
+  border:1px solid var(--line);border-left-width:4px;border-radius:6px;
+  padding:11px 13px;margin-bottom:12px;font-size:13px;
+}
+.callout h4{margin:0 0 5px;font:600 11px/1.4 var(--mono);letter-spacing:.09em;text-transform:uppercase}
+.callout p:last-child,.callout ul:last-child{margin-bottom:0}
+.callout p{margin:0 0 6px}
+.callout ul{margin:5px 0 0;padding-left:19px}
+.callout li{margin-bottom:3px}
+.callout.go{border-left-color:var(--green);background:var(--green-dim)}
+.callout.warn{border-left-color:var(--amber);background:var(--amber-dim)}
+.callout.stop{border-left-color:var(--red);background:var(--red-dim)}
+.callout.info{border-left-color:var(--blue);background:var(--blue-dim)}
+.callout.mute{border-left-color:var(--line3);background:var(--panel2)}
+
+#banner{max-width:1340px;margin:15px auto 0;padding:0 20px}
+#banner:empty{margin:0}
+
+/* ---------------------------------------------------------------- ELD clocks */
+.meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:9px}
+.meter{
+  background:var(--bg);border:1px solid var(--line2);border-radius:6px;padding:9px 11px 10px;
+}
+.meter .lbl{font:700 9px/1.4 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--ink3)}
+/* Neutral by default. Colour is reserved for values that actually carry a verdict —
+   a cost figure is not "good" just because it rendered. */
+.meter .big{font:650 22px/1.2 var(--mono);margin:4px 0 1px;color:var(--ink)}
+.meter .of{font:10.5px/1.4 var(--mono);color:var(--ink3)}
+.bar{height:5px;border-radius:0;background:#070a0d;margin-top:8px;overflow:hidden;border:1px solid #0a0f14}
+.bar i{display:block;height:100%;background:var(--green);transition:width .25s}
+.meter.ok .big{color:#7ee78d} .meter.ok .bar i{background:var(--green)}
+.meter.warn .big{color:var(--amber2)} .meter.warn .bar i{background:var(--amber)}
+.meter.bad .big{color:#ff9a94} .meter.bad .bar i{background:var(--red)}
+
+/* ---------------------------------------------------------------- screenshot import */
+.dropzone{
+  border:2px dashed var(--line3);border-radius:7px;background:var(--bg);
+  padding:18px 14px;text-align:center;display:flex;flex-direction:column;gap:5px;
+  cursor:default;transition:border-color .15s,background .15s;
+}
+.dropzone:focus{outline:2px solid var(--amber);outline-offset:2px}
+.dropzone.over{border-color:var(--amber);background:var(--amber-dim)}
+.dropzone b{font:600 13px/1.5 inherit;color:var(--ink)}
+.dropzone span{font-size:12.5px;color:var(--ink3)}
+.linky{
+  display:inline;margin:0;padding:0;font:inherit;letter-spacing:0;text-transform:none;
+  color:var(--amber);text-decoration:underline;cursor:pointer;
+}
+/* Hidden but still activatable by its label — display:none inputs are not reliably clickable. */
+.offscreen{
+  position:absolute;width:1px;height:1px;margin:-1px;padding:0;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+}
+.shots{display:flex;gap:9px;flex-wrap:wrap;margin:13px 0 3px}
+.shot{margin:0;background:var(--panel2);border:1px solid var(--line2);border-radius:6px;padding:6px;max-width:190px}
+.shot img{display:block;width:100%;height:auto;border-radius:3px;background:#000}
+.shot figcaption{
+  display:flex;align-items:center;gap:5px;justify-content:space-between;
+  margin-top:5px;font:10px/1.4 var(--mono);color:var(--ink3);word-break:break-all;
+}
+code{
+  font:12px/1.4 var(--mono);background:var(--panel3);border:1px solid var(--line2);
+  border-radius:3px;padding:1px 4px;color:var(--amber2);
+}
+
+/* ---------------------------------------------------------------- load board rows */
+.loadcard{
+  border:1px solid var(--line2);border-left-width:4px;border-radius:6px;
+  background:var(--panel2);padding:0;margin-bottom:11px;overflow:hidden;
+}
+.loadcard.auth{border-left-color:var(--green)}
+.loadcard.backup{border-left-color:var(--blue)}
+.loadcard.reject{border-left-color:var(--red)}
+.loadcard-head{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  padding:9px 13px;background:var(--panel3);border-bottom:1px solid var(--line2);
+}
+.loadcard-head .lane{font-weight:640;font-size:14px;letter-spacing:-.005em}
+.loadcard-head .spacer{flex:1}
+.loadcard-head .rate{font:700 17px/1 var(--mono);color:var(--amber2)}
+.loadcard > .kv,.loadcard > .reasons,.loadcard > p,.loadcard > details,
+.loadcard > .row-actions,.loadcard > .grid3,.loadcard > label{margin-left:13px;margin-right:13px}
+.loadcard > .kv:first-of-type{margin-top:10px}
+.loadcard > .row-actions{margin-bottom:12px}
+.kv{
+  display:flex;gap:7px 16px;flex-wrap:wrap;margin-bottom:9px;
+  font:11.5px/1.6 var(--mono);color:var(--ink3);
+}
+.kv b{color:var(--ink);font-weight:650}
+.reasons{font-size:12.5px;margin:0 0 9px;padding-left:18px;color:var(--ink2)}
+.reasons li{margin-bottom:3px}
+.reasons.bad li{color:#ff9a94}
+.reasons.good li{color:#7ee78d}
+details.score{margin:0 0 11px}
+details.score summary{
+  cursor:pointer;font:600 10px/1.6 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);
+}
+details.score summary:hover{color:var(--amber)}
+details.score ul{font:11px/1.65 var(--mono);color:var(--ink2);margin:8px 0 0;padding-left:18px}
+
+/* ---------------------------------------------------------------- HOS timeline */
+.tl{font-family:var(--mono);font-size:11.5px}
+.tl th{font-size:9px}
+.tl td:first-child{border-left:3px solid var(--line3)}
+.tl tr.Drive td:first-child{border-left-color:var(--blue)}
+.tl tr.OnDuty td:first-child{border-left-color:var(--amber)}
+.tl tr.Break td:first-child{border-left-color:var(--violet)}
+.tl tr.Rest td:first-child,.tl tr.Restart td:first-child{border-left-color:var(--green)}
+
+/* ---------------------------------------------------------------- misc */
+.kvlist{display:grid;grid-template-columns:auto 1fr;gap:5px 15px;font-size:13px;align-items:baseline}
+.kvlist dt{
+  font:10px/1.7 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);white-space:nowrap;
+}
+.kvlist dd{margin:0;font-family:var(--mono);font-size:12.5px}
+.progress-row{display:flex;align-items:center;gap:11px;margin-bottom:8px;font-size:13px}
+.progress-row .pl{flex:1 1 180px}
+.progress-row .pb{flex:0 0 92px;height:6px;background:#070a0d;border:1px solid #0a0f14;overflow:hidden}
+.progress-row .pb i{display:block;height:100%;background:var(--amber)}
+.progress-row .pb.done i{background:var(--green)}
+.progress-row .pv{flex:0 0 140px;text-align:right;font:11.5px/1.5 var(--mono);color:var(--ink2)}
+
+pre.packet{
+  background:#080b0f;border:1px solid var(--line2);border-radius:6px;padding:13px;
+  max-height:460px;overflow:auto;font:11px/1.6 var(--mono);
+  white-space:pre-wrap;word-break:break-word;color:var(--ink2);
+}
+pre.reply{
+  background:#080b0f;border:1px solid var(--line2);border-left:4px solid var(--amber);border-radius:6px;
+  padding:15px;white-space:pre-wrap;font:13.5px/1.65 inherit;color:var(--ink);
+}
+.log{font-size:12.5px;max-height:340px;overflow:auto}
+.log div{padding:5px 0;border-bottom:1px solid var(--line);display:flex;gap:10px}
+.log div:last-child{border-bottom:0}
+.log .ch{
+  flex:0 0 86px;font:700 9px/1.9 var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--ink3);
+}
+
+.toasts{position:fixed;bottom:16px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:80;max-width:410px}
+.toast{
+  background:var(--panel);border:1px solid var(--line3);border-left:4px solid var(--amber);
+  border-radius:5px;padding:10px 13px;font-size:13px;box-shadow:0 12px 30px #000a;
+  animation:pop .18s ease-out;
+}
+.toast.ok{border-left-color:var(--green)} .toast.bad{border-left-color:var(--red)}
+@keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.modal{position:fixed;inset:0;background:#000c;display:grid;place-items:center;z-index:70;padding:20px}
+.modal-box{
+  background:var(--panel);border:1px solid var(--line3);border-radius:var(--r);
+  padding:20px;max-width:760px;width:100%;max-height:88vh;overflow:auto;
+}

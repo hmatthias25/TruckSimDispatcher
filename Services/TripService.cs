@@ -1,0 +1,531 @@
+using TruckSimDispatcher.Models;
+
+namespace TruckSimDispatcher.Services;
+
+public class CompleteTripRequest
+{
+    public string DeliveredGameTime { get; set; } = "";
+    /// <summary>Set when the driver has no game timestamp — ATS flagged the load late.</summary>
+    public bool? DeliveredLate { get; set; }
+    public double ActualMiles { get; set; }
+    public double EndOdometer { get; set; }
+    public decimal? ActualRevenue { get; set; }
+
+    public double FuelGallons { get; set; }
+    public decimal FuelCost { get; set; }
+    public decimal Tolls { get; set; }
+    public decimal RepairCost { get; set; }
+    public decimal Fines { get; set; }
+    public decimal OtherExpense { get; set; }
+    public string OtherExpenseMemo { get; set; } = "";
+
+    public double TruckDamageAfter { get; set; }
+    public double TrailerDamageAfter { get; set; }
+    public double CargoDamagePct { get; set; }
+
+    public double LoadingHours { get; set; }
+    public double UnloadingHours { get; set; }
+    public double DetentionHours { get; set; }
+    public double LayoverDays { get; set; }
+    public double BreakdownDays { get; set; }
+    public int ExtraStops { get; set; }
+    public int TarpsUsed { get; set; }
+
+    /// <summary>Driver's account of any delay. Operations decides fault, not the driver.</summary>
+    public string DelayReason { get; set; } = "";
+    /// <summary>Driver's account of how the equipment got damaged, if it did.</summary>
+    public string DamageCause { get; set; } = "";
+    /// <summary>Optional explicit fault override by operations.</summary>
+    public string FaultOverride { get; set; } = "";
+    public decimal Chargeback { get; set; }
+    public string ChargebackMemo { get; set; } = "";
+    public string Notes { get; set; } = "";
+
+    // Post-delivery status
+    public string LocationCity { get; set; } = "";
+    public string LocationState { get; set; } = "";
+    public string LocationKind { get; set; } = "Receiver";
+    public double FuelPct { get; set; } = -1;
+    public string GameTime { get; set; } = "";
+}
+
+public class TripAudit
+{
+    public Trip Trip { get; set; } = new();
+    public string Headline { get; set; } = "";
+    public List<string> ServiceFindings { get; set; } = new();
+    public List<string> MileageFindings { get; set; } = new();
+    public List<string> MoneyFindings { get; set; } = new();
+    public List<string> EquipmentFindings { get; set; } = new();
+    public List<string> Directives { get; set; } = new();
+    public string MaintenanceStatus { get; set; } = "Monitor";
+    public string FaultAttribution { get; set; } = "None";
+    public string FaultRationale { get; set; } = "";
+    public decimal DriverPay { get; set; }
+    public decimal CompanyMargin { get; set; }
+    public string? IncidentNumber { get; set; }
+    public string? WorkOrderNumber { get; set; }
+    public string? DisciplineRecommendation { get; set; }
+}
+
+/// <summary>Closes a load out: service audit, pay accrual, ledger postings, equipment and career updates.</summary>
+public static class TripService
+{
+    public static Trip? Active(AppState s) =>
+        s.Trips.FirstOrDefault(t => t.Id == s.Status.ActiveTripId && t.Status is "Authorized" or "InTransit");
+
+    public static void LogEvent(AppState s, string tripId, TripEvent ev)
+    {
+        var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
+                   ?? throw new InvalidOperationException("Trip not found.");
+        trip.Events.Add(ev);
+        if (trip.Status == "Authorized" && ev.Kind is "Loaded" or "Departed")
+            trip.Status = "InTransit";
+        if (!string.IsNullOrWhiteSpace(ev.GameTime)) s.Status.GameTime = ev.GameTime;
+    }
+
+    public static TripAudit Complete(AppState s, string tripId, CompleteTripRequest req)
+    {
+        var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
+                   ?? throw new InvalidOperationException("Trip not found.");
+        if (trip.Status is "Delivered" or "Cancelled")
+            throw new InvalidOperationException($"{trip.Number} is already closed ({trip.Status}).");
+
+        var audit = new TripAudit { Trip = trip };
+
+        // ---- record what the driver reported
+        trip.DeliveredGameTime = string.IsNullOrWhiteSpace(req.DeliveredGameTime) ? req.GameTime : req.DeliveredGameTime;
+        trip.ActualMiles = req.ActualMiles > 0 ? req.ActualMiles : trip.DispatchedMiles;
+        trip.EndOdometer = req.EndOdometer;
+        if (req.ActualRevenue.HasValue && req.ActualRevenue.Value > 0)
+        {
+            trip.GameRevenue = req.ActualRevenue.Value;
+            trip.CompanyRevenue = Math.Round(trip.GameRevenue * (decimal)Math.Clamp(s.Settings.RevenueFactor, 0.05, 3.0), 2);
+        }
+
+        trip.FuelGallons = req.FuelGallons;
+        trip.FuelCost = req.FuelCost;
+        trip.Tolls = req.Tolls;
+        trip.RepairCost = req.RepairCost;
+        trip.Fines = req.Fines;
+        trip.OtherExpense = req.OtherExpense;
+        trip.OtherExpenseMemo = req.OtherExpenseMemo;
+        trip.TruckDamageAfter = req.TruckDamageAfter;
+        trip.TrailerDamageAfter = req.TrailerDamageAfter;
+        trip.CargoDamagePct = req.CargoDamagePct;
+        if (req.LoadingHours > 0) trip.LoadingHours = req.LoadingHours;
+        if (req.UnloadingHours > 0) trip.UnloadingHours = req.UnloadingHours;
+        trip.DetentionHours = req.DetentionHours;
+        trip.LayoverDays = req.LayoverDays;
+        trip.BreakdownDays = req.BreakdownDays;
+        if (req.ExtraStops > 0) trip.ExtraStops = req.ExtraStops;
+        if (req.TarpsUsed > 0) trip.TarpsUsed = req.TarpsUsed;
+        if (!string.IsNullOrWhiteSpace(req.Notes))
+            trip.Notes = string.IsNullOrWhiteSpace(trip.Notes) ? req.Notes : trip.Notes + " | " + req.Notes;
+
+        // ---- service result
+        var late = DetermineLate(trip, req, out var serviceNote);
+        trip.ServiceResult = trip.Kind == "Freight" ? (late ? "Late" : "OnTime") : "NotApplicable";
+        audit.ServiceFindings.Add(serviceNote);
+
+        // ---- fault attribution: the company owns its own bad dispatching
+        var (fault, rationale) = AttributeFault(s, trip, req, late);
+        trip.FaultAttribution = fault;
+        audit.FaultAttribution = fault;
+        audit.FaultRationale = rationale;
+        if (late) audit.ServiceFindings.Add(rationale);
+
+        // ---- mileage audit
+        if (trip.Kind == "Freight" && trip.DispatchedMiles > 0)
+        {
+            var variance = trip.ActualMiles - trip.DispatchedMiles;
+            var pct = variance / trip.DispatchedMiles * 100;
+            audit.MileageFindings.Add($"Dispatched {trip.DispatchedMiles:N0} mi, ran {trip.ActualMiles:N0} mi ({variance:+0;-0;0} mi, {pct:+0.#;-0.#;0}%).");
+            if (pct > 12)
+                audit.MileageFindings.Add("Out-of-route miles are high. Either the routing was wrong or you took a detour — either way it costs fuel and hours.");
+        }
+        if (trip.StartOdometer > 0 && trip.EndOdometer > 0)
+        {
+            var odo = trip.EndOdometer - trip.StartOdometer;
+            audit.MileageFindings.Add($"Odometer {trip.StartOdometer:N0} → {trip.EndOdometer:N0} = {odo:N0} mi.");
+            if (odo > 0 && Math.Abs(odo - (trip.ActualMiles + trip.DeadheadMiles)) > Math.Max(25, (trip.ActualMiles + trip.DeadheadMiles) * 0.1))
+                audit.MileageFindings.Add($"Odometer delta does not match reported trip miles ({trip.ActualMiles + trip.DeadheadMiles:N0} mi). Check the numbers before I post them.");
+        }
+
+        if (trip.FeasibilityAtDispatch is { } f && GameClock.TryParse(trip.DeliveredGameTime) is DateTime del
+            && GameClock.TryParse(f.ProjectedArrivalGameTime) is DateTime proj)
+        {
+            var driftHours = (del - proj).TotalHours;
+            audit.ServiceFindings.Add($"Projected arrival was {GameClock.Pretty(proj)}; you delivered {GameClock.Pretty(del)} ({driftHours:+0.#;-0.#;0} h vs plan).");
+            if (driftHours > 3)
+                audit.ServiceFindings.Add("Plan drifted by more than three hours. I am adjusting the speed factor assumption if this repeats.");
+        }
+
+        // ---- pay
+        trip.Pay = PayEngine.ComputeTripPay(s, trip);
+        if (req.Chargeback > 0)
+        {
+            trip.Pay.Chargebacks = req.Chargeback;
+            trip.Pay.ChargebackMemo = req.ChargebackMemo;
+            trip.Pay.Total = Math.Round(trip.Pay.Total - req.Chargeback, 2);
+            trip.Pay.Lines.Add($"Chargeback: {req.ChargebackMemo} = -${req.Chargeback:N2}");
+        }
+        audit.DriverPay = trip.Pay.Total;
+        s.Driver.UnsettledPay = Math.Round(s.Driver.UnsettledPay + trip.Pay.Total, 2);
+
+        // ---- ledger
+        trip.Status = "Delivered";
+        trip.ClosedUtc = DateTime.UtcNow.ToString("o");
+        LedgerService.PostTripFinancials(s, trip);
+
+        var costs = trip.FuelCost + trip.Tolls + trip.RepairCost + trip.OtherExpense
+                    + (trip.Kind == "Freight" ? s.Settings.OverheadPerLoad : 0)
+                    + (trip.FaultAttribution == "Driver" && trip.Pay.Chargebacks >= trip.Fines ? 0 : trip.Fines);
+        audit.CompanyMargin = Math.Round(trip.CompanyRevenue - costs - trip.Pay.Total, 2);
+        audit.MoneyFindings.Add($"Revenue ${trip.CompanyRevenue:N2} (ATS paid ${trip.GameRevenue:N2}) less ${costs:N2} operating and ${trip.Pay.Total:N2} driver pay = ${audit.CompanyMargin:N2} contribution.");
+        if (trip.ActualMiles + trip.DeadheadMiles > 0)
+        {
+            var allIn = trip.CompanyRevenue / (decimal)(trip.ActualMiles + trip.DeadheadMiles);
+            audit.MoneyFindings.Add($"${allIn:0.00}/mi all-in on {trip.ActualMiles + trip.DeadheadMiles:N0} total miles.");
+            if (allIn < s.Settings.Scoring.FloorAllInRpm)
+                audit.MoneyFindings.Add($"That is under our ${s.Settings.Scoring.FloorAllInRpm:0.00} floor. My call to book it, not yours.");
+        }
+        if (trip.FuelGallons > 0 && trip.ActualMiles + trip.DeadheadMiles > 0)
+        {
+            var mpg = (trip.ActualMiles + trip.DeadheadMiles) / trip.FuelGallons;
+            audit.MoneyFindings.Add($"Fuel economy {mpg:0.0} mpg over the trip.");
+        }
+        if (audit.CompanyMargin < 0)
+            audit.MoneyFindings.Add("Negative contribution. The company lost money on this load.");
+
+        // ---- equipment
+        UpdateEquipment(s, trip, audit, req);
+
+        // ---- location / clocks
+        var priorCity = s.Status.LocationCity;
+        if (!string.IsNullOrWhiteSpace(req.LocationCity)) s.Status.LocationCity = req.LocationCity;
+        else if (!string.IsNullOrWhiteSpace(trip.DestCity)) s.Status.LocationCity = trip.DestCity;
+        // The old "which dock / which yard" note belongs to the place we just left.
+        if (!string.Equals(priorCity, s.Status.LocationCity, StringComparison.OrdinalIgnoreCase))
+            s.Status.LocationDetail = string.IsNullOrWhiteSpace(trip.Receiver) ? "" : trip.Receiver;
+        if (!string.IsNullOrWhiteSpace(req.LocationState)) s.Status.LocationState = req.LocationState;
+        else if (!string.IsNullOrWhiteSpace(trip.DestState)) s.Status.LocationState = trip.DestState;
+        s.Status.LocationKind = string.IsNullOrWhiteSpace(req.LocationKind) ? "Receiver" : req.LocationKind;
+        if (req.FuelPct >= 0) s.Status.FuelPct = req.FuelPct;
+        if (!string.IsNullOrWhiteSpace(trip.DeliveredGameTime)) s.Status.GameTime = trip.DeliveredGameTime;
+        s.Status.ActiveTripId = "";
+        s.Status.DutyStatus = "OnDuty";
+        s.Status.UpdatedUtc = DateTime.UtcNow.ToString("o");
+
+        // ---- safety record
+        if (late && fault == "Driver")
+        {
+            var inc = SafetyService.RecordIncident(s, new Incident
+            {
+                Kind = "Late",
+                TripNumber = trip.Number,
+                GameTime = trip.DeliveredGameTime,
+                Description = $"Late delivery on {trip.Number} — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}. {req.DelayReason}".Trim(),
+                FaultAttribution = "Driver",
+                Severity = "Moderate",
+                Preventable = true,
+                LocationCity = trip.DestCity,
+                LocationState = trip.DestState
+            });
+            audit.IncidentNumber = inc.Number;
+            audit.DisciplineRecommendation = SafetyService.RecommendDiscipline(s, inc);
+        }
+        else if (late)
+        {
+            audit.ServiceFindings.Add(fault == "Dispatcher"
+                ? "Logged as a dispatcher-caused service failure. It does not touch your record."
+                : $"Logged as {Humanize(fault)} — non-preventable, no effect on your record.");
+            SafetyService.RecordIncident(s, new Incident
+            {
+                Kind = "Late",
+                TripNumber = trip.Number,
+                GameTime = trip.DeliveredGameTime,
+                Description = $"Late delivery on {trip.Number}. {req.DelayReason}".Trim(),
+                FaultAttribution = fault,
+                Severity = "Minor",
+                Preventable = false,
+                LocationCity = trip.DestCity,
+                LocationState = trip.DestState
+            });
+        }
+
+        var damageJump = trip.TruckDamageAfter - trip.TruckDamageBefore;
+        if (damageJump >= 10)
+        {
+            var (dmgFault, dmgWhy) = AttributeDamage(req, damageJump);
+            var inc = SafetyService.RecordIncident(s, new Incident
+            {
+                Kind = "Damage",
+                TripNumber = trip.Number,
+                GameTime = trip.DeliveredGameTime,
+                Description = $"Tractor damage rose {damageJump:0.#} points on {trip.Number} ({trip.TruckDamageBefore:0.#}% → {trip.TruckDamageAfter:0.#}%)."
+                              + (string.IsNullOrWhiteSpace(req.DamageCause) ? "" : $" Driver reports: {req.DamageCause}"),
+                FaultAttribution = dmgFault,
+                Severity = damageJump >= 25 ? "Serious" : "Moderate",
+                Preventable = dmgFault == "Driver",
+                Cost = trip.RepairCost,
+                LocationCity = trip.DestCity,
+                LocationState = trip.DestState
+            });
+            audit.EquipmentFindings.Add(dmgWhy);
+            audit.IncidentNumber ??= inc.Number;
+            audit.DisciplineRecommendation ??= SafetyService.RecommendDiscipline(s, inc);
+        }
+        if (trip.CargoDamagePct >= 5)
+            audit.EquipmentFindings.Add($"Cargo damage {trip.CargoDamagePct:0.#}% — that shows up as a claim. Secure and slow down in the rough spots.");
+
+        // ---- headline
+        audit.Headline = trip.Kind != "Freight"
+            ? $"{trip.Number} closed — {trip.Cargo.ToLowerInvariant()} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}."
+            : late
+                ? $"{trip.Number} delivered LATE — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}. Fault: {Humanize(fault)}."
+                : $"{trip.Number} delivered on time — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}. Driver pay ${trip.Pay.Total:N2}.";
+
+        // ---- what happens next
+        audit.Directives.Add("Show me the jobs available here at the receiver before I order you anywhere empty.");
+        var hosView = HosEngine.Describe(s, s.Trucks.FirstOrDefault(t => t.Unit == trip.TruckUnit));
+        if (!string.IsNullOrWhiteSpace(hosView.ResetWatch)) audit.Directives.Add(hosView.ResetWatch);
+        audit.Directives.Add($"Re-read your HOS display and report the clocks — I am not booking the next load off stale numbers. Current reading: {hosView.NextRequiredAction}");
+        if (audit.MaintenanceStatus is "MandatoryReview" or "OutOfService")
+            audit.Directives.Add("Maintenance comes before the next load. See the directive above.");
+
+        CareerService.Recalculate(s);
+
+        // A driver who was downgraded and has since run clean gets the offer without asking.
+        var restored = EquipmentService.CheckDowngradeRestoration(s);
+        if (restored != null)
+            audit.Directives.Add($"{restored.Number}: {restored.Instruction}");
+
+        return audit;
+    }
+
+    private static bool DetermineLate(Trip trip, CompleteTripRequest req, out string note)
+    {
+        if (trip.Kind != "Freight") { note = "Non-revenue move — no service window."; return false; }
+
+        var due = GameClock.TryParse(trip.DueGameTime);
+        var del = GameClock.TryParse(trip.DeliveredGameTime);
+
+        if (due != null && del != null)
+        {
+            var margin = (due.Value - del.Value).TotalHours;
+            note = margin >= 0
+                ? $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {margin:0.#} h early."
+                : $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Math.Abs(margin):0.#} h LATE.";
+            return margin < 0;
+        }
+
+        if (req.DeliveredLate.HasValue)
+        {
+            note = req.DeliveredLate.Value
+                ? "ATS flagged the load late (no game timestamps available to measure by)."
+                : "Delivered inside the window per ATS (no game timestamps available to measure by).";
+            return req.DeliveredLate.Value;
+        }
+
+        note = "No delivery timestamp and no late flag reported — recorded as on time. Report the game clock next time so the record is real.";
+        return false;
+    }
+
+    private static (string fault, string rationale) AttributeFault(AppState s, Trip trip, CompleteTripRequest req, bool late)
+    {
+        if (!late) return ("None", "");
+
+        if (!string.IsNullOrWhiteSpace(req.FaultOverride))
+            return (req.FaultOverride, $"Operations recorded this as {Humanize(req.FaultOverride)} fault by review.");
+
+        // The company owns loads it should never have booked.
+        var f = trip.FeasibilityAtDispatch;
+        if (f != null)
+        {
+            if (f.Verdict == "Tight" || f.SlackHours < f.RequiredBufferHours)
+                return ("Dispatcher", $"Dispatcher fault. This load was authorized with only {f.SlackHours:0.#} h of slack against a {f.RequiredBufferHours:0.#} h required buffer — I booked it too tight. Not on your record.");
+            if (f.CycleRestartRequired)
+                return ("Dispatcher", "Dispatcher fault. The plan required a cycle restart mid-trip. That was my planning error.");
+        }
+        else
+        {
+            return ("Dispatcher", "Dispatcher fault. This load was committed without a recorded feasibility check, which is a violation of our own dispatch policy.");
+        }
+
+        var reason = (req.DelayReason ?? "").ToLowerInvariant();
+        if (Mentions(reason, "breakdown", "mechanical", "engine", "blew", "tire", "flat", "tow", "malfunction"))
+            return ("Mechanical", "Mechanical failure. Equipment problem, not a driver problem — maintenance issue for the shop.");
+        if (Mentions(reason, "traffic", "accident", "closure", "closed", "construction", "detour", "weather", "snow", "ice", "fog", "scale", "inspection", "dot"))
+            return ("Unavoidable", "Non-preventable delay. Road conditions outside your control — no discipline attaches.");
+        if (Mentions(reason, "game", "crash", "bug", "mod", "save", "reload", "desync", "glitch"))
+            return ("GameLimitation", "Recorded as a game limitation, not a real service failure. It does not count against you or the company's service score.");
+        if (Mentions(reason, "shipper", "receiver", "dock", "detention", "waiting", "loading"))
+            return ("Unavoidable", "Facility delay at the dock. Detention applies; no fault to the driver.");
+        if (Mentions(reason, "overslept", "slept", "stopped", "forgot", "parked", "late start", "took my time"))
+            return ("Driver", "Driver-preventable. The plan had adequate slack and it was not used.");
+
+        return ("Driver", $"Driver-preventable by default: the load was authorized with {f?.SlackHours:0.#} h of slack and the plan was sound. If there is more to it, tell me and I will re-attribute it.");
+    }
+
+    private static bool Mentions(string text, params string[] words) => words.Any(text.Contains);
+
+    /// <summary>
+    /// A damage spike is presumed preventable, but not blindly — a blowout, a deer strike or a
+    /// game glitch is not a driver failing, and the driver gets to state the cause.
+    /// </summary>
+    private static (string fault, string why) AttributeDamage(CompleteTripRequest req, double jump)
+    {
+        if (!string.IsNullOrWhiteSpace(req.FaultOverride))
+            return (req.FaultOverride, $"Damage rose {jump:0.#} points; operations attributed it to {Humanize(req.FaultOverride)} on review.");
+
+        var text = ((req.DamageCause ?? "") + " " + (req.DelayReason ?? "")).ToLowerInvariant();
+
+        if (Mentions(text, "blowout", "blew a", "tire failed", "recap", "mechanical", "brake failure", "steering failed", "air line"))
+            return ("Mechanical", $"Damage rose {jump:0.#} points from an equipment failure. That is a shop problem, not a driver problem — no discipline attaches.");
+        if (Mentions(text, "deer", "animal", "rock", "debris", "hail", "wind", "ice", "black ice", "someone hit me", "rear-ended", "cut me off", "ran me off"))
+            return ("Unavoidable", $"Damage rose {jump:0.#} points from a non-preventable event. Recorded, but it does not count against you.");
+        if (Mentions(text, "game", "bug", "glitch", "ai traffic", "spawned", "clipped through", "physics", "mod", "reload", "save"))
+            return ("GameLimitation", $"Damage rose {jump:0.#} points from a game artifact rather than real driving. Logged as a game limitation only.");
+        if (Mentions(text, "dispatch", "rushed", "too tight", "pushed"))
+            return ("Dispatcher", $"Damage rose {jump:0.#} points on a load I pushed you to run. That is on operations.");
+
+        return ("Driver", $"Damage rose {jump:0.#} points with no stated cause, so it is recorded as preventable. Tell me what happened and I will re-attribute it.");
+    }
+
+    private static void UpdateEquipment(AppState s, Trip trip, TripAudit audit, CompleteTripRequest req)
+    {
+        var m = s.Settings.Maintenance;
+        var truck = s.Trucks.FirstOrDefault(t => t.Unit == trip.TruckUnit);
+        var trailer = s.Trailers.FirstOrDefault(t => t.Unit == trip.TrailerUnit);
+        var tripMiles = trip.ActualMiles + trip.DeadheadMiles;
+
+        if (truck != null)
+        {
+            truck.ServiceMiles = Math.Round(truck.ServiceMiles + tripMiles, 0);
+            truck.AtsOdometer = trip.EndOdometer > 0 ? trip.EndOdometer : truck.AtsOdometer + tripMiles;
+            truck.DamagePct = trip.TruckDamageAfter;
+            s.Status.TruckDamagePct = trip.TruckDamageAfter;
+            s.Status.AtsOdometer = truck.AtsOdometer;
+            audit.EquipmentFindings.Add($"Unit {truck.Unit}: {truck.DamagePct:0.#}% damage, {truck.ServiceMiles:N0} company-service mi, ATS odometer {truck.AtsOdometer:N0}.");
+
+            var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
+            if (sinceService >= truck.ServiceIntervalMiles)
+                audit.Directives.Add($"Unit {truck.Unit} is {sinceService - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM. Schedule the service at the next terminal.");
+            else if (sinceService >= truck.ServiceIntervalMiles * 0.9)
+                audit.EquipmentFindings.Add($"PM due in {truck.ServiceIntervalMiles - sinceService:N0} mi on unit {truck.Unit}.");
+        }
+
+        if (trailer != null)
+        {
+            trailer.ServiceMiles = Math.Round(trailer.ServiceMiles + tripMiles, 0);
+            trailer.DamagePct = trip.TrailerDamageAfter;
+            trailer.CurrentLocation = DispatchEngine.Place(
+                string.IsNullOrWhiteSpace(req.LocationCity) ? trip.DestCity : req.LocationCity,
+                string.IsNullOrWhiteSpace(req.LocationState) ? trip.DestState : req.LocationState);
+            s.Status.TrailerDamagePct = trip.TrailerDamageAfter;
+            audit.EquipmentFindings.Add($"Trailer {trailer.Unit}: {trailer.DamagePct:0.#}% damage, now at {trailer.CurrentLocation}.");
+        }
+
+        var worst = Math.Max(trip.TruckDamageAfter, trip.TrailerDamageAfter);
+        var worstUnit = trip.TruckDamageAfter >= trip.TrailerDamageAfter
+            ? $"unit {trip.TruckUnit}" : $"trailer {trip.TrailerUnit}";
+
+        if (worst >= m.OutOfServicePct)
+        {
+            audit.MaintenanceStatus = "OutOfService";
+            audit.Directives.Add($"STOP — {worstUnit} is at {worst:0.#}% damage, at or over our {m.OutOfServicePct:0}% out-of-service line. Do not take another load. Nearest shop, then report to operations.");
+            if (trip.TruckDamageAfter >= m.OutOfServicePct && truck != null) truck.Status = "OutOfService";
+            if (trip.TrailerDamageAfter >= m.OutOfServicePct && trailer != null) trailer.Status = "OutOfService";
+            audit.WorkOrderNumber = MaintenanceService.OpenWorkOrder(s, new WorkOrder
+            {
+                Unit = trip.TruckDamageAfter >= m.OutOfServicePct ? trip.TruckUnit : trip.TrailerUnit,
+                UnitKind = trip.TruckDamageAfter >= m.OutOfServicePct ? "Truck" : "Trailer",
+                Kind = "Damage",
+                Description = $"Out-of-service damage at {worst:0.#}% after {trip.Number}.",
+                LocationCity = trip.DestCity, LocationState = trip.DestState,
+                DamageBefore = worst, Status = "Open",
+                GameTime = trip.DeliveredGameTime,
+                OdometerAtService = trip.EndOdometer
+            }).Number;
+        }
+        else if (worst >= m.MandatoryReviewPct)
+        {
+            audit.MaintenanceStatus = "MandatoryReview";
+            audit.Directives.Add($"Mandatory maintenance review: {worstUnit} is at {worst:0.#}% (threshold {m.MandatoryReviewPct:0}%). Get it repaired before your next dispatch — company pays.");
+            audit.WorkOrderNumber = MaintenanceService.OpenWorkOrder(s, new WorkOrder
+            {
+                Unit = trip.TruckDamageAfter >= trip.TrailerDamageAfter ? trip.TruckUnit : trip.TrailerUnit,
+                UnitKind = trip.TruckDamageAfter >= trip.TrailerDamageAfter ? "Truck" : "Trailer",
+                Kind = "Repair",
+                Description = $"Damage at {worst:0.#}% after {trip.Number} — mandatory review threshold.",
+                LocationCity = trip.DestCity, LocationState = trip.DestState,
+                DamageBefore = worst, Status = "Open",
+                GameTime = trip.DeliveredGameTime,
+                OdometerAtService = trip.EndOdometer
+            }).Number;
+        }
+        else if (worst >= m.ReportPct)
+        {
+            audit.MaintenanceStatus = "Report";
+            audit.Directives.Add($"Reportable wear: {worstUnit} at {worst:0.#}%. Keep running, but get it fixed at the next terminal or major stop.");
+        }
+        else
+        {
+            audit.MaintenanceStatus = "Monitor";
+            audit.EquipmentFindings.Add($"Equipment condition is fine at {worst:0.#}% — monitor only.");
+        }
+    }
+
+    public static Trip Cancel(AppState s, string tripId, string reason, string fault, bool chargeCompany)
+    {
+        var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
+                   ?? throw new InvalidOperationException("Trip not found.");
+        if (trip.Status is "Delivered" or "Cancelled")
+            throw new InvalidOperationException($"{trip.Number} is already closed.");
+
+        // Cancelled loads move to the cancellation series so freight numbers stay a clean sequence.
+        var original = trip.Number;
+        trip.Number = DispatchEngine.TakeNumber(s, "Cancelled");
+        trip.Status = "Cancelled";
+        trip.ServiceResult = "NotApplicable";
+        trip.CancelReason = reason;
+        trip.FaultAttribution = string.IsNullOrWhiteSpace(fault) ? "Dispatcher" : fault;
+        trip.ClosedUtc = DateTime.UtcNow.ToString("o");
+        trip.CompanyRevenue = 0;
+        trip.Notes = $"Originally dispatched as {original}. {trip.Notes}".Trim();
+        trip.Events.Add(new TripEvent
+        {
+            GameTime = s.Status.GameTime, Kind = "Note",
+            Detail = $"Cancelled ({trip.FaultAttribution} fault): {reason}"
+        });
+
+        // Driver still gets paid for miles actually run on a company-caused cancellation.
+        if (trip.FaultAttribution != "Driver")
+        {
+            trip.Pay = PayEngine.ComputeTripPay(s, trip);
+            if (trip.Pay.Total <= 0 && trip.Kind == "Freight")
+            {
+                trip.Pay.BreakdownPay = s.Driver.Pay.BreakdownPerDay;
+                trip.Pay.Total = s.Driver.Pay.BreakdownPerDay;
+                trip.Pay.Lines.Add($"Company-caused cancellation — one day of breakdown/detention pay = ${trip.Pay.Total:N2}");
+            }
+            s.Driver.UnsettledPay = Math.Round(s.Driver.UnsettledPay + trip.Pay.Total, 2);
+        }
+
+        LedgerService.PostCancellation(s, trip, chargeCompany);
+        if (s.Status.ActiveTripId == trip.Id) s.Status.ActiveTripId = "";
+        CareerService.Recalculate(s);
+        return trip;
+    }
+
+    private static string Humanize(string fault) => fault switch
+    {
+        "GameLimitation" => "game limitation",
+        "Dispatcher" => "dispatcher",
+        "Mechanical" => "mechanical",
+        "Unavoidable" => "unavoidable",
+        "Driver" => "driver",
+        _ => fault.ToLowerInvariant()
+    };
+}

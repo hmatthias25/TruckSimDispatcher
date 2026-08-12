@@ -1,0 +1,139 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TruckSim Dispatcher</title>
+<link rel="stylesheet" href="/styles.css">
+
+<div id="boot" class="boot">Connecting to operations…</div>
+
+<!-- ============================================================ ONBOARDING -->
+<div id="onboarding" class="hidden">
+  <div class="tape"></div>
+  <div class="wrap narrow">
+    <div class="hero">
+      <div class="hero-kicker">Driver Application</div>
+      <h1>Carrier Operations &mdash; New Hire Intake</h1>
+      <p>Fill this out and recruiting will make a decision. Answer honestly &mdash; the company builds
+        your division access, equipment assignment, pay scale and probation terms from these answers,
+        and it will not force you onto freight you say you won't haul.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Application</h2></div>
+      <div class="grid2">
+        <label>Driver name<input id="ap-name" placeholder="e.g. Heath Matthias"></label>
+        <label>Years of verifiable experience<input id="ap-exp" type="number" min="0" max="50" step="0.5" value="3"></label>
+
+        <label>Preferred freight division
+          <select id="ap-div1">
+            <option>Dry Van</option><option>Reefer</option><option>Flatbed</option>
+            <option>Tanker</option><option>Heavy Haul</option><option>Auto</option>
+            <option>Livestock</option><option>Log</option>
+          </select>
+        </label>
+        <label>Second-choice division
+          <select id="ap-div2">
+            <option>Reefer</option><option>Dry Van</option><option>Flatbed</option>
+            <option>Tanker</option><option>Heavy Haul</option><option>Auto</option>
+            <option>Livestock</option><option>Log</option>
+          </select>
+        </label>
+
+        <label>Transmission preference
+          <select id="ap-trans">
+            <option value="either">Either &mdash; no preference</option>
+            <option value="manual">Manual (18-speed)</option>
+            <option value="automatic">Automated (AMT)</option>
+          </select>
+        </label>
+        <label>Preferred trip length
+          <select id="ap-length">
+            <option value="short">Short &mdash; under 250 mi</option>
+            <option value="medium" selected>Medium &mdash; 250&ndash;700 mi</option>
+            <option value="long">Long &mdash; 600 mi+</option>
+            <option value="otr">OTR &mdash; run me hard</option>
+          </select>
+        </label>
+
+        <label>Home city<input id="ap-city" placeholder="e.g. Denver"></label>
+        <label>Home state<input id="ap-state" placeholder="CO" maxlength="2" class="up"></label>
+
+        <label class="span2">Home-time preference
+          <input id="ap-hometime" placeholder="e.g. home every other weekend, or no preference">
+        </label>
+
+        <label class="span2">Prior freight experience (comma separated)
+          <input id="ap-freight" placeholder="e.g. dry van, refrigerated, flatbed">
+        </label>
+
+        <label class="span2">Freight you will NOT haul (comma separated &mdash; the company will respect this)
+          <input id="ap-nohaul" placeholder="e.g. livestock, hazmat">
+        </label>
+
+        <fieldset class="span2">
+          <legend>Endorsements on file</legend>
+          <label class="chk"><input type="checkbox" id="ap-hazmat"> Hazmat (H)</label>
+          <label class="chk"><input type="checkbox" id="ap-tanker"> Tanker (N)</label>
+          <label class="chk"><input type="checkbox" id="ap-doubles"> Doubles/Triples (T)</label>
+        </fieldset>
+
+        <fieldset class="span2">
+          <legend>Probation</legend>
+          <label class="chk"><input type="checkbox" id="ap-probation" checked> I am willing to start on probation</label>
+          <p class="hint">Everyone here starts on probation. Refusing it with less than five years of
+            experience is an automatic decline.</p>
+        </fieldset>
+
+        <label>Current in-game day &amp; time
+          <span style="display:flex;gap:6px">
+            <input id="ap-gameday" type="number" min="1" step="1" value="1" style="flex:0 0 92px" title="Game day">
+            <input id="ap-gametod" type="time" step="60" value="06:00" style="flex:1" title="Time of day">
+          </span>
+          <span class="hint">ATS has no calendar — just count days from wherever your profile is now.
+            Day 1 is fine for a new driver.</span>
+        </label>
+        <label>Notes for recruiting<input id="ap-notes" placeholder="optional"></label>
+      </div>
+
+      <div class="row-actions">
+        <button class="btn primary" id="btn-market">See who is hiring &rarr;</button>
+      </div>
+    </div>
+
+    <div id="market-result"></div>
+    <div id="hire-result"></div>
+  </div>
+</div>
+
+<!-- ============================================================ MAIN APP -->
+<div id="appshell" class="hidden">
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark" id="tb-code">SFL</div>
+      <div>
+        <div class="brand-name" id="tb-company">Carrier</div>
+        <div class="brand-sub" id="tb-terminal">terminal</div>
+      </div>
+    </div>
+    <div class="statstrip" id="tb-stats"></div>
+    <div class="topbar-actions">
+      <button class="btn tiny" id="btn-refresh" title="Reload from the data file">Refresh</button>
+    </div>
+  </header>
+
+  <div class="tape"></div>
+  <nav class="tabs" id="tabs"></nav>
+
+  <div id="banner"></div>
+  <main id="view" class="wrap"></main>
+
+  <footer class="foot">
+    <span id="foot-data"></span>
+    <span class="sep">&middot;</span>
+    <span>Company revenue is not your paycheck. Wages settle on the Payroll tab.</span>
+  </footer>
+</div>
+
+<div id="toasts" class="toasts"></div>
+<div id="modal" class="modal hidden"><div class="modal-box"><div id="modal-body"></div></div></div>
+
+<script src="/app.js"></script>
