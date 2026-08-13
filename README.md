@@ -25,16 +25,21 @@ folder to another machine and the career goes with it.
 
 ## Before your first load
 
-**You start with one small garage and one truck.** That is not a limitation of the app, it is the
-game: ATS only generates cargo for cities you have actually *driven to*. Reveal a city with a save
-editor and it still counts as undiscovered — it appears on the map and never offers a single job. A
-yard bought there would sit empty and a truck based there would have nothing to haul.
+**You start with one small garage and one truck** — what a fresh ATS profile can afford. That is a
+starting point, not a ceiling. Seed cash with an editor, buy the large garage, set the yard to Large
+on the Terminals tab, and use **Fleet → Stock a yard** to put a five-truck fleet in it in one step.
+Yard tier sets capacity the way the ATS garage upgrades do: Small 1, Medium 3, Large 5.
+
+**What money cannot buy you is coverage.** ATS only generates cargo for cities you have actually
+*driven to*. Reveal a city with a save editor and it still counts as undiscovered — it appears on the
+map and never offers a single job. A yard bought there would sit empty and a truck based there would
+have nothing to haul.
 
 So the network grows the way a real carrier's does. Run out of your home yard, and when you reach
 somewhere new the app tells you a garage is for sale there and whether the freight is worth it. Buy
-it in game, add it on the Terminals tab, base a truck there.
+it in game, add it on the Terminals tab, base trucks there.
 
-A save editor is still useful for seeding cash if you want to grow faster. Money lives in
+For seeding cash: money lives in
 `Documents\American Truck Simulator\profiles\<profile>\save\<slot>\game.sii`, which is encrypted —
 SII_Decrypt opens it, TS SE Tool is a dedicated editor. Mods can unlock all dealerships and
 recruiting agencies, which ATS otherwise hides until you drive past them.

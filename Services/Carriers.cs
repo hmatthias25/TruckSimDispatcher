@@ -645,15 +645,17 @@ public static class Carriers
         {
             Title = "First — you start with one yard and one truck",
             Detail =
-                $"{s.Company.Name} opens with {yardCount} yard and {truckCount} tractor, and that is deliberate. " +
-                "A fresh ATS profile cannot afford more, and there is a harder limit than money: ATS only " +
-                "generates cargo for cities you have actually driven to. Reveal a city with a save editor " +
-                "and it stays undiscovered as far as the freight system is concerned — no jobs will ever " +
-                "appear there.\n\n" +
+                $"{s.Company.Name} opens with {yardCount} yard and {truckCount} tractor, because that is what " +
+                "a fresh ATS profile can afford. Seed some cash with an editor and you can start bigger: buy " +
+                "a large garage, set the yard to Large here, and stock it with a full fleet from the Fleet " +
+                "tab in one step.\n\n" +
+                "What money cannot buy you is coverage. ATS only generates cargo for cities you have actually " +
+                "driven to — reveal a city with a save editor and it stays undiscovered as far as the freight " +
+                "system is concerned, so no jobs will ever appear there.\n\n" +
                 "So the network grows the way a real one does. Run out of your home yard, and when you reach " +
                 "somewhere new the app tells you a garage is for sale there and whether the freight is worth " +
-                "it. Buy it in game, add it on the Terminals tab, and base a truck there.\n\n" +
-                "A save editor is still useful for seeding cash if you want to grow faster. Saves live in " +
+                "it. Buy it in game, add it on the Terminals tab, and base trucks there.\n\n" +
+                "For seeding cash: saves live in " +
                 "Documents\\American Truck Simulator\\profiles\\<profile>\\save\\<slot>\\game.sii and are " +
                 "encrypted — SII_Decrypt decrypts them for editing, and TS SE Tool is a purpose-built " +
                 "editor. Money sits in the economy section of game.sii. Mods can also unlock all dealerships " +
@@ -669,11 +671,15 @@ public static class Carriers
 
         steps.Add(new SetupStep
         {
-            Title = $"Buy a small garage in {s.Company.TerminalCity}, {s.Company.TerminalState}",
-            Detail = "This is your headquarters yard, and a small garage — one truck — is what you need. " +
-                     "Upgrade it to Medium or Large later when you have trucks to put in it, and match the " +
-                     "tier on the Terminals tab. If you already own a garage elsewhere, either buy one here " +
-                     "or edit the terminal so the app matches your game.",
+            Title = $"Buy a garage in {s.Company.TerminalCity}, {s.Company.TerminalState}",
+            Detail = "This is your headquarters yard. A small garage — one truck — is all you need to start, " +
+                     "and it is what a fresh profile can afford.\n\n" +
+                     "It is not a ceiling. If you have seeded cash, buy the large garage instead, set the " +
+                     "tier to Large on the Terminals tab, and use 'Stock a yard' on the Fleet tab to put a " +
+                     "five-truck fleet in it in one step. Tier decides capacity: Small 1, Medium 3, Large 5, " +
+                     "matching the ATS garage upgrades. Upgrade the garage in game whenever you want more room.\n\n" +
+                     "If you already own a garage elsewhere, either buy one here or edit the terminal so the " +
+                     "app matches your game.",
             Why = "Dispatch plans your first load out of this city and treats it as home. Start where you " +
                   "are standing — that city is discovered, so it will actually offer freight."
         });

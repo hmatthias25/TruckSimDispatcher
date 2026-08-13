@@ -521,6 +521,15 @@ app.MapDelete("/api/fleet/trailer/{unit}", (string unit) => Results.Ok(store.Mut
     return Snapshot(s);
 })));
 
+app.MapPost("/api/fleet/stock", (StockRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var result = Seed.StockYard(s, req.TerminalId, req.Count, req.AlreadyBought,
+        req.TransmissionPreference ?? "either", req.AddTrailers);
+    store.Log(s, "system", $"Yard stocked: {result.Message}");
+    CareerService.Recalculate(s);
+    return new { snapshot = Snapshot(s), result };
+})));
+
 app.MapPost("/api/fleet/trim", (TrimRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
     var notes = Migrations.TrimBackdropEquipment(s, req.IncludeYards);
@@ -1138,4 +1147,5 @@ record RestoreRequest(string File);
 record ResetRequest(string Confirm, bool? ResetSettings);
 record DiscoverRequest(string City, string? State);
 record TrimRequest(bool IncludeYards);
+record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? TransmissionPreference, bool AddTrailers);
 record AdoptRequest(string Path);

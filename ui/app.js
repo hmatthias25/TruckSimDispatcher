@@ -1356,6 +1356,7 @@ function viewFleet() {
     <div class="panel-head"><h2>Tractors (${S.trucks.length})</h2>
       <span class="sub">${S.trucks.filter((t) => t.inGameGarage).length} in your ATS garage</span>
       <div class="spacer"></div>
+      <button class="btn tiny" data-act="stock-yard">Stock a yard</button>
       <button class="btn tiny primary" data-act="add-truck">Add tractor</button></div>
     <div class="tablewrap"><table>
       <thead><tr><th>Unit</th><th>Tractor</th><th>Driveline</th><th>Cab</th><th class="num">Gov</th>
@@ -2590,6 +2591,52 @@ function editTruckModal(unit) {
     </div>`);
 }
 
+/* Bulk-fill a yard. Starting at one truck is what a fresh profile can afford — it is not a ceiling.
+   Upgrade the garage in ATS, re-tier it here, and put a real fleet in it. */
+function stockYardModal() {
+  const yards = S.company.terminals || [];
+  if (!yards.length) return toast('No yards yet — open one on the Terminals tab first.', 'bad');
+  const rows = yards.map((y) => {
+    const based = S.trucks.filter((t) => t.homeTerminalId === y.id && t.status !== 'OutOfService').length;
+    return { ...y, based, room: y.truckCapacity - based };
+  });
+  const first = rows.find((r) => r.room > 0) || rows[0];
+
+  modal(`<div class="panel-head"><h2>Stock a yard</h2><div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+    <p class="hint">Adds tractors in one step instead of one spec form at a time. A yard holds what its
+      tier allows — Small 1, Medium 3, Large 5. Upgrade the garage in ATS, re-tier it on the Terminals
+      tab, and it will take more.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Yard</th><th>Tier</th><th class="num">Based</th><th class="num">Room</th></tr></thead>
+      <tbody>${rows.map((r) => `<tr>
+        <td>${esc(r.city)}${r.state ? ', ' + esc(r.state) : ''}${r.isHeadquarters ? ' ' + badge('info', 'HQ') : ''}</td>
+        <td>${esc(r.level)}</td><td class="num">${r.based}/${r.truckCapacity}</td>
+        <td class="num">${r.room > 0 ? r.room : badge('warn', 'full')}</td></tr>`).join('')}
+      </tbody></table></div>
+    <div class="grid2" style="margin-top:12px">
+      <label>Yard<select id="sk-yard">${rows.map((r) =>
+        `<option value="${esc(r.id)}" ${r.id === first.id ? 'selected' : ''}>${esc(r.city)} — ${esc(r.level)}, ${r.room} free</option>`).join('')}</select></label>
+      <label>How many tractors<input id="sk-count" type="number" min="1" max="5" step="1" value="${Math.max(1, first.room)}"></label>
+      <label>Transmission<select id="sk-trans">
+        <option value="either">Mixed fleet</option>
+        <option value="automatic">All automated</option>
+        <option value="manual">All manual</option></select></label>
+      <label class="chk" style="margin-top:26px"><input type="checkbox" id="sk-trailers" checked> Add a matching trailer for each</label>
+    </div>
+    <fieldset><legend>Have you bought these in ATS?</legend>
+      <label class="chk"><input type="checkbox" id="sk-bought"> Yes — these units exist in my garage</label>
+      <p class="hint">Tick this only for equipment you actually own in game. Ticked units get their damage
+        and odometer tracked against ATS; unticked ones sit on the book as company backdrop and never
+        get invented damage or a shop directive you could not act on. You can tick them individually
+        later as you buy them.</p>
+    </fieldset>
+    <div class="row-actions">
+      <div style="flex:1"></div>
+      <button class="btn primary" data-act="do-stock">Stock the yard</button>
+    </div>`);
+}
+
 function editTrailerModal(unit) {
   const isNew = !unit;
   const t = isNew ? { ...BLANK_TRAILER } : S.trailers.find((x) => x.unit === unit);
@@ -3053,6 +3100,15 @@ async function handleAction(act, d, ev) {
     case 'edit-trailer': return editTrailerModal(d.unit);
     case 'add-truck': return editTruckModal('');
     case 'add-trailer': return editTrailerModal('');
+    case 'stock-yard': return stockYardModal();
+    case 'do-stock': return run(async () => {
+      const r = absorb(await api('/fleet/stock', 'POST', {
+        terminalId: sv('sk-yard'), count: fv('sk-count'), alreadyBought: bv('sk-bought'),
+        transmissionPreference: sv('sk-trans'), addTrailers: bv('sk-trailers'),
+      }));
+      closeModal();
+      toast(r.result.message, 'ok');
+    });
 
     case 'save-truck': {
       const isNew = d.new === '1';

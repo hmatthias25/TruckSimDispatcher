@@ -275,6 +275,147 @@ public static class Seed
         });
     }
 
+    /// <summary>What stocking a yard produced, so the UI can report it rather than guess.</summary>
+    public class StockResult
+    {
+        public List<string> Trucks { get; set; } = new();
+        public List<string> Trailers { get; set; } = new();
+        public string Message { get; set; } = "";
+        public int RoomLeft { get; set; }
+    }
+
+    /// <summary>
+    /// Fills a yard with tractors (and optionally matching trailers) in one go.
+    ///
+    /// A career starts at one truck because that is what a fresh ATS profile can afford, but a player
+    /// who has seeded cash can buy a large garage and run a real fleet out of it from day one. Adding
+    /// five tractors one spec-form at a time is a chore, so this does it in a single step and respects
+    /// the yard's tier — upgrade the yard first and it will take more.
+    ///
+    /// <paramref name="alreadyBought"/> is the honest bit: only tick it for units that actually exist
+    /// in the ATS garage, because that flag is what makes the app track damage and odometer against
+    /// them. Untick it and they sit on the book as company backdrop until you buy them.
+    /// </summary>
+    public static StockResult StockYard(AppState s, string terminalId, int count, bool alreadyBought,
+        string transmissionPreference, bool addTrailers)
+    {
+        var yard = Migrations.TerminalOf(s, terminalId)
+                   ?? throw new InvalidOperationException("That terminal is not one of ours.");
+
+        var room = Migrations.RoomAt(s, yard);
+        if (room <= 0)
+        {
+            var based = Migrations.TrucksBasedAt(s, yard.Id);
+            // Only ever suggest a tier that is actually bigger than the one the yard is on.
+            var next = yard.Level switch
+            {
+                "Small" => "Upgrade it to Medium (3) or Large (5) here — in ATS that means buying the garage upgrade.",
+                "Medium" => "Upgrade it to Large (5) here — in ATS that means buying the garage upgrade.",
+                _ => "It is already at the largest tier, so base these units at another yard."
+            };
+            throw new InvalidOperationException(
+                $"{yard.City} is a {yard.Level.ToLowerInvariant()} yard: it holds {yard.TruckCapacity} tractor(s) " +
+                $"and {based} {(based == 1 ? "is" : "are")} already based there. {next}");
+        }
+
+        var wanted = Math.Clamp(count, 1, room);
+        var result = new StockResult();
+
+        var wantsManual = transmissionPreference == "manual";
+        var pool = new List<TruckSpec>();
+        if (wantsManual) { pool.AddRange(ManualSpecs); pool.AddRange(AmtSpecs); }
+        else if (transmissionPreference == "automatic") { pool.AddRange(AmtSpecs); pool.AddRange(ManualSpecs); }
+        else { for (var i = 0; i < AmtSpecs.Length; i++) { pool.Add(AmtSpecs[i]); pool.Add(ManualSpecs[i]); } }
+
+        var rnd = new Random(StableSeed(yard.Id + s.Trucks.Count));
+        var divisions = s.Company.Divisions.Count > 0 ? s.Company.Divisions : new List<string> { "Dry Van" };
+
+        for (var i = 0; i < wanted; i++)
+        {
+            var spec = pool[i % pool.Count];
+            var unit = NextTruckUnit(s);
+            var serviceMiles = rnd.Next(60, 340) * 1000 + rnd.Next(0, 999);
+            s.Trucks.Add(new Truck
+            {
+                Unit = unit,
+                Make = spec.Make, Model = spec.Model, Year = spec.Year,
+                Engine = $"{spec.Engine} {spec.Hp} hp", Horsepower = spec.Hp,
+                Transmission = spec.Trans, TransmissionType = spec.TransType,
+                CabConfig = spec.Cab,
+                Wheelbase = spec.Cab == "Day Cab" ? "228\"" : "265\"",
+                GovernedMph = spec.Governed,
+                FuelCapacityGal = spec.Fuel, AvgMpg = spec.Mpg,
+                AssignedFreightTypes = divisions.Skip(i % divisions.Count).Take(2).ToList(),
+                ServiceMiles = serviceMiles,
+                LastServiceMiles = Math.Max(0, serviceMiles - rnd.Next(2000, 18000)),
+                ServiceIntervalMiles = 25000,
+                // Damage always starts at zero. The driver cannot set damage in ATS, so any figure we
+                // invented here could never be reconciled against the game.
+                DamagePct = 0,
+                InGameGarage = alreadyBought,
+                Status = "InService",
+                HomeTerminalId = yard.Id,
+                PurchasePrice = 118_000m + rnd.Next(0, 46) * 1000m,
+                MonthlyPayment = 2_150m + rnd.Next(0, 12) * 50m,
+                Notes = alreadyBought ? "" : "Not yet bought in ATS — tick 'in my garage' once you own it."
+            });
+            result.Trucks.Add(unit);
+
+            if (addTrailers)
+            {
+                var division = divisions[i % divisions.Count];
+                var (type, len) = TrailerForDivision(division);
+                var tUnit = NextTrailerUnit(s);
+                s.Trailers.Add(new Trailer
+                {
+                    Unit = tUnit,
+                    Type = type, Division = division,
+                    Year = 2016 + rnd.Next(0, 9),
+                    Make = TrailerMake(type),
+                    Length = len,
+                    Axles = type is "Lowboy" or "Car Hauler" ? "Tri-axle" : "Tandem",
+                    DamagePct = 0,
+                    InGameGarage = alreadyBought,
+                    ServiceMiles = rnd.Next(40, 220) * 1000,
+                    Status = "InService",
+                    HomeTerminalId = yard.Id,
+                    CurrentLocation = $"{yard.City}, {yard.State}",
+                    Notes = alreadyBought ? "" : "Not yet bought in ATS."
+                });
+                result.Trailers.Add(tUnit);
+            }
+        }
+
+        result.RoomLeft = Migrations.RoomAt(s, yard);
+        result.Message = $"{result.Trucks.Count} tractor(s)" +
+                         (result.Trailers.Count > 0 ? $" and {result.Trailers.Count} trailer(s)" : "") +
+                         $" based at {yard.City}" +
+                         (alreadyBought ? "" : " as backdrop until you buy them in game") +
+                         $". {result.RoomLeft} slot(s) left at this yard.";
+        if (count > wanted)
+            result.Message += $" You asked for {count}; the yard only had room for {wanted}.";
+        return result;
+    }
+
+    /// <summary>Continues the seeded numbering (101, 104, 107...) rather than colliding with it.</summary>
+    private static string NextTruckUnit(AppState s)
+    {
+        var highest = s.Trucks
+            .Select(t => int.TryParse(t.Unit, out var n) ? n : 0)
+            .DefaultIfEmpty(98)
+            .Max();
+        return $"{Math.Max(101, highest + 3)}";
+    }
+
+    private static string NextTrailerUnit(AppState s)
+    {
+        var highest = s.Trailers
+            .Select(t => int.TryParse(t.Unit.TrimStart('T', 't'), out var n) ? n : 0)
+            .DefaultIfEmpty(499)
+            .Max();
+        return $"T{Math.Max(501, highest + 2)}";
+    }
+
     private static string TrailerMake(string type) => type switch
     {
         "Reefer" => "Utility 3000R",
