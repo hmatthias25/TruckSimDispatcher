@@ -230,6 +230,14 @@ public static class DispatchEngine
                 stops.Add($"Trailer {trailer.Unit} is at {tdmg:0.#}% damage — out of service until repaired.");
         }
 
+        // Re-rigged at home and the trailer is still out under one of our own drivers. Sending the
+        // driver out on the wrong equipment would defeat the reassignment, so they wait — at home.
+        if (EquipmentService.PendingTrailerWait(s) is { } wait)
+            stops.Add(string.IsNullOrWhiteSpace(wait.HeldByDriverName)
+                ? $"{wait.Number}: waiting on trailer {wait.ToTrailerUnit} — available {GameClock.Pretty(wait.AvailableFromGameTime)}."
+                : $"{wait.Number}: {wait.HeldByDriverName} still has trailer {wait.ToTrailerUnit}, due back around " +
+                  $"{GameClock.Pretty(wait.AvailableFromGameTime)}. Stay home until it is in — the wait is home time, not hours.");
+
         if (s.Hos.CycleRemaining <= 0)
             stops.Add($"70-hour cycle is exhausted. {s.Settings.Hos.CycleRestartHours:0.#}-hour restart required before any driving.");
         else if (s.Hos.DriveRemaining <= 0.25 && s.Hos.ShiftRemaining <= 0.5)

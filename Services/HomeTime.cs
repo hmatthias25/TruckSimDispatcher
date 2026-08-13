@@ -57,6 +57,9 @@ public static class HomeTime
         public string Headline { get; set; } = "";
         public string LastHomeGameTime { get; set; } = "";
         public int HomeTimesTaken { get; set; }
+        /// <summary>Set when a trailer reassignment is holding the driver at the yard.</summary>
+        public string WaitingOn { get; set; } = "";
+        public string WaitingUntil { get; set; } = "";
     }
 
     public static Terminal? HomeTerminal(AppState s) =>
@@ -101,6 +104,18 @@ public static class HomeTime
         st.MilesFromHome = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
         st.AtHome = st.MilesFromHome is { } m && m <= s.Settings.Scoring.HomeRadiusMiles;
 
+        // Re-rigged and waiting on the trailer to come back in — that wait is spent at home.
+        if (EquipmentService.PendingTrailerWait(s) is { } wait)
+        {
+            st.WaitingOn = string.IsNullOrWhiteSpace(wait.HeldByDriverName)
+                ? $"trailer {wait.ToTrailerUnit}"
+                : $"{wait.HeldByDriverName} to bring trailer {wait.ToTrailerUnit} in";
+            st.WaitingUntil = wait.AvailableFromGameTime;
+            st.Headline = $"Home, and held here until {st.WaitingOn} — around {GameClock.Pretty(wait.AvailableFromGameTime)}. " +
+                          "The wait is home time, not hours.";
+            return st;
+        }
+
         st.Headline = st.Overdue
             ? $"Home time is OVERDUE — {st.DaysOut:0.#} days out against a {st.IntervalDays}-day arrangement. " +
               (st.AtHome ? "You are close enough to take it now." : "Dispatch is routing you toward {0}.".Replace("{0}", st.TerminalLabel))
@@ -134,7 +149,84 @@ public static class HomeTime
 
         s.Driver.LastHomeGameTime = s.Status.GameTime;
         s.Driver.HomeTimesTaken++;
+        ConsiderTrailerReassignment(s);
         return true;
+    }
+
+    /// <summary>
+    /// Sometimes — not every time — the company re-rigs a driver while they are home, because the
+    /// freight it wants them on next needs a different trailer.
+    ///
+    /// Home time is the only realistic moment for this: the truck is standing at its own yard with
+    /// nothing hooked to it. Whether it happens is seeded on the driver and which home time this is,
+    /// so it cannot be re-rolled by reloading the page, and it is deliberately occasional — a carrier
+    /// that changed your trailer every single time you came home would be a carrier with no plan.
+    /// </summary>
+    public static EquipmentOrder? ConsiderTrailerReassignment(AppState s)
+    {
+        var divisions = s.Company.Divisions?.Where(d => !string.IsNullOrWhiteSpace(d)).ToList() ?? new List<string>();
+        if (divisions.Count < 2) return null;    // a one-division carrier has nothing to move you to
+
+        var current = DispatchEngine.AssignedTrailer(s);
+        if (current == null) return null;
+
+        // Never on the first trip home. A carrier settles a new driver on one kind of freight before
+        // it starts moving them around, and being re-rigged on your first weekend reads as chaos
+        // rather than as a company with a plan.
+        if (s.Driver.HomeTimesTaken < 2) return null;
+
+        // Roughly one home time in three thereafter. Seeded, so refreshing does not re-roll it.
+        var roll = Hash($"{s.Driver.Name}|reassign|{s.Driver.HomeTimesTaken}") % 100;
+        if (roll >= 34) return null;
+
+        // Move them onto a division the carrier runs that is not what they are pulling now, and that
+        // they are actually qualified for — no tanker without the endorsement.
+        var options = divisions
+            .Select(TrailerTypeFor)
+            .Where(t => !string.IsNullOrWhiteSpace(t) && !EquipmentService.TypeCovers(current.Type, t))
+            .Where(t => Qualified(s, t))
+            .Distinct()
+            .ToList();
+        if (options.Count == 0) return null;
+
+        var pick = options[(int)(Hash($"{s.Driver.Name}|type|{s.Driver.HomeTimesTaken}") % (uint)options.Count)];
+
+        return EquipmentService.IssueTrailerReassignment(s, pick,
+            $"Freight mix — operations wants you on {pick.ToLowerInvariant()} for the next tour.");
+    }
+
+    private static bool Qualified(AppState s, string trailerType)
+    {
+        var app = s.Application;
+        if (app == null) return true;
+        if (trailerType.Equals("Tanker", StringComparison.OrdinalIgnoreCase) && !app.HasTanker) return false;
+        if (s.Driver.Restrictions.Any(r => r.Equals(trailerType, StringComparison.OrdinalIgnoreCase))) return false;
+        // Never assign freight the driver said they would not haul.
+        return !app.WillNotHaul.Any(w => w.Equals(trailerType, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string TrailerTypeFor(string division) => (division ?? "").Trim() switch
+    {
+        "Reefer" or "Refrigerated" => "Reefer",
+        "Dry Van" or "Van" => "Dry Van",
+        "Flatbed" or "Open Deck" => "Flatbed",
+        "Step Deck" => "Step Deck",
+        "Heavy Haul" or "Oversize" => "Lowboy",
+        "Tanker" or "Bulk" => "Tanker",
+        "Auto" or "Car Hauling" => "Car Hauler",
+        "Livestock" => "Livestock",
+        "Log" => "Log",
+        _ => ""
+    };
+
+    private static uint Hash(string text)
+    {
+        unchecked
+        {
+            uint h = 2166136261;
+            foreach (var c in text ?? "") { h ^= c; h *= 16777619; }
+            return h;
+        }
     }
 
     /// <summary>

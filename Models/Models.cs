@@ -819,6 +819,16 @@ public class EquipmentOrder
     /// <summary>For a downgrade: clean loads needed before the good unit comes back.</summary>
     public int RestoreAfterLoads { get; set; }
     public int LoadCountAtIssue { get; set; }
+    /// <summary>
+    /// Game time the equipment is actually available. Set when the trailer we want is out with a
+    /// hired driver — you cannot hook to a trailer that is three states away under someone else, so
+    /// the driver waits at the yard until it comes back. That wait is spent at home.
+    /// </summary>
+    public string AvailableFromGameTime { get; set; } = "";
+    /// <summary>Hired driver currently on the trailer, if we are waiting for one.</summary>
+    public string HeldByDriverName { get; set; } = "";
+    /// <summary>The company has no trailer of this type — the player has to buy one in ATS.</summary>
+    public bool MustPurchase { get; set; }
     public string Notes { get; set; } = "";
     public string CreatedUtc { get; set; } = DateTime.UtcNow.ToString("o");
 }

@@ -104,6 +104,12 @@ price and flags a lane worth planning fuel around.
 **Cities have to be discovered.** See above — this is why the app tracks where you have been and only
 suggests yards in cities that will actually offer freight.
 
+**You get re-rigged at home sometimes.** Occasionally — roughly one home time in three, and never on
+your first trip home — operations puts you on a different trailer for the next tour. If the trailer
+you need is out with one of your hired drivers, you wait at the yard until they bring it in, and that
+wait is part of your home time rather than your hours. If the company owns nothing suitable, you buy
+one in game while you are home.
+
 **Home time is a promise, not a note.** You pick an arrangement when you sign on — weekly through six
 weeks, or none. Dispatch tracks days out and, as the date approaches, loads finishing near your home
 yard start outranking better-paying freight going the other way. When a load is your ride home it says

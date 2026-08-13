@@ -188,6 +188,144 @@ public static class EquipmentService
         s.EquipmentOrders.FirstOrDefault(o => o.Status == "Open");
 
     /// <summary>
+    /// Puts the driver on a different type of trailer for their next tour.
+    ///
+    /// Issued during home time, because that is the only point a carrier can realistically re-rig a
+    /// driver — the truck is standing at its own yard with nothing hooked to it. Where the trailer
+    /// comes from decides how long it takes:
+    ///
+    ///   * one sitting free at the home yard  — ready when you are
+    ///   * one out under a hired driver       — you wait for them to bring it in, at home
+    ///   * none on the property               — you buy one in ATS before you leave
+    ///
+    /// The wait is the point rather than an inconvenience to design away. A real driver whose next
+    /// tour needs a reefer does not get one conjured up; they sit at the house until the reefer is
+    /// back, and those days are days at home.
+    /// </summary>
+    public static EquipmentOrder? IssueTrailerReassignment(AppState s, string requiredType, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(requiredType)) return null;
+
+        var current = DispatchEngine.AssignedTrailer(s);
+        if (current != null && TypeCovers(current.Type, requiredType)) return null;   // already on it
+        if (s.EquipmentOrders.Any(o => o.Status == "Open" && o.Kind == "TrailerSwap")) return null;
+
+        var homeYard = Migrations.TerminalOf(s, s.Driver.HomeTerminalId)
+                       ?? s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters);
+        var homeLabel = homeYard != null ? DispatchEngine.Place(homeYard.City, homeYard.State) : "the yard";
+
+        var matching = s.Trailers
+            .Where(t => t.Status == "InService" && TypeCovers(t.Type, requiredType))
+            .ToList();
+
+        // 1. Something free — nobody on it, and it is sitting at our home yard.
+        var free = matching.FirstOrDefault(t => string.IsNullOrWhiteSpace(t.AssignedTruckUnit)
+                                                && homeYard != null && t.HomeTerminalId == homeYard.Id)
+                   ?? matching.FirstOrDefault(t => string.IsNullOrWhiteSpace(t.AssignedTruckUnit));
+
+        if (free != null)
+        {
+            var at = !string.IsNullOrWhiteSpace(free.CurrentLocation) ? free.CurrentLocation : homeLabel;
+            return Issue(s, new EquipmentOrder
+            {
+                Kind = "TrailerSwap",
+                Reason = reason,
+                FromTrailerUnit = current?.Unit ?? "",
+                ToTrailerUnit = free.Unit,
+                TerminalId = homeYard?.Id ?? "",
+                TerminalLabel = homeLabel,
+                AvailableFromGameTime = s.Status.GameTime,
+                Instruction = $"Next tour is {requiredType.ToLowerInvariant()} freight. Drop {(current == null ? "your trailer" : current.Unit)} " +
+                              $"and hook trailer {free.Unit} ({free.Year} {free.Make}, {free.Length} {free.Type}) at {at}. " +
+                              "Do the swap in ATS, then mark this order complete.",
+                Notes = "Trailer is on the property and free."
+            });
+        }
+
+        // 2. Out with one of our own drivers — we wait for it.
+        var taken = matching
+            .Select(t => new { Trailer = t, Driver = s.HiredDrivers.FirstOrDefault(h => h.AssignedTrailerUnit == t.Unit && h.Status == "Active") })
+            .FirstOrDefault(x => x.Driver != null);
+
+        if (taken != null)
+        {
+            var days = ReturnDays(s, taken.Driver!);
+            var back = GameClock.TryParse(s.Status.GameTime) is { } now
+                ? GameClock.Format(now.AddDays(days))
+                : s.Status.GameTime;
+
+            return Issue(s, new EquipmentOrder
+            {
+                Kind = "TrailerSwap",
+                Reason = reason,
+                FromTrailerUnit = current?.Unit ?? "",
+                ToTrailerUnit = taken.Trailer.Unit,
+                TerminalId = homeYard?.Id ?? "",
+                TerminalLabel = homeLabel,
+                AvailableFromGameTime = back,
+                HeldByDriverName = taken.Driver!.Name,
+                Instruction = $"Next tour is {requiredType.ToLowerInvariant()} freight, and our {requiredType.ToLowerInvariant()} " +
+                              $"({taken.Trailer.Unit}) is out with {taken.Driver!.Name}. They are due back at {homeLabel} around " +
+                              $"{GameClock.Pretty(back)} — about {days:0.#} day(s). Stay home until then; it comes out of your home time, not your hours. " +
+                              $"When the trailer is in, hook {taken.Trailer.Unit} and mark this order complete.",
+                Notes = $"Waiting on {taken.Driver!.Name} to return {taken.Trailer.Unit}."
+            });
+        }
+
+        // 3. We simply do not own one.
+        return Issue(s, new EquipmentOrder
+        {
+            Kind = "TrailerSwap",
+            Reason = reason,
+            FromTrailerUnit = current?.Unit ?? "",
+            ToTrailerUnit = "",
+            TerminalId = homeYard?.Id ?? "",
+            TerminalLabel = homeLabel,
+            MustPurchase = true,
+            AvailableFromGameTime = s.Status.GameTime,
+            Instruction = $"Next tour is {requiredType.ToLowerInvariant()} freight and the company has no {requiredType.ToLowerInvariant()} " +
+                          $"trailer available. Buy one in ATS at {homeLabel} while you are home, add it on the Fleet tab, " +
+                          "then hook it and mark this order complete.",
+            Notes = $"No {requiredType} on the property."
+        });
+    }
+
+    /// <summary>
+    /// Roughly how long until a hired driver brings a trailer back. Seeded on the driver and the day
+    /// so the answer does not change when the page is refreshed.
+    /// </summary>
+    private static double ReturnDays(AppState s, HiredDriver d)
+    {
+        var seed = StableHash(d.Id + s.Driver.HomeTimesTaken);
+        // One to four days: long enough to matter, short enough not to strand the player.
+        return 1 + seed % 7 * 0.5;
+    }
+
+    private static uint StableHash(string text)
+    {
+        unchecked
+        {
+            uint h = 2166136261;
+            foreach (var c in text ?? "") { h ^= c; h *= 16777619; }
+            return h;
+        }
+    }
+
+    /// <summary>
+    /// A trailer swap we are still waiting on. Dispatch uses this to hold the driver at home rather
+    /// than sending them out on the wrong equipment.
+    /// </summary>
+    public static EquipmentOrder? PendingTrailerWait(AppState s)
+    {
+        var o = s.EquipmentOrders.FirstOrDefault(x => x.Status == "Open" && x.Kind == "TrailerSwap");
+        if (o == null) return null;
+        var ready = GameClock.TryParse(o.AvailableFromGameTime);
+        var now = GameClock.TryParse(s.Status.GameTime);
+        if (ready == null || now == null) return null;
+        return now.Value < ready.Value ? o : null;
+    }
+
+    /// <summary>
     /// Earned an upgrade. The best unassigned sleeper on the property is reserved and the driver is
     /// told which yard to collect it from — they do the swap in ATS and confirm it here.
     /// </summary>
@@ -342,6 +480,31 @@ public static class EquipmentService
             s.Status.TruckDamagePct = newTruck.DamagePct;
             s.Status.AtsOdometer = newTruck.AtsOdometer;
             messages.Insert(0, $"Now on unit {newTruck.Unit} ({newTruck.Year} {newTruck.Make} {newTruck.Model}).");
+        }
+
+        if (o.Kind == "TrailerSwap")
+        {
+            // You cannot hook a trailer that is still three states away under another driver.
+            var ready = GameClock.TryParse(o.AvailableFromGameTime);
+            var now = GameClock.TryParse(s.Status.GameTime);
+            if (ready != null && now != null && now.Value < ready.Value)
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(o.HeldByDriverName)
+                        ? $"Trailer {o.ToTrailerUnit} is not available until {GameClock.Pretty(ready.Value)}."
+                        : $"{o.HeldByDriverName} still has trailer {o.ToTrailerUnit} — due back around " +
+                          $"{GameClock.Pretty(ready.Value)}. Report the game clock when they are in and close this then.");
+
+            if (o.MustPurchase && string.IsNullOrWhiteSpace(o.ToTrailerUnit))
+            {
+                // The player bought one and added it on the Fleet tab; find it and hook that.
+                var bought = s.Trailers.FirstOrDefault(t => t.Status == "InService"
+                                                            && string.IsNullOrWhiteSpace(t.AssignedTruckUnit)
+                                                            && t.Unit != s.Driver.AssignedTrailerUnit);
+                if (bought == null)
+                    throw new InvalidOperationException(
+                        "No new trailer on the books yet. Buy it in ATS, add it on the Fleet tab, then close this order.");
+                o.ToTrailerUnit = bought.Unit;
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(o.ToTrailerUnit))
