@@ -6,6 +6,8 @@ hours before you hook, audits every trip, and pays you.
 
 Single portable `.exe`. No install, no runtime, no internet.
 
+> Original idea by **SimRacerSteve** on Discord — the company-driver roleplay this app automates is his.
+
 ---
 
 ## Running it
@@ -101,6 +103,12 @@ price and flags a lane worth planning fuel around.
 
 **Cities have to be discovered.** See above — this is why the app tracks where you have been and only
 suggests yards in cities that will actually offer freight.
+
+**Home time is a promise, not a note.** You pick an arrangement when you sign on — weekly through six
+weeks, or none. Dispatch tracks days out and, as the date approaches, loads finishing near your home
+yard start outranking better-paying freight going the other way. When a load is your ride home it says
+so, tells you to report to the yard once you are empty, and lists what to put through the shop while
+the truck is sitting.
 
 **Equipment lives in garages.** Each yard holds what its tier allows (Small 1, Medium 3, Large 5).
 When operations sends you to a yard for a better truck, it is a straight exchange — the unit you hand

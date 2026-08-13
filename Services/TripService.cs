@@ -85,6 +85,8 @@ public class TripAudit
     public bool ClocksReported { get; set; }
     /// <summary>Set when delivering here put a new city on the map.</summary>
     public DiscoveryService.DiscoveryNotice? Discovery { get; set; }
+    /// <summary>Home-time instructions: report to the yard, and what to put through the shop while there.</summary>
+    public List<string> HomeTimeInstructions { get; set; } = new();
 }
 
 /// <summary>Closes a load out: service audit, pay accrual, ledger postings, equipment and career updates.</summary>
@@ -377,6 +379,17 @@ public static class TripService
             : $"Re-read your HOS display and report the clocks — I am not booking the next load off stale numbers. Current reading: {hosView.NextRequiredAction}");
         if (audit.Discovery is { GarageAvailable: true } disc)
             audit.Directives.Add($"{disc.Place} is new to us and ATS sells a garage here. See the note on the Dispatch tab before you leave.");
+
+        // The load that was run to get them home ends with the instruction to actually go home.
+        if (trip.IsHomeRun || HomeTime.Status(s).Overdue)
+        {
+            var homeNow = HomeTime.HomeRunInstructions(s, s.Status.LocationCity, s.Status.LocationState);
+            if (homeNow.Count > 0)
+            {
+                audit.HomeTimeInstructions.AddRange(homeNow);
+                audit.Directives.Add(homeNow[0]);
+            }
+        }
         if (audit.MaintenanceStatus is "MandatoryReview" or "OutOfService")
             audit.Directives.Add("Maintenance comes before the next load. See the directive above.");
 

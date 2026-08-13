@@ -11,6 +11,17 @@ public static class MaintenanceService
         var code = string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code;
         wo.Number = $"{code}-WO-{++s.Counters.WorkOrder:0000}";
         if (string.IsNullOrWhiteSpace(wo.GameTime)) wo.GameTime = s.Status.GameTime;
+
+        // An order that is still open has not been paid, so it must not post a cost to the books. Keep
+        // the quoted figure as an estimate instead of discarding it — it pre-fills the close-out, which
+        // is what stops a repair being recorded as free.
+        if (wo.Status != "Completed" && wo.Cost > 0)
+        {
+            wo.EstimatedCost = wo.Cost;
+            wo.Cost = 0;
+        }
+        if (wo.EstimatedCost <= 0 && wo.Cost > 0) wo.EstimatedCost = wo.Cost;
+
         s.WorkOrders.Insert(0, wo);
         if (wo.Status == "Completed") Close(s, wo);
         return wo;

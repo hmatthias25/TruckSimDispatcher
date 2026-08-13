@@ -508,6 +508,10 @@ public static class Seed
             Qualifications = quals,
             Restrictions = restrictions,
             Probation = probation,
+            // The home-time arrangement is a commitment the company makes, so it is recorded on the
+            // driver file in days and routed for — not left as a note nobody reads.
+            HomeTimeIntervalDays = HomeTime.DaysFor(app.HomeTimePreference),
+            LastHomeGameTime = s.Status.GameTime,
             Notes = decision.Decision
         };
     }

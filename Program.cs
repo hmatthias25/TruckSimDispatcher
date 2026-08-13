@@ -95,7 +95,12 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     // Arriving somewhere new grows the network — and may be worth a yard.
     var discovery = DiscoveryService.Note(s, s.Status.LocationCity, s.Status.LocationState, s.Status.GameTime);
 
-    return new { snapshot = Snapshot(s), discovery };
+    // Reporting in at the home yard is how home time gets taken — we observe it, we do not schedule it.
+    var wentHome = HomeTime.Touch(s);
+    if (wentHome)
+        store.Log(s, "career", $"Home time taken at {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)}.");
+
+    return new { snapshot = Snapshot(s), discovery, wentHome };
 })));
 
 // ---------------------------------------------------------------- discovery
@@ -887,6 +892,22 @@ app.MapPost("/api/career/promote", (CareerActionRequest req) => Results.Ok(store
     return new { message, snapshot = Snapshot(s) };
 })));
 
+app.MapPost("/api/career/home-time", (HomeTimeRequest req) => Results.Ok(store.Mutate(s =>
+{
+    var days = HomeTime.DaysFor(req.Preference);
+    if (days <= 0 && !string.Equals(req.Preference, "none", StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException("That is not a home-time arrangement I recognise.");
+
+    s.Application ??= new DriverApplication();
+    s.Application.HomeTimePreference = req.Preference;
+    s.Driver.HomeTimeIntervalDays = days;
+    if (string.IsNullOrWhiteSpace(s.Driver.LastHomeGameTime))
+        s.Driver.LastHomeGameTime = string.IsNullOrWhiteSpace(s.Driver.HiredGameDate) ? s.Status.GameTime : s.Driver.HiredGameDate;
+
+    store.Log(s, "career", $"Home-time arrangement changed to {HomeTime.LabelFor(req.Preference)}.");
+    return Snapshot(s);
+})));
+
 app.MapPost("/api/career/pay", (PayAdjustRequest req) => Results.Ok(store.Mutate(s =>
 {
     var message = CareerService.AdjustPay(s, req.LoadedCpm, req.DeadheadCpm, req.Reason ?? "");
@@ -1016,6 +1037,7 @@ object Snapshot(AppState? given = null)
         onboarded = s.Onboarded,
         company = s.Company,
         driver = s.Driver,
+        application = s.Application,
         settings = safeSettings,
         status = s.Status,
         hos = s.Hos,          // driver-reported clocks; views.hos is the derived projection
@@ -1033,6 +1055,8 @@ object Snapshot(AppState? given = null)
         views = new
         {
             garageOpportunities = DiscoveryService.GarageOpportunityView(s),
+            homeTime = HomeTime.Status(s),
+            homeTimeOptions = HomeTime.Options.Select(o => new { key = o.Key, label = o.Label, days = o.Days, note = o.Note }).ToList(),
             backdrop = Backdrop(s),
             hos = HosEngine.Describe(s, truck),
             finance = LedgerService.Summary(s),
@@ -1149,3 +1173,4 @@ record DiscoverRequest(string City, string? State);
 record TrimRequest(bool IncludeYards);
 record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? TransmissionPreference, bool AddTrailers);
 record AdoptRequest(string Path);
+record HomeTimeRequest(string Preference);

@@ -690,6 +690,7 @@ function viewDispatch() {
       ${screenshotHtml()}
       ${boardTableHtml()}
       ${decisionHtml()}
+      ${homeTimeHtml()}
       ${DISCOVERY ? discoveryHtml(DISCOVERY) : ''}
       ${garageOpportunitiesHtml()}
       ${resetOptionsHtml()}
@@ -1002,7 +1003,10 @@ function viewActive() {
           <select id="ev-kind">${['Loaded', 'Departed', 'Fuel', 'Break', 'Rest', 'Scale', 'Delay', 'Breakdown', 'Arrived', 'Note']
             .map((x) => `<option>${x}</option>`).join('')}</select></label>
       </div>
-      <label>Detail<input id="ev-detail" placeholder="e.g. loaded 43,900 lb, trailer at 4%"></label>
+      <label>Detail <span class="sub">— optional</span>
+        <input id="ev-detail" placeholder="only if there is something worth noting"></label>
+      <p class="hint">The event type and time are the record. Leave this blank unless something happened
+        worth reading back later — a delay, a scale, damage, why you stopped where you did.</p>
       <fieldset><legend>If this is a fuel stop</legend>
         <div class="grid4">
           <label>Gallons<input id="ev-gal" type="number" step="0.1" placeholder="0"></label>
@@ -1062,6 +1066,35 @@ function viewActive() {
     </div>
   </div>
   ${TRIP_AUDIT ? auditHtml(TRIP_AUDIT) : ''}`;
+}
+
+/* ---- home time
+   The one driver preference the company is on the hook for, so it gets a visible clock rather than
+   living in the scoring detail where nobody would find it. */
+function homeTimeHtml() {
+  const h = S.views.homeTime;
+  if (!h || !h.tracked) return '';
+  const cls = h.overdue ? 'stop' : h.dueSoon ? 'warn' : 'info';
+  const pctOut = h.intervalDays > 0 ? Math.min(100, (h.daysOut / h.intervalDays) * 100) : 0;
+  return `<div class="panel">
+    <div class="panel-head"><h2>Home time</h2>
+      ${h.overdue ? badge('bad', 'overdue') : h.dueSoon ? badge('warn', 'due soon') : badge('ok', 'on schedule')}
+      <div class="spacer"></div><span class="sub">${esc(h.arrangement)}</span></div>
+    <div class="meter ${h.overdue ? 'bad' : h.dueSoon ? 'warn' : 'ok'}">
+      <div class="lbl">Days out of ${h.intervalDays}</div>
+      <div class="big">${num(h.daysOut, 1)}</div>
+      <div class="of">home yard ${esc(h.terminalLabel || '—')}</div>
+      <div class="bar"><i style="width:${pctOut}%"></i></div>
+    </div>
+    <div class="callout ${cls}" style="margin-top:12px"><p>${esc(h.headline)}</p>
+      ${h.milesFromHome !== null && h.milesFromHome !== undefined
+        ? `<p>Roughly <b>${num(h.milesFromHome)} mi</b> from ${esc(h.terminalLabel)} right now${
+            h.atHome ? ' — close enough to take it.' : '.'}</p>` : ''}
+      ${h.homeTimesTaken > 0 ? `<p class="sub">${h.homeTimesTaken} home time(s) taken · last home ${gt(h.lastHomeGameTime)}.</p>` : ''}
+    </div>
+    <p class="hint">Distance is deliberately rough — it only has to tell a load heading home from one
+      heading away. Report in at the yard itself to log the home time as taken.</p>
+  </div>`;
 }
 
 /* ---- city discovery
@@ -1190,6 +1223,9 @@ function auditHtml(a) {
       <h4>Carried forward to the next dispatch${a.clocksReported ? ', clocks included' : ''}</h4>
       <p>You do not need to type any of this again — confirm it on the Dispatch tab.</p>
       <ul>${a.carriedForward.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+    ${a.homeTimeInstructions && a.homeTimeInstructions.length ? `<div class="callout go" style="margin-top:14px">
+      <h4>Home time — report to the yard</h4>
+      <ul>${a.homeTimeInstructions.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
     ${a.discovery ? discoveryHtml(a.discovery) : ''}
     ${a.directives.length ? `<div class="callout ${a.maintenanceStatus === 'OutOfService' ? 'stop' : 'info'}" style="margin-top:14px">
       <h4>What happens next</h4><ul>${a.directives.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
@@ -1449,6 +1485,21 @@ function terminalsHtml() {
     ${open.map((t) => `<div class="row-actions">
       <button class="btn" data-act="settle-transfer" data-id="${esc(t.id)}">
         Check on the ${esc(t.toTerminalName)} request (${t.loadsRequired} loads asked)</button></div>`).join('')}
+
+    <h3 class="sect">Home-time arrangement</h3>
+    <p class="hint">What you agreed to when you signed on. Dispatch routes for it: as the date gets
+      close, loads finishing near your home yard start outranking better-paying freight going the other
+      way, and you are told when a load is your ride home.</p>
+    <div class="grid3">
+      <label>Arrangement
+        <select id="ht-pref">${(S.views.homeTimeOptions || []).map((o) =>
+          `<option value="${esc(o.key)}" ${(S.application && S.application.homeTimePreference === o.key) ? 'selected' : ''}
+            >${esc(o.label)}</option>`).join('')}</select></label>
+      <label style="align-self:end"><button class="btn primary wide" data-act="save-home-time">Update arrangement</button></label>
+      <div>${S.views.homeTime && S.views.homeTime.tracked
+        ? `<p class="hint" style="margin-top:22px">${num(S.views.homeTime.daysOut, 1)} days out of
+           ${S.views.homeTime.intervalDays}.</p>` : ''}</div>
+    </div>
   </div>`;
 }
 
@@ -2016,12 +2067,15 @@ function viewMaint() {
         <label>Odometer<input id="wo-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
       </div>
       <label>Description<input id="wo-desc" placeholder="what needs doing"></label>
-      <label class="chk"><input type="checkbox" id="wo-open" checked> Leave open (uncheck to close it immediately)</label>
+      <label class="chk"><input type="checkbox" id="wo-open" checked> Leave it open — the work has not been done yet</label>
       <div class="grid2" style="margin-top:8px">
-        <label>Cost $ (if closing now)<input id="wo-cost" type="number" step="0.01" value="0"></label>
-        <label>Damage after %<input id="wo-dmga" type="number" step="0.1" value="0"></label>
+        <label>Cost $<input id="wo-cost" type="number" step="0.01" placeholder="0.00"></label>
+        <label>Damage after %<input id="wo-dmga" type="number" step="0.1" placeholder="0"></label>
       </div>
       <label>Paid by<select id="wo-paid"><option>Company</option><option>Driver</option></select></label>
+      <p class="hint">Leaving it open keeps the cost as a <b>quote</b> — nothing is posted to the books
+        until the work is closed out, and the figure carries over to pre-fill the closing cost. Untick
+        the box if the repair is already done and paid for, and it posts straight away.</p>
       <p class="hint">The company pays legitimate maintenance. Charge the driver only for unauthorized
         modifications, intentional abuse or clearly reckless conduct.</p>
       <div class="row-actions"><button class="btn primary" data-act="create-wo">Create work order</button></div>
@@ -2035,10 +2089,13 @@ function viewMaint() {
             <span class="lane">${esc(w.number)} — ${esc(w.unitKind)} ${esc(w.unit)}</span></div>
           <p style="margin:0 0 9px">${esc(w.description)}</p>
           <div class="kv"><span>at <b>${esc(w.locationCity)}, ${esc(w.locationState)}</b></span>
-            <span>damage <b>${pct(w.damageBefore)}</b></span><span>opened <b>${gt(w.gameTime)}</b></span></div>
+            <span>damage <b>${pct(w.damageBefore)}</b></span><span>opened <b>${gt(w.gameTime)}</b></span>
+            ${w.estimatedCost > 0 ? `<span>quoted <b>${money(w.estimatedCost)}</b></span>` : ''}</div>
           <div class="grid3">
-            <label>Cost $<input id="cw-cost-${esc(w.number)}" type="number" step="0.01" value="0"></label>
-            <label>Damage after %<input id="cw-dmg-${esc(w.number)}" type="number" step="0.1" value="0"></label>
+            <label>Cost $<input id="cw-cost-${esc(w.number)}" type="number" step="0.01"
+              value="${w.estimatedCost > 0 ? w.estimatedCost : ''}" placeholder="what it actually cost"></label>
+            <label>Damage after %<input id="cw-dmg-${esc(w.number)}" type="number" step="0.1" value="0"
+              title="ATS repairs to 0%. Change it if the shop only did part of the work."></label>
             <label>Vendor<input id="cw-vend-${esc(w.number)}" value="${esc(w.vendor)}"></label>
           </div>
           <label>Paid by<select id="cw-paid-${esc(w.number)}"><option>Company</option><option>Driver</option></select></label>
@@ -2711,6 +2768,9 @@ async function handleAction(act, d, ev) {
       return r;
     });
 
+    case 'save-home-time': return run(async () => absorb(await api('/career/home-time', 'POST',
+      { preference: sv('ht-pref') })), 'Home-time arrangement updated.');
+
     /* ---- city discovery */
     case 'decline-garage': return run(async () => {
       absorb(await api('/discovery/decline', 'POST', { city: d.city, state: d.state }));
@@ -2865,12 +2925,12 @@ async function handleAction(act, d, ev) {
     /* ---- trips */
     case 'trip-detail': return tripDetailModal(d.id);
     case 'log-event': {
-      if (!sv('ev-detail') && fv('ev-gal') <= 0) return toast('Add a detail for the log entry.', 'bad');
       const gal = fv('ev-gal'), price = fv('ev-price');
       return run(async () => {
         const r = absorb(await api(`/trips/${d.id}/event`, 'POST', {
           gameTime: readDayTime('ev-time'), kind: sv('ev-kind'),
-          detail: sv('ev-detail') || (gal > 0 ? `Fuelled ${gal} gal` : ''),
+          // The event type and time are the record; a detail is only worth having when there is one.
+          detail: sv('ev-detail') || (gal > 0 ? `Fuelled ${num(gal, 1)} gal` : sv('ev-kind')),
           city: sv('ev-city'), state: sv('ev-state'),
           gallons: gal, pricePerGal: price, cost: 0,
         }));
@@ -3189,20 +3249,34 @@ async function handleAction(act, d, ev) {
     /* ---- maintenance */
     case 'create-wo': {
       if (!sv('wo-desc')) return toast('Describe what needs doing.', 'bad');
-      return run(async () => absorb(await api('/maintenance/workorder', 'POST', {
-        unit: sv('wo-unit'), unitKind: sv('wo-kind2'), kind: sv('wo-type'),
-        description: sv('wo-desc'), vendor: sv('wo-vendor'),
-        locationCity: sv('wo-city'), locationState: sv('wo-state'),
-        cost: bv('wo-open') ? 0 : fv('wo-cost'), damageBefore: fv('wo-dmgb'),
-        damageAfter: bv('wo-open') ? fv('wo-dmgb') : fv('wo-dmga'),
-        odometerAtService: fv('wo-odo'), paidBy: sv('wo-paid'),
-        status: bv('wo-open') ? 'Open' : 'Completed',
-      })), 'Work order created.');
+      const leaveOpen = bv('wo-open');
+      // Send the cost either way. The server keeps it as an estimate on an open order rather than
+      // throwing it away, so what was typed is never silently lost.
+      return run(async () => {
+        const r = absorb(await api('/maintenance/workorder', 'POST', {
+          unit: sv('wo-unit'), unitKind: sv('wo-kind2'), kind: sv('wo-type'),
+          description: sv('wo-desc'), vendor: sv('wo-vendor'),
+          locationCity: sv('wo-city'), locationState: sv('wo-state'),
+          cost: fv('wo-cost'), damageBefore: fv('wo-dmgb'),
+          damageAfter: leaveOpen ? fv('wo-dmgb') : fv('wo-dmga'),
+          odometerAtService: fv('wo-odo'), paidBy: sv('wo-paid'),
+          status: leaveOpen ? 'Open' : 'Completed',
+        }));
+        const w = r.workOrder;
+        toast(leaveOpen
+          ? `${w.number} opened${w.estimatedCost > 0 ? ` — ${money(w.estimatedCost)} quoted, not yet posted` : ''}.`
+          : `${w.number} closed — ${money(w.cost)} posted.`, 'ok');
+      });
     }
-    case 'close-wo': return run(async () => absorb(await api(`/maintenance/workorder/${encodeURIComponent(d.num)}/complete`, 'POST', {
-      cost: fv('cw-cost-' + d.num), damageAfter: fv('cw-dmg-' + d.num),
-      vendor: sv('cw-vend-' + d.num), paidBy: sv('cw-paid-' + d.num), notes: '',
-    })), 'Work order closed.');
+    case 'close-wo': {
+      const cost = fv('cw-cost-' + d.num);
+      if (cost <= 0 && !confirm('Close this work order with no cost?\n\nNothing will be posted to the books '
+        + 'and the repair will read as free. Cancel and enter what it cost if that is not right.')) return;
+      return run(async () => absorb(await api(`/maintenance/workorder/${encodeURIComponent(d.num)}/complete`, 'POST', {
+        cost, damageAfter: fv('cw-dmg-' + d.num),
+        vendor: sv('cw-vend-' + d.num), paidBy: sv('cw-paid-' + d.num), notes: '',
+      })), 'Work order closed.');
+    }
 
     /* ---- safety */
     case 'record-incident': {

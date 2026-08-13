@@ -57,8 +57,18 @@
         <label>Home city<input id="ap-city" placeholder="e.g. Denver"></label>
         <label>Home state<input id="ap-state" placeholder="CO" maxlength="2" class="up"></label>
 
-        <label class="span2">Home-time preference
-          <input id="ap-hometime" placeholder="e.g. home every other weekend, or no preference">
+        <label class="span2">How often do you want to be home?
+          <select id="ap-hometime">
+            <option value="weekly">Home every week &mdash; ~7 days out</option>
+            <option value="biweekly" selected>Home every other week &mdash; ~14 days out</option>
+            <option value="threeweeks">Home every three weeks &mdash; ~21 days out</option>
+            <option value="monthly">Home about once a month &mdash; ~30 days out</option>
+            <option value="sixweeks">Home every six weeks &mdash; ~42 days out</option>
+            <option value="none">No arrangement &mdash; keep me out</option>
+          </select>
+          <span class="hint">Dispatch routes for this. As the date approaches, loads finishing near your
+            home terminal start outranking better-paying freight going the other way, and you will be
+            told when a load is your ride home.</span>
         </label>
 
         <label class="span2">Prior freight experience (comma separated)
@@ -130,6 +140,8 @@
     <span id="foot-data"></span>
     <span class="sep">&middot;</span>
     <span>Company revenue is not your paycheck. Wages settle on the Payroll tab.</span>
+    <span class="sep">&middot;</span>
+    <span>Original idea by <b>SimRacerSteve</b></span>
   </footer>
 </div>
 

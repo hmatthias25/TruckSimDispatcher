@@ -92,6 +92,11 @@ public static class DispatchEngine
             return decision;
         }
 
+        // Home time colours the whole board once it is close, so it leads the notes rather than
+        // turning up as a footnote under a load the driver has already been told to run.
+        var homeNote = HomeTime.BoardNote(HomeTime.Status(s));
+        if (homeNote != null) decision.DispatchNotes.Add(homeNote);
+
         // Hard stops that prevent ANY dispatch.
         var stops = DispatchBlockers(s, truck, trailer);
         if (stops.Count > 0)
@@ -133,6 +138,10 @@ public static class DispatchEngine
                 decision.DispatchNotes.Add($"Plan on {pick.Feasibility.RestsRequired} × {s.Settings.Hos.OffDutyReset:0.#}-hour reset and {pick.Feasibility.BreaksRequired} required break(s) en route.");
             if (pick.Feasibility.FuelStopsRequired > 0)
                 decision.DispatchNotes.Add($"{pick.Feasibility.FuelStopsRequired} fuel stop(s) planned — do not run below a quarter tank.");
+            // If this pick is the ride home, say so plainly — the driver should know why they are
+            // taking it over a better-paying load, and what to do once the trailer comes off.
+            foreach (var line in HomeTime.HomeRunInstructions(s, pick.Load.DestCity, pick.Load.DestState))
+                decision.DispatchNotes.Add(line);
             decision.DispatchNotes.Add("After you are loaded, report: loaded game time, odometer, actual trailer weight and trailer damage.");
             return decision;
         }
@@ -347,6 +356,14 @@ public static class DispatchEngine
         var utilPts = TripLengthFit(app?.PreferredTripLength, load.LoadedMiles) * w.UtilizationFit;
         score += utilPts;
         detail.Add($"{load.LoadedMiles:0} loaded miles vs your {app?.PreferredTripLength ?? "medium"} length preference: {utilPts:+0.00;-0.00}");
+
+        // Home time. Silent until it is close, then it starts outweighing a better rate the wrong way.
+        var homeStatus = HomeTime.Status(s);
+        var (homePts, homeDetail, homePro, homeCon) = HomeTime.ScoreLoad(s, load, homeStatus);
+        score += homePts;
+        if (homeDetail != null) detail.Add(homeDetail);
+        if (homePro != null) e.Pros.Add(homePro);
+        if (homeCon != null) e.Cons.Add(homeCon);
 
         e.Score = Math.Round(score, 3);
         e.ScoreDetail = detail;
@@ -592,6 +609,20 @@ public static class DispatchEngine
 
         if (eval.Feasibility.Verdict == "Tight")
             trip.Notes = "Authorized as an exception with sub-buffer slack. Dispatcher owns any service failure on this load.";
+
+        // Record on the trip itself that this was a ride home, so the close-out audit can repeat the
+        // instruction without having to re-derive whether it still applies.
+        var homeRun = HomeTime.HomeRunInstructions(s, load.DestCity, load.DestState);
+        if (homeRun.Count > 0)
+        {
+            trip.IsHomeRun = true;
+            trip.Events.Add(new TripEvent
+            {
+                GameTime = s.Status.GameTime,
+                Kind = "Note",
+                Detail = "Routed for home time. " + homeRun[0]
+            });
+        }
 
         trip.Events.Add(new TripEvent
         {

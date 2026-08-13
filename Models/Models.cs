@@ -51,7 +51,12 @@ public class DriverApplication
     public List<string> FreightExperience { get; set; } = new();
     /// <summary>"short" | "medium" | "long" | "otr"</summary>
     public string PreferredTripLength { get; set; } = "medium";
-    public string HomeTimePreference { get; set; } = "";
+    /// <summary>
+    /// How long the driver is willing to stay out: weekly | biweekly | threeweeks | monthly |
+    /// sixweeks | none. A key rather than free text, because dispatch actually routes for it —
+    /// see <see cref="Driver.HomeTimeIntervalDays"/>.
+    /// </summary>
+    public string HomeTimePreference { get; set; } = "biweekly";
     public string HomeCity { get; set; } = "";
     public string HomeState { get; set; } = "";
     public List<string> WillNotHaul { get; set; } = new();
@@ -156,6 +161,17 @@ public class Driver
     public string AssignedTrailerUnit { get; set; } = "";
     /// <summary>Terminal the driver is domiciled out of — where home time starts and ends.</summary>
     public string HomeTerminalId { get; set; } = "";
+    /// <summary>
+    /// Game days the driver agreed to stay out before going home. 0 means no arrangement, so dispatch
+    /// never routes for it. Taken from the application and honoured by the load scorer: as the driver
+    /// approaches it, loads that finish near the home terminal are worth more, and once it is passed,
+    /// freight running the other way is argued against.
+    /// </summary>
+    public int HomeTimeIntervalDays { get; set; }
+    /// <summary>Game time the driver was last at their home terminal. Blank = never, count from hire.</summary>
+    public string LastHomeGameTime { get; set; } = "";
+    /// <summary>Home times taken, for the driver file.</summary>
+    public int HomeTimesTaken { get; set; }
     public List<TransferRequest> Transfers { get; set; } = new();
     public ProbationPlan Probation { get; set; } = new();
     /// <summary>Driver pay accrued but not yet paid out on a settlement.</summary>
@@ -502,6 +518,11 @@ public class Trip
     /// <summary>Settlement number this trip was paid on; empty = unsettled.</summary>
     public string SettlementNumber { get; set; } = "";
 
+    /// <summary>
+    /// Authorized to get the driver home rather than on its merits. Recorded at dispatch so the
+    /// close-out can tell them to report to the yard and take their home time.
+    /// </summary>
+    public bool IsHomeRun { get; set; }
     /// <summary>Feasibility analysis snapshot captured at authorization, for later audit.</summary>
     public FeasibilityResult? FeasibilityAtDispatch { get; set; }
     public string AuthorizationRationale { get; set; } = "";
@@ -643,6 +664,12 @@ public class WorkOrder
     public string LocationCity { get; set; } = "";
     public string LocationState { get; set; } = "";
     public decimal Cost { get; set; }
+    /// <summary>
+    /// What the repair was quoted at when the order was raised. An open work order has no actual cost
+    /// yet — nothing has been paid — but the figure the driver was quoted should not be thrown away.
+    /// It pre-fills the cost when the order is closed.
+    /// </summary>
+    public decimal EstimatedCost { get; set; }
     /// <summary>Company | Driver — driver chargebacks only for abuse/unauthorized mods.</summary>
     public string PaidBy { get; set; } = "Company";
     public double DamageBefore { get; set; }
@@ -951,6 +978,17 @@ public class ScoringWeights
     public double HosSlack { get; set; } = 0.7;
     public double DivisionFit { get; set; } = 0.5;
     public double UtilizationFit { get; set; } = 0.4;
+    /// <summary>
+    /// Weight on getting the driver home when their home time is coming due. Deliberately heavier
+    /// than division or trip-length fit: a carrier that misses home time loses drivers, so once the
+    /// clock is up this should outrank a slightly better-paying load going the wrong way.
+    /// </summary>
+    public double HomeTime { get; set; } = 1.4;
+    /// <summary>
+    /// How near the home terminal counts as home. ATS generates loads to fixed cities, so insisting
+    /// on the exact yard would strand the driver waiting for freight that may never appear.
+    /// </summary>
+    public double HomeRadiusMiles { get; set; } = 200;
     /// <summary>Cycle hours at or below which reset positioning starts dominating.</summary>
     public double ResetWatchCycleHours { get; set; } = 18;
     /// <summary>

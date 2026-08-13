@@ -20,6 +20,41 @@ public static class Migrations
         CollapseReservesIntoOneCashAccount(s);
         EnsureDiscoveredCities(s);
         EnsureTripFuelStops(s);
+        EnsureHomeTimeArrangement(s);
+    }
+
+    /// <summary>
+    /// Home time used to be free text on the application ("every couple of weeks", "whenever") and was
+    /// never acted on. Read what the driver wrote into a real interval where the wording is clear, and
+    /// otherwise fall back to the common OTR arrangement rather than silently deciding they never go
+    /// home. They can change it on the Career tab.
+    /// </summary>
+    private static void EnsureHomeTimeArrangement(AppState s)
+    {
+        if (s.Driver.HomeTimeIntervalDays != 0) return;                 // already set, or deliberately none
+        if (s.Application == null) return;
+        if (!string.IsNullOrWhiteSpace(s.Driver.LastHomeGameTime)) return;
+
+        var text = (s.Application.HomeTimePreference ?? "").Trim().ToLowerInvariant();
+        var key = text switch
+        {
+            _ when text.Length == 0 => "biweekly",
+            _ when HomeTime.DaysFor(text) > 0 => text,                   // already a key
+            _ when text.Contains("never") || text.Contains("stay out") || text.Contains("no pref") => "none",
+            _ when text.Contains("week") && (text.Contains("every") || text.Contains("each"))
+                   && !text.Contains("other") && !text.Contains("two") && !text.Contains("three") => "weekly",
+            _ when text.Contains("other week") || text.Contains("two week") || text.Contains("biweek")
+                   || text.Contains("14") => "biweekly",
+            _ when text.Contains("three week") || text.Contains("21") => "threeweeks",
+            _ when text.Contains("month") || text.Contains("30") => "monthly",
+            _ when text.Contains("six week") || text.Contains("42") => "sixweeks",
+            _ => "biweekly"
+        };
+
+        s.Application.HomeTimePreference = key;
+        s.Driver.HomeTimeIntervalDays = HomeTime.DaysFor(key);
+        // Start the clock from the hire date rather than pretending they just got home.
+        s.Driver.LastHomeGameTime = s.Driver.HiredGameDate;
     }
 
     /// <summary>
