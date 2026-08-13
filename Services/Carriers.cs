@@ -643,38 +643,39 @@ public static class Carriers
         var truckCount = s.Trucks.Count;
         steps.Add(new SetupStep
         {
-            Title = "First — decide how you are funding this company",
+            Title = "First — you start with one yard and one truck",
             Detail =
-                $"{s.Company.Name} as modelled here has {yardCount} yard(s) and {truckCount} tractor(s). " +
-                "A fresh ATS profile cannot come close to affording that — you start with a small loan and " +
-                "one truck. You have three honest options.\n\n" +
-                "1) START SMALL AND GROW (no tools needed, recommended). Trim the app to match your real " +
-                "game: on this tab, delete the yards and units you do not own, keep the one truck you bought, " +
-                "and add yards and tractors here as you actually buy them in ATS. The dispatch, HOS, pay and " +
-                "safety systems all work exactly the same for a one-truck operation.\n\n" +
-                "2) USE A SAVE EDITOR to seed the cash for the company as described. Saves live in " +
+                $"{s.Company.Name} opens with {yardCount} yard and {truckCount} tractor, and that is deliberate. " +
+                "A fresh ATS profile cannot afford more, and there is a harder limit than money: ATS only " +
+                "generates cargo for cities you have actually driven to. Reveal a city with a save editor " +
+                "and it stays undiscovered as far as the freight system is concerned — no jobs will ever " +
+                "appear there.\n\n" +
+                "So the network grows the way a real one does. Run out of your home yard, and when you reach " +
+                "somewhere new the app tells you a garage is for sale there and whether the freight is worth " +
+                "it. Buy it in game, add it on the Terminals tab, and base a truck there.\n\n" +
+                "A save editor is still useful for seeding cash if you want to grow faster. Saves live in " +
                 "Documents\\American Truck Simulator\\profiles\\<profile>\\save\\<slot>\\game.sii and are " +
                 "encrypted — SII_Decrypt decrypts them for editing, and TS SE Tool is a purpose-built " +
-                "editor. Money sits in the economy section of game.sii.\n\n" +
-                "3) USE MODS to unlock things you have not discovered yet — all dealerships, all garages, " +
-                "all cities and recruiting agencies visible from the start. ATS normally hides dealers and " +
-                "agencies until you drive to them.",
-            Why = "The app will happily model a large carrier, but it cannot buy anything in your game. " +
-                  "Either the company matches your garage or you make your garage match the company.",
+                "editor. Money sits in the economy section of game.sii. Mods can also unlock all dealerships " +
+                "and recruiting agencies, which ATS otherwise hides until you drive past them.",
+            Why = "The app cannot buy anything in your game, and it will not pretend to own equipment ATS " +
+                  "has never heard of — a fabricated damage figure could never be reconciled with the game.",
             Caution =
                 "Back up your profile folder before running any editor. Save editors can corrupt a save, " +
                 "TS SE Tool is explicitly alpha software, and SCS cannot offer support on a modified save " +
-                "because they cannot tell what was changed. If you would rather not touch save files at all, " +
-                "take option 1 — it is fully supported here and arguably the better roleplay anyway."
+                "because they cannot tell what was changed. Note that editing cities to be visible does NOT " +
+                "make them discovered — they will show on the map and still never offer freight."
         });
 
         steps.Add(new SetupStep
         {
-            Title = $"Buy a garage in {s.Company.TerminalCity}, {s.Company.TerminalState}",
-            Detail = "In ATS this is your headquarters yard. A small garage is enough to start — you can " +
-                     "upgrade later. If you already own a garage somewhere else, either buy one here or " +
-                     "edit the terminal on the Fleet tab so the app matches your game.",
-            Why = "Dispatch plans your first load out of this city and treats it as home."
+            Title = $"Buy a small garage in {s.Company.TerminalCity}, {s.Company.TerminalState}",
+            Detail = "This is your headquarters yard, and a small garage — one truck — is what you need. " +
+                     "Upgrade it to Medium or Large later when you have trucks to put in it, and match the " +
+                     "tier on the Terminals tab. If you already own a garage elsewhere, either buy one here " +
+                     "or edit the terminal so the app matches your game.",
+            Why = "Dispatch plans your first load out of this city and treats it as home. Start where you " +
+                  "are standing — that city is discovered, so it will actually offer freight."
         });
 
         if (truck != null)

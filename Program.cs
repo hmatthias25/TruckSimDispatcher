@@ -57,7 +57,7 @@ app.MapGet("/favicon.ico", () => Results.NoContent());
 
 app.MapGet("/api/bootstrap", () => Results.Ok(Snapshot()));
 
-app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate(s =>
+app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s =>
 {
     if (u.LocationCity != null) s.Status.LocationCity = u.LocationCity.Trim();
     if (u.LocationState != null) s.Status.LocationState = u.LocationState.Trim().ToUpperInvariant();
@@ -77,6 +77,11 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate(s =>
     if (u.Notes != null) s.Status.Notes = u.Notes;
     s.Status.UpdatedUtc = DateTime.UtcNow.ToString("o");
 
+    // The driver has now signed off on these readings, whether they edited them or accepted what the
+    // last close-out carried forward.
+    s.Status.Confirmed = true;
+    s.Status.CarriedForwardFrom = "";
+
     // Keep the assigned units in step with what the driver reports from the game.
     var tk = DispatchEngine.AssignedTruck(s);
     if (tk != null)
@@ -87,6 +92,36 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate(s =>
     var tr = DispatchEngine.AssignedTrailer(s);
     if (tr != null && u.TrailerDamagePct.HasValue) tr.DamagePct = s.Status.TrailerDamagePct;
 
+    // Arriving somewhere new grows the network — and may be worth a yard.
+    var discovery = DiscoveryService.Note(s, s.Status.LocationCity, s.Status.LocationState, s.Status.GameTime);
+
+    return new { snapshot = Snapshot(s), discovery };
+})));
+
+// ---------------------------------------------------------------- discovery
+
+app.MapPost("/api/discovery/note", (DiscoverRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    if (string.IsNullOrWhiteSpace(req.City)) throw new InvalidOperationException("Which city?");
+    var notice = DiscoveryService.Note(s, req.City, req.State, s.Status.GameTime);
+    return new { snapshot = Snapshot(s), discovery = notice, already = notice == null };
+})));
+
+app.MapPost("/api/discovery/decline", (DiscoverRequest req) => Results.Ok(store.Mutate(s =>
+{
+    var hit = DiscoveryService.Find(s, req.City, req.State)
+              ?? throw new InvalidOperationException("That city is not on our discovered list.");
+    hit.Declined = true;
+    hit.Notified = true;
+    store.Log(s, "dispatch", $"Passed on a yard in {DispatchEngine.Place(hit.City, hit.State)}.");
+    return Snapshot(s);
+})));
+
+app.MapPost("/api/discovery/reconsider", (DiscoverRequest req) => Results.Ok(store.Mutate(s =>
+{
+    var hit = DiscoveryService.Find(s, req.City, req.State)
+              ?? throw new InvalidOperationException("That city is not on our discovered list.");
+    hit.Declined = false;
     return Snapshot(s);
 })));
 
@@ -486,6 +521,13 @@ app.MapDelete("/api/fleet/trailer/{unit}", (string unit) => Results.Ok(store.Mut
     return Snapshot(s);
 })));
 
+app.MapPost("/api/fleet/trim", (TrimRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var notes = Migrations.TrimBackdropEquipment(s, req.IncludeYards);
+    foreach (var n in notes) store.Log(s, "maintenance", n);
+    return new { snapshot = Snapshot(s), notes };
+})));
+
 app.MapPost("/api/fleet/assign", (AssignRequest req) => Results.Ok(store.Mutate(s =>
 {
     if (!string.IsNullOrWhiteSpace(req.TruckUnit))
@@ -656,10 +698,11 @@ app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mut
 
 // ---------------------------------------------------------------- terminals
 
-app.MapPost("/api/terminals", (Terminal t) => Results.Ok(store.Mutate(s =>
+app.MapPost("/api/terminals", (Terminal t) => Results.Ok(store.Mutate<object>(s =>
 {
     var existing = s.Company.Terminals.FirstOrDefault(x => x.Id == t.Id);
     t.State = (t.State ?? "").Trim().ToUpperInvariant();
+    string? warning = null;
     if (existing == null)
     {
         if (string.IsNullOrWhiteSpace(t.City)) throw new InvalidOperationException("A terminal needs a city.");
@@ -667,13 +710,19 @@ app.MapPost("/api/terminals", (Terminal t) => Results.Ok(store.Mutate(s =>
         if (string.IsNullOrWhiteSpace(t.Name)) t.Name = $"{s.Company.Name} — {t.City}";
         s.Company.Terminals.Add(t);
         store.Log(s, "system", $"Terminal opened: {t.City}, {t.State} ({t.Level}).");
+
+        // Buying a yard somewhere proves you have been there, so it counts as discovered. The warning
+        // is advisory only — the player can see their own game and we cannot.
+        warning = DiscoveryService.YardWarning(s, t.City, t.State);
+        DiscoveryService.Note(s, t.City, t.State, s.Status.GameTime);
     }
     else
     {
         s.Company.Terminals[s.Company.Terminals.IndexOf(existing)] = t;
     }
     Migrations.SyncHeadquarters(s);
-    return Snapshot(s);
+    DiscoveryService.SyncOwnership(s);
+    return new { snapshot = Snapshot(s), warning };
 })));
 
 app.MapDelete("/api/terminals/{id}", (string id) => Results.Ok(store.Mutate(s =>
@@ -887,7 +936,19 @@ app.MapPost("/api/markets", (MarketCity c) => Results.Ok(store.Mutate(s =>
 
 // ---------------------------------------------------------------- backup / data
 
-app.MapGet("/api/backups", () => Results.Ok(new { dataDir = store.DataDirectory, files = store.ListBackups() }));
+app.MapGet("/api/backups", () => Results.Ok(new
+{
+    dataDir = store.DataDirectory,
+    stateFile = store.StateFile,
+    files = store.ListBackups(),
+    // Careers left behind by an older copy of the app, so an update never looks like a lost save.
+    otherCareers = store.OtherCareerFiles()
+}));
+app.MapPost("/api/data/adopt", (AdoptRequest r) =>
+{
+    store.AdoptFile(r.Path);
+    return Results.Ok(Snapshot());
+});
 app.MapPost("/api/backups/snapshot", (NoteRequest r) => Results.Ok(new { path = store.Snapshot(r.Notes ?? "manual") }));
 app.MapPost("/api/backups/restore", (RestoreRequest r) => { store.RestoreBackup(r.File); return Results.Ok(Snapshot()); });
 app.MapGet("/api/export", () => Results.Text(store.ExportJson(), "application/json"));
@@ -900,7 +961,8 @@ app.MapPost("/api/import", async (HttpRequest http) =>
 app.MapPost("/api/reset", (ResetRequest r) =>
 {
     if (r.Confirm != "RESET") return Results.BadRequest(new { error = "Type RESET to confirm. A snapshot is taken first either way." });
-    store.ResetAll();
+    // Settings describe the install, not the career — they survive unless explicitly wiped.
+    store.ResetAll(keepSettings: r.ResetSettings != true);
     return Results.Ok(Snapshot());
 });
 
@@ -957,9 +1019,12 @@ object Snapshot(AppState? given = null)
         discipline = s.Discipline,
         workOrders = s.WorkOrders,
         counters = s.Counters,
+        discovered = s.Discovered,
         events = s.Events.Take(80).ToList(),
         views = new
         {
+            garageOpportunities = DiscoveryService.GarageOpportunityView(s),
+            backdrop = Backdrop(s),
             hos = HosEngine.Describe(s, truck),
             finance = LedgerService.Summary(s),
             career = CareerService.Review(s),
@@ -987,6 +1052,13 @@ object Snapshot(AppState? given = null)
             aiConfigured = AiService.Configured(s.Settings)
         }
     };
+}
+
+/// <summary>Equipment and yards on the book that ATS knows nothing about, so the UI can offer a trim.</summary>
+static object Backdrop(AppState s)
+{
+    var (trucks, trailers, yards) = Migrations.CountBackdrop(s);
+    return new { trucks, trailers, yards, any = trucks + trailers + yards > 0 };
 }
 
 static string BuildFirstDispatch(AppState s, Truck? truck, Trailer? trailer)
@@ -1063,4 +1135,7 @@ record PayAdjustRequest(decimal LoadedCpm, decimal DeadheadCpm, string? Reason);
 record AiRequest(string? Message);
 record ExtractRequest(List<ScreenshotImage>? Images);
 record RestoreRequest(string File);
-record ResetRequest(string Confirm);
+record ResetRequest(string Confirm, bool? ResetSettings);
+record DiscoverRequest(string City, string? State);
+record TrimRequest(bool IncludeYards);
+record AdoptRequest(string Path);

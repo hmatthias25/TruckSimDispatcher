@@ -15,6 +15,7 @@ public class StateStore
     private readonly string _file;
     private readonly string _backupDir;
     private readonly object _gate = new();
+    private readonly List<string> _searched;
     private AppState _state;
 
     public static readonly JsonSerializerOptions Json = new()
@@ -31,20 +32,16 @@ public class StateStore
 
     public StateStore(string baseDir)
     {
-        _dataDir = ResolveDataDir(baseDir);
+        _searched = Candidates(baseDir);
+        _dataDir = ResolveDataDir(_searched);
         _backupDir = Path.Combine(_dataDir, "backups");
         _file = Path.Combine(_dataDir, "career.json");
         Directory.CreateDirectory(_backupDir);
         _state = Load();
     }
 
-    /// <summary>
-    /// The career file lives beside the exe so the whole thing stays portable — copy the folder to
-    /// another machine and the career comes with it. If that location is not writable (dropped into
-    /// Program Files, a read-only share, or launched through the shared dotnet host) fall back to
-    /// LocalAppData rather than failing to start.
-    /// </summary>
-    private static string ResolveDataDir(string preferred)
+    /// <summary>Every place a career file might live, in priority order.</summary>
+    private static List<string> Candidates(string preferred)
     {
         var candidates = new List<string>();
 
@@ -60,6 +57,38 @@ public class StateStore
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "TruckSimDispatcher", "data"));
 
+        return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static bool HasCareer(string dir)
+    {
+        try { return File.Exists(Path.Combine(dir, "career.json")); }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// The career file lives beside the exe so the whole thing stays portable — copy the folder to
+    /// another machine and the career comes with it.
+    ///
+    /// A location that already holds a career beats an empty one. That is what makes updating the app
+    /// safe: drop a newer exe in and it finds the career that is already there rather than opening a
+    /// blank one and looking like the save was lost. An explicit TSD_DATA_DIR still overrides
+    /// everything, and if nothing is writable (Program Files, a read-only share, launched through the
+    /// shared dotnet host) it falls back to LocalAppData rather than failing to start.
+    /// </summary>
+    private static string ResolveDataDir(List<string> candidates)
+    {
+        var explicitDir = Environment.GetEnvironmentVariable("TSD_DATA_DIR");
+        if (!string.IsNullOrWhiteSpace(explicitDir) && IsWritable(explicitDir))
+            return explicitDir;
+
+        foreach (var dir in candidates)
+            if (HasCareer(dir) && IsWritable(dir))
+            {
+                Console.WriteLine($"  [data] found an existing career at {dir}");
+                return dir;
+            }
+
         foreach (var dir in candidates)
         {
             if (IsWritable(dir)) return dir;
@@ -70,6 +99,41 @@ public class StateStore
         var last = candidates[^1];
         Directory.CreateDirectory(last);
         return last;
+    }
+
+    /// <summary>
+    /// Career files sitting in the other locations we searched. Surfaced in the UI so a career left
+    /// behind by an older copy of the app can be found and adopted instead of quietly abandoned.
+    /// </summary>
+    public List<object> OtherCareerFiles()
+    {
+        var found = new List<object>();
+        foreach (var dir in _searched)
+        {
+            if (string.Equals(dir, _dataDir, StringComparison.OrdinalIgnoreCase)) continue;
+            var path = Path.Combine(dir, "career.json");
+            if (!File.Exists(path)) continue;
+            try
+            {
+                var fi = new FileInfo(path);
+                found.Add(new
+                {
+                    path,
+                    sizeKb = Math.Round(fi.Length / 1024.0, 1),
+                    modified = fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm")
+                });
+            }
+            catch { /* unreadable — nothing useful to offer */ }
+        }
+        return found;
+    }
+
+    /// <summary>Loads a career file from an arbitrary path, snapshotting the current one first.</summary>
+    public AppState AdoptFile(string path)
+    {
+        var full = Path.GetFullPath(path);
+        if (!File.Exists(full)) throw new FileNotFoundException("No career file at that path.", full);
+        return ImportJson(File.ReadAllText(full));
     }
 
     private static bool IsWritable(string dir)
@@ -208,13 +272,35 @@ public class StateStore
         }
     }
 
-    /// <summary>Wipe the career and start over. Always snapshots first.</summary>
-    public void ResetAll()
+    /// <summary>
+    /// Wipe the career and start over. Always snapshots first.
+    ///
+    /// Settings are kept by default, and that is the point: the API key, the HOS rule set, the mod
+    /// list and the economic assumptions describe the player's game and their machine, not the career
+    /// that just ended. Losing them on every restart means re-entering an API key and re-unticking the
+    /// 30-minute break to play the same way in the same install. Pass <paramref name="keepSettings"/>
+    /// false only to genuinely start from factory defaults.
+    /// </summary>
+    public void ResetAll(bool keepSettings = true)
     {
         lock (_gate)
         {
             if (File.Exists(_file)) Snapshot("pre-reset");
+
+            var settings = _state.Settings;
+            var markets = _state.MarketExtras;
+
             _state = Fresh();
+
+            if (keepSettings)
+            {
+                _state.Settings = settings;
+                // Trip numbering belongs to the career that just ended, not to the new one.
+                _state.Settings.FreightPrefix = "";
+                // Map data the player entered describes their install, so it survives too.
+                _state.MarketExtras = markets;
+            }
+
             Save();
         }
     }

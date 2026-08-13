@@ -124,19 +124,6 @@ public static class Seed
             divisions.Add(Norm(app.SecondDivision));
         if (!divisions.Contains("Dry Van")) divisions.Add("Dry Van");
 
-        // Relay yards in different states from HQ and from each other. A six-truck carrier runs a
-        // regional network, not a coast-to-coast one, so aim for roughly a day or two out rather
-        // than the farthest market on the map.
-        const double RelayTarget = 10.0;   // ~700-1,000 mi in the crude centroid units
-        var secondary = Markets.Effective(s)
-            .Where(c => c.Tier == 1 && c.ResetFriendly && !c.State.Equals(hqState, StringComparison.OrdinalIgnoreCase))
-            .GroupBy(c => c.State)
-            .Select(g => g.OrderBy(c => c.City).First())
-            .Where(c => StateDistanceScore(hqState, c.State) > 3)
-            .OrderBy(c => Math.Abs(StateDistanceScore(hqState, c.State) - RelayTarget))
-            .Take(2)
-            .ToList();
-
         s.Company = new Company
         {
             Name = profile.Name,
@@ -152,52 +139,29 @@ public static class Seed
                                       "Interstate for-hire; no brokerage authority — we haul our own freight only."
         };
 
-        // HQ is a full-service yard; relay points are smaller. Even the smallest has fuel and
-        // parking — a yard that cannot fuel or hold a truck is no use to dispatch.
+        // One yard, at the smallest tier — which is what ATS actually sells you first.
+        //
+        // The carrier deliberately does NOT start with a relay network. Cities revealed with a save
+        // editor rather than driven to never generate cargo in ATS, so a yard in a city the driver
+        // has not reached would sit empty and a truck based there would have nothing to haul. The
+        // network grows as the driver discovers cities; see DiscoveryService.
         s.Company.Terminals.Clear();
-        s.Company.Terminals.Add(Migrations.BuildTerminal(s, hqCity, hqState, isHq: true, "Large"));
-        for (var i = 0; i < secondary.Count; i++)
-            s.Company.Terminals.Add(Migrations.BuildTerminal(
-                s, secondary[i].City, secondary[i].State, isHq: false, i == 0 ? "Medium" : "Small"));
+        s.Company.Terminals.Add(Migrations.BuildTerminal(s, hqCity, hqState, isHq: true, "Small"));
         Migrations.SyncHeadquarters(s);
+
+        // The home city counts as discovered — the driver is standing in it.
+        s.Discovered.Clear();
+        DiscoveryService.Note(s, hqCity, hqState, s.Status.GameTime);
 
         s.Settings.FreightPrefix = profile.Code;
 
-        // Starting finances for a small, real carrier — leveraged, not rich.
+        // Starting finances for a one-truck operation, leveraged and thin. These are book figures:
+        // the real number is whatever ATS shows, which the driver reports and the ledger trues up to.
         ApplyDefaultAccounts(s);
-        SetOpening(s, LedgerService.Operating, 184_500m);
-        SetOpening(s, LedgerService.MaintenanceReserve, 46_000m);
-        SetOpening(s, LedgerService.PayrollReserve, 28_500m);
-        SetOpening(s, LedgerService.EquipmentNote, -412_000m);
-    }
-
-    /// <summary>
-    /// Rough state centroids, used only to spread terminals apart geographically so the
-    /// generated network looks like a real carrier's rather than three yards in one state.
-    /// </summary>
-    private static readonly Dictionary<string, (double Lat, double Lon)> StateCenters = new()
-    {
-        ["AL"] = (32.8, -86.8), ["AZ"] = (34.2, -111.7), ["AR"] = (34.9, -92.4), ["CA"] = (37.2, -119.5),
-        ["CO"] = (39.0, -105.5), ["CT"] = (41.6, -72.7), ["DE"] = (39.0, -75.5), ["FL"] = (28.6, -82.4),
-        ["GA"] = (32.6, -83.4), ["ID"] = (44.4, -114.6), ["IL"] = (40.0, -89.2), ["IN"] = (39.9, -86.3),
-        ["IA"] = (42.1, -93.5), ["KS"] = (38.5, -98.4), ["KY"] = (37.5, -85.3), ["LA"] = (31.1, -92.0),
-        ["ME"] = (45.4, -69.2), ["MD"] = (39.0, -76.8), ["MA"] = (42.3, -71.8), ["MI"] = (44.3, -85.4),
-        ["MN"] = (46.3, -94.3), ["MS"] = (32.7, -89.7), ["MO"] = (38.4, -92.5), ["MT"] = (47.0, -109.6),
-        ["NE"] = (41.5, -99.8), ["NV"] = (39.3, -116.6), ["NH"] = (43.7, -71.6), ["NJ"] = (40.2, -74.7),
-        ["NM"] = (34.4, -106.1), ["NY"] = (42.9, -75.5), ["NC"] = (35.5, -79.4), ["ND"] = (47.4, -100.5),
-        ["OH"] = (40.3, -82.8), ["OK"] = (35.6, -97.5), ["OR"] = (43.9, -120.6), ["PA"] = (40.9, -77.8),
-        ["RI"] = (41.7, -71.6), ["SC"] = (33.9, -80.9), ["SD"] = (44.4, -100.2), ["TN"] = (35.8, -86.4),
-        ["TX"] = (31.5, -99.3), ["UT"] = (39.3, -111.7), ["VT"] = (44.1, -72.7), ["VA"] = (37.5, -78.9),
-        ["WA"] = (47.4, -120.5), ["WV"] = (38.6, -80.6), ["WI"] = (44.6, -89.7), ["WY"] = (43.0, -107.5),
-    };
-
-    private static double StateDistanceScore(string from, string to)
-    {
-        if (!StateCenters.TryGetValue((from ?? "").ToUpperInvariant(), out var a)) return 0;
-        if (!StateCenters.TryGetValue((to ?? "").ToUpperInvariant(), out var b)) return 0;
-        var dLat = a.Lat - b.Lat;
-        var dLon = (a.Lon - b.Lon) * Math.Cos(a.Lat * Math.PI / 180);
-        return Math.Sqrt(dLat * dLat + dLon * dLon);
+        SetOpening(s, LedgerService.Operating, 18_500m);
+        SetOpening(s, LedgerService.MaintenanceReserve, 0m);
+        SetOpening(s, LedgerService.PayrollReserve, 0m);
+        SetOpening(s, LedgerService.EquipmentNote, -152_000m);
     }
 
     private static void SetOpening(AppState s, string key, decimal amount)
@@ -241,115 +205,89 @@ public static class Seed
         new("Freightliner", "Coronado",2017, "Detroit DD15",  505, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 65, 250, 6.0)
     };
 
+    /// <summary>
+    /// Creates the starting equipment: exactly one tractor and one trailer, both at the home yard.
+    ///
+    /// It used to seed a six-truck fleet spread across three yards, and that was wrong for two
+    /// reasons. The player has to buy every unit in ATS for its damage and odometer to mean anything,
+    /// and a truck based in a city they have not driven to would never see cargo. So the book starts
+    /// at what one driver can actually own, and grows on the Fleet tab as they buy real equipment.
+    /// </summary>
     public static void CreateFleet(AppState s, DriverApplication app)
     {
         s.Trucks.Clear();
         s.Trailers.Clear();
 
         var wantsManual = app.TransmissionPreference == "manual";
-        var pool = new List<TruckSpec>();
-        // A real small fleet is mixed. Weight it toward the driver's preference.
-        if (wantsManual) { pool.AddRange(ManualSpecs.Take(3)); pool.AddRange(AmtSpecs.Take(3)); }
-        else { pool.AddRange(AmtSpecs.Take(3)); pool.AddRange(ManualSpecs.Take(3)); }
+        var spec = wantsManual ? ManualSpecs[2] : AmtSpecs[0];
 
-        // Spread the fleet across the yards the carrier actually operates, respecting each yard's
-        // capacity, rather than parking everything at headquarters.
-        var yards = s.Company.Terminals.Count > 0
-            ? s.Company.Terminals.OrderByDescending(t => t.IsHeadquarters).ThenByDescending(t => t.TruckCapacity).ToList()
-            : new List<Terminal>();
+        var yard = s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters)
+                   ?? s.Company.Terminals.FirstOrDefault();
         var divisions = s.Company.Divisions;
         var rnd = new Random(StableSeed(app.DriverName + s.Company.Code));
 
-        for (var i = 0; i < pool.Count; i++)
+        // Company-service mileage is roleplay history and is fine to invent — it is the carrier's own
+        // book, not something ATS reports. Damage is NOT: the driver cannot set damage in ATS, so a
+        // fabricated figure could never be reconciled with the game. It starts at zero and only moves
+        // when the driver reports a real reading.
+        var serviceMiles = rnd.Next(90, 260) * 1000 + rnd.Next(0, 999);
+        s.Trucks.Add(new Truck
         {
-            var spec = pool[i];
-            var unit = $"{101 + i * 3}";
-            // Company-service mileage is roleplay history and is fine to invent — it is the
-            // carrier's own book, not something ATS reports. Damage is NOT: the driver cannot set
-            // damage in ATS, so a fabricated figure could never be reconciled with the game.
-            // Everything starts undamaged and only moves when the driver reports a real reading.
-            var serviceMiles = rnd.Next(180, 720) * 1000 + rnd.Next(0, 999);
-            s.Trucks.Add(new Truck
-            {
-                Unit = unit,
-                Make = spec.Make, Model = spec.Model, Year = spec.Year,
-                Engine = $"{spec.Engine} {spec.Hp} hp", Horsepower = spec.Hp,
-                Transmission = spec.Trans, TransmissionType = spec.TransType,
-                CabConfig = spec.Cab,
-                Wheelbase = spec.Cab == "Day Cab" ? "228\"" : "265\"",
-                GovernedMph = spec.Governed,
-                FuelCapacityGal = spec.Fuel, AvgMpg = spec.Mpg,
-                AssignedFreightTypes = divisions.Skip(i % Math.Max(1, divisions.Count)).Take(2).ToList(),
-                ServiceMiles = serviceMiles,
-                LastServiceMiles = Math.Max(0, serviceMiles - rnd.Next(2000, 18000)),
-                ServiceIntervalMiles = 25000,
-                DamagePct = 0,
-                InGameGarage = false,
-                Status = "InService",
-                HomeTerminalId = NextYardWithRoom(s, yards, i),
-                PurchasePrice = 118_000m + rnd.Next(0, 46) * 1000m,
-                MonthlyPayment = 2_150m + rnd.Next(0, 12) * 50m,
-                Notes = spec.Cab == "Day Cab" ? "Local/regional spec — not for OTR dispatch." : ""
-            });
-        }
+            Unit = "101",
+            Make = spec.Make, Model = spec.Model, Year = spec.Year,
+            Engine = $"{spec.Engine} {spec.Hp} hp", Horsepower = spec.Hp,
+            Transmission = spec.Trans, TransmissionType = spec.TransType,
+            CabConfig = spec.Cab,
+            Wheelbase = spec.Cab == "Day Cab" ? "228\"" : "265\"",
+            GovernedMph = spec.Governed,
+            FuelCapacityGal = spec.Fuel, AvgMpg = spec.Mpg,
+            AssignedFreightTypes = divisions.Take(2).ToList(),
+            ServiceMiles = serviceMiles,
+            LastServiceMiles = Math.Max(0, serviceMiles - rnd.Next(2000, 18000)),
+            ServiceIntervalMiles = 25000,
+            DamagePct = 0,
+            InGameGarage = false,
+            Status = "InService",
+            HomeTerminalId = yard?.Id ?? "",
+            PurchasePrice = 118_000m + rnd.Next(0, 46) * 1000m,
+            MonthlyPayment = 2_150m + rnd.Next(0, 12) * 50m,
+            Notes = "Match this to the tractor you actually buy in game — edit the spec on the Fleet tab."
+        });
 
-        // Trailers: cover every division the company runs, plus spares.
-        var trailerPlan = new List<(string Type, string Division, string Len, int Count)>();
-        foreach (var d in divisions)
+        var primary = divisions.FirstOrDefault() ?? "Dry Van";
+        var (type, len) = TrailerForDivision(primary);
+        s.Trailers.Add(new Trailer
         {
-            var (type, len) = TrailerForDivision(d);
-            trailerPlan.Add((type, d, len, d == divisions[0] ? 4 : 2));
-        }
-
-        var tNum = 501;
-        foreach (var plan in trailerPlan)
-        {
-            for (var i = 0; i < plan.Count; i++)
-            {
-                s.Trailers.Add(new Trailer
-                {
-                    Unit = $"T{tNum}",
-                    Type = plan.Type,
-                    Division = plan.Division,
-                    Year = 2016 + rnd.Next(0, 9),
-                    Make = plan.Type switch
-                    {
-                        "Reefer" => "Utility 3000R",
-                        "Dry Van" => "Wabash DuraPlate",
-                        "Flatbed" => "Fontaine Infinity",
-                        "Step Deck" => "Fontaine Velocity",
-                        "Tanker" => "Polar 7000 gal",
-                        "Lowboy" => "Trail King RGN",
-                        "Car Hauler" => "Cottrell 9-car",
-                        "Livestock" => "Wilson Silverstar",
-                        "Log" => "Peerless log trailer",
-                        _ => "Great Dane"
-                    },
-                    Length = plan.Len,
-                    Axles = plan.Type is "Lowboy" or "Car Hauler" ? "Tri-axle" : "Tandem",
-                    DamagePct = 0,
-                    InGameGarage = false,
-                    ServiceMiles = rnd.Next(60, 480) * 1000,
-                    Status = "InService",
-                    HomeTerminalId = yards.Count > 0 ? yards[0].Id : "",
-                    CurrentLocation = yards.Count > 0 ? $"{yards[0].City}, {yards[0].State}" : ""
-                });
-                tNum += 2;
-            }
-        }
+            Unit = "T501",
+            Type = type,
+            Division = primary,
+            Year = 2016 + rnd.Next(0, 9),
+            Make = TrailerMake(type),
+            Length = len,
+            Axles = type is "Lowboy" or "Car Hauler" ? "Tri-axle" : "Tandem",
+            DamagePct = 0,
+            InGameGarage = false,
+            ServiceMiles = rnd.Next(40, 220) * 1000,
+            Status = "InService",
+            HomeTerminalId = yard?.Id ?? "",
+            CurrentLocation = yard == null ? "" : $"{yard.City}, {yard.State}",
+            Notes = "Match this to the trailer you actually buy in game."
+        });
     }
 
-    /// <summary>
-    /// Places a tractor at the first yard with a free slot, so the seeded fleet never starts over
-    /// capacity. Falls back to headquarters if every yard is full — the player can re-home units.
-    /// </summary>
-    private static string NextYardWithRoom(AppState s, List<Terminal> yards, int index)
+    private static string TrailerMake(string type) => type switch
     {
-        if (yards.Count == 0) return "";
-        foreach (var y in yards)
-            if (Migrations.RoomAt(s, y) > 0) return y.Id;
-        return yards[index % yards.Count].Id;
-    }
+        "Reefer" => "Utility 3000R",
+        "Dry Van" => "Wabash DuraPlate",
+        "Flatbed" => "Fontaine Infinity",
+        "Step Deck" => "Fontaine Velocity",
+        "Tanker" => "Polar 7000 gal",
+        "Lowboy" => "Trail King RGN",
+        "Car Hauler" => "Cottrell 9-car",
+        "Livestock" => "Wilson Silverstar",
+        "Log" => "Peerless log trailer",
+        _ => "Great Dane"
+    };
 
     private static (string Type, string Len) TrailerForDivision(string division) => division switch
     {

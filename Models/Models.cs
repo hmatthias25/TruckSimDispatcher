@@ -28,6 +28,7 @@ public class AppState
     public List<DisciplineAction> Discipline { get; set; } = new();
     public List<WorkOrder> WorkOrders { get; set; } = new();
     public List<MarketCity> MarketExtras { get; set; } = new();
+    public List<DiscoveredCity> Discovered { get; set; } = new();
     public List<HiredDriver> HiredDrivers { get; set; } = new();
     public List<FleetReport> FleetReports { get; set; } = new();
     public List<EquipmentOrder> EquipmentOrders { get; set; } = new();
@@ -343,6 +344,16 @@ public class DriverStatus
     /// <summary>Duty status: OffDuty | SleeperBerth | OnDuty | Driving</summary>
     public string DutyStatus { get; set; } = "OffDuty";
     public string ActiveTripId { get; set; } = "";
+    /// <summary>
+    /// Trip number whose close-out produced these readings. Closing a load already reports where the
+    /// truck is, its fuel, damage and odometer — so the next dispatch inherits them instead of asking
+    /// for the same numbers a second time. The driver confirms, or edits what actually changed.
+    /// </summary>
+    public string CarriedForwardFrom { get; set; } = "";
+    /// <summary>Game time the carried-forward readings were taken.</summary>
+    public string CarriedForwardGameTime { get; set; } = "";
+    /// <summary>Set once the driver has confirmed or amended the carried-forward readings.</summary>
+    public bool Confirmed { get; set; } = true;
     public string Notes { get; set; } = "";
     public string UpdatedUtc { get; set; } = "";
 }
@@ -367,6 +378,10 @@ public class HosSnapshot
     /// <summary>Optional recap hours the driver's HOS display projects returning.</summary>
     public List<RecapDay> Recap { get; set; } = new();
     public string Source { get; set; } = "";
+    /// <summary>Trip number whose close-out these clocks were read at, if they came in that way.</summary>
+    public string CarriedForwardFrom { get; set; } = "";
+    /// <summary>False until the driver confirms the clocks still read this. Stale clocks never plan a load.</summary>
+    public bool Confirmed { get; set; } = true;
     public string Notes { get; set; } = "";
     public string UpdatedUtc { get; set; } = "";
 }
@@ -450,8 +465,15 @@ public class Trip
     public string DeliveredGameTime { get; set; } = "";
     public double DeadlineHoursAtDispatch { get; set; }
 
+    /// <summary>Total gallons across every stop on the trip. Rolled up from <see cref="FuelStops"/>.</summary>
     public double FuelGallons { get; set; }
+    /// <summary>Total fuel spend across every stop. Rolled up from <see cref="FuelStops"/>.</summary>
     public decimal FuelCost { get; set; }
+    /// <summary>
+    /// Every fuel purchase on this trip. A long run fuels two or three times at different prices, so
+    /// each stop is recorded on its own rather than being averaged into one number by hand.
+    /// </summary>
+    public List<FuelPurchase> FuelStops { get; set; } = new();
     public decimal Tolls { get; set; }
     public decimal RepairCost { get; set; }
     public decimal Fines { get; set; }
@@ -499,7 +521,37 @@ public class TripEvent
     /// <summary>Loaded | Departed | Fuel | Break | Rest | Scale | Delay | Breakdown | Arrived | Note</summary>
     public string Kind { get; set; } = "Note";
     public string Detail { get; set; } = "";
+    /// <summary>City the event happened in, when it is worth recording (fuel stops, breakdowns).</summary>
+    public string City { get; set; } = "";
+    public string State { get; set; } = "";
+    /// <summary>For a Fuel event: what went in the tanks. Becomes a <see cref="FuelPurchase"/> on the trip.</summary>
+    public double Gallons { get; set; }
+    public decimal PricePerGal { get; set; }
+    public decimal Cost { get; set; }
     public string LoggedUtc { get; set; } = DateTime.UtcNow.ToString("o");
+}
+
+/// <summary>
+/// One fuel purchase. Recorded when it happens rather than reconstructed at the end of the trip, so
+/// a run that fuels three times at three prices produces three lines and an honest blended cost.
+/// </summary>
+public class FuelPurchase
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string GameTime { get; set; } = "";
+    public string City { get; set; } = "";
+    public string State { get; set; } = "";
+    public string Vendor { get; set; } = "";
+    public double Gallons { get; set; }
+    public decimal PricePerGal { get; set; }
+    /// <summary>Total paid. Filled from gallons x price when the driver reports it that way.</summary>
+    public decimal Cost { get; set; }
+    /// <summary>Fuelled at one of our own yards, at the yard's contract price.</summary>
+    public bool AtCompanyYard { get; set; }
+    public string Notes { get; set; } = "";
+
+    /// <summary>Whichever of cost / gallons x price the driver actually gave us.</summary>
+    public decimal Total() => Cost > 0 ? Cost : Math.Round((decimal)Gallons * PricePerGal, 2);
 }
 
 public class PayBreakdown
@@ -917,6 +969,33 @@ public class ScoringWeights
 
 // ---------------------------------------------------------------- market data
 
+/// <summary>
+/// A city the driver has actually reached in ATS.
+///
+/// This exists because of a real game behaviour: a city revealed with a save editor rather than
+/// driven to is not truly "discovered", and ATS never generates cargo for it. So the carrier cannot
+/// treat the whole map as its network on day one — it grows as the driver physically gets there.
+/// A yard is only worth buying in a city that will actually offer freight.
+/// </summary>
+public class DiscoveredCity
+{
+    public string City { get; set; } = "";
+    public string State { get; set; } = "";
+    /// <summary>Game time the driver first reported being here.</summary>
+    public string DiscoveredGameTime { get; set; } = "";
+    /// <summary>Trip that brought us here, if it was a load rather than a status report.</summary>
+    public string TripNumber { get; set; } = "";
+    /// <summary>ATS sells a garage here.</summary>
+    public bool GarageAvailable { get; set; } = true;
+    /// <summary>We own a yard here — mirrors a <see cref="Terminal"/> existing in this city.</summary>
+    public bool GarageOwned { get; set; }
+    /// <summary>The "you can buy a yard here" notice has been shown, so it does not nag.</summary>
+    public bool Notified { get; set; }
+    /// <summary>Driver passed on buying here. Keeps it off the recommendation list.</summary>
+    public bool Declined { get; set; }
+    public string Notes { get; set; } = "";
+}
+
 public class MarketCity
 {
     public string City { get; set; } = "";
@@ -925,6 +1004,11 @@ public class MarketCity
     public int Tier { get; set; } = 2;
     /// <summary>Legal truck parking + fuel + services suitable for a 34-hour restart.</summary>
     public bool ResetFriendly { get; set; }
+    /// <summary>
+    /// ATS offers a purchasable garage in this city. True for nearly every city in the game, so it
+    /// defaults on; clear it for the handful that have no yard for sale.
+    /// </summary>
+    public bool HasGarage { get; set; } = true;
     public bool HasFuel { get; set; } = true;
     /// <summary>Official = SCS map DLC. C2C = Coast to Coast mod. MAC = More American Cities.</summary>
     public string Source { get; set; } = "Official";

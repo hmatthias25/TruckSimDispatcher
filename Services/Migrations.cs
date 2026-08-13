@@ -18,6 +18,119 @@ public static class Migrations
         EnsureAssignedEquipmentIsInGarage(s);
         EnsureAccounts(s);
         CollapseReservesIntoOneCashAccount(s);
+        EnsureDiscoveredCities(s);
+        EnsureTripFuelStops(s);
+    }
+
+    /// <summary>
+    /// Careers written before city discovery was tracked know nothing about where the truck has been.
+    /// Rebuild that from the history we do have, so an established career is not told it has
+    /// discovered nothing. Backfilled cities are marked notified — a career with forty loads behind it
+    /// should not open to forty "new city" notices.
+    /// </summary>
+    private static void EnsureDiscoveredCities(AppState s)
+    {
+        if (s.Discovered.Count == 0) DiscoveryService.Backfill(s);
+        else DiscoveryService.SyncOwnership(s);
+    }
+
+    /// <summary>
+    /// Fuel used to be one gallons/cost pair per trip. Promote those to a single fuel stop so every
+    /// closed trip stores fuel the same way and the per-stop reporting has something to show.
+    /// </summary>
+    private static void EnsureTripFuelStops(AppState s)
+    {
+        foreach (var t in s.Trips)
+        {
+            if (t.FuelStops.Count > 0) continue;
+            if (t.FuelGallons <= 0 && t.FuelCost <= 0) continue;
+            t.FuelStops.Add(new FuelPurchase
+            {
+                GameTime = t.DeliveredGameTime,
+                City = t.DestCity,
+                State = t.DestState,
+                Gallons = t.FuelGallons,
+                Cost = t.FuelCost,
+                PricePerGal = t.FuelGallons > 0 ? Math.Round(t.FuelCost / (decimal)t.FuelGallons, 3) : 0,
+                Notes = "Reconstructed from the trip total — this build records each stop separately."
+            });
+        }
+    }
+
+    /// <summary>
+    /// Equipment the carrier "owns" on paper but that does not exist in the driver's ATS garage.
+    ///
+    /// Older careers were seeded with a six-truck fleet across three yards. That cannot be reconciled
+    /// with the game: the player never bought those units, so their damage and mileage are fiction,
+    /// and yards in cities they never drove to would never see cargo anyway. This reports the problem
+    /// and <see cref="TrimBackdropEquipment"/> fixes it — but only when the player asks, because
+    /// deleting equipment is not something a migration should do behind their back.
+    /// </summary>
+    public static (int trucks, int trailers, int yards) CountBackdrop(AppState s)
+    {
+        var trucks = s.Trucks.Count(t => !t.InGameGarage && t.Unit != s.Driver.AssignedTruckUnit
+                                         && !s.HiredDrivers.Any(h => h.AssignedTruckUnit == t.Unit));
+        var trailers = s.Trailers.Count(t => !t.InGameGarage && t.Unit != s.Driver.AssignedTrailerUnit
+                                             && !s.HiredDrivers.Any(h => h.AssignedTrailerUnit == t.Unit));
+        var yards = s.Company.Terminals.Count(t => !t.IsHeadquarters
+                                                   && !DiscoveryService.IsDiscovered(s, t.City, t.State));
+        return (trucks, trailers, yards);
+    }
+
+    /// <summary>
+    /// Removes on-paper-only equipment and undiscovered yards, keeping anything real: the driver's own
+    /// units, anything assigned to a hired driver, anything flagged as being in an ATS garage, and
+    /// headquarters. Units carrying real history are re-homed rather than deleted.
+    /// </summary>
+    public static List<string> TrimBackdropEquipment(AppState s, bool includeYards)
+    {
+        var notes = new List<string>();
+
+        bool TruckIsReal(Truck t) => t.InGameGarage
+                                     || t.Unit == s.Driver.AssignedTruckUnit
+                                     || s.HiredDrivers.Any(h => h.AssignedTruckUnit == t.Unit)
+                                     || s.Trips.Any(x => x.TruckUnit == t.Unit);
+
+        bool TrailerIsReal(Trailer t) => t.InGameGarage
+                                         || t.Unit == s.Driver.AssignedTrailerUnit
+                                         || s.HiredDrivers.Any(h => h.AssignedTrailerUnit == t.Unit)
+                                         || s.Trips.Any(x => x.TrailerUnit == t.Unit);
+
+        var droppedTrucks = s.Trucks.Where(t => !TruckIsReal(t)).Select(t => t.Unit).ToList();
+        s.Trucks.RemoveAll(t => droppedTrucks.Contains(t.Unit));
+        if (droppedTrucks.Count > 0)
+            notes.Add($"Removed {droppedTrucks.Count} tractor(s) that were never in your garage: {string.Join(", ", droppedTrucks)}.");
+
+        var droppedTrailers = s.Trailers.Where(t => !TrailerIsReal(t)).Select(t => t.Unit).ToList();
+        s.Trailers.RemoveAll(t => droppedTrailers.Contains(t.Unit));
+        if (droppedTrailers.Count > 0)
+            notes.Add($"Removed {droppedTrailers.Count} trailer(s) that were never in your garage: {string.Join(", ", droppedTrailers)}.");
+
+        if (includeYards)
+        {
+            var hq = s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters);
+            var doomed = s.Company.Terminals
+                .Where(t => !t.IsHeadquarters && !DiscoveryService.IsDiscovered(s, t.City, t.State))
+                .ToList();
+            foreach (var y in doomed)
+            {
+                // Never orphan a unit. Anything based here comes back to headquarters.
+                foreach (var t in s.Trucks.Where(t => t.HomeTerminalId == y.Id)) t.HomeTerminalId = hq?.Id ?? "";
+                foreach (var t in s.Trailers.Where(t => t.HomeTerminalId == y.Id)) t.HomeTerminalId = hq?.Id ?? "";
+                foreach (var d in s.HiredDrivers.Where(d => d.HomeTerminalId == y.Id)) d.HomeTerminalId = hq?.Id ?? "";
+                if (s.Driver.HomeTerminalId == y.Id) s.Driver.HomeTerminalId = hq?.Id ?? "";
+                s.Company.Terminals.Remove(y);
+            }
+            if (doomed.Count > 0)
+                notes.Add($"Closed {doomed.Count} yard(s) in cities you have not reached: " +
+                          $"{string.Join(", ", doomed.Select(y => DispatchEngine.Place(y.City, y.State)))}. " +
+                          "Anything based there came back to headquarters.");
+        }
+
+        SyncHeadquarters(s);
+        DiscoveryService.SyncOwnership(s);
+        if (notes.Count == 0) notes.Add("Nothing to trim — every unit and yard on the book is real.");
+        return notes;
     }
 
     /// <summary>

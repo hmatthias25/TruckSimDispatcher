@@ -25,17 +25,19 @@ folder to another machine and the career goes with it.
 
 ## Before your first load
 
-**The company this app models costs more than a fresh ATS profile has.** Three honest options, and
-the first is the one to take:
+**You start with one small garage and one truck.** That is not a limitation of the app, it is the
+game: ATS only generates cargo for cities you have actually *driven to*. Reveal a city with a save
+editor and it still counts as undiscovered — it appears on the map and never offers a single job. A
+yard bought there would sit empty and a truck based there would have nothing to haul.
 
-1. **Start small and grow.** On the Fleet tab, delete the yards and units you do not actually own.
-   Keep the one truck you bought. Add things as you buy them. Everything works for a one-truck
-   operation.
-2. **Seed your game with a save editor.** Money lives in
-   `Documents\American Truck Simulator\profiles\<profile>\save\<slot>\game.sii`, which is encrypted —
-   SII_Decrypt opens it, TS SE Tool is a dedicated editor.
-3. **Use mods** to unlock all dealerships, garages, cities and recruiting agencies, which ATS
-   otherwise hides until you drive to them.
+So the network grows the way a real carrier's does. Run out of your home yard, and when you reach
+somewhere new the app tells you a garage is for sale there and whether the freight is worth it. Buy
+it in game, add it on the Terminals tab, base a truck there.
+
+A save editor is still useful for seeding cash if you want to grow faster. Money lives in
+`Documents\American Truck Simulator\profiles\<profile>\save\<slot>\game.sii`, which is encrypted —
+SII_Decrypt opens it, TS SE Tool is a dedicated editor. Mods can unlock all dealerships and
+recruiting agencies, which ATS otherwise hides until you drive past them.
 
 > **Back up your profile folder before running any editor.** Editors can corrupt a save, TS SE Tool
 > is alpha software, and SCS cannot support a modified save because they cannot tell what changed.
@@ -54,7 +56,7 @@ The app gives you a numbered setup checklist the moment you are hired.
 | Evaluate & assign | Dispatch | Operations picks one load, or rejects the board and says why |
 | Authorize | Dispatch | Trip number issued, plan captured |
 | Run it | Active Load | Log loaded / fuel / break / rest / arrived |
-| Close it out | Active Load | Miles, fuel, tolls, damage, detention |
+| Close it out | Active Load | Miles, every fuel stop, tolls, damage, detention, and your clocks |
 | Audit | Active Load | Service, fault, money, equipment, pay lines, what happens next |
 | Settle | Payroll | Wages paid, bonuses calculated across the period |
 
@@ -83,6 +85,17 @@ is tracked in this app and never touches your game balance.
 fuel ÷ mpg, plus your CPM, plus overhead over the miles. If everything is being rejected, go to
 **Finances → Cost model → Calibrate to my market**. On a scaled map, overhead per load is usually
 the culprit.
+
+**You report a number once.** Closing a load already tells operations where you are, your fuel,
+damage and odometer — so the Dispatch tab inherits all of it and you just confirm. Report your HOS
+clocks in the same close-out and dispatch will not ask for them again either.
+
+**Fuel is recorded per stop.** A long run fuels two or three times at different prices. Log each fill
+from the trip log as you make it and it is already on the close-out; the audit gives you the blended
+price and flags a lane worth planning fuel around.
+
+**Cities have to be discovered.** See above — this is why the app tracks where you have been and only
+suggests yards in cities that will actually offer freight.
 
 **Equipment lives in garages.** Each yard holds what its tier allows (Small 1, Medium 3, Large 5).
 When operations sends you to a yard for a better truck, it is a straight exchange — the unit you hand
@@ -115,6 +128,22 @@ app makes no network calls at all.
 
 Settings → Data: snapshot, download the career file, list and restore backups, or start over. Every
 save writes atomically and rotates a backup first.
+
+**Starting over keeps your settings.** The API key, HOS rules, mod list and cost assumptions describe
+your game and your machine, not the career that just ended, so a reset leaves them alone. There is a
+second prompt if you genuinely want factory defaults.
+
+## Updating the app
+
+**Replace `TruckSimDispatcher.exe` in the folder you are already using.** Leave the `data` folder
+alone — the career stays put, and newer builds migrate older career files forward on load. Migrations
+only ever add what is missing; they never rewrite history.
+
+If you move the exe somewhere new, it looks for an existing career before opening a blank one:
+`TSD_DATA_DIR` if set, then beside the exe, then `%LOCALAPPDATA%\TruckSimDispatcher\data`. A career
+found in any of those wins over an empty folder, and the console prints which file it opened. Any
+career it finds elsewhere is listed under **Settings → Data → List backups** with a button to load it,
+so an update never silently looks like a lost save.
 
 ## Building from source
 

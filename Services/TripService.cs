@@ -11,6 +11,12 @@ public class CompleteTripRequest
     public double EndOdometer { get; set; }
     public decimal? ActualRevenue { get; set; }
 
+    /// <summary>
+    /// Every fuel stop on the trip. Pre-populated from fuel events logged while the load was running,
+    /// so the driver confirms what is already there instead of adding it all up at the end.
+    /// </summary>
+    public List<FuelPurchase>? FuelStops { get; set; }
+    /// <summary>Single-stop shorthand, still honoured when no stop list is sent.</summary>
     public double FuelGallons { get; set; }
     public decimal FuelCost { get; set; }
     public decimal Tolls { get; set; }
@@ -47,6 +53,13 @@ public class CompleteTripRequest
     public string LocationKind { get; set; } = "Receiver";
     public double FuelPct { get; set; } = -1;
     public string GameTime { get; set; } = "";
+
+    // Clocks as they read at delivery. Optional, but reporting them here means the next dispatch
+    // starts from a confirmed HOS position instead of asking for the same four numbers again.
+    public double? HosDriveRemaining { get; set; }
+    public double? HosShiftRemaining { get; set; }
+    public double? HosBreakRemaining { get; set; }
+    public double? HosCycleRemaining { get; set; }
 }
 
 public class TripAudit
@@ -66,6 +79,12 @@ public class TripAudit
     public string? IncidentNumber { get; set; }
     public string? WorkOrderNumber { get; set; }
     public string? DisciplineRecommendation { get; set; }
+    /// <summary>Readings this close-out handed straight to the next dispatch, so nothing is retyped.</summary>
+    public List<string> CarriedForward { get; set; } = new();
+    /// <summary>True when the driver reported their clocks at delivery, so dispatch need not ask again.</summary>
+    public bool ClocksReported { get; set; }
+    /// <summary>Set when delivering here put a new city on the map.</summary>
+    public DiscoveryService.DiscoveryNotice? Discovery { get; set; }
 }
 
 /// <summary>Closes a load out: service audit, pay accrual, ledger postings, equipment and career updates.</summary>
@@ -82,6 +101,32 @@ public static class TripService
         if (trip.Status == "Authorized" && ev.Kind is "Loaded" or "Departed")
             trip.Status = "InTransit";
         if (!string.IsNullOrWhiteSpace(ev.GameTime)) s.Status.GameTime = ev.GameTime;
+
+        // A fuel stop logged as it happens becomes a purchase on the trip, so close-out already has it
+        // and the driver is never asked to reconstruct three fills from memory.
+        if (ev.Kind == "Fuel" && (ev.Gallons > 0 || ev.Cost > 0))
+        {
+            var stop = new FuelPurchase
+            {
+                GameTime = ev.GameTime,
+                City = string.IsNullOrWhiteSpace(ev.City) ? s.Status.LocationCity : ev.City,
+                State = string.IsNullOrWhiteSpace(ev.State) ? s.Status.LocationState : ev.State,
+                Gallons = ev.Gallons,
+                PricePerGal = ev.PricePerGal,
+                Cost = ev.Cost,
+                Notes = ev.Detail
+            };
+            if (stop.Cost <= 0) stop.Cost = stop.Total();
+            if (stop.PricePerGal <= 0 && stop.Gallons > 0)
+                stop.PricePerGal = Math.Round(stop.Cost / (decimal)stop.Gallons, 3);
+            trip.FuelStops.Add(stop);
+            trip.FuelGallons = Math.Round(trip.FuelStops.Sum(f => f.Gallons), 2);
+            trip.FuelCost = Math.Round(trip.FuelStops.Sum(f => f.Cost), 2);
+        }
+
+        // Events carry a location when the driver gives one — that is a city we have now been to.
+        if (!string.IsNullOrWhiteSpace(ev.City))
+            DiscoveryService.Note(s, ev.City, ev.State, ev.GameTime, trip.Number);
     }
 
     public static TripAudit Complete(AppState s, string tripId, CompleteTripRequest req)
@@ -103,8 +148,7 @@ public static class TripService
             trip.CompanyRevenue = Math.Round(trip.GameRevenue * (decimal)Math.Clamp(s.Settings.RevenueFactor, 0.05, 3.0), 2);
         }
 
-        trip.FuelGallons = req.FuelGallons;
-        trip.FuelCost = req.FuelCost;
+        RecordFuel(trip, req, audit);
         trip.Tolls = req.Tolls;
         trip.RepairCost = req.RepairCost;
         trip.Fines = req.Fines;
@@ -217,6 +261,44 @@ public static class TripService
         s.Status.DutyStatus = "OnDuty";
         s.Status.UpdatedUtc = DateTime.UtcNow.ToString("o");
 
+        // Everything the close-out just told us IS the driver's current position. Hand it forward
+        // rather than asking for the same readings a second time on the dispatch screen.
+        s.Status.CarriedForwardFrom = trip.Number;
+        s.Status.CarriedForwardGameTime = trip.DeliveredGameTime;
+        s.Status.Confirmed = false;
+        audit.CarriedForward.Add($"Position: {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)}"
+                                 + (string.IsNullOrWhiteSpace(s.Status.LocationDetail) ? "" : $" ({s.Status.LocationDetail})"));
+        audit.CarriedForward.Add($"Game clock: {GameClock.Pretty(s.Status.GameTime)}");
+        if (req.FuelPct >= 0) audit.CarriedForward.Add($"Fuel: {s.Status.FuelPct:0}%");
+        audit.CarriedForward.Add($"Damage: tractor {s.Status.TruckDamagePct:0.#}%, trailer {s.Status.TrailerDamagePct:0.#}%");
+        if (s.Status.AtsOdometer > 0) audit.CarriedForward.Add($"Odometer: {s.Status.AtsOdometer:N0}");
+
+        // Clocks at delivery, if the driver read them off while they were closing the load out.
+        if (req.HosDriveRemaining.HasValue || req.HosShiftRemaining.HasValue
+            || req.HosBreakRemaining.HasValue || req.HosCycleRemaining.HasValue)
+        {
+            if (req.HosDriveRemaining.HasValue) s.Hos.DriveRemaining = Math.Max(0, req.HosDriveRemaining.Value);
+            if (req.HosShiftRemaining.HasValue) s.Hos.ShiftRemaining = Math.Max(0, req.HosShiftRemaining.Value);
+            if (req.HosBreakRemaining.HasValue) s.Hos.BreakRemaining = Math.Max(0, req.HosBreakRemaining.Value);
+            if (req.HosCycleRemaining.HasValue) s.Hos.CycleRemaining = Math.Max(0, req.HosCycleRemaining.Value);
+            s.Hos.AsOfGameTime = trip.DeliveredGameTime;
+            s.Hos.CarriedForwardFrom = trip.Number;
+            s.Hos.Confirmed = true;   // read off the game just now — this is a fresh reading, not a stale one
+            s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
+            audit.ClocksReported = true;
+            audit.CarriedForward.Add(
+                $"Clocks: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
+        }
+        else
+        {
+            // Clocks not reported at delivery, so whatever we hold is now stale by a whole trip.
+            s.Hos.Confirmed = false;
+        }
+
+        // ---- did this load put a new city on our map?
+        audit.Discovery = DiscoveryService.Note(s, s.Status.LocationCity, s.Status.LocationState,
+            trip.DeliveredGameTime, trip.Number);
+
         // ---- safety record
         if (late && fault == "Driver")
         {
@@ -290,7 +372,11 @@ public static class TripService
         audit.Directives.Add("Show me the jobs available here at the receiver before I order you anywhere empty.");
         var hosView = HosEngine.Describe(s, s.Trucks.FirstOrDefault(t => t.Unit == trip.TruckUnit));
         if (!string.IsNullOrWhiteSpace(hosView.ResetWatch)) audit.Directives.Add(hosView.ResetWatch);
-        audit.Directives.Add($"Re-read your HOS display and report the clocks — I am not booking the next load off stale numbers. Current reading: {hosView.NextRequiredAction}");
+        audit.Directives.Add(audit.ClocksReported
+            ? $"Clocks logged at delivery — I have what I need to plan the next load. {hosView.NextRequiredAction}"
+            : $"Re-read your HOS display and report the clocks — I am not booking the next load off stale numbers. Current reading: {hosView.NextRequiredAction}");
+        if (audit.Discovery is { GarageAvailable: true } disc)
+            audit.Directives.Add($"{disc.Place} is new to us and ATS sells a garage here. See the note on the Dispatch tab before you leave.");
         if (audit.MaintenanceStatus is "MandatoryReview" or "OutOfService")
             audit.Directives.Add("Maintenance comes before the next load. See the directive above.");
 
@@ -303,6 +389,70 @@ public static class TripService
 
         return audit;
     }
+
+    /// <summary>
+    /// Rolls the trip's fuel stops up into the totals the rest of the app costs from.
+    ///
+    /// A stop list wins when one is sent, because that is the detailed truth. The flat
+    /// gallons/cost pair is still accepted for a single fill, and gets promoted to a one-line stop
+    /// list so every trip stores fuel the same shape regardless of how it was entered.
+    /// </summary>
+    private static void RecordFuel(Trip trip, CompleteTripRequest req, TripAudit audit)
+    {
+        if (req.FuelStops != null)
+            trip.FuelStops = req.FuelStops.Where(f => f.Gallons > 0 || f.Total() > 0).ToList();
+
+        foreach (var f in trip.FuelStops)
+        {
+            if (f.Cost <= 0) f.Cost = f.Total();
+            // Back out the price when the driver gave us a total instead — a blended price per gallon
+            // is what the cost model calibrates against.
+            if (f.PricePerGal <= 0 && f.Gallons > 0) f.PricePerGal = Math.Round(f.Cost / (decimal)f.Gallons, 3);
+            if (string.IsNullOrWhiteSpace(f.GameTime)) f.GameTime = trip.DeliveredGameTime;
+        }
+
+        if (trip.FuelStops.Count > 0)
+        {
+            trip.FuelGallons = Math.Round(trip.FuelStops.Sum(f => f.Gallons), 2);
+            trip.FuelCost = Math.Round(trip.FuelStops.Sum(f => f.Cost), 2);
+        }
+        else
+        {
+            // Single-fill shorthand. Keep it as a stop so the trip record is uniform.
+            trip.FuelGallons = req.FuelGallons;
+            trip.FuelCost = req.FuelCost;
+            if (req.FuelGallons > 0 || req.FuelCost > 0)
+            {
+                trip.FuelStops.Add(new FuelPurchase
+                {
+                    GameTime = trip.DeliveredGameTime,
+                    City = string.IsNullOrWhiteSpace(req.LocationCity) ? trip.DestCity : req.LocationCity,
+                    State = string.IsNullOrWhiteSpace(req.LocationState) ? trip.DestState : req.LocationState,
+                    Gallons = req.FuelGallons,
+                    Cost = req.FuelCost,
+                    PricePerGal = req.FuelGallons > 0 ? Math.Round(req.FuelCost / (decimal)req.FuelGallons, 3) : 0
+                });
+            }
+        }
+
+        if (trip.FuelStops.Count > 1)
+        {
+            var blended = trip.FuelGallons > 0 ? trip.FuelCost / (decimal)trip.FuelGallons : 0;
+            audit.MoneyFindings.Add(
+                $"{trip.FuelStops.Count} fuel stops: {trip.FuelGallons:N1} gal for ${trip.FuelCost:N2}, blended ${blended:0.000}/gal.");
+
+            var dear = trip.FuelStops.Where(f => f.PricePerGal > 0).OrderByDescending(f => f.PricePerGal).FirstOrDefault();
+            var cheap = trip.FuelStops.Where(f => f.PricePerGal > 0).OrderBy(f => f.PricePerGal).FirstOrDefault();
+            if (dear != null && cheap != null && dear != cheap && dear.PricePerGal - cheap.PricePerGal >= 0.25m)
+                audit.MoneyFindings.Add(
+                    $"Spread of ${dear.PricePerGal - cheap.PricePerGal:0.00}/gal between {Where(cheap)} (${cheap.PricePerGal:0.000}) and " +
+                    $"{Where(dear)} (${dear.PricePerGal:0.000}). Worth planning fuel stops around on this lane.");
+        }
+    }
+
+    private static string Where(FuelPurchase f) =>
+        string.IsNullOrWhiteSpace(f.City) ? (string.IsNullOrWhiteSpace(f.Vendor) ? "an unnamed stop" : f.Vendor)
+                                          : DispatchEngine.Place(f.City, f.State);
 
     private static bool DetermineLate(Trip trip, CompleteTripRequest req, out string note)
     {

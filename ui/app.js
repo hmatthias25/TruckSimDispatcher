@@ -10,6 +10,7 @@ let TRIP_AUDIT = null;
 let RECON = null;
 let SHOTS = [];            // pending screenshots {mediaType, dataBase64, thumb, name}
 let EXTRACT = null;        // last extraction result, awaiting confirmation
+let DISCOVERY = null;      // "new city reached" notice awaiting acknowledgement
 let BUSY = '';             // label of an in-flight long operation
 
 const TABS = [
@@ -34,6 +35,13 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) =>
 
 const sv = (id) => ($(id)?.value ?? '').trim();
 const fv = (id) => { const n = parseFloat($(id)?.value); return isNaN(n) ? 0 : n; };
+/* Empty means "not reported", which is different from zero — a blank clock must not read as 0 hours left. */
+const fvn = (id) => {
+  const raw = ($(id)?.value ?? '').trim();
+  if (raw === '') return null;
+  const n = parseFloat(raw);
+  return isNaN(n) ? null : n;
+};
 const bv = (id) => !!$(id)?.checked;
 const list = (id) => sv(id).split(',').map((x) => x.trim()).filter(Boolean);
 
@@ -568,6 +576,14 @@ function viewDispatch() {
       <div class="panel">
         <div class="panel-head"><h2>Report from the game</h2>
           <span class="sub">Operations plans off these numbers — keep them current.</span></div>
+        ${st.carriedForwardFrom ? `<div class="callout go">
+          <h4>Carried forward from ${esc(st.carriedForwardFrom)}</h4>
+          <p>These are the readings you gave me when you closed ${esc(st.carriedForwardFrom)} out at
+            ${gt(st.carriedForwardGameTime)}. If nothing has changed since, just confirm them —
+            no need to type them again. Edit anything that has moved.</p>
+          <div class="row-actions">
+            <button class="btn go" data-act="confirm-status">Confirm — nothing changed</button>
+          </div></div>` : ''}
         <div class="grid2">
           ${dayTimeInput('st-time', st.gameTime, 'In-game day & time')}
           <label>Duty status
@@ -591,7 +607,15 @@ function viewDispatch() {
 
       <div class="panel">
         <div class="panel-head"><h2>Hours of service</h2>
+          ${h.confirmed === false ? badge('warn', 'not confirmed') : ''}
+          <div class="spacer"></div>
           <span class="sub">Your HOS display is authoritative. Type what it says.</span></div>
+        ${h.carriedForwardFrom ? `<div class="callout go">
+          <p>Clocks came off your HOS display when you closed <b>${esc(h.carriedForwardFrom)}</b> out at
+            ${gt(h.asOfGameTime)}. Still good if you have not driven since.</p></div>`
+        : h.confirmed === false ? `<div class="callout warn">
+          <p>These clocks were last read at ${gt(h.asOfGameTime)} and a load has run since. Re-read your
+            HOS display before I plan anything off them.</p></div>` : ''}
         <div class="${v.hos.breakEnforced ? 'grid4' : 'grid3'}">
           <label>Drive left<input id="h-drive" type="number" step="0.25" min="0" value="${h.driveRemaining}"></label>
           <label>Shift left<input id="h-shift" type="number" step="0.25" min="0" value="${h.shiftRemaining}"></label>
@@ -666,6 +690,8 @@ function viewDispatch() {
       ${screenshotHtml()}
       ${boardTableHtml()}
       ${decisionHtml()}
+      ${DISCOVERY ? discoveryHtml(DISCOVERY) : ''}
+      ${garageOpportunitiesHtml()}
       ${resetOptionsHtml()}
     </div>
   </div>
@@ -977,9 +1003,21 @@ function viewActive() {
             .map((x) => `<option>${x}</option>`).join('')}</select></label>
       </div>
       <label>Detail<input id="ev-detail" placeholder="e.g. loaded 43,900 lb, trailer at 4%"></label>
+      <fieldset><legend>If this is a fuel stop</legend>
+        <div class="grid4">
+          <label>Gallons<input id="ev-gal" type="number" step="0.1" placeholder="0"></label>
+          <label>$/gal<input id="ev-price" type="number" step="0.001" placeholder="0.000"></label>
+          <label>City<input id="ev-city" placeholder="${esc(S.status.locationCity)}"></label>
+          <label>State<input id="ev-state" class="up" maxlength="2" placeholder="${esc(S.status.locationState)}"></label>
+        </div>
+        <p class="hint">Log each fill as you make it and it lands on the close-out for you — no adding
+          three stops up from memory at the end.</p>
+      </fieldset>
       <div class="row-actions"><button class="btn primary" data-act="log-event" data-id="${t.id}">Add to log</button></div>
       ${t.events.length ? `<div class="log" style="margin-top:12px">${t.events.slice().reverse().map((e) =>
-        `<div><span class="ch">${esc(e.kind)}</span><span>${gt(e.gameTime)} — ${esc(e.detail)}</span></div>`).join('')}</div>` : ''}
+        `<div><span class="ch">${esc(e.kind)}</span><span>${gt(e.gameTime)} — ${esc(e.detail)}${
+          e.gallons ? ` <b>${num(e.gallons, 1)} gal</b>${e.pricePerGal ? ` @ $${num(e.pricePerGal, 3)}` : ''}` : ''
+        }</span></div>`).join('')}</div>` : ''}
     </div>
 
     <div class="panel">
@@ -989,8 +1027,6 @@ function viewActive() {
         <label>Actual miles run<input id="c-miles" type="number" step="1" value="${Math.round(t.dispatchedMiles)}"></label>
         <label>Ending odometer<input id="c-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
         <label>Actual payout $<input id="c-rev" type="number" step="1" value="${Math.round(t.gameRevenue)}"></label>
-        <label>Fuel bought (gal)<input id="c-gal" type="number" step="0.1" value="0"></label>
-        <label>Fuel cost $<input id="c-fuel" type="number" step="0.01" value="0"></label>
         <label>Tolls $<input id="c-tolls" type="number" step="0.01" value="0"></label>
         <label>Repairs $<input id="c-repair" type="number" step="0.01" value="0"></label>
         <label>Fines $<input id="c-fines" type="number" step="0.01" value="0"></label>
@@ -1000,6 +1036,8 @@ function viewActive() {
         <label>Cargo damage %<input id="c-cargo" type="number" step="0.1" min="0" max="100" value="0"></label>
         <label>Fuel % now<input id="c-fuelpct" type="number" step="1" min="0" max="100" value="${S.status.fuelPct}"></label>
       </div>
+      ${fuelStopsHtml(t)}
+      ${clocksAtDeliveryHtml()}
       <fieldset><legend>Time and accessorials</legend>
         <div class="grid4">
           <label>Loading h<input id="c-load" type="number" step="0.25" value="${t.loadingHours}"></label>
@@ -1026,6 +1064,118 @@ function viewActive() {
   ${TRIP_AUDIT ? auditHtml(TRIP_AUDIT) : ''}`;
 }
 
+/* ---- city discovery
+   ATS never generates cargo for a city that was revealed with a save editor instead of driven to, so
+   the carrier's network can only grow to places the driver has actually reached. */
+function discoveryHtml(n) {
+  if (!n) return '';
+  return `<div class="callout ${n.recommended ? 'go' : 'info'}" style="margin-top:14px">
+    <h4>${esc(n.headline)}</h4>
+    ${n.detail && n.detail.length ? `<ul>${n.detail.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    ${n.garageAvailable ? `<div class="row-actions">
+      <button class="btn" data-act="tab" data-tab="terminals">Open a yard here</button>
+      <button class="btn ghost" data-act="decline-garage"
+        data-city="${esc(n.city)}" data-state="${esc(n.state)}">Not interested</button>
+    </div>` : ''}
+  </div>`;
+}
+
+function garageOpportunitiesHtml() {
+  const ops = S.views.garageOpportunities || [];
+  if (!ops.length) return '';
+  const show = ops.slice(0, 6);
+  return `<div class="panel">
+    <div class="panel-head"><h2>Cities you have reached</h2>
+      <span class="sub">${ops.length} without a yard of ours</span></div>
+    <p class="hint">A garage is only worth buying where you have actually driven — ATS will not generate
+      cargo in a city you revealed with an editor rather than discovered.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>City</th><th>Discovered</th><th>Market</th><th></th></tr></thead><tbody>
+      ${show.map((c) => `<tr>
+        <td><b>${esc(c.city)}</b>${c.state ? ', ' + esc(c.state) : ''}</td>
+        <td>${gt(c.discoveredGameTime)}</td>
+        <td>${c.tier ? `Tier ${c.tier}${c.resetFriendly ? ' · reset-friendly' : ''}` : '—'}</td>
+        <td><button class="btn tiny ghost" data-act="decline-garage"
+          data-city="${esc(c.city)}" data-state="${esc(c.state)}">Dismiss</button></td></tr>`).join('')}
+    </tbody></table></div>
+    ${ops.length > show.length ? `<p class="sub">+ ${ops.length - show.length} more.</p>` : ''}
+  </div>`;
+}
+
+/* ---- fuel stops on the close-out
+   A trip can fuel several times at several prices, so each fill is its own line. Stops logged from the
+   trip log during the run are already here; the driver only adds what they did not log. */
+let FUEL = { tripId: null, seeded: 0, rows: [] };
+
+function fuelRows(t) {
+  const server = t.fuelStops || [];
+  if (FUEL.tripId !== t.id) {
+    FUEL = { tripId: t.id, seeded: server.length, rows: server.map((f) => ({ ...f, logged: true })) };
+  } else if (server.length > FUEL.seeded) {
+    // A fill was just logged on the trip log. Fold it in without discarding rows typed here.
+    FUEL.rows = FUEL.rows.concat(server.slice(FUEL.seeded).map((f) => ({ ...f, logged: true })));
+    FUEL.seeded = server.length;
+  }
+  return FUEL.rows;
+}
+
+/* Pull whatever is currently in the inputs back into state, so adding or removing a row does not
+   throw away what the driver has already typed into the others. */
+function harvestFuel() {
+  FUEL.rows = FUEL.rows.map((r, i) => ({
+    ...r,
+    gallons: fv(`fs-gal-${i}`),
+    pricePerGal: fv(`fs-price-${i}`),
+    city: sv(`fs-city-${i}`),
+    state: sv(`fs-state-${i}`),
+  }));
+  return FUEL.rows.filter((r) => r.gallons > 0 || r.cost > 0);
+}
+
+function fuelStopsHtml(t) {
+  const rows = fuelRows(t);
+  const gal = rows.reduce((a, r) => a + (+r.gallons || 0), 0);
+  const cost = rows.reduce((a, r) => a + (+r.gallons || 0) * (+r.pricePerGal || 0) || 0, 0);
+  const mi = (t.dispatchedMiles || 0) + (t.deadheadMiles || 0);
+
+  return `<fieldset><legend>Fuel stops</legend>
+    ${rows.length ? `<div class="tablewrap"><table><thead><tr>
+        <th>Gallons</th><th>$/gal</th><th>City</th><th>ST</th><th class="num">Cost</th><th></th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr>
+        <td><input id="fs-gal-${i}" type="number" step="0.1" style="width:86px" value="${r.gallons || ''}"></td>
+        <td><input id="fs-price-${i}" type="number" step="0.001" style="width:86px" value="${r.pricePerGal || ''}"></td>
+        <td><input id="fs-city-${i}" style="width:128px" value="${esc(r.city || '')}"></td>
+        <td><input id="fs-state-${i}" class="up" maxlength="2" style="width:50px" value="${esc(r.state || '')}"></td>
+        <td class="num">${money((+r.gallons || 0) * (+r.pricePerGal || 0))}</td>
+        <td>${r.logged ? badge('mute', 'logged') : ''}
+          <button class="btn tiny ghost" data-act="del-fuel-row" data-i="${i}" title="Remove this stop">×</button></td>
+      </tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty">No fuel bought on this trip.</div>`}
+    <div class="row-actions">
+      <button class="btn ghost" data-act="add-fuel-row">+ Add a fuel stop</button>
+      ${rows.length ? `<span class="sub">${num(gal, 1)} gal · ${money(cost)}${
+        gal > 0 ? ` · blended $${num(cost / gal, 3)}/gal` : ''}${
+        gal > 0 && mi > 0 ? ` · ${num(mi / gal, 1)} mpg` : ''}</span>` : ''}
+    </div>
+  </fieldset>`;
+}
+
+/* ---- clocks at delivery
+   Reporting them here is what stops the Dispatch tab asking for the same four numbers again. */
+function clocksAtDeliveryHtml() {
+  const brk = S.views.hos.breakEnforced;
+  return `<fieldset><legend>Clocks at delivery — optional, saves reporting them again</legend>
+    <div class="${brk ? 'grid4' : 'grid3'}">
+      <label>Drive left<input id="c-hdrive" type="number" step="0.25" min="0" placeholder="—"></label>
+      <label>Shift left<input id="c-hshift" type="number" step="0.25" min="0" placeholder="—"></label>
+      ${brk ? `<label>Break clock<input id="c-hbreak" type="number" step="0.25" min="0" placeholder="—"></label>` : ''}
+      <label>Cycle left<input id="c-hcycle" type="number" step="0.25" min="0" placeholder="—"></label>
+    </div>
+    <p class="hint">Read them off your HOS display while you are stopped at the receiver and dispatch can
+      plan the next load straight away. Leave blank and I will ask for them on the Dispatch tab.</p>
+  </fieldset>`;
+}
+
 function auditHtml(a) {
   const sec = (title, items) => items.length
     ? `<h3 class="sect">${title}</h3><ul class="reasons">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
@@ -1036,6 +1186,11 @@ function auditHtml(a) {
       <h4>${esc(a.headline)}</h4>${a.faultRationale ? `<p>${esc(a.faultRationale)}</p>` : ''}</div>
     ${sec('Service', a.serviceFindings)}${sec('Mileage', a.mileageFindings)}
     ${sec('Money', a.moneyFindings)}${sec('Equipment', a.equipmentFindings)}
+    ${a.carriedForward && a.carriedForward.length ? `<div class="callout go" style="margin-top:14px">
+      <h4>Carried forward to the next dispatch${a.clocksReported ? ', clocks included' : ''}</h4>
+      <p>You do not need to type any of this again — confirm it on the Dispatch tab.</p>
+      <ul>${a.carriedForward.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+    ${a.discovery ? discoveryHtml(a.discovery) : ''}
     ${a.directives.length ? `<div class="callout ${a.maintenanceStatus === 'OutOfService' ? 'stop' : 'info'}" style="margin-top:14px">
       <h4>What happens next</h4><ul>${a.directives.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
     ${a.trip.pay.lines.length ? `<h3 class="sect">Driver pay accrued — ${money(a.driverPay)}</h3>
@@ -1110,7 +1265,21 @@ function tripDetailModal(id) {
 /* ============================================================ FLEET */
 function viewFleet() {
   const t = S.views.truck, tr = S.views.trailer;
+  const b = S.views.backdrop || {};
   return `
+  ${b.any ? `<div class="callout warn">
+    <h4>Equipment on the book that ATS knows nothing about</h4>
+    <p>${[b.trucks ? `${b.trucks} tractor(s)` : '', b.trailers ? `${b.trailers} trailer(s)` : '',
+         b.yards ? `${b.yards} yard(s) in cities you have not reached` : '']
+        .filter(Boolean).join(', ')}. These were never bought in your game, so their damage and mileage
+      are fiction — and a truck based in an undiscovered city would never see cargo, because ATS does not
+      generate freight for cities you did not drive to.</p>
+    <p>Trim the book to what you actually own. Anything with real trip history, anything assigned to you
+      or to a hired driver, and headquarters are all kept.</p>
+    <div class="row-actions">
+      <button class="btn" data-act="trim-fleet" data-yards="0">Trim equipment only</button>
+      ${b.yards ? `<button class="btn" data-act="trim-fleet" data-yards="1">Trim equipment and yards</button>` : ''}
+    </div></div>` : ''}
   <div class="panel">
     <div class="panel-head"><h2>Your assignment</h2></div>
     <div class="cols">
@@ -2467,12 +2636,39 @@ async function handleAction(act, d, ev) {
     case 'clear-audit': TRIP_AUDIT = null; return render();
 
     /* ---- status & HOS */
-    case 'save-status': return run(async () => absorb(await api('/status', 'POST', {
-      locationCity: sv('st-city'), locationState: sv('st-state'), locationKind: sv('st-kind'),
-      locationDetail: sv('st-detail'), gameTime: readDayTime('st-time'), fuelPct: fv('st-fuel'),
-      truckDamagePct: fv('st-tdmg'), trailerDamagePct: fv('st-trdmg'), atsOdometer: fv('st-odo'),
-      dutyStatus: sv('st-duty'), atsBankBalance: fv('st-bank'),
-    })), 'Status updated.');
+    case 'save-status': return run(async () => {
+      const r = absorb(await api('/status', 'POST', {
+        locationCity: sv('st-city'), locationState: sv('st-state'), locationKind: sv('st-kind'),
+        locationDetail: sv('st-detail'), gameTime: readDayTime('st-time'), fuelPct: fv('st-fuel'),
+        truckDamagePct: fv('st-tdmg'), trailerDamagePct: fv('st-trdmg'), atsOdometer: fv('st-odo'),
+        dutyStatus: sv('st-duty'), atsBankBalance: fv('st-bank'),
+      }));
+      DISCOVERY = r.discovery || null;
+      toast(DISCOVERY ? DISCOVERY.headline : 'Status updated.', 'ok');
+      return r;
+    });
+
+    /* Nothing has moved since the last close-out, so re-post what is already on screen. Cheaper for
+       the driver than retyping six fields that the delivery report already told us. */
+    case 'confirm-status': return run(async () => {
+      const r = absorb(await api('/status', 'POST', {
+        locationCity: S.status.locationCity, locationState: S.status.locationState,
+        locationKind: S.status.locationKind, locationDetail: S.status.locationDetail,
+        gameTime: S.status.gameTime, fuelPct: S.status.fuelPct,
+        truckDamagePct: S.status.truckDamagePct, trailerDamagePct: S.status.trailerDamagePct,
+        atsOdometer: S.status.atsOdometer, dutyStatus: S.status.dutyStatus,
+        atsBankBalance: S.status.atsBankBalance,
+      }));
+      DISCOVERY = r.discovery || null;
+      toast('Confirmed.', 'ok');
+      return r;
+    });
+
+    /* ---- city discovery */
+    case 'decline-garage': return run(async () => {
+      absorb(await api('/discovery/decline', 'POST', { city: d.city, state: d.state }));
+      DISCOVERY = null;
+    }, 'Noted — I will stop suggesting it.');
 
     case 'save-hos': {
       const recap = sv('h-recap').split(',').map((p) => {
@@ -2622,23 +2818,49 @@ async function handleAction(act, d, ev) {
     /* ---- trips */
     case 'trip-detail': return tripDetailModal(d.id);
     case 'log-event': {
-      if (!sv('ev-detail')) return toast('Add a detail for the log entry.', 'bad');
-      return run(async () => absorb(await api(`/trips/${d.id}/event`, 'POST',
-        { gameTime: readDayTime('ev-time'), kind: sv('ev-kind'), detail: sv('ev-detail') })), 'Logged.');
+      if (!sv('ev-detail') && fv('ev-gal') <= 0) return toast('Add a detail for the log entry.', 'bad');
+      const gal = fv('ev-gal'), price = fv('ev-price');
+      return run(async () => {
+        const r = absorb(await api(`/trips/${d.id}/event`, 'POST', {
+          gameTime: readDayTime('ev-time'), kind: sv('ev-kind'),
+          detail: sv('ev-detail') || (gal > 0 ? `Fuelled ${gal} gal` : ''),
+          city: sv('ev-city'), state: sv('ev-state'),
+          gallons: gal, pricePerGal: price, cost: 0,
+        }));
+        toast(gal > 0 && sv('ev-kind') === 'Fuel'
+          ? `Logged — ${gal} gal added to the close-out.` : 'Logged.', 'ok');
+        return r;
+      });
     }
+
+    /* Fuel stops: harvest what is typed before changing the row count, or the other rows blank out. */
+    case 'add-fuel-row': {
+      harvestFuel();
+      FUEL.rows.push({ gallons: 0, pricePerGal: 0, city: S.status.locationCity, state: S.status.locationState });
+      return render();
+    }
+    case 'del-fuel-row': {
+      harvestFuel();
+      FUEL.rows.splice(+d.i, 1);
+      return render();
+    }
+
     case 'complete-trip': return run(async () => {
       const r = await api(`/trips/${d.id}/complete`, 'POST', {
         deliveredGameTime: readDayTime('c-time'), deliveredLate: bv('c-late') ? true : null,
         actualMiles: fv('c-miles'), endOdometer: fv('c-odo'), actualRevenue: fv('c-rev') || null,
-        fuelGallons: fv('c-gal'), fuelCost: fv('c-fuel'), tolls: fv('c-tolls'),
+        fuelStops: harvestFuel(), tolls: fv('c-tolls'),
         repairCost: fv('c-repair'), fines: fv('c-fines'), otherExpense: fv('c-other'),
         truckDamageAfter: fv('c-tdmg'), trailerDamageAfter: fv('c-trdmg'), cargoDamagePct: fv('c-cargo'),
         loadingHours: fv('c-load'), unloadingHours: fv('c-unload'), detentionHours: fv('c-det'),
         layoverDays: fv('c-lay'), breakdownDays: fv('c-bd'), extraStops: fv('c-stops'), tarpsUsed: fv('c-tarps'),
         delayReason: sv('c-delay'), damageCause: sv('c-dmgcause'), notes: sv('c-notes'),
         locationKind: 'Receiver', fuelPct: fv('c-fuelpct'), gameTime: readDayTime('c-time'),
+        hosDriveRemaining: fvn('c-hdrive'), hosShiftRemaining: fvn('c-hshift'),
+        hosBreakRemaining: fvn('c-hbreak'), hosCycleRemaining: fvn('c-hcycle'),
       });
       absorb(r); TRIP_AUDIT = r.audit;
+      FUEL = { tripId: null, seeded: 0, rows: [] };
       toast(r.audit.headline, r.audit.trip.serviceResult === 'Late' ? 'bad' : 'ok');
     });
     case 'show-cancel': return cancelModal(d.id);
@@ -2649,6 +2871,16 @@ async function handleAction(act, d, ev) {
     }, 'Load cancelled.');
 
     /* ---- fleet */
+    case 'trim-fleet': {
+      const yards = d.yards === '1';
+      if (!confirm(yards
+        ? 'Remove on-paper equipment AND close yards in cities you have not reached?\n\nA snapshot is kept in backups.'
+        : 'Remove equipment that is not in your ATS garage?\n\nA snapshot is kept in backups.')) return;
+      return run(async () => {
+        const r = absorb(await api('/fleet/trim', 'POST', { includeYards: yards }));
+        toast((r.notes || ['Trimmed.']).join(' '), 'ok');
+      });
+    }
     case 'assign': return run(async () => absorb(await api('/fleet/assign', 'POST',
       { truckUnit: sv('as-truck'), trailerUnit: sv('as-trailer'), force: false })), 'Equipment assigned.');
     /* ---- equipment orders & swaps */
@@ -2779,7 +3011,7 @@ async function handleAction(act, d, ev) {
       if (!sv('tm-city')) return toast('A yard needs a city.', 'bad');
       const levelChanged = !isNew && base.level !== sv('tm-level');
       return run(async () => {
-        absorb(await api('/terminals', 'POST', {
+        const saved = absorb(await api('/terminals', 'POST', {
           ...base, id: d.id || '', city: sv('tm-city'), state: sv('tm-state'), level: sv('tm-level'),
           truckCapacity: fv('tm-cap'), fuelPricePerGal: fv('tm-fuel'),
           shopLabourDiscount: fv('tm-shopdisc'), monthlyCost: fv('tm-cost'),
@@ -2792,7 +3024,10 @@ async function handleAction(act, d, ev) {
           if (id && levelChanged) absorb(await api(`/terminals/${id}/level`, 'POST', { level: sv('tm-level') }));
         }
         closeModal();
-      }, isNew ? 'Yard opened.' : 'Yard saved.');
+        // A yard in a city the driver has not driven to will not see cargo — say so, but allow it.
+        if (saved && saved.warning) toast(saved.warning, 'bad');
+        else toast(isNew ? 'Yard opened.' : 'Yard saved.', 'ok');
+      });
     }
     case 'del-terminal': {
       if (!confirm('Close this yard? Trucks based there keep their history.')) return;
@@ -2979,7 +3214,17 @@ async function handleAction(act, d, ev) {
     }
     case 'list-backups': return run(async () => {
       const r = await api('/backups');
-      $('backup-list').innerHTML = `<h3 class="sect">Backups in ${esc(r.dataDir)}</h3>
+      $('backup-list').innerHTML = `<h3 class="sect">Career file</h3>
+        <p class="mono sub">${esc(r.stateFile)}</p>
+        ${(r.otherCareers || []).length ? `<div class="callout warn">
+          <h4>Another career file exists on this machine</h4>
+          <p>Probably left by an earlier copy of the app. Adopting one replaces what is loaded now —
+            your current career is snapshotted first.</p>
+          ${r.otherCareers.map((o) => `<div class="row-actions">
+            <span class="mono sub">${esc(o.path)} · ${o.sizeKb} KB · ${esc(o.modified)}</span>
+            <button class="btn tiny ghost" data-act="adopt-career" data-path="${esc(o.path)}">Load this one</button>
+          </div>`).join('')}</div>` : ''}
+        <h3 class="sect">Backups in ${esc(r.dataDir)}</h3>
         <div class="log">${r.files.map((f) => `<div><span class="ch">file</span><span>${esc(f)}
           <button class="btn tiny ghost" data-act="restore" data-file="${esc(f)}">Restore</button></span></div>`).join('')
           || '<div class="empty">No backups yet.</div>'}</div>`;
@@ -2988,11 +3233,24 @@ async function handleAction(act, d, ev) {
       if (!confirm(`Restore ${d.file}? Your current state is snapshotted first.`)) return;
       return run(async () => absorb(await api('/backups/restore', 'POST', { file: d.file })), 'Backup restored.');
     }
-    case 'reset': {
-      const c = prompt('This starts a brand-new career. Your current file is snapshotted first.\n\nType RESET to confirm:');
-      if (c !== 'RESET') return;
+    case 'adopt-career': {
+      if (!confirm(`Load the career at\n\n${d.path}\n\nYour current one is snapshotted first.`)) return;
       return run(async () => {
-        absorb(await api('/reset', 'POST', { confirm: 'RESET' }));
+        absorb(await api('/data/adopt', 'POST', { path: d.path }));
+        location.reload();
+      });
+    }
+    case 'reset': {
+      const c = prompt('This starts a brand-new career. Your current file is snapshotted first.\n\n'
+        + 'Your settings are kept — API key, HOS rules, mods and cost assumptions describe your game, '
+        + 'not the career.\n\nType RESET to confirm:');
+      if (c !== 'RESET') return;
+      // Factory-reset of settings is a separate, deliberate second answer.
+      const wipe = confirm('Also reset SETTINGS to factory defaults?\n\n'
+        + 'OK = wipe settings too (clears your API key and HOS preferences).\n'
+        + 'Cancel = keep my settings (recommended).');
+      return run(async () => {
+        absorb(await api('/reset', 'POST', { confirm: 'RESET', resetSettings: wipe }));
         location.reload();
       });
     }
