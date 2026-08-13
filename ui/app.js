@@ -178,6 +178,7 @@ function closeModal() { $('modal').classList.add('hidden'); $('modal-body').inne
       if (TABS.some(([k]) => k === fromUrl)) TAB = fromUrl;
       render();
       if (TAB === 'finance') loadLedger();
+      if (TAB === 'fleet') loadFleetOps();
       // A board left sitting is an open decision — show it again instead of making
       // the driver re-run the evaluation after every reload.
       if (S.board.length) {
@@ -448,6 +449,7 @@ window.addEventListener('hashchange', () => {
   if (S?.onboarded && TABS.some(([t]) => t === k) && k !== TAB) {
     TAB = k; render();
     if (TAB === 'finance') loadLedger();
+    if (TAB === 'fleet' && !FLEETOPS) loadFleetOps();
   }
 });
 
@@ -1585,8 +1587,8 @@ function fleetOpsHtml() {
     <div class="panel-head"><h2>Hired drivers</h2>
       <span class="sub">${f.activeCount || 0} active · ${f.reportCount || 0} report(s) filed</span>
       <div class="spacer"></div>
-      <button class="btn tiny" data-act="load-fleetops">${FLEETOPS ? 'Refresh' : 'Load roster'}</button>
-      ${FLEETOPS ? '<button class="btn tiny primary" data-act="add-hire">Hire a driver</button>' : ''}
+      <button class="btn tiny ghost" data-act="load-fleetops">Refresh</button>
+      <button class="btn tiny primary" data-act="add-hire">Hire a driver</button>
     </div>
 
     <div class="callout info">
@@ -2735,6 +2737,9 @@ async function handleAction(act, d, ev) {
       if (location.hash.replace('#', '') !== TAB) location.hash = TAB;
       render();
       if (TAB === 'finance') loadLedger();
+      // The hired roster is not in the main snapshot, so fetch it on arrival. It used to sit behind a
+      // "Load roster" button, which also hid "Hire a driver" — a primary action nobody could find.
+      if (TAB === 'fleet' && !FLEETOPS) loadFleetOps();
       return;
     case 'close-modal': return closeModal();
     case 'clear-audit': TRIP_AUDIT = null; return render();
@@ -3431,6 +3436,15 @@ function collectSettings() {
     emptyMovePrefix: sv('nu-mt'), maintenancePrefix: sv('nu-mx'), cancelPrefix: sv('nu-cx'),
     aiEnabled: bv('ai-enabled'), anthropicApiKey: sv('ai-key'), anthropicModel: sv('ai-model'),
   };
+}
+
+/* The hired roster lives outside the main snapshot, so it is fetched when the Fleet tab opens.
+   Failure is quiet: the rest of the tab is useful without it, and hiring still works. */
+async function loadFleetOps() {
+  try {
+    FLEETOPS = await api('/fleetops');
+    render();
+  } catch { /* leave the panel empty rather than blocking the tab */ }
 }
 
 async function loadLedger() {
