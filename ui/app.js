@@ -600,7 +600,9 @@ function viewDispatch() {
           <label>Fuel %<input id="st-fuel" type="number" min="0" max="100" step="1" value="${st.fuelPct}"></label>
           <label>ATS odometer<input id="st-odo" type="number" step="1" value="${Math.round(st.atsOdometer)}"></label>
           <label>ATS bank balance $<input id="st-bank" type="number" step="1"
-            value="${Math.round(st.atsBankBalance || 0)}" title="What your game shows — this is the company's cash"></label>
+            value="${S.views.position.hasReportedBalance ? Math.round(st.atsBankBalance) : ''}"
+            placeholder="what your game shows"
+            title="The company's cash. Leave blank if you have not checked it — blank is not zero."></label>
           <label>Tractor damage %<input id="st-tdmg" type="number" min="0" max="100" step="0.1" value="${st.truckDamagePct}"></label>
           <label>Trailer damage %<input id="st-trdmg" type="number" min="0" max="100" step="0.1" value="${st.trailerDamagePct}"></label>
         </div>
@@ -1002,8 +1004,12 @@ function viewActive() {
       <div class="grid2">
         ${dayTimeInput('ev-time', S.status.gameTime, 'Game time')}
         <label>Event
-          <select id="ev-kind">${['Loaded', 'Departed', 'Fuel', 'Break', 'Rest', 'Scale', 'Delay', 'Breakdown', 'Arrived', 'Note']
-            .map((x) => `<option>${x}</option>`).join('')}</select></label>
+          <select id="ev-kind">${[
+            ['BeginLoad', 'Begin load'], ['EndLoad', 'End load'],
+            ['BeginUnload', 'Begin unload'], ['EndUnload', 'End unload'],
+            ['Fuel', 'Fuel'], ['Break', 'Break'], ['Rest', 'Rest'], ['Scale', 'Scale'],
+            ['Delay', 'Delay'], ['Breakdown', 'Breakdown'], ['Note', 'Note'],
+          ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       </div>
       <label>Detail <span class="sub">— optional</span>
         <input id="ev-detail" placeholder="only if there is something worth noting"></label>
@@ -1044,11 +1050,9 @@ function viewActive() {
       </div>
       ${fuelStopsHtml(t)}
       ${clocksAtDeliveryHtml()}
+      ${facilityHtml(t)}
       <fieldset><legend>Time and accessorials</legend>
         <div class="grid4">
-          <label>Loading h<input id="c-load" type="number" step="0.25" value="${t.loadingHours}"></label>
-          <label>Unloading h<input id="c-unload" type="number" step="0.25" value="${t.unloadingHours}"></label>
-          <label>Detention h<input id="c-det" type="number" step="0.25" value="0"></label>
           <label>Layover days<input id="c-lay" type="number" step="0.5" value="0"></label>
           <label>Breakdown days<input id="c-bd" type="number" step="0.5" value="0"></label>
           <label>Extra stops<input id="c-stops" type="number" step="1" value="${t.extraStops}"></label>
@@ -1195,6 +1199,50 @@ function fuelStopsHtml(t) {
   </fieldset>`;
 }
 
+/* ---- facility time
+   Loading, unloading and detention come from the Begin/End pairs in the trip log. Detention is pay,
+   so showing the working matters more than showing a box to type a number into. */
+function facilityHtml(t) {
+  const at = (kind) => {
+    const hit = (t.events || []).filter((e) => e.kind === kind).map((e) => e.gameTime).filter(Boolean).sort();
+    return hit.length ? hit[0] : null;
+  };
+  const span = (a, b) => {
+    const x = at(a), y = at(b);
+    if (!x || !y) return null;
+    const h = (Date.parse(isoUtc(y)) - Date.parse(isoUtc(x))) / 3600000;
+    return h >= 0 ? h : null;
+  };
+  const load = span('BeginLoad', 'EndLoad');
+  const unload = span('BeginUnload', 'EndUnload');
+  const free = S.driver.pay.detentionFreeHours || 0;
+  const det = (load === null && unload === null) ? null
+    : Math.max(0, (load || 0) - free) + Math.max(0, (unload || 0) - free);
+
+  const line = (label, hours, a, b) => hours === null
+    ? `<tr><td>${label}</td><td colspan="2" class="sub">not logged — log <b>${a}</b> and <b>${b}</b>, or type it below</td></tr>`
+    : `<tr><td>${label}</td><td class="num"><b>${num(hours, 2)} h</b></td>
+        <td class="sub">${gt(at(a))} → ${gt(at(b))}</td></tr>`;
+
+  return `<fieldset><legend>Facility time — from your trip log</legend>
+    <div class="tablewrap"><table><tbody>
+      ${line('Loading', load, 'BeginLoad', 'EndLoad')}
+      ${line('Unloading', unload, 'BeginUnload', 'EndUnload')}
+      ${det === null ? '' : `<tr><td><b>Detention</b></td>
+        <td class="num"><b style="color:${det > 0 ? 'var(--amber2)' : 'var(--ink3)'}">${num(det, 2)} h</b></td>
+        <td class="sub">${det > 0 ? `beyond ${num(free, 1)} h free at each stop — this is paid`
+          : `both stops inside the ${num(free, 1)} h free window`}</td></tr>`}
+    </tbody></table></div>
+    ${load === null || unload === null ? `<div class="grid3" style="margin-top:8px">
+      <label>Loading h<input id="c-load" type="number" step="0.25" value="${t.loadingHours || 0}"></label>
+      <label>Unloading h<input id="c-unload" type="number" step="0.25" value="${t.unloadingHours || 0}"></label>
+      <label>Detention h<input id="c-det" type="number" step="0.25" value="0"></label>
+    </div>
+    <p class="hint">Fallback for what you did not log. Log the pairs next time and this works itself out.</p>`
+      : `<p class="hint">Derived from the log, so there is nothing to type. The audit shows the times it used.</p>`}
+  </fieldset>`;
+}
+
 /* ---- clocks at delivery
    Reporting them here is what stops the Dispatch tab asking for the same four numbers again. */
 function clocksAtDeliveryHtml() {
@@ -1233,9 +1281,10 @@ function auditHtml(a) {
       <h4>What happens next</h4><ul>${a.directives.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
     ${a.trip.pay.lines.length ? `<h3 class="sect">Driver pay accrued — ${money(a.driverPay)}</h3>
       <ul class="reasons">${a.trip.pay.lines.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    ${a.disciplineRecommendation ? `<div class="callout warn" style="margin-top:14px">
-      <h4>Safety recommends: ${esc(a.disciplineRecommendation)}</h4>
-      <p>Incident ${esc(a.incidentNumber || '')} was opened. Issue or decline it on the Safety tab.</p></div>` : ''}
+    ${a.disciplineRecommendation ? `<div class="callout stop" style="margin-top:14px">
+      <h4>Safety has issued: ${esc(a.disciplineRecommendation.replace(/([a-z])([A-Z])/g, '$1 $2'))}</h4>
+      <p>Incident ${esc(a.incidentNumber || '')} was opened and the action follows from it.
+        Read it and acknowledge it on the Safety tab.</p></div>` : ''}
     <div class="row-actions"><button class="btn ghost" data-act="clear-audit">Dismiss</button></div>
   </div>`;
 }
@@ -1940,6 +1989,21 @@ function positionHtml() {
       <p style="margin:0">${esc(p.note)}</p>
     </div>
 
+    <div class="grid3" style="margin-top:10px;align-items:end">
+      <label>Bank balance from your game $
+        <input id="pos-bank" type="number" step="1"
+          value="${p.hasReportedBalance ? Math.round(p.atsBankBalance) : ''}"
+          placeholder="open ATS and read it off"></label>
+      <div class="row-actions" style="margin:0">
+        <button class="btn primary" data-act="set-balance">${p.hasReportedBalance ? 'Update balance' : 'Report balance'}</button>
+        ${p.hasReportedBalance ? `<button class="btn ghost" data-act="clear-balance"
+          title="Go back to treating it as unreported">Clear</button>` : ''}
+      </div>
+      <div class="sub">${p.hasReportedBalance
+        ? `Last read ${gt(p.balanceReportedAt)}.`
+        : 'Blank is not zero — until you report it, the books stand on their own and nothing is flagged as a mismatch.'}</div>
+    </div>
+
     <div class="cols">
       <div>
         <h3 class="sect">What the company can actually spend</h3>
@@ -2120,9 +2184,41 @@ function viewMaint() {
   </div>`;
 }
 
+/* ---- what still counts against you
+   An incident is on the record for ever, but it should not bar you from a carrier for ever. This is
+   the difference between the two, and how much clean work is left before it stops counting. */
+function standingHtml() {
+  const rows = S.views.faultStanding || [];
+  if (!rows.length) return '';
+  const counting = rows.filter((r) => r.counting).length;
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Preventable standing</h2>
+      ${badge(counting ? 'bad' : 'ok', counting ? counting + ' still counting' : 'nothing counting')}
+      <div class="spacer"></div>
+      <span class="sub">what carriers screen on</span></div>
+    <p class="hint">Carriers screen on preventable driver-fault incidents. These stay on your record
+      permanently, but they stop <em>counting against hiring</em> once you have put enough clean work
+      behind them — a mistake in your first week should not end the career.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Incident</th><th>What</th><th>Severity</th><th>Status</th><th>Clean loads to clear</th><th></th></tr></thead>
+      <tbody>${rows.map((r) => `<tr>
+        <td class="mono">${esc(r.number)}</td>
+        <td>${esc(r.kind)} — ${esc((r.description || '').slice(0, 60))}</td>
+        <td>${esc(r.severity)}</td>
+        <td>${r.forgiven ? badge('ok', 'cleared') : r.counting ? badge('bad', 'counting') : badge('mute', 'aged off')}</td>
+        <td class="num">${r.forgiven || !r.counting ? '—' : `${r.loadsToClear} of ${r.agesOffAfterLoads}`}</td>
+        <td>${r.counting && !r.forgiven
+          ? `<button class="btn tiny ghost" data-act="forgive-incident" data-num="${esc(r.number)}">Request review</button>`
+          : r.forgiven ? `<span class="sub">${esc(r.forgivenReason || '')}</span>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>
+  </div>`;
+}
+
 /* ============================================================ SAFETY */
 function viewSafety() {
   const sr = S.views.career.safety;
+  const pending = S.views.unacknowledged || [];
   return `
   <div class="panel">
     <div class="panel-head"><h2>Safety record</h2>
@@ -2158,25 +2254,48 @@ function viewSafety() {
         <label>Trip number<input id="in-trip" value="${esc(S.views.activeTrip?.number || '')}"></label>
         <label class="chk" style="margin-top:26px"><input type="checkbox" id="in-prevent" checked> Preventable</label>
       </div>
-      <label>What happened<textarea id="in-desc" placeholder="be specific — operations decides fault from this"></textarea></label>
+      <label>What happened<textarea id="in-desc" placeholder="be specific — Safety decides fault and consequence from this"></textarea></label>
+      <p class="hint">You report it; Safety decides what follows and tells you. You do not choose your
+        own outcome.</p>
       <div class="row-actions"><button class="btn primary" data-act="record-incident">File incident</button></div>
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>Issue discipline</h2>
-        <span class="sub">Safety department action</span></div>
-      <div class="grid2">
-        <label>Level<select id="da-level">${['Coaching', 'WrittenWarning', 'FinalWarning', 'Suspension', 'Termination', 'Commendation']
-          .map((x) => `<option ${x === sr.nextStepIfPreventable ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-        <label>Ages off after N loads<input id="da-expire" type="number" step="1" value="20"></label>
-      </div>
-      <label>Linked incident<select id="da-inc"><option value="">(none)</option>
-        ${S.incidents.filter((i) => !i.disciplineNumber).map((i) => `<option value="${esc(i.number)}">${esc(i.number)} — ${esc(i.kind)} (${esc(i.faultAttribution)})</option>`).join('')}</select></label>
-      <label>Reason<input id="da-reason" placeholder="what the action is for"></label>
-      <label>Corrective action<input id="da-corrective" placeholder="what changes going forward"></label>
-      <div class="row-actions"><button class="btn danger" data-act="issue-discipline">Issue action</button></div>
+      <div class="panel-head"><h2>Safety's decision</h2>
+        ${pending.length ? badge('bad', pending.length + ' to acknowledge') : badge('ok', 'nothing outstanding')}</div>
+      ${pending.length ? pending.map((a) => `
+        <div class="callout ${a.level === 'Termination' || a.level === 'Suspension' ? 'stop' : 'warn'}">
+          <h4>${esc(a.number)} — ${esc(a.level.replace(/([a-z])([A-Z])/g, '$1 $2'))}</h4>
+          <p><b>${esc(a.reason)}</b></p>
+          <p>${esc(a.correctiveAction)}</p>
+          <p class="hint" style="margin:0">Issued ${gt(a.gameTime)}${a.incidentNumber ? ' on ' + esc(a.incidentNumber) : ''}
+            by ${esc(a.issuedBy)}${a.expiresAfterLoads > 0 ? ` · ages off after ${a.expiresAfterLoads} clean loads` : ' · does not age off'}.</p>
+          <div class="row-actions">
+            <button class="btn go" data-act="ack-discipline" data-num="${esc(a.number)}">Acknowledge</button>
+          </div>
+        </div>`).join('')
+        : `<div class="callout go"><p>No action awaiting your signature. File an incident above and
+             Safety will tell you what happens next.</p></div>`}
+
+      <details class="score" style="margin-top:12px">
+        <summary>Management override — issue an action manually</summary>
+        <p class="hint">You are also playing the safety manager, so you can overrule the ladder. It is
+          logged as an override, which is the honest way to record overruling your own process.</p>
+        <div class="grid2">
+          <label>Level<select id="da-level">${['Coaching', 'WrittenWarning', 'FinalWarning', 'EquipmentDowngrade', 'Suspension', 'Termination', 'Commendation']
+            .map((x) => `<option ${x === sr.nextStepIfPreventable ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+          <label>Ages off after N loads<input id="da-expire" type="number" step="1" value="20"></label>
+        </div>
+        <label>Linked incident<select id="da-inc"><option value="">(none)</option>
+          ${S.incidents.filter((i) => !i.disciplineNumber).map((i) => `<option value="${esc(i.number)}">${esc(i.number)} — ${esc(i.kind)} (${esc(i.faultAttribution)})</option>`).join('')}</select></label>
+        <label>Reason<input id="da-reason" placeholder="what the action is for"></label>
+        <label>Corrective action<input id="da-corrective" placeholder="what changes going forward"></label>
+        <div class="row-actions"><button class="btn danger" data-act="issue-discipline">Issue as override</button></div>
+      </details>
     </div>
   </div>
+
+  ${standingHtml()}
 
   <div class="panel">
     <div class="panel-head"><h2>Incident log</h2></div>
@@ -2750,7 +2869,9 @@ async function handleAction(act, d, ev) {
         locationCity: sv('st-city'), locationState: sv('st-state'), locationKind: sv('st-kind'),
         locationDetail: sv('st-detail'), gameTime: readDayTime('st-time'), fuelPct: fv('st-fuel'),
         truckDamagePct: fv('st-tdmg'), trailerDamagePct: fv('st-trdmg'), atsOdometer: fv('st-odo'),
-        dutyStatus: sv('st-duty'), atsBankBalance: fv('st-bank'),
+        // Blank means "not reported", not "zero". Sending 0 for an untouched box made the app
+        // believe the game held nothing and warn about a mismatch against its own correct figure.
+        dutyStatus: sv('st-duty'), atsBankBalance: fvn('st-bank'),
       }));
       DISCOVERY = r.discovery || null;
       toast(DISCOVERY ? DISCOVERY.headline : 'Status updated.', 'ok');
@@ -3251,6 +3372,19 @@ async function handleAction(act, d, ev) {
       loadLedger();
     }, 'Adjustment applied.');
 
+    case 'set-balance': {
+      const v = fvn('pos-bank');
+      if (v === null) return toast('Type the balance your game shows.', 'bad');
+      return run(async () => {
+        absorb(await api('/finance/balance', 'POST', { balance: v, gameTime: null }));
+        loadLedger();
+      }, 'Balance recorded.');
+    }
+    case 'clear-balance': return run(async () => {
+      absorb(await api('/finance/balance', 'POST', { balance: null, gameTime: null }));
+      loadLedger();
+    }, 'Balance cleared — treated as unreported.');
+
     /* ---- maintenance */
     case 'create-wo': {
       if (!sv('wo-desc')) return toast('Describe what needs doing.', 'bad');
@@ -3292,17 +3426,40 @@ async function handleAction(act, d, ev) {
           preventable: bv('in-prevent'), cost: fv('in-cost'), tripNumber: sv('in-trip'),
           description: sv('in-desc'), locationCity: S.status.locationCity, locationState: S.status.locationState,
         }));
-        toast(r.recommendation
-          ? `${r.incident.number} filed. Safety recommends: ${r.recommendation}.`
-          : `${r.incident.number} filed. No discipline attaches.`, r.recommendation ? 'bad' : 'ok');
+        toast(r.action
+          ? `${r.incident.number} filed. Safety has issued ${r.action.level} — acknowledge it below.`
+          : `${r.incident.number} filed. No discipline attaches.`, r.action ? 'bad' : 'ok');
       });
     }
+    case 'forgive-incident': {
+      const why = prompt('Ask Safety to review this incident early.\n\n'
+        + 'They will want to know what has changed — remedial training, a re-examination of what happened,\n'
+        + 'or a stretch of clean work behind it.\n\nWhat is the case?');
+      if (why === null) return;
+      return run(async () => {
+        try {
+          absorb(await api(`/incidents/${encodeURIComponent(d.num)}/forgive`, 'POST', { reason: why, force: false }));
+          toast('Safety has cleared it. It stays on your record but no longer counts against hiring.', 'ok');
+        } catch (e) {
+          // Not enough clean work yet — say so, and let management overrule if they insist.
+          if (!/clean loads before Safety/.test(e.message)) throw e;
+          if (!confirm(`${e.message}\n\nClear it anyway as a management decision?`)) return;
+          absorb(await api(`/incidents/${encodeURIComponent(d.num)}/forgive`, 'POST',
+            { reason: (why || 'Management decision') + ' (cleared early by management)', force: true }));
+          toast('Cleared early by management decision.', 'ok');
+        }
+      });
+    }
+    case 'ack-discipline': return run(async () =>
+      absorb(await api(`/discipline/${encodeURIComponent(d.num)}/acknowledge`, 'POST', {})),
+      'Acknowledged.');
     case 'issue-discipline': {
       if (!sv('da-reason')) return toast('A disciplinary action needs a reason.', 'bad');
+      if (!confirm('Issue this manually, overruling the safety ladder?\n\nIt will be logged as a management override.')) return;
       return run(async () => absorb(await api('/discipline', 'POST', {
         level: sv('da-level'), reason: sv('da-reason'), correctiveAction: sv('da-corrective'),
         incidentNumber: sv('da-inc'), expiresAfterLoads: fv('da-expire'),
-      })), 'Action issued.');
+      })), 'Override issued.');
     }
     case 'reinstate': return run(async () => absorb(await api('/discipline/reinstate', 'POST',
       { notes: sv('ri-note') })), 'Driver reinstated.');

@@ -123,14 +123,14 @@ public static class Carriers
         new("Groendyke Transport", "GRO",
             new[] { "Tanker", "Hazmat", "Bulk" }, "Regional",
             "Enid", "OK", new[] { "Houston,TX", "Baton Rouge,LA", "Odessa,TX" },
-            0.70m, 0.57m, 2, 0, 94, 0, 5, true, true, false, true, 4, 2, 5,
+            0.70m, 0.57m, 2, 0, 94, 1, 5, true, true, false, true, 4, 2, 5,
             "Enid, Oklahoma chemical and petroleum tank carrier. Placarded liquid bulk with the regulatory load that comes with it.",
             "Hazmat and tanker endorsements required."),
 
         new("Trimac Transportation", "TRI",
             new[] { "Tanker", "Bulk", "Pneumatic", "Hazmat" }, "Large",
             "Houston", "TX", new[] { "Baton Rouge,LA", "Chicago,IL", "Salt Lake City,UT" },
-            0.68m, 0.55m, 2, 0, 94, 0, 5, true, true, false, true, 4, 2, 4,
+            0.68m, 0.55m, 2, 0, 94, 1, 5, true, true, false, true, 4, 2, 4,
             "Bulk tank carrier hauling chemicals, fuels and dry bulk across North America, with a strong emphasis on safety and driver training.",
             "Tanker and hazmat endorsements required."),
 
@@ -144,14 +144,14 @@ public static class Carriers
         new("Jack Cooper Transport", "JCT",
             new[] { "Auto", "Dry Van" }, "Regional",
             "Kansas City", "MO", new[] { "Detroit,MI", "Louisville,KY", "Dallas,TX" },
-            0.65m, 0.53m, 3, 15, 95, 0, 3, false, false, false, true, 4, 3, 4,
+            0.65m, 0.53m, 3, 15, 95, 1, 3, false, false, false, true, 4, 3, 4,
             "Kansas City finished-vehicle carrier moving cars from assembly plants to dealers on multi-car rigs. Every unit is inspected at both ends.",
             "Three years and a clean damage record."),
 
         new("United Road Services", "URS",
             new[] { "Auto", "Dry Van" }, "Regional",
             "Romulus", "MI", new[] { "Dallas,TX", "Atlanta,GA", "Newark,NJ" },
-            0.64m, 0.52m, 3, 15, 94, 0, 3, false, false, false, true, 4, 3, 4,
+            0.64m, 0.52m, 3, 15, 94, 1, 3, false, false, false, true, 4, 3, 4,
             "Michigan-based vehicle logistics carrier hauling new and used automobiles for manufacturers, auctions and dealer groups.",
             "Three years and a clean damage record."),
     };
@@ -208,7 +208,7 @@ public static class Carriers
         new("Meridian Auto Transport", "MAT",
             new[] { "Auto", "Dry Van" }, "Regional",
             "Detroit", "MI", new[] { "Columbus,OH", "Louisville,KY", "Dallas,TX" },
-            0.64m, 0.52m, 3, 15, 95, 0, 3, false, false, false, true, 4, 3, 4,
+            0.64m, 0.52m, 3, 15, 95, 1, 3, false, false, false, true, 4, 3, 4,
             "Finished vehicles from the plants to the dealers on multi-car stingers. Every unit is inspected at both ends and damage comes straight out of the settlement conversation.",
             "Three years and a genuinely clean damage record. They do not hire people who scrape things."),
 
@@ -443,7 +443,10 @@ public static class Carriers
         var stats = s.Onboarded ? CareerService.Compute(s) : new CareerStats();
         var totalLoads = stats.LoadsDelivered + s.Driver.PriorLoads;
         var onTime = totalLoads > 0 ? stats.OnTimePct : 100;
-        var faults = stats.DriverFaultIncidents + s.Driver.PriorFaultIncidents;
+        // Only incidents that still count. Anything Safety has cleared, or that has aged off through
+        // clean work, stays on the record but no longer bars the driver from a carrier — otherwise one
+        // mistake in the first week locks them out of a third of the market for the life of the file.
+        var faults = (s.Onboarded ? SafetyService.CountingFaults(s).Count : 0) + s.Driver.PriorFaultIncidents;
 
         var fails = new List<string>();
         var notes = new List<string>();

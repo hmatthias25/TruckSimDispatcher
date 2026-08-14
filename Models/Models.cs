@@ -506,6 +506,10 @@ public class Trip
 
     public double LoadingHours { get; set; }
     public double UnloadingHours { get; set; }
+    /// <summary>
+    /// BILLABLE detention hours — already net of the free window, worked out per stop from the
+    /// Begin/End pairs in the trip log. Pay multiplies this directly; do not subtract free time again.
+    /// </summary>
     public double DetentionHours { get; set; }
     public double LayoverDays { get; set; }
     public double BreakdownDays { get; set; }
@@ -539,7 +543,15 @@ public class Trip
 public class TripEvent
 {
     public string GameTime { get; set; } = "";
-    /// <summary>Loaded | Departed | Fuel | Break | Rest | Scale | Delay | Breakdown | Arrived | Note</summary>
+    /// <summary>
+    /// BeginLoad | EndLoad | BeginUnload | EndUnload | Fuel | Break | Rest | Scale | Delay |
+    /// Breakdown | Note.
+    ///
+    /// The load and unload events are paired deliberately: their timestamps are what loading,
+    /// unloading and detention are computed from, so the driver never hand-calculates time that the
+    /// log already knows. "Loaded", "Departed" and "Arrived" are retained only so older trips still
+    /// read correctly — they are not offered for new entries.
+    /// </summary>
     public string Kind { get; set; } = "Note";
     public string Detail { get; set; } = "";
     /// <summary>City the event happened in, when it is worth recording (fuel stops, breakdowns).</summary>
@@ -699,6 +711,22 @@ public class Incident
     public string LocationCity { get; set; } = "";
     public string LocationState { get; set; } = "";
     public string DisciplineNumber { get; set; } = "";
+    /// <summary>
+    /// Clean loads that must pass before this stops counting against hiring. Scaled by severity —
+    /// a scraped mirror is not a rollover. It stays on the record for ever either way; ageing off
+    /// only stops it barring the driver from carriers.
+    ///
+    /// Without this a single preventable on load one permanently locks a driver out of every carrier
+    /// that demands a spotless record, which is most of the good ones.
+    /// </summary>
+    /// <remarks>0 means "not set yet" — <c>RecordIncident</c> fills it in from the severity. A
+    /// non-zero default here would silently override that scaling for every incident.</remarks>
+    public int AgesOffAfterLoads { get; set; }
+    /// <summary>Loads delivered when this happened, so "clean loads since" can be measured.</summary>
+    public int LoadCountAtIncident { get; set; }
+    /// <summary>Set when Safety has cleared it early — remedial training, review, or re-attribution.</summary>
+    public string ForgivenGameTime { get; set; } = "";
+    public string ForgivenReason { get; set; } = "";
     public string Notes { get; set; } = "";
     public string CreatedUtc { get; set; } = DateTime.UtcNow.ToString("o");
 }

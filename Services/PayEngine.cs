@@ -62,7 +62,10 @@ public static class PayEngine
         b.StopPay = p.ExtraStopPay * trip.ExtraStops;
         b.TarpPay = p.TarpPay * trip.TarpsUsed;
 
-        var billableDetention = Math.Max(0, trip.DetentionHours - p.DetentionFreeHours);
+        // Trip.DetentionHours is already net of the free window — it is worked out per stop, because
+        // three hours at a shipper and three at a receiver are two separate claims, not one six-hour
+        // one. Subtracting the free time again here would take it off twice.
+        var billableDetention = Math.Max(0, trip.DetentionHours);
         b.DetentionPay = Math.Round((decimal)billableDetention * p.DetentionPerHour, 2);
         b.LayoverPay = Math.Round((decimal)trip.LayoverDays * p.LayoverPerDay, 2);
         b.BreakdownPay = Math.Round((decimal)trip.BreakdownDays * p.BreakdownPerDay, 2);
@@ -82,9 +85,7 @@ public static class PayEngine
         if (b.StopPay > 0) b.Lines.Add($"{trip.ExtraStops} extra stop(s) @ ${p.ExtraStopPay:N2} = ${b.StopPay:N2}");
         if (b.TarpPay > 0) b.Lines.Add($"{trip.TarpsUsed} tarp(s) @ ${p.TarpPay:N2} = ${b.TarpPay:N2}");
         if (b.DetentionPay > 0)
-            b.Lines.Add($"Detention {billableDetention:0.#} h billable ({trip.DetentionHours:0.#} h less {p.DetentionFreeHours:0.#} h free) @ ${p.DetentionPerHour:N2}/h = ${b.DetentionPay:N2}");
-        else if (trip.DetentionHours > 0)
-            b.Lines.Add($"Detention {trip.DetentionHours:0.#} h — inside the {p.DetentionFreeHours:0.#} h free window, not payable");
+            b.Lines.Add($"Detention {billableDetention:0.##} h billable, beyond {p.DetentionFreeHours:0.#} h free per stop @ ${p.DetentionPerHour:N2}/h = ${b.DetentionPay:N2}");
         if (b.LayoverPay > 0) b.Lines.Add($"Layover {trip.LayoverDays:0.#} day(s) @ ${p.LayoverPerDay:N2} = ${b.LayoverPay:N2}");
         if (b.BreakdownPay > 0) b.Lines.Add($"Breakdown {trip.BreakdownDays:0.#} day(s) @ ${p.BreakdownPerDay:N2} = ${b.BreakdownPay:N2}");
         if (b.Chargebacks > 0) b.Lines.Add($"Chargeback: {b.ChargebackMemo} = -${b.Chargebacks:N2}");

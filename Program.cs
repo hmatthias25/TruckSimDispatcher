@@ -803,18 +803,37 @@ app.MapPost("/api/maintenance/workorder/{number}/complete", (string number, Comp
 
 // ---------------------------------------------------------------- safety
 
+// Filing an incident produces a decision, not a form. The driver reports; the company decides.
 app.MapPost("/api/incidents", (Incident inc) => Results.Ok(store.Mutate(s =>
 {
-    var created = SafetyService.RecordIncident(s, inc);
-    var recommendation = SafetyService.RecommendDiscipline(s, created);
+    var (created, action) = SafetyService.FileAndDecide(s, inc);
     store.Log(s, "safety", $"{created.Number} {created.Kind} ({created.FaultAttribution} fault): {created.Description}", created.Number);
-    return new { incident = created, recommendation, snapshot = Snapshot(s) };
+    if (action != null)
+        store.Log(s, "safety", $"{action.Number} {action.Level} issued on {created.Number}.", action.Number);
+    return new { incident = created, action, snapshot = Snapshot(s) };
 })));
 
+app.MapPost("/api/incidents/{number}/forgive", (string number, ForgiveRequest req) => Results.Ok(store.Mutate(s =>
+{
+    var inc = SafetyService.Forgive(s, number, req.Reason ?? "", req.Force);
+    store.Log(s, "safety", $"{inc.Number} cleared by Safety: {inc.ForgivenReason}", inc.Number);
+    return Snapshot(s);
+})));
+
+app.MapPost("/api/discipline/{number}/acknowledge", (string number) => Results.Ok(store.Mutate(s =>
+{
+    var a = SafetyService.Acknowledge(s, number);
+    store.Log(s, "safety", $"{a.Number} acknowledged by the driver.", a.Number);
+    return Snapshot(s);
+})));
+
+// Management override. The normal path is /api/incidents deciding for itself; this exists because the
+// player is also roleplaying the safety manager and may want to overrule. Logged as an override.
 app.MapPost("/api/discipline", (DisciplineRequest req) => Results.Ok(store.Mutate(s =>
 {
     var action = SafetyService.Issue(s, req.Level, req.Reason, req.CorrectiveAction, req.IncidentNumber, req.ExpiresAfterLoads);
-    store.Log(s, "safety", $"{action.Number} {action.Level} issued: {action.Reason}", action.Number);
+    action.IssuedBy = "Management override";
+    store.Log(s, "safety", $"OVERRIDE: {action.Number} {action.Level} issued manually: {action.Reason}", action.Number);
     return new { action, snapshot = Snapshot(s) };
 })));
 
@@ -837,6 +856,25 @@ app.MapPost("/api/settlements/run", (NoteRequest req) => Results.Ok(store.Mutate
 app.MapGet("/api/finance", () => Results.Ok(LedgerService.Summary(store.State)));
 
 app.MapGet("/api/finance/position", () => Results.Ok(LedgerService.Position(store.State)));
+
+// Setting the balance from the Finances tab, where the mismatch warning actually appears. Kept apart
+// from /api/status so reporting a number here does not count as confirming the whole status report.
+app.MapPost("/api/finance/balance", (BalanceRequest req) => Results.Ok(store.Mutate(s =>
+{
+    if (req.Balance == null)
+    {
+        // Explicitly forgetting it — back to "never reported" rather than a reported zero.
+        s.Status.AtsBankBalance = 0;
+        s.Status.AtsBalanceGameTime = "";
+        store.Log(s, "ledger", "ATS bank balance cleared — treated as unreported.");
+        return Snapshot(s);
+    }
+
+    s.Status.AtsBankBalance = req.Balance.Value;
+    s.Status.AtsBalanceGameTime = string.IsNullOrWhiteSpace(req.GameTime) ? s.Status.GameTime : req.GameTime;
+    store.Log(s, "ledger", $"ATS bank balance reported: ${req.Balance.Value:N2}.");
+    return Snapshot(s);
+})));
 
 app.MapPost("/api/finance/true-up", (NoteRequest req) => Results.Ok(store.Mutate(s =>
 {
@@ -1055,6 +1093,20 @@ object Snapshot(AppState? given = null)
         views = new
         {
             garageOpportunities = DiscoveryService.GarageOpportunityView(s),
+            unacknowledged = SafetyService.Unacknowledged(s),
+            // Which incidents still bar the driver from carriers, and how close each is to clearing.
+            faultStanding = s.Incidents
+                .Where(i => i.FaultAttribution == "Driver" && i.Preventable)
+                .Select(i => new
+                {
+                    i.Number, i.Kind, i.Severity, i.GameTime, i.Description,
+                    forgiven = !string.IsNullOrWhiteSpace(i.ForgivenGameTime),
+                    i.ForgivenReason,
+                    i.AgesOffAfterLoads,
+                    loadsToClear = SafetyService.LoadsToAgeOff(s, i),
+                    counting = SafetyService.CountingFaults(s).Any(x => x.Number == i.Number)
+                }).ToList(),
+            countingFaults = SafetyService.CountingFaults(s).Count,
             homeTime = HomeTime.Status(s),
             homeTimeOptions = HomeTime.Options.Select(o => new { key = o.Key, label = o.Label, days = o.Days, note = o.Note }).ToList(),
             backdrop = Backdrop(s),
@@ -1171,6 +1223,8 @@ record RestoreRequest(string File);
 record ResetRequest(string Confirm, bool? ResetSettings);
 record DiscoverRequest(string City, string? State);
 record TrimRequest(bool IncludeYards);
+record BalanceRequest(decimal? Balance, string? GameTime);
+record ForgiveRequest(string? Reason, bool Force);
 record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? TransmissionPreference, bool AddTrailers);
 record AdoptRequest(string Path);
 record HomeTimeRequest(string Preference);

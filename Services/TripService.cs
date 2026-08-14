@@ -100,7 +100,8 @@ public static class TripService
         var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
                    ?? throw new InvalidOperationException("Trip not found.");
         trip.Events.Add(ev);
-        if (trip.Status == "Authorized" && ev.Kind is "Loaded" or "Departed")
+        // "Loaded" and "Departed" are the retired names, still honoured for older careers.
+        if (trip.Status == "Authorized" && ev.Kind is "EndLoad" or "BeginLoad" or "Loaded" or "Departed")
             trip.Status = "InTransit";
         if (!string.IsNullOrWhiteSpace(ev.GameTime)) s.Status.GameTime = ev.GameTime;
 
@@ -159,9 +160,13 @@ public static class TripService
         trip.TruckDamageAfter = req.TruckDamageAfter;
         trip.TrailerDamageAfter = req.TrailerDamageAfter;
         trip.CargoDamagePct = req.CargoDamagePct;
-        if (req.LoadingHours > 0) trip.LoadingHours = req.LoadingHours;
-        if (req.UnloadingHours > 0) trip.UnloadingHours = req.UnloadingHours;
-        trip.DetentionHours = req.DetentionHours;
+        // Facility time comes from the Begin/End pairs in the log where they exist. Detention is pay,
+        // so it is derived from clock times rather than taken on trust.
+        var facility = DeriveFacilityTimes(s, trip, req.LoadingHours, req.UnloadingHours, req.DetentionHours);
+        if (facility.LoadingHours > 0) trip.LoadingHours = facility.LoadingHours;
+        if (facility.UnloadingHours > 0) trip.UnloadingHours = facility.UnloadingHours;
+        trip.DetentionHours = facility.DetentionHours;
+        audit.ServiceFindings.AddRange(facility.Explain);
         trip.LayoverDays = req.LayoverDays;
         trip.BreakdownDays = req.BreakdownDays;
         if (req.ExtraStops > 0) trip.ExtraStops = req.ExtraStops;
@@ -304,7 +309,7 @@ public static class TripService
         // ---- safety record
         if (late && fault == "Driver")
         {
-            var inc = SafetyService.RecordIncident(s, new Incident
+            var (inc, action) = SafetyService.FileAndDecide(s, new Incident
             {
                 Kind = "Late",
                 TripNumber = trip.Number,
@@ -317,7 +322,7 @@ public static class TripService
                 LocationState = trip.DestState
             });
             audit.IncidentNumber = inc.Number;
-            audit.DisciplineRecommendation = SafetyService.RecommendDiscipline(s, inc);
+            audit.DisciplineRecommendation = action?.Level;
         }
         else if (late)
         {
@@ -342,7 +347,7 @@ public static class TripService
         if (damageJump >= 10)
         {
             var (dmgFault, dmgWhy) = AttributeDamage(req, damageJump);
-            var inc = SafetyService.RecordIncident(s, new Incident
+            var (inc, dmgAction) = SafetyService.FileAndDecide(s, new Incident
             {
                 Kind = "Damage",
                 TripNumber = trip.Number,
@@ -358,7 +363,7 @@ public static class TripService
             });
             audit.EquipmentFindings.Add(dmgWhy);
             audit.IncidentNumber ??= inc.Number;
-            audit.DisciplineRecommendation ??= SafetyService.RecommendDiscipline(s, inc);
+            audit.DisciplineRecommendation ??= dmgAction?.Level;
         }
         if (trip.CargoDamagePct >= 5)
             audit.EquipmentFindings.Add($"Cargo damage {trip.CargoDamagePct:0.#}% — that shows up as a claim. Secure and slow down in the rough spots.");
@@ -401,6 +406,104 @@ public static class TripService
             audit.Directives.Add($"{restored.Number}: {restored.Instruction}");
 
         return audit;
+    }
+
+    /// <summary>Facility time worked out from the trip log rather than typed in from memory.</summary>
+    public class FacilityTimes
+    {
+        public double LoadingHours { get; set; }
+        public double UnloadingHours { get; set; }
+        public double DetentionHours { get; set; }
+        public bool LoadDerived { get; set; }
+        public bool UnloadDerived { get; set; }
+        public List<string> Explain { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Derives loading, unloading and detention from the Begin/End pairs in the trip log.
+    ///
+    /// Detention is real money, so it is never a number the driver guesses at — it comes from the
+    /// clock times they logged at the dock, and the audit shows the working. Free time is granted per
+    /// stop, which is how it works in practice: sitting three hours at a shipper and three at a
+    /// receiver is two separate detention claims, not one six-hour one.
+    ///
+    /// Anything the log cannot answer falls back to what the driver typed, so forgetting to log a pair
+    /// degrades to the old behaviour instead of silently recording zero.
+    /// </summary>
+    public static FacilityTimes DeriveFacilityTimes(AppState s, Trip trip, double typedLoading,
+        double typedUnloading, double typedDetention)
+    {
+        var f = new FacilityTimes();
+        var free = Math.Max(0, s.Driver.Pay.DetentionFreeHours);
+
+        double? Span(string beginKind, string endKind)
+        {
+            var begin = trip.Events.Where(e => e.Kind == beginKind)
+                .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Min();
+            var end = trip.Events.Where(e => e.Kind == endKind)
+                .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Max();
+            if (begin == null || end == null) return null;
+            var hours = (end.Value - begin.Value).TotalHours;
+            return hours >= 0 ? hours : null;      // a reversed pair is a typo, not negative time
+        }
+
+        var loaded = Span("BeginLoad", "EndLoad");
+        var unloaded = Span("BeginUnload", "EndUnload");
+
+        f.LoadingHours = loaded ?? typedLoading;
+        f.LoadDerived = loaded != null;
+        f.UnloadingHours = unloaded ?? typedUnloading;
+        f.UnloadDerived = unloaded != null;
+
+        if (loaded != null)
+            f.Explain.Add($"Loading {loaded.Value:0.##} h from the log ({Stamp(trip, "BeginLoad")} → {Stamp(trip, "EndLoad")}).");
+        if (unloaded != null)
+            f.Explain.Add($"Unloading {unloaded.Value:0.##} h from the log ({Stamp(trip, "BeginUnload")} → {Stamp(trip, "EndUnload")}).");
+
+        if (loaded == null && unloaded == null)
+        {
+            // Nothing logged. The driver types time spent at the dock, so net the free window off it
+            // here — the stored figure is always billable hours, whichever way it arrived.
+            f.DetentionHours = Math.Round(Math.Max(0, typedDetention - free), 2);
+            if (typedDetention > 0)
+                f.Explain.Add(f.DetentionHours > 0
+                    ? $"Detention {f.DetentionHours:0.##} h billable from the {typedDetention:0.##} h you reported, " +
+                      $"less {free:0.#} h free. No Begin/End pairs in the log to check it against."
+                    : $"Detention {typedDetention:0.##} h as reported is inside the {free:0.#} h free window — not payable.");
+            return f;
+        }
+
+        var atShipper = Math.Max(0, f.LoadingHours - free);
+        var atReceiver = Math.Max(0, f.UnloadingHours - free);
+        f.DetentionHours = Math.Round(atShipper + atReceiver, 2);
+
+        if (f.DetentionHours > 0)
+        {
+            var parts = new List<string>();
+            if (atShipper > 0) parts.Add($"{atShipper:0.##} h at the shipper");
+            if (atReceiver > 0) parts.Add($"{atReceiver:0.##} h at the receiver");
+            f.Explain.Add($"Detention {f.DetentionHours:0.##} h — {string.Join(" plus ", parts)}, " +
+                          $"after {free:0.#} h free at each stop.");
+        }
+        else
+        {
+            f.Explain.Add($"No detention — both stops came in inside the {free:0.#} h free window.");
+        }
+
+        // A typed figure that disagrees with the log is worth saying out loud rather than discarding.
+        if (typedDetention > 0 && Math.Abs(typedDetention - f.DetentionHours) > 0.25)
+            f.Explain.Add($"You reported {typedDetention:0.##} h of detention; the log works out to {f.DetentionHours:0.##} h. " +
+                          "I am paying the log.");
+
+        return f;
+    }
+
+    private static string Stamp(Trip trip, string kind)
+    {
+        var e = trip.Events.Where(x => x.Kind == kind)
+            .Select(x => GameClock.TryParse(x.GameTime)).Where(d => d != null)
+            .OrderBy(d => d!.Value).FirstOrDefault();
+        return e == null ? "?" : GameClock.Pretty(e.Value);
     }
 
     /// <summary>

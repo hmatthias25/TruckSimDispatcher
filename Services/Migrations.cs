@@ -21,6 +21,23 @@ public static class Migrations
         EnsureDiscoveredCities(s);
         EnsureTripFuelStops(s);
         EnsureHomeTimeArrangement(s);
+        ClearPhantomBankBalance(s);
+    }
+
+    /// <summary>
+    /// Older builds stamped the balance-reported timestamp on every status update, because the UI sent
+    /// 0 for an untouched box rather than "not reported". The app then believed the game held zero and
+    /// warned about a mismatch against its own perfectly correct figure — with no way out except
+    /// zeroing the books to match a phantom.
+    ///
+    /// A zero balance on a career that has been trading is not a real reading, so treat it as never
+    /// reported and ask for it properly. Nothing is destroyed; the ledger is untouched.
+    /// </summary>
+    private static void ClearPhantomBankBalance(AppState s)
+    {
+        if (s.Status.AtsBankBalance != 0) return;
+        if (string.IsNullOrWhiteSpace(s.Status.AtsBalanceGameTime)) return;
+        s.Status.AtsBalanceGameTime = "";
     }
 
     /// <summary>

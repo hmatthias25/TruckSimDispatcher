@@ -135,7 +135,73 @@ public static class SafetyService
         var code = string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code;
         inc.Number = $"{code}-INC-{++s.Counters.Incident:0000}";
         if (string.IsNullOrWhiteSpace(inc.GameTime)) inc.GameTime = s.Status.GameTime;
+        inc.LoadCountAtIncident = s.Trips.Count(t => t.Status == "Delivered");
+        if (inc.AgesOffAfterLoads <= 0) inc.AgesOffAfterLoads = AgeOffFor(inc.Severity);
         s.Incidents.Insert(0, inc);
+        return inc;
+    }
+
+    /// <summary>How much clean work it takes to put an incident behind you. Severity scales it.</summary>
+    public static int AgeOffFor(string severity) => severity switch
+    {
+        "Major" => 60,
+        "Serious" => 40,
+        "Moderate" => 25,
+        _ => 20
+    };
+
+    /// <summary>
+    /// Driver-fault preventable incidents that still count against hiring.
+    ///
+    /// Excludes anything forgiven by Safety and anything that has aged off through clean work. The
+    /// incident stays on the record permanently — this is only about whether it still bars the driver
+    /// from a carrier, because a mistake in the first week should not end a career.
+    /// </summary>
+    public static List<Incident> CountingFaults(AppState s)
+    {
+        var loadsNow = s.Trips.Count(t => t.Status == "Delivered");
+        return s.Incidents
+            .Where(i => i.FaultAttribution == "Driver" && i.Preventable)
+            .Where(i => string.IsNullOrWhiteSpace(i.ForgivenGameTime))
+            .Where(i => i.AgesOffAfterLoads <= 0 || loadsNow - i.LoadCountAtIncident < i.AgesOffAfterLoads)
+            .ToList();
+    }
+
+    /// <summary>Clean loads still needed before an incident stops counting. 0 = already clear.</summary>
+    public static int LoadsToAgeOff(AppState s, Incident inc)
+    {
+        if (!string.IsNullOrWhiteSpace(inc.ForgivenGameTime)) return 0;
+        if (inc.AgesOffAfterLoads <= 0) return 0;
+        var loadsNow = s.Trips.Count(t => t.Status == "Delivered");
+        return Math.Max(0, inc.AgesOffAfterLoads - (loadsNow - inc.LoadCountAtIncident));
+    }
+
+    /// <summary>
+    /// Safety clearing an incident early — remedial training, a review that changed the picture, or a
+    /// re-attribution. Requires real work behind it: half the age-off period, so it is earned rather
+    /// than clicked away the moment it becomes inconvenient.
+    /// </summary>
+    public static Incident Forgive(AppState s, string number, string reason, bool force)
+    {
+        var inc = s.Incidents.FirstOrDefault(i => i.Number == number)
+                  ?? throw new InvalidOperationException("No such incident.");
+        if (!string.IsNullOrWhiteSpace(inc.ForgivenGameTime))
+            throw new InvalidOperationException($"{inc.Number} has already been cleared.");
+        if (inc.FaultAttribution != "Driver" || !inc.Preventable)
+            throw new InvalidOperationException($"{inc.Number} is not a preventable driver-fault incident — it never counted against you.");
+
+        var loadsNow = s.Trips.Count(t => t.Status == "Delivered");
+        var clean = loadsNow - inc.LoadCountAtIncident;
+        var required = Math.Max(1, inc.AgesOffAfterLoads / 2);
+        if (clean < required && !force)
+            throw new InvalidOperationException(
+                $"{inc.Number} needs {required} clean loads before Safety will review it early; you have run {clean}. " +
+                $"It ages off on its own after {inc.AgesOffAfterLoads}.");
+
+        inc.ForgivenGameTime = s.Status.GameTime;
+        inc.ForgivenReason = string.IsNullOrWhiteSpace(reason)
+            ? $"Cleared by Safety after {clean} clean load(s)."
+            : reason;
         return inc;
     }
 
@@ -162,6 +228,72 @@ public static class SafetyService
         next = Math.Clamp(next, 0, Ladder.Length - 1);
         return Ladder[next];
     }
+
+    /// <summary>
+    /// Files an incident and applies the consequence in one step.
+    ///
+    /// The driver reports what happened; the company decides what follows. Letting the driver pick
+    /// their own level made the ladder meaningless — nobody chooses Termination — and inverted the one
+    /// relationship the app is built on. <see cref="RecommendDiscipline"/> already knew the right
+    /// answer; this makes it the decision rather than a suggestion the driver may ignore.
+    /// </summary>
+    public static (Incident Incident, DisciplineAction? Action) FileAndDecide(AppState s, Incident inc)
+    {
+        var created = RecordIncident(s, inc);
+        var level = RecommendDiscipline(s, created);
+        if (level == null) return (created, null);
+
+        var action = Issue(s, level,
+            $"{created.Kind} on {(string.IsNullOrWhiteSpace(created.TripNumber) ? "no trip" : created.TripNumber)} — {created.Description}".Trim(),
+            CorrectiveFor(level, created), created.Number, ExpiryFor(level));
+        action.DriverAcknowledged = false;
+        return (created, action);
+    }
+
+    /// <summary>What the company requires of the driver at each rung of the ladder.</summary>
+    public static string CorrectiveFor(string level, Incident inc) => level switch
+    {
+        "Coaching" =>
+            "Coaching conversation logged. Slow down in the situation that caused this and it goes no further — " +
+            "this ages off your record after twenty clean loads.",
+        "WrittenWarning" =>
+            "Written warning on file. Safety is watching the next stretch closely. Another preventable event " +
+            "moves you to a final warning.",
+        "FinalWarning" =>
+            "Final warning. One more preventable incident and you are out of the truck. Take the extra minute " +
+            "at every dock and every tight turn.",
+        "EquipmentDowngrade" =>
+            "You are being moved to a lesser unit while you prove this is behind you. Fifteen clean loads earns " +
+            "the better truck back.",
+        "Suspension" =>
+            "Suspended from dispatch pending review. No freight moves under your name until Safety reinstates you.",
+        "Termination" =>
+            "Employment terminated. The record follows you — a future carrier will see it when you apply.",
+        _ => "See Safety for what happens next."
+    };
+
+    /// <summary>Heavier actions stay on the record longer.</summary>
+    private static int ExpiryFor(string level) => level switch
+    {
+        "Coaching" => 20,
+        "WrittenWarning" => 30,
+        "FinalWarning" => 45,
+        "EquipmentDowngrade" => 30,
+        _ => 0            // suspension and termination do not age off on their own
+    };
+
+    /// <summary>The driver signing that they have been told. Not optional, and not an agreement.</summary>
+    public static DisciplineAction Acknowledge(AppState s, string number)
+    {
+        var a = s.Discipline.FirstOrDefault(x => x.Number == number)
+                ?? throw new InvalidOperationException("No such disciplinary action.");
+        a.DriverAcknowledged = true;
+        return a;
+    }
+
+    /// <summary>Actions the driver has been issued but not yet signed for.</summary>
+    public static List<DisciplineAction> Unacknowledged(AppState s) =>
+        s.Discipline.Where(d => !d.DriverAcknowledged && d.Level != "Commendation").ToList();
 
     public static List<DisciplineAction> ActiveDiscipline(AppState s, int loadsNow) =>
         s.Discipline
