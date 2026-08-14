@@ -391,7 +391,8 @@ const MAX_EDGE = 2000;
 
 function addImageFile(file) {
   if (!file || !/^image\/(png|jpe?g)$/.test(file.type)) return;
-  if (SHOTS.length >= 8) return toast('Eight screenshots is the limit per read.', 'bad');
+  // The server reads these in small batches, so there is no practical ceiling — this is a sanity stop.
+  if (SHOTS.length >= 24) return toast('Twenty-four screenshots is the limit per read.', 'bad');
   const reader = new FileReader();
   reader.onload = () => {
     const img = new Image();
@@ -752,8 +753,8 @@ function screenshotHtml() {
       <b>Ctrl+V to paste a screenshot</b>
       <span>or drop image files here, or <label class="linky" for="shot-file">browse</label></span>
       <input type="file" id="shot-file" accept="image/png,image/jpeg" multiple class="offscreen">
-      <span class="hint" style="margin:0">The board only shows ~10 jobs at a time — paste several
-        screenshots and they are read together.</span>
+      <span class="hint" style="margin:0">The board only shows ~10 jobs at a time — paste as many
+        screenshots as you need. They are read in small batches and merged, and duplicates are dropped.</span>
     </div>
 
     ${SHOTS.length ? `<div class="shots">${SHOTS.map((s, i) => `

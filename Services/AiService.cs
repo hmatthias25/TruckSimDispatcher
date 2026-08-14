@@ -254,6 +254,17 @@ public static class AiService
     /// confirmation — a misread payout or mileage would corrupt every downstream feasibility and
     /// rate decision, so nothing here goes onto the board unreviewed.
     /// </summary>
+    /// <summary>
+    /// Screenshots per request. A full ATS board is about ten rows, and ten rows of structured JSON is
+    /// a lot of output — seven boards in one call exhausted the token budget and failed the whole read.
+    /// Reading in small batches and merging keeps every request well inside its budget, so the driver
+    /// can paste as many boards as they like without having to know any of this.
+    /// </summary>
+    private const int BatchSize = 3;
+
+    /// <summary>Generous ceiling. Not a limit anyone will meet in practice — the board is ten rows.</summary>
+    private const int MaxScreenshots = 24;
+
     public static async Task<ExtractionResult> ExtractLoadsAsync(
         AppState state, List<ScreenshotImage> images, CancellationToken ct = default)
     {
@@ -262,25 +273,80 @@ public static class AiService
             return new ExtractionResult { Ok = false, Error = "Screenshot import needs an Anthropic API key — add one in Settings → In-app dispatcher. Everything else in the app works without it." };
         if (images == null || images.Count == 0)
             return new ExtractionResult { Ok = false, Error = "No screenshots were supplied." };
-        if (images.Count > 8)
-            return new ExtractionResult { Ok = false, Error = "Send at most 8 screenshots at a time." };
+        if (images.Count > MaxScreenshots)
+            return new ExtractionResult { Ok = false, Error = $"That is {images.Count} screenshots. Send at most {MaxScreenshots} at a time." };
 
         var model = string.IsNullOrWhiteSpace(cfg.AnthropicModel) ? "claude-opus-5" : cfg.AnthropicModel.Trim();
 
+        var batches = images
+            .Select((img, i) => (img, i))
+            .GroupBy(x => x.i / BatchSize)
+            .Select(g => g.Select(x => x.img).ToList())
+            .ToList();
+
+        var merged = new ExtractionResult { Ok = true, Model = model };
+        var notes = new List<string>();
+        var failures = new List<string>();
+        var offset = 0;
+
+        foreach (var batch in batches)
+        {
+            var part = await ExtractBatchAsync(cfg, model, batch, offset, images.Count, ct);
+            offset += batch.Count;
+
+            if (!part.Ok)
+            {
+                // One bad batch must not lose the rows the others read successfully.
+                failures.Add(part.Error);
+                continue;
+            }
+
+            merged.Loads.AddRange(part.Loads);
+            if (!string.IsNullOrWhiteSpace(part.Notes)) notes.Add(part.Notes);
+            merged.InputTokens += part.InputTokens;
+            merged.OutputTokens += part.OutputTokens;
+        }
+
+        // The same job can appear on two screenshots when boards overlap or are re-pasted.
+        merged.Loads = Deduplicate(merged.Loads);
+
+        if (merged.Loads.Count == 0)
+            return new ExtractionResult
+            {
+                Ok = false,
+                Model = model,
+                Error = failures.Count > 0
+                    ? string.Join(" ", failures.Distinct())
+                    : "Nothing readable in those screenshots."
+            };
+
+        if (failures.Count > 0)
+            notes.Add($"{failures.Count} of {batches.Count} batches could not be read: {string.Join(" ", failures.Distinct())}");
+        if (batches.Count > 1)
+            notes.Insert(0, $"Read in {batches.Count} batches of up to {BatchSize} screenshots.");
+
+        merged.Notes = string.Join(" ", notes);
+        return merged;
+    }
+
+    /// <summary>One request's worth of screenshots.</summary>
+    private static async Task<ExtractionResult> ExtractBatchAsync(AppSettings cfg, string model,
+        List<ScreenshotImage> batch, int offset, int total, CancellationToken ct)
+    {
         try
         {
             var client = new AnthropicClient { ApiKey = cfg.AnthropicApiKey.Trim() };
 
             var content = new List<ContentBlockParam>();
-            for (var i = 0; i < images.Count; i++)
+            for (var i = 0; i < batch.Count; i++)
             {
-                content.Add(new TextBlockParam { Text = $"Screenshot {i + 1} of {images.Count}:" });
+                content.Add(new TextBlockParam { Text = $"Screenshot {offset + i + 1} of {total}:" });
                 content.Add(new ImageBlockParam
                 {
                     Source = new Base64ImageSource
                     {
-                        Data = images[i].DataBase64,
-                        MediaType = images[i].MediaType == "image/jpeg"
+                        Data = batch[i].DataBase64,
+                        MediaType = batch[i].MediaType == "image/jpeg"
                             ? MediaType.ImageJpeg
                             : MediaType.ImagePng
                     }
@@ -294,7 +360,7 @@ public static class AiService
             var response = await client.Messages.Create(new MessageCreateParams
             {
                 Model = model,
-                MaxTokens = 12000,
+                MaxTokens = 16000,
                 Thinking = new ThinkingConfigAdaptive(),
                 OutputConfig = new OutputConfig
                 {
@@ -311,7 +377,7 @@ public static class AiService
             if (response.StopReason == "refusal")
                 return new ExtractionResult { Ok = false, Model = model, Error = "The model declined to read these images." };
             if (response.StopReason == "max_tokens")
-                return new ExtractionResult { Ok = false, Model = model, Error = "Ran out of output room — send fewer screenshots at once." };
+                return new ExtractionResult { Ok = false, Model = model, Error = "A batch ran out of output room even at three screenshots — try pasting fewer, larger-text captures." };
 
             var text = string.Join("", response.Content
                 .Select(b => b.Value).OfType<TextBlock>().Select(t => t.Text));
@@ -343,6 +409,24 @@ public static class AiService
         {
             return new ExtractionResult { Ok = false, Model = model, Error = Describe(ex) };
         }
+    }
+
+    /// <summary>
+    /// Drops rows that are the same job read twice — boards overlap between screenshots, and a driver
+    /// re-pasting one they already had should not end up with the load on the board twice.
+    /// </summary>
+    private static List<ExtractedLoad> Deduplicate(List<ExtractedLoad> loads)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var kept = new List<ExtractedLoad>();
+        foreach (var l in loads)
+        {
+            var key = string.Join("|",
+                (l.Cargo ?? "").Trim(), (l.DestCity ?? "").Trim(), (l.DestState ?? "").Trim(),
+                Math.Round(l.LoadedMiles), Math.Round(l.GameRevenue));
+            if (seen.Add(key)) kept.Add(l);
+        }
+        return kept;
     }
 
     private class ExtractionPayload
