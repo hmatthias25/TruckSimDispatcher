@@ -142,6 +142,7 @@ public static class DispatchEngine
             // taking it over a better-paying load, and what to do once the trailer comes off.
             foreach (var line in HomeTime.HomeRunInstructions(s, pick.Load.DestCity, pick.Load.DestState))
                 decision.DispatchNotes.Add(line);
+            if (Dedicated.BoardNote(s) is { } dedNote) decision.DispatchNotes.Add(dedNote);
             decision.DispatchNotes.Add("After you are loaded, report: loaded game time, odometer, actual trailer weight and trailer damage.");
             return decision;
         }
@@ -201,6 +202,14 @@ public static class DispatchEngine
             need.Add("Current truck location (city and state).");
         if (string.IsNullOrWhiteSpace(s.Hos.UpdatedUtc) && string.IsNullOrWhiteSpace(s.Hos.AsOfGameTime))
             need.Add("Current HOS clocks from your HOS display (drive, shift, break, 70-hour).");
+        if (Dedicated.AwaitingAccount(s))
+            need.Add("Which customer you are dedicated to — set it on the Career tab so I can tell your freight from the rest of the board.");
+        // A dedicated driver's shipper is how the account is recognised, so it stops being optional.
+        if (Dedicated.Active(s))
+            foreach (var l in s.Board.Where(l => string.IsNullOrWhiteSpace(l.Shipper)
+                                                 && string.IsNullOrWhiteSpace(l.Receiver)
+                                                 && string.IsNullOrWhiteSpace(l.Broker)))
+                need.Add($"Who the {l.Cargo} to {Place(l.DestCity, l.DestState)} belongs to — on dedicated I need the company name to know if it is yours.");
         foreach (var l in s.Board)
         {
             if (l.LoadedMiles <= 0)
@@ -291,6 +300,17 @@ public static class DispatchEngine
 
         // ---- hard gates
         e.HardFails.AddRange(QualificationFails(s, load, trailer));
+
+        // Dedicated: the board is full of other companies' freight, and none of it is yours. Only
+        // lifted when the account genuinely has nothing here — see Dedicated.CanRunOffAccount.
+        if (Dedicated.Active(s) && !Dedicated.IsOnAccount(s, load))
+        {
+            if (Dedicated.CanRunOffAccount(s, out _))
+                e.Cons.Add($"Off-account: you are dedicated to {s.Driver.DedicatedAccount}. " +
+                           "Running this is an exception and it goes on the record as one.");
+            else
+                e.HardFails.Add(Dedicated.RejectionReason(s, load));
+        }
 
         // ---- trailer: solvable by swapping, so it blocks this load without killing it
         if (trailer != null && !string.IsNullOrWhiteSpace(load.TrailerType) &&
@@ -633,6 +653,20 @@ public static class DispatchEngine
 
         if (eval.Feasibility.Verdict == "Tight")
             trip.Notes = "Authorized as an exception with sub-buffer slack. Dispatcher owns any service failure on this load.";
+
+        // Off-account freight is allowed when the account is dry, but it is recorded as the exception
+        // it is rather than quietly counted as a normal dedicated run.
+        if (Dedicated.Active(s) && !Dedicated.IsOnAccount(s, load))
+        {
+            s.Driver.OffAccountLoads++;
+            trip.Notes = $"Off-account exception — {s.Driver.DedicatedAccount} had nothing available. {trip.Notes}".Trim();
+            trip.Events.Add(new TripEvent
+            {
+                GameTime = s.Status.GameTime,
+                Kind = "Note",
+                Detail = $"Run off-account. Driver is dedicated to {s.Driver.DedicatedAccount}."
+            });
+        }
 
         // Record on the trip itself that this was a ride home, so the close-out audit can repeat the
         // instruction without having to re-derive whether it still applies.

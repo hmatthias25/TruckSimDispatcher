@@ -683,7 +683,13 @@ app.MapGet("/api/fleetops", () => Results.Ok(new
 {
     summary = FleetOpsService.Summary(store.State),
     drivers = store.State.HiredDrivers,
-    reports = store.State.FleetReports.Take(20).ToList()
+    reports = store.State.FleetReports.Take(20).ToList(),
+    // Decisions the last report left open: seats to fill, terminations to confirm, units to trade.
+    openUnits = FleetOpsService.OpenUnitDecisions(store.State),
+    pendingTerminations = store.State.FleetReports
+        .SelectMany(r => r.Personnel).Where(p => p.Pending).ToList(),
+    retirements = store.State.FleetReports.FirstOrDefault()?.Retirements ?? new List<RetirementRecommendation>(),
+    recommendedTruck = Seed.RecommendedTruck(store.State)
 }));
 
 app.MapPost("/api/fleetops/drivers", (HiredDriver d) => Results.Ok(store.Mutate(s =>
@@ -699,6 +705,20 @@ app.MapDelete("/api/fleetops/drivers/{id}", (string id) => Results.Ok(store.Muta
 {
     FleetOpsService.RemoveDriver(s, id);
     return Snapshot(s);
+})));
+
+app.MapPost("/api/fleetops/terminate", (TerminateRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var change = FleetOpsService.Terminate(s, req.DriverId, req.Reason ?? "");
+    store.Log(s, "career", $"{change.DriverName} terminated: {string.Join(" ", change.Evidence)}");
+    return new { snapshot = Snapshot(s), change };
+})));
+
+app.MapPost("/api/fleetops/retire", (RetireRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var message = FleetOpsService.RetireUnit(s, req.Unit, req.ReplacementUnit ?? "");
+    store.Log(s, "maintenance", message);
+    return new { snapshot = Snapshot(s), message };
 })));
 
 app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mutate(s =>
@@ -946,6 +966,13 @@ app.MapPost("/api/career/home-time", (HomeTimeRequest req) => Results.Ok(store.M
     return Snapshot(s);
 })));
 
+app.MapPost("/api/career/dedicated", (DedicatedRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var message = Dedicated.SetAccount(s, req.OnDedicated, req.Account ?? "");
+    store.Log(s, "career", message);
+    return new { snapshot = Snapshot(s), message };
+})));
+
 app.MapPost("/api/career/pay", (PayAdjustRequest req) => Results.Ok(store.Mutate(s =>
 {
     var message = CareerService.AdjustPay(s, req.LoadedCpm, req.DeadheadCpm, req.Reason ?? "");
@@ -1094,6 +1121,16 @@ object Snapshot(AppState? given = null)
         {
             garageOpportunities = DiscoveryService.GarageOpportunityView(s),
             unacknowledged = SafetyService.Unacknowledged(s),
+            dedicated = new
+            {
+                carrierRuns = Dedicated.CarrierRunsDedicated(s),
+                s.Driver.OnDedicated,
+                s.Driver.DedicatedAccount,
+                s.Driver.OffAccountLoads,
+                awaitingAccount = Dedicated.AwaitingAccount(s),
+                onAccountCount = Dedicated.Active(s) ? s.Board.Count(b => Dedicated.IsOnAccount(s, b)) : 0,
+                note = Dedicated.BoardNote(s)
+            },
             // Which incidents still bar the driver from carriers, and how close each is to clearing.
             faultStanding = s.Incidents
                 .Where(i => i.FaultAttribution == "Driver" && i.Preventable)
@@ -1225,6 +1262,9 @@ record DiscoverRequest(string City, string? State);
 record TrimRequest(bool IncludeYards);
 record BalanceRequest(decimal? Balance, string? GameTime);
 record ForgiveRequest(string? Reason, bool Force);
+record TerminateRequest(string DriverId, string? Reason);
+record RetireRequest(string Unit, string? ReplacementUnit);
+record DedicatedRequest(bool OnDedicated, string? Account);
 record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? TransmissionPreference, bool AddTrailers);
 record AdoptRequest(string Path);
 record HomeTimeRequest(string Preference);

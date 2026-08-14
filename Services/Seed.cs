@@ -235,6 +235,25 @@ public static class Seed
     }
 
     /// <summary>
+    /// The tractor the company would put this driver in, described well enough to go and buy it.
+    ///
+    /// Told to the player whenever they have to make the purchase themselves — replacing a traded
+    /// unit, or filling an empty seat — because "buy a truck" is not an instruction. It follows the
+    /// carrier's equipment standard and the driver's transmission preference, so what they come back
+    /// with matches what the app expects to see on the book.
+    /// </summary>
+    public static string RecommendedTruck(AppState s)
+    {
+        var pref = s.Application?.TransmissionPreference ?? "either";
+        var spec = SpecsForStandard(s.Company.EquipmentStars, pref).FirstOrDefault();
+        if (spec == null) return "any sleeper tractor you can afford";
+
+        return $"a {spec.Year}-or-newer {spec.Make} {spec.Model} — {spec.Engine} around {spec.Hp} hp, " +
+               $"{spec.Trans}, {spec.Cab.ToLowerInvariant()}, roughly {spec.Fuel:N0} gal of fuel. " +
+               $"Anything close to that spec is fine; match what you actually buy on the Fleet tab.";
+    }
+
+    /// <summary>
     /// Miles a carrier of this standard would hand over. A five-star fleet trades early, so their
     /// trucks are young; a one-star fleet runs them into the ground.
     /// </summary>

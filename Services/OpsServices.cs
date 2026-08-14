@@ -52,6 +52,9 @@ public static class MaintenanceService
             var t = s.Trucks.FirstOrDefault(x => x.Unit == wo.Unit);
             if (t != null)
             {
+                // What the company has spent on this unit is what decides its trade date.
+                if (wo.Cost > 0 && wo.PaidBy != "Driver")
+                    t.LifetimeRepairCost = Math.Round(t.LifetimeRepairCost + wo.Cost, 2);
                 t.DamagePct = wo.DamageAfter;
                 if (t.Status is "OutOfService" or "Shop" && wo.DamageAfter < s.Settings.Maintenance.MandatoryReviewPct)
                     t.Status = "InService";

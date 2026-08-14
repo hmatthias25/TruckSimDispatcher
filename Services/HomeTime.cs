@@ -164,6 +164,9 @@ public static class HomeTime
     /// </summary>
     public static EquipmentOrder? ConsiderTrailerReassignment(AppState s)
     {
+        // A dedicated driver is not re-rigged: the account decides the trailer, not the freight mix.
+        if (Dedicated.Active(s)) return null;
+
         var divisions = s.Company.Divisions?.Where(d => !string.IsNullOrWhiteSpace(d)).ToList() ?? new List<string>();
         if (divisions.Count < 2) return null;    // a one-division carrier has nothing to move you to
 
@@ -207,6 +210,9 @@ public static class HomeTime
 
     private static string TrailerTypeFor(string division) => (division ?? "").Trim() switch
     {
+        // Dedicated is not a trailer type — the customer's freight decides what you pull.
+        "Dedicated" => "",
+        "Intermodal" => "Dry Van",
         "Reefer" or "Refrigerated" => "Reefer",
         "Dry Van" or "Van" => "Dry Van",
         "Flatbed" or "Open Deck" => "Flatbed",

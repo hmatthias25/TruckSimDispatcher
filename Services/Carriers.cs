@@ -547,13 +547,14 @@ public static class Carriers
         return d;
     }
 
-    /// <summary>Turns a chosen carrier into the player's employer: company, terminals, pay.</summary>
     /// <summary>A carrier's equipment standard by code, for careers written before it was stored.</summary>
     public static int EquipmentStarsFor(string? code)
     {
         var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
-        return spec.Code == null ? 3 : spec.EquipmentStars;
+        return spec == null ? 3 : spec.EquipmentStars;
     }
+
+    /// <summary>Turns a chosen carrier into the player's employer: company, terminals, pay.</summary>
 
     public static void Employ(AppState s, string code, DriverApplication app)
     {

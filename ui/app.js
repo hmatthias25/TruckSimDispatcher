@@ -1656,13 +1656,62 @@ function equipmentByYardHtml() {
   </div>`;
 }
 
+/* ---- what the last fleet report left for you to decide
+   Drivers leaving, seats standing empty and trucks past their time are all consequences of the
+   period's numbers, so they surface together after the report is filed. */
+function fleetDecisionsHtml() {
+  const pending = FLEETOPS?.pendingTerminations || [];
+  const retire = FLEETOPS?.retirements || [];
+  const open = FLEETOPS?.openUnits || [];
+  if (!pending.length && !retire.length && !open.length) return '';
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Decisions from the last report</h2>
+      ${badge('warn', (pending.length + retire.length + open.length) + ' outstanding')}</div>
+
+    ${pending.map((p) => `<div class="callout stop">
+      <h4>${esc(p.headline)}</h4>
+      <ul>${p.evidence.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>
+      <p class="hint">It is your company — Safety recommends, you decide.</p>
+      <div class="row-actions">
+        <button class="btn danger" data-act="terminate-driver" data-id="${esc(p.driverId)}"
+          data-name="${esc(p.driverName)}">Terminate ${esc(p.driverName)}</button>
+        <button class="btn ghost" data-act="keep-driver" data-name="${esc(p.driverName)}">Keep them on</button>
+      </div></div>`).join('')}
+
+    ${retire.map((r) => `<div class="callout warn">
+      <h4>${esc(r.headline)}</h4>
+      <ul>${r.evidence.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>
+      <div class="row-actions">
+        <button class="btn" data-act="retire-unit" data-unit="${esc(r.unit)}"
+          data-mine="${r.isPlayerUnit ? '1' : ''}">Trade unit ${esc(r.unit)}</button>
+      </div></div>`).join('')}
+
+    ${open.length ? `<h3 class="sect">Trucks with nobody in them</h3>
+      ${open.map((u) => `<div class="callout info">
+        <h4>Unit ${esc(u.unit)} — ${esc(u.spec)}</h4>
+        <p>${num(u.serviceMiles)} mi · ${pct(u.damagePct)} damage${u.yard ? ' · based ' + esc(u.yard) : ''}</p>
+        <ul>
+          <li><b>Hire someone.</b> ${esc(u.hireNote)}</li>
+          <li><b>Take it yourself.</b> ${esc(u.takeNote)}</li>
+          <li><b>Leave it parked.</b> ${esc(u.parkNote)}</li>
+        </ul>
+        <p class="hint">${esc(u.buyNote)}</p>
+        <div class="row-actions">
+          <button class="btn" data-act="add-hire">Hire a driver for it</button>
+          ${u.betterThanYours ? `<button class="btn go" data-act="take-unit" data-unit="${esc(u.unit)}">Take it myself</button>` : ''}
+        </div></div>`).join('')}` : ''}
+  </div>`;
+}
+
 /* ---- hired drivers and their weekly production ---- */
 function fleetOpsHtml() {
   const f = S.views.fleetOps || { driverCount: 0, unassignedUnits: [] };
   const drivers = FLEETOPS?.drivers || [];
   const reports = FLEETOPS?.reports || [];
 
-  return `<div class="panel">
+  return `${fleetDecisionsHtml()}
+  <div class="panel">
     <div class="panel-head"><h2>Hired drivers</h2>
       <span class="sub">${f.activeCount || 0} active · ${f.reportCount || 0} report(s) filed</span>
       <div class="spacer"></div>
@@ -1789,7 +1838,7 @@ function editHireModal(id) {
         <select id="hd-skill">${['Trainee', 'Competent', 'Experienced', 'Veteran'].map((x) =>
           `<option ${d.skill === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <label>Status
-        <select id="hd-status">${['Active', 'OnLeave', 'Terminated'].map((x) =>
+        <select id="hd-status">${['Active', 'OnLeave', 'Resigned', 'Terminated'].map((x) =>
           `<option ${d.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <label>Wage share of revenue (0–0.9)<input id="hd-wage" type="number" step="0.05" min="0" max="0.9" value="${d.wageShare}"></label>
       <label>Home terminal
@@ -2355,6 +2404,48 @@ function viewSafety() {
 }
 
 /* ============================================================ CAREER */
+/* ---- dedicated: one customer, their freight only
+   The customer is named by the player, because the app cannot see which shippers exist in their
+   install or their map mods — and filtering a board against an invented company would be useless. */
+function dedicatedHtml() {
+  const d = S.views.dedicated;
+  if (!d || !d.carrierRuns) return '';
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Dedicated</h2>
+      ${d.onDedicated
+        ? (d.awaitingAccount ? badge('warn', 'customer not set') : badge('ok', esc(d.dedicatedAccount)))
+        : badge('mute', 'open board')}
+      <div class="spacer"></div>
+      <span class="sub">${esc(S.company.name)} runs dedicated freight</span></div>
+
+    <div class="callout ${d.awaitingAccount ? 'warn' : 'info'}">
+      <p><b>Dedicated means one customer.</b> You are assigned to a single account and haul their
+        freight only. Other companies' loads still show on the board — they are simply not yours.
+        In exchange the work is steadier and home time is more predictable, usually at a slightly
+        lower rate than open board.</p>
+      ${d.note ? `<p style="margin:0">${esc(d.note)}</p>` : ''}
+    </div>
+
+    <div class="grid2" style="align-items:end">
+      <label>Customer, exactly as it appears on your ATS board
+        <input id="ded-account" value="${esc(d.dedicatedAccount || '')}"
+          placeholder="e.g. Walmart, Sunny Fields, Trameri"></label>
+      <div class="row-actions" style="margin:0">
+        ${d.onDedicated
+          ? `<button class="btn primary" data-act="set-dedicated" data-on="1">${d.dedicatedAccount ? 'Change customer' : 'Set customer'}</button>
+             <button class="btn ghost" data-act="set-dedicated" data-on="">Come off dedicated</button>`
+          : `<button class="btn primary" data-act="set-dedicated" data-on="1">Go on a dedicated account</button>`}
+      </div>
+    </div>
+    <p class="hint">I cannot see your game, so I do not know which companies your board offers —
+      especially with map mods. Type the customer's name and I will match it against the shipper,
+      receiver or market on each load.</p>
+    ${d.offAccountLoads > 0 ? `<p class="hint"><b>${d.offAccountLoads}</b> load(s) run off-account by
+      exception. That only happens when your account has nothing on the board.</p>` : ''}
+  </div>`;
+}
+
 function viewCareer() {
   const c = S.views.career, st = c.stats;
   // Judge incidents against the allowance in force, so the tile agrees with the requirement below it.
@@ -2365,6 +2456,7 @@ function viewCareer() {
     <span class="pv">${esc(r.current)} / ${esc(r.required)} ${r.met ? '✓' : ''}</span></div>`).join('');
 
   return `
+  ${dedicatedHtml()}
   <div class="panel">
     <div class="panel-head"><h2>${esc(S.driver.name)} — ${esc(c.rankTitle)}</h2>
       ${badge(S.driver.status === 'Active' ? 'ok' : S.driver.status === 'Probation' ? 'warn' : 'bad', S.driver.status)}
@@ -3197,6 +3289,32 @@ async function handleAction(act, d, ev) {
     case 'goto-fleet': TAB = 'fleet';
       return run(async () => { FLEETOPS = await api('/fleetops'); });
     case 'load-fleetops': return run(async () => { FLEETOPS = await api('/fleetops'); });
+    case 'terminate-driver': {
+      const why = prompt(`Terminate ${d.name}?\n\nWhat goes on the file?`, 'Sustained poor performance.');
+      if (why === null) return;
+      return run(async () => {
+        const r = absorb(await api('/fleetops/terminate', 'POST', { driverId: d.id, reason: why }));
+        FLEETOPS = await api('/fleetops');
+        toast(`${d.name} terminated. Unit ${r.change.truckUnit || ''} is open.`, 'ok');
+      });
+    }
+    case 'keep-driver': return toast(`${d.name} stays on. It will come up again if the numbers do not improve.`, '');
+    case 'retire-unit': {
+      const mine = d.mine === '1';
+      const rep = prompt(mine
+        ? `Trade unit ${d.unit}.\n\nLeave blank and the company puts you in the best spare on the property.\nOr type the unit number of a replacement you have bought and added on the Fleet tab.`
+        : `Trade unit ${d.unit}.\n\nLeave blank to retire it with nobody moving.\nOr type the unit number of its replacement.`, '');
+      if (rep === null) return;
+      return run(async () => {
+        const r = absorb(await api('/fleetops/retire', 'POST', { unit: d.unit, replacementUnit: rep.trim() }));
+        FLEETOPS = await api('/fleetops');
+        toast(r.message, 'ok');
+      });
+    }
+    case 'take-unit': return run(async () => {
+      absorb(await api('/fleet/assign', 'POST', { truckUnit: d.unit, trailerUnit: null, force: false }));
+      FLEETOPS = await api('/fleetops');
+    }, 'You are in that unit now.');
     case 'add-hire': return editHireModal('');
     case 'edit-hire': return editHireModal(d.id);
     case 'save-hire': {
@@ -3499,6 +3617,17 @@ async function handleAction(act, d, ev) {
       { notes: sv('ri-note') })), 'Driver reinstated.');
 
     /* ---- career */
+    case 'set-dedicated': {
+      const on = d.on === '1';
+      if (on && !sv('ded-account'))
+        return toast('Type the customer name as it appears on your ATS board.', 'bad');
+      if (!on && !confirm('Come off the dedicated account and back on the open board?')) return;
+      return run(async () => {
+        const r = absorb(await api('/career/dedicated', 'POST',
+          { onDedicated: on, account: on ? sv('ded-account') : '' }));
+        toast(r.message, 'ok');
+      });
+    }
     case 'clear-probation': return run(async () => {
       const r = absorb(await api('/career/clear-probation', 'POST',
         { force: d.force === '1', note: 'Probation review' }));

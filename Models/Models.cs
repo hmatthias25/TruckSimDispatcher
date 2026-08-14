@@ -178,6 +178,19 @@ public class Driver
     public string LastHomeGameTime { get; set; } = "";
     /// <summary>Home times taken, for the driver file.</summary>
     public int HomeTimesTaken { get; set; }
+
+    /// <summary>
+    /// The driver is on a dedicated account: assigned to one customer, hauling their freight only.
+    ///
+    /// Set when the carrier runs a Dedicated division and the driver asked for it. The customer is
+    /// NOT invented — the app cannot see which shippers exist in the player's game or their mods, so
+    /// the player names it from what they actually see on the board, and dispatch filters to it.
+    /// </summary>
+    public bool OnDedicated { get; set; }
+    /// <summary>The customer, as they appear in ATS. Blank while the driver has not named them yet.</summary>
+    public string DedicatedAccount { get; set; } = "";
+    /// <summary>Loads run off-account by exception, so the pattern is visible rather than silent.</summary>
+    public int OffAccountLoads { get; set; }
     public List<TransferRequest> Transfers { get; set; } = new();
     public ProbationPlan Probation { get; set; } = new();
     /// <summary>Driver pay accrued but not yet paid out on a settlement.</summary>
@@ -309,6 +322,15 @@ public class Truck
     public string HomeTerminal { get; set; } = "";
     public double LastServiceMiles { get; set; }
     public double ServiceIntervalMiles { get; set; } = 25000;
+    /// <summary>
+    /// Everything the company has spent keeping this unit running. What turns a trade decision from a
+    /// hunch into an argument: a truck costing more in the shop than the payment is worth is finished,
+    /// whatever the odometer says.
+    /// </summary>
+    public decimal LifetimeRepairCost { get; set; }
+    /// <summary>Retired from the fleet — kept on the book so its trip history still resolves.</summary>
+    public bool Retired { get; set; }
+    public string RetiredGameTime { get; set; } = "";
     public decimal PurchasePrice { get; set; }
     public decimal MonthlyPayment { get; set; }
     public string Notes { get; set; } = "";
@@ -773,7 +795,7 @@ public class HiredDriver
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string Name { get; set; } = "";
     public string HiredGameDate { get; set; } = "";
-    /// <summary>Active | OnLeave | Terminated</summary>
+    /// <summary>Active | OnLeave | Resigned | Terminated. Only Active counts as running a unit.</summary>
     public string Status { get; set; } = "Active";
     public string AssignedTruckUnit { get; set; } = "";
     public string AssignedTrailerUnit { get; set; } = "";
@@ -786,7 +808,61 @@ public class HiredDriver
     public decimal LifetimeRevenue { get; set; }
     public decimal LifetimeWages { get; set; }
     public int ReportsFiled { get; set; }
+    /// <summary>
+    /// What each reporting period produced, so a run of bad numbers can be judged over time rather
+    /// than on one bad fortnight. A carrier does not sack a driver for a single slow period.
+    /// </summary>
+    public List<DriverPeriodResult> Periods { get; set; } = new();
+    /// <summary>Resigned | Terminated — set when they leave, alongside <see cref="Status"/>.</summary>
+    public string SeparationReason { get; set; } = "";
+    public string SeparatedGameTime { get; set; } = "";
     public string Notes { get; set; } = "";
+}
+
+/// <summary>One reporting period's production for a hired driver.</summary>
+public class DriverPeriodResult
+{
+    public string ReportNumber { get; set; } = "";
+    public string PeriodEndGame { get; set; } = "";
+    public decimal Revenue { get; set; }
+    public double Miles { get; set; }
+    public decimal Wages { get; set; }
+    public decimal Repairs { get; set; }
+    public double DamageAfter { get; set; }
+    /// <summary>Revenue per mile — the number a fleet manager actually judges a driver on.</summary>
+    public decimal RatePerMile { get; set; }
+}
+
+/// <summary>
+/// A driver leaving the company, resolved on the fleet report after the period's numbers are in.
+/// Terminations are recommended and confirmed; resignations simply happen.
+/// </summary>
+public class PersonnelChange
+{
+    public string DriverId { get; set; } = "";
+    public string DriverName { get; set; } = "";
+    /// <summary>Terminated | Resigned</summary>
+    public string Kind { get; set; } = "Resigned";
+    /// <summary>Recommended but not yet actioned — the player confirms a termination.</summary>
+    public bool Pending { get; set; }
+    public string Headline { get; set; } = "";
+    public List<string> Evidence { get; set; } = new();
+    public string TruckUnit { get; set; } = "";
+    public string TrailerUnit { get; set; } = "";
+}
+
+/// <summary>A unit past its useful life, with the numbers behind the call.</summary>
+public class RetirementRecommendation
+{
+    public string Unit { get; set; } = "";
+    public string UnitKind { get; set; } = "Truck";
+    public string Headline { get; set; } = "";
+    public List<string> Evidence { get; set; } = new();
+    public double ServiceMiles { get; set; }
+    public decimal RepairSpend { get; set; }
+    public double DamagePct { get; set; }
+    public string AssignedTo { get; set; } = "";
+    public bool IsPlayerUnit { get; set; }
 }
 
 /// <summary>A period's worth of hired-driver production, as read off the game and posted to the books.</summary>
@@ -805,6 +881,10 @@ public class FleetReport
     public List<string> Findings { get; set; } = new();
     /// <summary>Units the report put into the shop queue, with the work order raised for each.</summary>
     public List<RepairFlag> RepairsNeeded { get; set; } = new();
+    /// <summary>Drivers who left, or are recommended for termination, on this period's numbers.</summary>
+    public List<PersonnelChange> Personnel { get; set; } = new();
+    /// <summary>Units the trade cycle says it is time to replace.</summary>
+    public List<RetirementRecommendation> Retirements { get; set; } = new();
     public string FiledUtc { get; set; } = DateTime.UtcNow.ToString("o");
 }
 
