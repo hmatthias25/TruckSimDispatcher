@@ -149,7 +149,14 @@ public static class DispatchEngine
         // Nothing clean. Reject the board, but name the closest thing to a runnable load.
         decision.RejectAll = true;
         var tight = decision.Evaluations.FirstOrDefault(e => e.HardFails.Count == 0 && e.Feasibility.Verdict == "Tight");
-        decision.Headline = "Board rejected — nothing on it is worth committing the truck to.";
+
+        // Rejecting what was on offer at the dock is not the same as rejecting the city. Ask for the
+        // wider board before talking about repositioning — there may be plenty here we have not seen.
+        var onlyLocal = decision.Evaluations.Count > 0 && decision.Evaluations.All(e => e.Load.AtLocation);
+        decision.LocalOnly = onlyLocal;
+        decision.Headline = onlyLocal
+            ? $"Nothing worth running out of {Place(s.Status.LocationCity, s.Status.LocationState)} at this dock."
+            : "Board rejected — nothing on it is worth committing the truck to.";
 
         var why = new List<string>();
         foreach (var e in decision.Evaluations.Take(6))
@@ -166,6 +173,15 @@ public static class DispatchEngine
         {
             tight.Recommendation = "Backup";
             decision.DispatchNotes.Add($"Closest to runnable: {Place(tight.Load.OriginCity, tight.Load.OriginState)} → {Place(tight.Load.DestCity, tight.Load.DestState)} {tight.Load.Cargo}, but it leaves only {tight.Feasibility.SlackHours:0.#} h of slack against our {s.Settings.SafetyBufferHours:0.#} h buffer. I will not authorize that on a normal day. If you want it, say so and I will authorize it as an exception and own the call.");
+        }
+
+        if (onlyLocal)
+        {
+            decision.DispatchNotes.Add(
+                $"That was only what is on offer at this location. Before I send you anywhere empty, open the full " +
+                $"freight board for {Place(s.Status.LocationCity, s.Status.LocationState)} and show me that — " +
+                "there is usually more in the city than at the dock you are sitting on.");
+            return decision;
         }
 
         decision.DispatchNotes.Add(decision.ResetWatch

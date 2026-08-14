@@ -11,6 +11,9 @@ let RECON = null;
 let SHOTS = [];            // pending screenshots {mediaType, dataBase64, thumb, name}
 let EXTRACT = null;        // last extraction result, awaiting confirmation
 let DISCOVERY = null;      // "new city reached" notice awaiting acknowledgement
+/* Which board the driver is showing us: what is on offer at this dock, or the whole city. Starts
+   local because that is the first thing you see when the trailer comes off. */
+let BOARD_STAGE = 'local';
 let BUSY = '';             // label of an in-flight long operation
 
 const TABS = [
@@ -655,19 +658,37 @@ function viewDispatch() {
 
     <div>
       <div class="panel">
-        <div class="panel-head"><h2>Enter the freight board</h2>
+        <div class="panel-head"><h2>${BOARD_STAGE === 'local' ? 'Jobs at this location' : 'The city freight board'}</h2>
+          <div class="spacer"></div>
           <span class="sub">One row per job you can see in ATS.</span></div>
+
+        <div class="row-actions" style="margin:0 0 10px">
+          <button class="btn ${BOARD_STAGE === 'local' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="local">
+            Jobs at this location</button>
+          <button class="btn ${BOARD_STAGE === 'city' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="city">
+            Full city board</button>
+        </div>
+        <p class="hint">${BOARD_STAGE === 'local'
+          ? `In ATS: <b>find other load from this location</b>. Just the handful going out from where you are
+             standing — origin is filled in and there is no deadhead. Show me these first; if none of them
+             work I will ask for the whole city.`
+          : `Everything on offer in ${esc(st.locationCity || 'this city')}, including jobs you would deadhead to.`}</p>
+
         <div class="grid2">
           <label>Cargo<input id="b-cargo" placeholder="e.g. Frozen Foods"></label>
           <label>Trailer required
             <select id="b-trailer">${['', 'Dry Van', 'Reefer', 'Flatbed', 'Step Deck', 'Tanker', 'Lowboy', 'Car Hauler', 'Livestock', 'Log', 'Hopper', 'Dump']
               .map((x) => `<option value="${x}" ${(tr && tr.type === x) ? 'selected' : ''}>${x || '(same as assigned)'}</option>`).join('')}</select></label>
-          <label>Origin city<input id="b-ocity" value="${esc(st.locationCity)}"></label>
-          <label>Origin state<input id="b-ostate" class="up" maxlength="2" value="${esc(st.locationState)}"></label>
+          ${BOARD_STAGE === 'local'
+            ? `<input type="hidden" id="b-ocity" value="${esc(st.locationCity)}">
+               <input type="hidden" id="b-ostate" value="${esc(st.locationState)}">
+               <input type="hidden" id="b-dh" value="0">`
+            : `<label>Origin city<input id="b-ocity" value="${esc(st.locationCity)}"></label>
+               <label>Origin state<input id="b-ostate" class="up" maxlength="2" value="${esc(st.locationState)}"></label>`}
           <label>Destination city<input id="b-dcity" placeholder="e.g. Boise"></label>
           <label>Destination state<input id="b-dstate" class="up" maxlength="2" placeholder="ID"></label>
           <label>Loaded miles<input id="b-miles" type="number" step="1" min="0" placeholder="ATS distance"></label>
-          <label>Deadhead miles<input id="b-dh" type="number" step="1" min="0" value="0"></label>
+          ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead miles<input id="b-dh" type="number" step="1" min="0" value="0"></label>`}
           <label>Job revenue $<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
           <label>Hours to deliver<input id="b-deadline" type="number" step="0.5" min="0" placeholder="from the job listing"></label>
           <label>Weight lb<input id="b-weight" type="number" step="1" min="0" placeholder="optional"></label>
@@ -857,7 +878,16 @@ function decisionHtml() {
     ${d.infoNeeded.length ? `<div class="callout warn"><h4>I need this before committing freight</h4>
       <ul>${d.infoNeeded.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''}
     ${d.evaluations.map((e) => loadCardHtml(e, d)).join('')}
-    ${d.rejectAll && !d.infoNeeded.length ? `<div class="row-actions">
+    ${d.localOnly ? `<div class="callout info">
+      <h4>Next step: the wider board</h4>
+      <p>Nothing at this dock is worth running. Open the full freight board for
+        <b>${esc(S.status.locationCity)}</b> in ATS and enter it — that is a different, usually longer
+        list than what is offered where you are parked.</p>
+      <div class="row-actions">
+        <button class="btn primary" data-act="board-stage" data-stage="city">Show the city board</button>
+        <button class="btn ghost" data-act="reject-all">Nothing in the city either — log it</button>
+      </div></div>`
+    : d.rejectAll && !d.infoNeeded.length ? `<div class="row-actions">
       <button class="btn danger" data-act="reject-all">Reject the board &amp; log it</button></div>` : ''}
   </div>`;
 }
@@ -2917,9 +2947,11 @@ async function handleAction(act, d, ev) {
     }
 
     /* ---- board */
+    case 'board-stage': BOARD_STAGE = d.stage; return render();
     case 'board-add': {
       const load = {
         cargo: sv('b-cargo') || 'Freight', trailerType: sv('b-trailer'),
+        atLocation: BOARD_STAGE === 'local',
         originCity: sv('b-ocity'), originState: sv('b-ostate'),
         destCity: sv('b-dcity'), destState: sv('b-dstate'),
         loadedMiles: fv('b-miles'), deadheadMiles: fv('b-dh'),
@@ -3094,6 +3126,8 @@ async function handleAction(act, d, ev) {
       });
       absorb(r); TRIP_AUDIT = r.audit;
       FUEL = { tripId: null, seeded: 0, rows: [] };
+      // New dock, new starting point: show me what is going out from here before the whole city.
+      BOARD_STAGE = 'local';
       toast(r.audit.headline, r.audit.trip.serviceResult === 'Late' ? 'bad' : 'ok');
     });
     case 'show-cancel': return cancelModal(d.id);

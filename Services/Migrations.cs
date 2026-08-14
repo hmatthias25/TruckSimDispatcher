@@ -22,6 +22,18 @@ public static class Migrations
         EnsureTripFuelStops(s);
         EnsureHomeTimeArrangement(s);
         ClearPhantomBankBalance(s);
+        EnsureEquipmentStandard(s);
+    }
+
+    /// <summary>
+    /// Careers written before the carrier's equipment standard was stored have no idea what tier of
+    /// truck their employer runs. Look it up from the carrier code so upgrades and stocked yards
+    /// issue the right equipment from here on. Nothing already in the fleet is touched.
+    /// </summary>
+    private static void EnsureEquipmentStandard(AppState s)
+    {
+        if (s.Company.EquipmentStars > 0) return;
+        s.Company.EquipmentStars = Carriers.EquipmentStarsFor(s.Company.Code);
     }
 
     /// <summary>

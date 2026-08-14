@@ -32,28 +32,28 @@ public static class Carriers
         new("Schneider National", "SNI",
             new[] { "Dry Van", "Intermodal", "Dedicated", "Tanker" }, "Large",
             "Green Bay", "WI", new[] { "Dallas,TX", "Charlotte,NC", "Phoenix,AZ", "Chicago,IL" },
-            0.52m, 0.42m, 0, 0, 0, 99, 100, false, false, true, false, 3, 2, 2,
+            0.52m, 0.42m, 0, 0, 0, 99, 100, false, false, true, false, 2, 2, 2,
             "One of the largest carriers in North America, running dry van, intermodal drayage and dedicated fleets out of Green Bay. Runs one of the industry's biggest driver-training programmes and regularly hires drivers straight out of CDL school.",
             "Hires inexperienced drivers through their training programme."),
 
         new("Werner Enterprises", "WER",
             new[] { "Dry Van", "Dedicated", "Reefer", "Intermodal" }, "Large",
             "Omaha", "NE", new[] { "Dallas,TX", "Atlanta,GA", "Phoenix,AZ" },
-            0.50m, 0.40m, 0, 0, 0, 99, 100, false, false, true, false, 3, 2, 2,
+            0.50m, 0.40m, 0, 0, 0, 99, 100, false, false, true, false, 2, 2, 2,
             "Omaha-based nationwide truckload carrier running van, dedicated, temperature-controlled and intermodal freight. Long-standing entry point for new drivers.",
             "Takes recent CDL graduates."),
 
         new("Knight-Swift Transport", "KNX",
             new[] { "Dry Van", "Intermodal", "Reefer", "Dedicated" }, "Large",
             "Phoenix", "AZ", new[] { "Dallas,TX", "Atlanta,GA", "Memphis,TN", "Denver,CO" },
-            0.51m, 0.41m, 0, 0, 0, 99, 100, false, false, true, false, 3, 2, 2,
+            0.51m, 0.41m, 0, 0, 0, 99, 100, false, false, true, false, 2, 2, 2,
             "The largest truckload carrier in the United States after the Knight and Swift merger, headquartered in Phoenix. Van, reefer, intermodal and dedicated across the whole country.",
             "Hires new CDL holders."),
 
         new("C.R. England", "CRE",
             new[] { "Reefer", "Dedicated", "Dry Van" }, "Large",
             "Salt Lake City", "UT", new[] { "Dallas,TX", "Indianapolis,IN", "Phoenix,AZ" },
-            0.53m, 0.43m, 0, 0, 0, 99, 100, false, false, true, false, 3, 2, 2,
+            0.53m, 0.43m, 0, 0, 0, 99, 100, false, false, true, false, 2, 2, 2,
             "Salt Lake City refrigerated carrier, one of the biggest reefer fleets in the country, with dedicated and van divisions alongside. Operates large driver-training and hiring programmes for people entering the industry.",
             "Trains and hires inexperienced drivers."),
 
@@ -548,10 +548,20 @@ public static class Carriers
     }
 
     /// <summary>Turns a chosen carrier into the player's employer: company, terminals, pay.</summary>
+    /// <summary>A carrier's equipment standard by code, for careers written before it was stored.</summary>
+    public static int EquipmentStarsFor(string? code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        return spec.Code == null ? 3 : spec.EquipmentStars;
+    }
+
     public static void Employ(AppState s, string code, DriverApplication app)
     {
         var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase))
                    ?? throw new InvalidOperationException("No such carrier.");
+
+        // Garages the driver bought in ATS survive a change of employer — the app cannot un-buy them.
+        var keptTerminals = s.Company.Terminals.Count > 0 ? s.Company.Terminals.ToList() : null;
 
         s.Company = new Company
         {
@@ -562,20 +572,31 @@ public static class Carriers
             TerminalCity = spec.HqCity,
             TerminalState = spec.HqState,
             Founded = "2009",
+            EquipmentStars = spec.EquipmentStars,
             Divisions = spec.Divisions.ToList(),
             OperatingAuthorityNotes = $"48-state common carrier authority. {string.Join(" / ", spec.Divisions)} divisions."
         };
 
+        // Yards the driver already owns stay theirs — they bought those garages in ATS and switching
+        // employer does not repossess them. Only the headquarters moves.
+        //
+        // The carrier's other yards are deliberately NOT created: a yard in a city the driver has not
+        // driven to would never see cargo, because ATS does not generate freight for undiscovered
+        // cities. They appear as the driver reaches them. See DiscoveryService.
+        var existing = keptTerminals ?? new List<Terminal>();
         s.Company.Terminals.Clear();
-        s.Company.Terminals.Add(Migrations.BuildTerminal(s, spec.HqCity, spec.HqState, isHq: true, "Large"));
-        for (var i = 0; i < spec.OtherYards.Length; i++)
+        s.Company.Terminals.AddRange(existing);
+
+        var hq = s.Company.Terminals.FirstOrDefault(t =>
+            t.City.Equals(spec.HqCity, StringComparison.OrdinalIgnoreCase));
+        if (hq == null)
         {
-            var parts = spec.OtherYards[i].Split(',');
-            s.Company.Terminals.Add(Migrations.BuildTerminal(
-                s, parts[0].Trim(), parts.Length > 1 ? parts[1].Trim() : "",
-                isHq: false, i == 0 ? "Medium" : "Small"));
+            hq = Migrations.BuildTerminal(s, spec.HqCity, spec.HqState, isHq: true, "Small");
+            s.Company.Terminals.Add(hq);
         }
+        foreach (var t in s.Company.Terminals) t.IsHeadquarters = t == hq;
         Migrations.SyncHeadquarters(s);
+        DiscoveryService.SyncOwnership(s);
         s.Settings.FreightPrefix = spec.Code;
 
         Seed.ApplyDefaultAccounts(s);

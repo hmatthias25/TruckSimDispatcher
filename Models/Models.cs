@@ -125,6 +125,12 @@ public class Company
     [Obsolete("Superseded by Terminals; retained so older career files still load.")]
     public List<string> SecondaryTerminals { get; set; } = new();
     public string Founded { get; set; } = "";
+    /// <summary>
+    /// The carrier's equipment standard, 1-5. Decides what you are put in: a five-star fleet issues
+    /// current-model tractors with low mileage, a one-star fleet issues what it has. Signing with a
+    /// better carrier should be something you can see from the driver's seat, not just on the payslip.
+    /// </summary>
+    public int EquipmentStars { get; set; } = 3;
     public List<string> Divisions { get; set; } = new();
     public string OperatingAuthorityNotes { get; set; } = "";
     public string Motto { get; set; } = "";
@@ -436,6 +442,15 @@ public class BoardLoad
     public bool IsOversize { get; set; }
     public bool RequiresTarp { get; set; }
     public int ExtraStops { get; set; }
+    /// <summary>
+    /// This job was offered right where the truck is standing — the "find other load from this
+    /// location" list in ATS, rather than the wider city board.
+    ///
+    /// Dispatch looks at these first, because that is the order the driver actually meets them: you
+    /// come off a dock, you see what is going out from that dock, and only if none of it works do you
+    /// go and read the whole board for the city.
+    /// </summary>
+    public bool AtLocation { get; set; }
     /// <summary>Freight market / company that owns the load in ATS.</summary>
     public string Broker { get; set; } = "";
     public string Notes { get; set; } = "";
@@ -1171,6 +1186,11 @@ public class BoardDecision
     public List<string> DispatchNotes { get; set; } = new();
     public List<string> InfoNeeded { get; set; } = new();
     public bool RejectAll { get; set; }
+    /// <summary>
+    /// Everything considered was offered at the driver's current location. A rejection here means
+    /// "show me the wider city board", not "reposition" — the city has not been looked at yet.
+    /// </summary>
+    public bool LocalOnly { get; set; }
     public bool ResetWatch { get; set; }
     public string NextTripNumberPreview { get; set; } = "";
 }

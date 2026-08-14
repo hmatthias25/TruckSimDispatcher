@@ -184,26 +184,72 @@ public static class Seed
 
     // ---------------------------------------------------------------- fleet
 
+    /// <summary><see cref="Tier"/> is the equipment standard a carrier has to hold to issue this unit.</summary>
     private record TruckSpec(string Make, string Model, int Year, string Engine, int Hp,
-        string Trans, string TransType, string Cab, int Governed, double Fuel, double Mpg);
+        string Trans, string TransType, string Cab, int Governed, double Fuel, double Mpg, int Tier);
 
     private static readonly TruckSpec[] AmtSpecs =
     {
-        new("Freightliner", "Cascadia 126", 2022, "Detroit DD15", 505, "Detroit DT12 12-spd AMT", "automatic", "Sleeper", 65, 240, 7.1),
-        new("Kenworth",     "T680",         2021, "PACCAR MX-13", 510, "PACCAR TX-12 12-spd AMT", "automatic", "Sleeper", 65, 240, 6.9),
-        new("Volvo",        "VNL 860",      2023, "Volvo D13TC",  500, "Volvo I-Shift 12-spd AMT", "automatic", "Sleeper", 68, 250, 7.3),
-        new("International","LT625",        2020, "Cummins X15",  500, "Eaton Endurant 12-spd AMT", "automatic", "Sleeper", 65, 230, 6.8),
-        new("Mack",         "Anthem",       2021, "Mack MP8",     505, "Mack mDRIVE 12-spd AMT", "automatic", "Sleeper", 65, 240, 6.7)
+        new("Volvo",        "VNL 860",      2023, "Volvo D13TC",  500, "Volvo I-Shift 12-spd AMT", "automatic", "Sleeper", 68, 250, 7.3, 5),
+        new("Freightliner", "Cascadia 126", 2022, "Detroit DD15", 505, "Detroit DT12 12-spd AMT", "automatic", "Sleeper", 65, 240, 7.1, 4),
+        new("Kenworth",     "T680",         2021, "PACCAR MX-13", 510, "PACCAR TX-12 12-spd AMT", "automatic", "Sleeper", 65, 240, 6.9, 4),
+        new("Mack",         "Anthem",       2021, "Mack MP8",     505, "Mack mDRIVE 12-spd AMT", "automatic", "Sleeper", 65, 240, 6.7, 3),
+        new("International","LT625",        2020, "Cummins X15",  500, "Eaton Endurant 12-spd AMT", "automatic", "Sleeper", 65, 230, 6.8, 3),
+        new("Freightliner", "Cascadia 125", 2017, "Detroit DD15", 455, "Detroit DT12 12-spd AMT", "automatic", "Sleeper", 63, 230, 6.4, 2),
+        new("International","ProStar",      2016, "Cummins ISX15",450, "Eaton UltraShift 10-spd AMT", "automatic", "Sleeper", 62, 200, 6.1, 2),
+        new("Freightliner", "Cascadia",     2013, "Detroit DD13", 410, "Eaton UltraShift 10-spd AMT", "automatic", "Sleeper", 62, 180, 5.8, 1),
+        new("International","ProStar",      2012, "MaxxForce 13", 430, "Eaton UltraShift 10-spd AMT", "automatic", "Day Cab", 62, 150, 5.5, 1)
     };
 
     private static readonly TruckSpec[] ManualSpecs =
     {
-        new("Kenworth",  "W900L",      2019, "Cummins X15",   565, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 68, 300, 5.9),
-        new("Peterbilt", "389",        2018, "Cummins X15",   605, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 70, 300, 5.6),
-        new("Peterbilt", "579",        2021, "Cummins X15",   500, "Eaton Fuller 13-spd manual", "manual", "Sleeper", 65, 240, 6.6),
-        new("Western Star", "49X",     2022, "Detroit DD16",  600, "Eaton Fuller 18-spd manual", "manual", "Day Cab", 65, 280, 5.4),
-        new("Freightliner", "Coronado",2017, "Detroit DD15",  505, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 65, 250, 6.0)
+        new("Peterbilt", "389",         2023, "Cummins X15",   605, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 70, 300, 5.9, 5),
+        new("Peterbilt", "579",         2021, "Cummins X15",   500, "Eaton Fuller 13-spd manual", "manual", "Sleeper", 65, 240, 6.6, 4),
+        new("Western Star", "49X",      2022, "Detroit DD16",  600, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 65, 280, 5.6, 4),
+        new("Kenworth",  "W900L",       2019, "Cummins X15",   565, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 68, 300, 5.9, 3),
+        new("Peterbilt", "389",         2018, "Cummins X15",   605, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 70, 300, 5.6, 3),
+        new("Freightliner", "Coronado", 2017, "Detroit DD15",  505, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 65, 250, 6.0, 2),
+        new("Kenworth",  "T800",        2015, "Cummins ISX15", 485, "Eaton Fuller 13-spd manual", "manual", "Sleeper", 63, 240, 5.5, 2),
+        new("Freightliner", "Columbia", 2012, "Detroit DD15",  455, "Eaton Fuller 10-spd manual", "manual", "Sleeper", 62, 200, 5.3, 1),
+        new("International","9900i",    2011, "Cummins ISX",   430, "Eaton Fuller 10-spd manual", "manual", "Day Cab", 62, 180, 5.1, 1)
     };
+
+    /// <summary>
+    /// Equipment a carrier of this standard would put a driver in.
+    ///
+    /// Picks at the carrier's tier and falls outward if that band is thin, so every carrier issues
+    /// something. The driver's transmission preference is always honoured — a better carrier means a
+    /// better truck, not a truck they did not ask for.
+    /// </summary>
+    private static List<TruckSpec> SpecsForStandard(int stars, string transmissionPreference)
+    {
+        var tier = Math.Clamp(stars <= 0 ? 3 : stars, 1, 5);
+        var pool = transmissionPreference switch
+        {
+            "manual" => ManualSpecs.ToList(),
+            "automatic" => AmtSpecs.ToList(),
+            _ => AmtSpecs.Concat(ManualSpecs).ToList()
+        };
+        // Nearest tier first, then next-nearest — never empty.
+        return pool.OrderBy(x => Math.Abs(x.Tier - tier)).ThenByDescending(x => x.Year).ToList();
+    }
+
+    /// <summary>
+    /// Miles a carrier of this standard would hand over. A five-star fleet trades early, so their
+    /// trucks are young; a one-star fleet runs them into the ground.
+    /// </summary>
+    private static int StartingServiceMiles(int stars, Random rnd)
+    {
+        var (lo, hi) = Math.Clamp(stars, 1, 5) switch
+        {
+            5 => (15, 90),
+            4 => (60, 200),
+            3 => (90, 300),
+            2 => (200, 480),
+            _ => (350, 720)
+        };
+        return rnd.Next(lo, hi) * 1000 + rnd.Next(0, 999);
+    }
 
     /// <summary>
     /// Creates the starting equipment: exactly one tractor and one trailer, both at the home yard.
@@ -218,8 +264,8 @@ public static class Seed
         s.Trucks.Clear();
         s.Trailers.Clear();
 
-        var wantsManual = app.TransmissionPreference == "manual";
-        var spec = wantsManual ? ManualSpecs[2] : AmtSpecs[0];
+        // What you are put in follows the carrier's equipment standard, not a fixed choice.
+        var spec = SpecsForStandard(s.Company.EquipmentStars, app.TransmissionPreference).First();
 
         var yard = s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters)
                    ?? s.Company.Terminals.FirstOrDefault();
@@ -230,7 +276,7 @@ public static class Seed
         // book, not something ATS reports. Damage is NOT: the driver cannot set damage in ATS, so a
         // fabricated figure could never be reconciled with the game. It starts at zero and only moves
         // when the driver reports a real reading.
-        var serviceMiles = rnd.Next(90, 260) * 1000 + rnd.Next(0, 999);
+        var serviceMiles = StartingServiceMiles(s.Company.EquipmentStars, rnd);
         s.Trucks.Add(new Truck
         {
             Unit = "101",
@@ -321,11 +367,9 @@ public static class Seed
         var wanted = Math.Clamp(count, 1, room);
         var result = new StockResult();
 
-        var wantsManual = transmissionPreference == "manual";
-        var pool = new List<TruckSpec>();
-        if (wantsManual) { pool.AddRange(ManualSpecs); pool.AddRange(AmtSpecs); }
-        else if (transmissionPreference == "automatic") { pool.AddRange(AmtSpecs); pool.AddRange(ManualSpecs); }
-        else { for (var i = 0; i < AmtSpecs.Length; i++) { pool.Add(AmtSpecs[i]); pool.Add(ManualSpecs[i]); } }
+        // Same equipment standard as the rest of the fleet — a yard you stock yourself should not
+        // quietly hand you better trucks than the carrier issues.
+        var pool = SpecsForStandard(s.Company.EquipmentStars, transmissionPreference);
 
         var rnd = new Random(StableSeed(yard.Id + s.Trucks.Count));
         var divisions = s.Company.Divisions.Count > 0 ? s.Company.Divisions : new List<string> { "Dry Van" };
@@ -334,7 +378,7 @@ public static class Seed
         {
             var spec = pool[i % pool.Count];
             var unit = NextTruckUnit(s);
-            var serviceMiles = rnd.Next(60, 340) * 1000 + rnd.Next(0, 999);
+            var serviceMiles = StartingServiceMiles(s.Company.EquipmentStars, rnd);
             s.Trucks.Add(new Truck
             {
                 Unit = unit,
