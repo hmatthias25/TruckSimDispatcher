@@ -142,6 +142,16 @@ public static class DispatchEngine
             // taking it over a better-paying load, and what to do once the trailer comes off.
             foreach (var line in HomeTime.HomeRunInstructions(s, pick.Load.DestCity, pick.Load.DestState))
                 decision.DispatchNotes.Add(line);
+            // Better still when the ride home is also the ride to the shop — say so, because it is the
+            // difference between a paid run home and an empty one.
+            if (Shop.Assess(s, truck, trailer) is { Kind: "RunHome" } rh)
+            {
+                decision.DispatchNotes.Add(
+                    $"This is your run to the shop as well. It finishes at {rh.HomeLabel}, so you get paid for the trip in " +
+                    "instead of deadheading it — which is exactly why I wanted a board before sending you.");
+                decision.DispatchNotes.AddRange(rh.Instructions.Skip(1));
+                if (!string.IsNullOrWhiteSpace(rh.LateWarning)) decision.DispatchNotes.Add(rh.LateWarning);
+            }
             if (Dedicated.BoardNote(s) is { } dedNote) decision.DispatchNotes.Add(dedNote);
             decision.DispatchNotes.Add("After you are loaded, report: loaded game time, odometer, actual trailer weight and trailer damage.");
             return decision;
@@ -166,6 +176,24 @@ public static class DispatchEngine
 
             decision.DispatchNotes.Add("I am clearing the board. By the time you are legal these jobs will have " +
                                        "turned over anyway — pull a fresh one when you are back on duty.");
+            foreach (var e in decision.Evaluations) e.Recommendation = "Reject";
+            return decision;
+        }
+
+        // Under a run-home order, a board with nothing going to the yard is not a bad board — it is
+        // simply a board that cannot help. The truck still has to get to the shop, so they deadhead.
+        // Saying "reposition and pull a fresh board" here would send a damaged unit the wrong way.
+        var repair = Shop.Assess(s, truck, trailer);
+        if (repair.Kind == "RunHome")
+        {
+            decision.RejectAll = true;
+            decision.Headline = $"Nothing here goes to {repair.HomeLabel}. Run it in empty.";
+            decision.Rationale = repair.Headline;
+            decision.DispatchNotes.Add(
+                $"I looked — there is no freight on this board that finishes at {repair.HomeLabel}, so there is nothing to " +
+                "put under you. Deadhead in; the truck has to get to the shop either way and every mile the other direction is a mile back.");
+            decision.DispatchNotes.AddRange(repair.Instructions);
+            if (!string.IsNullOrWhiteSpace(repair.LateWarning)) decision.DispatchNotes.Add(repair.LateWarning);
             foreach (var e in decision.Evaluations) e.Recommendation = "Reject";
             return decision;
         }
@@ -310,17 +338,30 @@ public static class DispatchEngine
                 stops.Add($"Unit {truck.Unit} is out of service.");
             if (truck.Status == "Shop")
                 stops.Add($"Unit {truck.Unit} is in the shop.");
-            var dmg = Math.Max(truck.DamagePct, s.Status.TruckDamagePct);
-            if (dmg >= m.OutOfServicePct)
-                stops.Add($"Unit {truck.Unit} is at {dmg:0.#}% damage — at or above the {m.OutOfServicePct:0}% out-of-service threshold. Shop first.");
         }
+        if (trailer == null) stops.Add("No trailer assigned.");
 
-        if (trailer == null)
-            stops.Add("No trailer assigned.");
-        else
+        // Condition stops dispatch well before the out-of-service line. A truck limping along at 12%
+        // is a truck that comes back at 30%, and the company would rather lose a day to the shop than
+        // a unit to neglect. Shop.Assess quotes the wait, and decides whether home is the better shop.
+        //
+        // A run-home order is deliberately NOT a blocker. The truck has to go home either way, so if
+        // the board where they are standing has freight that finishes at the yard, they run it loaded.
+        // That is handled per-load in Evaluate; only a genuine stop lands here.
+        var shopOrder = Shop.Assess(s, truck, trailer);
+        if (shopOrder.BlocksAllFreight)
         {
-            var tdmg = Math.Max(trailer.DamagePct, s.Status.TrailerDamagePct);
-            if (tdmg >= m.OutOfServicePct)
+            stops.Add(shopOrder.Headline);
+            stops.AddRange(shopOrder.Instructions);
+            if (!string.IsNullOrWhiteSpace(shopOrder.LateWarning)) stops.Add(shopOrder.LateWarning);
+        }
+        else if (shopOrder.Kind == "None")
+        {
+            // A backdrop unit has no condition Shop.Assess will read, so the old out-of-service line
+            // stays as the backstop for anything it deliberately ignores.
+            if (truck != null && Math.Max(truck.DamagePct, s.Status.TruckDamagePct) is var dmg && dmg >= m.OutOfServicePct)
+                stops.Add($"Unit {truck.Unit} is at {dmg:0.#}% damage — at or above the {m.OutOfServicePct:0}% out-of-service threshold. Shop first.");
+            if (trailer != null && Math.Max(trailer.DamagePct, s.Status.TrailerDamagePct) is var tdmg && tdmg >= m.OutOfServicePct)
                 stops.Add($"Trailer {trailer.Unit} is at {tdmg:0.#}% damage — out of service until repaired.");
         }
 
@@ -369,6 +410,15 @@ public static class DispatchEngine
 
         // ---- hard gates
         e.HardFails.AddRange(QualificationFails(s, load, trailer));
+
+        // Under a run-home repair order the truck is going to the yard whether or not it is loaded.
+        // So freight is still on the table — but only freight that finishes there. Anything else puts
+        // more miles on a unit that is already hurt, and moves it further from the shop we want it in.
+        var repairOrder = Shop.Assess(s, truck, trailer);
+        if (repairOrder.Kind == "RunHome" && !Shop.FinishesAtHome(s, load))
+            e.HardFails.Add(
+                $"Not while the truck is at {repairOrder.TruckDamagePct:0.#}%. You are going to {repairOrder.HomeLabel} for the repair, " +
+                $"and this finishes at {Place(load.DestCity, load.DestState)}. I will take a load that ends at the yard, not one that adds miles to it.");
 
         // Dedicated: the board is full of other companies' freight, and none of it is yours. Only
         // lifted when the account genuinely has nothing here — see Dedicated.CanRunOffAccount.

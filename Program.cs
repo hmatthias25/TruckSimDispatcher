@@ -836,6 +836,31 @@ app.MapPost("/api/maintenance/workorder/{number}/complete", (string number, Comp
     return new { workOrder = wo, snapshot = Snapshot(s) };
 })));
 
+// What the shop will cost you in hours, before you commit to it. Quoted against whatever damage the
+// driver asks about, so they can price a repair they have not taken yet.
+app.MapGet("/api/maintenance/quote", (double? truck, double? trailer, bool? companyShop) =>
+{
+    var s = store.State;
+    var atShop = companyShop ?? Shop.AtCompanyShop(s);
+    var td = truck ?? Math.Max(s.Status.TruckDamagePct,
+        s.Trucks.FirstOrDefault(t => t.Unit == s.Driver.AssignedTruckUnit)?.DamagePct ?? 0);
+    var rd = trailer ?? Math.Max(s.Status.TrailerDamagePct,
+        s.Trailers.FirstOrDefault(t => t.Unit == s.Driver.AssignedTrailerUnit)?.DamagePct ?? 0);
+    return Results.Ok(Shop.Quote(s, td, rd, atShop,
+        s.Trucks.FirstOrDefault(t => t.Unit == s.Driver.AssignedTruckUnit)));
+});
+
+// A tractor past the write-off line. The player reports what the wreck fetched for scrap; the app
+// never guesses at it, and never invents a number ATS did not show them.
+app.MapPost("/api/maintenance/writeoff", (WriteOffRequest req) => Results.Ok(store.Mutate(s =>
+{
+    var result = Shop.WriteOff(s, req.Unit, req.DriverFault, req.ScrapRecovery, req.Notes ?? "");
+    store.Log(s, "maintenance",
+        $"Unit {result.Unit} written off — insurance ${result.InsurancePayout:N2} less ${result.Deductible:N2} deductible, " +
+        $"scrap ${result.ScrapRecovery:N2}, net ${result.NetRecovery:N2}.", result.Unit);
+    return new { writeOff = result, snapshot = Snapshot(s) };
+})));
+
 // ---------------------------------------------------------------- safety
 
 // Filing an incident produces a decision, not a form. The driver reports; the company decides.
@@ -1194,6 +1219,17 @@ object Snapshot(AppState? given = null)
             career = CareerService.Review(s),
             maintenanceAlerts = MaintenanceService.FleetAlerts(s),
             dispatchBlockers = DispatchEngine.DispatchBlockers(s, truck, trailer),
+            // Condition of the equipment and what the company wants done about it, quoted in hours.
+            shopOrder = Shop.Assess(s, truck, trailer),
+            // The write-off line for every unit we can actually read, since it moves with the odometer.
+            writeOffLines = s.Trucks.Where(t => !t.Retired && t.InGameGarage)
+                .Select(t => new
+                {
+                    unit = t.Unit,
+                    miles = t.AtsOdometer > 0 ? t.AtsOdometer : t.ServiceMiles,
+                    atPct = Shop.TotalLossPctFor(s, t),
+                    explain = Shop.ExplainTotalLossLine(s, t)
+                }).ToList(),
             infoNeeded = DispatchEngine.MissingContext(s),
             activeTrip = TripService.Active(s),
             // What close-out measures the run against. A trip that was already rolling before the app
@@ -1317,6 +1353,7 @@ record CancelRequest(string Reason, string Fault, bool ChargeCompany);
 record NoteRequest(string? Notes, string? SafetyNotes, string? FaultAttribution);
 record AssignRequest(string? TruckUnit, string? TrailerUnit, bool Force);
 record CompleteWoRequest(decimal Cost, double DamageAfter, string Vendor, string PaidBy, string Notes);
+record WriteOffRequest(string Unit, bool DriverFault, decimal ScrapRecovery, string? Notes);
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
 record ReconcileRequest(string? Account, decimal Amount, string Memo, decimal? FixUnsettledPay, int? FixFreightCounter);
 record CareerActionRequest(string? Rank, string? Note, bool Force);

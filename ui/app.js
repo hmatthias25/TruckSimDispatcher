@@ -2464,20 +2464,100 @@ function costModelHtml() {
 }
 
 /* ============================================================ MAINTENANCE */
+/**
+ * What the company wants done about the condition of the equipment, and what it costs in hours.
+ * Sits at the top of Maintenance because when it is set, it is the only thing that matters.
+ */
+function shopOrderHtml() {
+  const o = S.views.shopOrder;
+  if (!o || o.kind === 'None') return '';
+
+  const cls = o.kind === 'TotalLoss' ? 'stop' : o.kind === 'RunHome' ? 'info' : 'warn';
+  const q = o.quote;
+  return `<div class="panel">
+    <div class="panel-head"><h2>Shop order</h2>
+      ${badge(o.kind === 'TotalLoss' ? 'bad' : 'warn', o.kind === 'RunHome' ? 'run it home' : o.kind === 'TotalLoss' ? 'total loss' : 'nearest shop')}
+      <div class="spacer"></div>
+      <span class="sub">tractor ${num(o.truckDamagePct, 1)}% · trailer ${num(o.trailerDamagePct, 1)}%</span></div>
+
+    <div class="callout ${cls}">
+      <h4>${esc(o.headline)}</h4>
+      ${o.instructions.map((x) => `<p>${esc(x)}</p>`).join('')}
+      ${o.lateWarning ? `<p><b>${esc(o.lateWarning)}</b></p>` : ''}
+    </div>
+
+    ${q && !q.totalLoss && q.waitHours > 0 ? `<div class="meters">
+      ${fkpi('Tractor', hhmm(q.truckHours))}
+      ${fkpi('Trailer', hhmm(q.trailerHours))}
+      ${fkpi('You wait', hhmm(q.waitHours), 'warn')}
+      ${fkpi('Shop', q.atCompanyShop ? 'company yard' : 'roadside dealer')}
+      ${fkpi('Written off at', num(o.totalLossAtPct, 1) + '%', 'bad')}
+    </div>
+    <p class="hint">They work both units at once, so the wait is the longer of the two, not the sum.
+      It is on-duty-not-driving time — log it and it lands in your HOS like anything else.</p>` : ''}
+  </div>`;
+}
+
+/** The write-off: only offered once a unit is actually past its own line. */
+function writeOffHtml() {
+  const lines = S.views.writeOffLines || [];
+  const at = (unit) => lines.find((l) => l.unit === unit);
+  const units = S.trucks.filter((t) => !t.retired && t.inGameGarage
+    && at(t.unit) && t.damagePct >= at(t.unit).atPct);
+  if (!units.length) return '';
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Total loss</h2>${badge('bad', `${units.length} unit(s)`)}</div>
+    <p class="hint">The write-off line moves with the odometer. Nobody scraps a truck with 60,000 miles on it over
+      damage they would happily fix, and nobody sinks that money into one with 600,000 — past a point the repair
+      is worth more than the truck. Insurance settles against the unit's value less a deductible, and the
+      deductible is heavier when the damage was the driver's doing.</p>
+    ${units.map((t) => `<div class="callout stop">
+      <h4>Unit ${esc(t.unit)} — ${t.year} ${esc(t.make)} ${esc(t.model)} at ${num(t.damagePct, 1)}%</h4>
+      <p>${esc(at(t.unit).explain)}</p>
+      <div class="grid3">
+        <label>Scrap value $<input id="wo-scrap-${esc(t.unit)}" type="number" step="1" placeholder="what ATS paid"></label>
+        <label class="chk" style="align-self:end"><input type="checkbox" id="wo-fault-${esc(t.unit)}"> Driver-fault damage</label>
+        <label>Note<input id="wo-note-${esc(t.unit)}" placeholder="optional"></label>
+      </div>
+      <p class="hint">Sell the wreck for scrap in your game first and put what it actually fetched in the box.
+        Leave it blank if you have not sold it yet — report it later and I will book the recovery then.</p>
+      <div class="row-actions">
+        <button class="btn danger" data-act="write-off" data-unit="${esc(t.unit)}">Write unit ${esc(t.unit)} off</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
 function viewMaint() {
   const m = S.settings.maintenance;
   const open = S.workOrders.filter((w) => w.status === 'Open');
   const done = S.workOrders.filter((w) => w.status !== 'Open');
   return `
+  ${shopOrderHtml()}
+  ${writeOffHtml()}
+
   <div class="panel">
     <div class="panel-head"><h2>Company thresholds</h2></div>
     <div class="meters">
-      ${fkpi('Monitor below', pct(m.reportPct, 0))}
       ${fkpi('Report after delivery', pct(m.reportPct, 0) + '+')}
+      ${fkpi('No more dispatches', pct(m.stopDispatchPct, 0) + '+', 'warn')}
       ${fkpi('Mandatory review', pct(m.mandatoryReviewPct, 0) + '+', 'warn')}
       ${fkpi('Out of service', pct(m.outOfServicePct, 0) + '+', 'bad')}
+      ${fkpi('Total loss (fresh truck)', pct(m.totalLossPct, 0) + '+', 'bad')}
       ${fkpi('PM interval', num(m.preventiveIntervalMiles) + ' mi')}
     </div>
+    ${(S.views.writeOffLines || []).length ? `<div class="tablewrap" style="margin-top:12px"><table>
+      <thead><tr><th>Unit</th><th class="num">Odometer</th><th class="num">Written off at</th><th class="num">Now</th></tr></thead>
+      <tbody>${S.views.writeOffLines.map((l) => {
+        const t = S.trucks.find((x) => x.unit === l.unit);
+        const dmg = t ? t.damagePct : 0;
+        return `<tr><td>${esc(l.unit)}</td><td class="num">${num(l.miles)} mi</td>
+          <td class="num"><b>${num(l.atPct, 1)}%</b></td>
+          <td class="num" style="color:${dmg >= l.atPct ? 'var(--red)' : dmg >= m.stopDispatchPct ? 'var(--amber2)' : 'var(--ink3)'}">${num(dmg, 1)}%</td></tr>`;
+      }).join('')}</tbody></table></div>
+    <p class="hint">A fresh tractor is worth fixing to ${num(m.totalLossPct, 0)}%. That line falls as the miles go on,
+      down to a floor of ${num(m.writeOffFloorPct, 0)}% — the odometer you report is what moves it.</p>` : ''}
     ${S.views.maintenanceAlerts.length ? `<div class="callout warn" style="margin-top:14px">
       <h4>Open attention items</h4><ul>${S.views.maintenanceAlerts.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>`
       : `<div class="callout go" style="margin-top:14px"><p>Fleet is inside every threshold. Nothing outstanding.</p></div>`}
@@ -3039,10 +3119,31 @@ function viewSettings() {
       <div class="panel-head"><h2>Maintenance thresholds</h2></div>
       <div class="grid2">
         <label>Report after delivery %<input id="mt-report" type="number" step="1" value="${m.reportPct}"></label>
+        <label>No more dispatches %<input id="mt-stop" type="number" step="1" value="${m.stopDispatchPct}"></label>
         <label>Mandatory review %<input id="mt-review" type="number" step="1" value="${m.mandatoryReviewPct}"></label>
         <label>Out of service %<input id="mt-oos" type="number" step="1" value="${m.outOfServicePct}"></label>
+        <label>Total loss, fresh truck %<input id="mt-total" type="number" step="1" value="${m.totalLossPct}"></label>
         <label>PM interval mi<input id="mt-pm" type="number" step="500" value="${m.preventiveIntervalMiles}"></label>
       </div>
+      <p class="hint">The write-off line falls with the odometer — a worn-out tractor is scrapped over damage a new
+        one would be repaired from, because past a point the repair is worth more than the truck.</p>
+      <div class="grid3">
+        <label>Fully worn at mi<input id="mt-life" type="number" step="25000" value="${m.writeOffLifeMiles}"></label>
+        <label>Wear takes ×<input id="mt-wear" type="number" step="0.05" min="0" max="1" value="${m.writeOffWearFactor}"></label>
+        <label>Never below %<input id="mt-floor" type="number" step="1" value="${m.writeOffFloorPct}"></label>
+      </div>
+      <p class="hint">At the dispatch line the truck goes to a shop. If home is close and the damage is light
+        it goes home instead — cheaper labour, and the repair counts as home time.</p>
+      <div class="grid2">
+        <label>Run home under %<input id="mt-runhome-pct" type="number" step="1" value="${m.runHomeMaxDamagePct}"></label>
+        <label>Run home within<input id="mt-runhome-h" inputmode="numeric" value="${hhmm(m.runHomeMaxHours)}"></label>
+        <label>Repair time per point<input id="mt-perpoint" inputmode="numeric" value="${hhmm(m.repairHoursPerPoint)}"></label>
+        <label>Trailer rate ×<input id="mt-trfactor" type="number" step="0.05" min="0.1" max="1" value="${m.trailerRepairFactor}"></label>
+        <label>Company shop ×<input id="mt-shopfactor" type="number" step="0.05" min="0.1" max="1" value="${m.companyShopFactor}"></label>
+        <label>Total-loss deductible $<input id="mt-deduct" type="number" step="100" value="${m.totalLossDeductible}"></label>
+      </div>
+      <p class="hint">A driver-fault write-off pays double the deductible. Insurance settles at
+        ${pct(m.totalLossPayoutFactor * 100, 0)} of the unit's book value — nobody is made whole on a write-off.</p>
     </div>
 
     <div class="panel">
@@ -3874,6 +3975,32 @@ async function handleAction(act, d, ev) {
     }, 'Balance cleared — treated as unreported.');
 
     /* ---- maintenance */
+    case 'write-off': {
+      const u = d.unit;
+      if (!confirm(`Write unit ${u} off? It leaves the fleet permanently and the insurance claim is filed. `
+        + `Your career is snapshotted on every save, so this is recoverable — but it is meant to be final.`)) return;
+      return run(async () => {
+        const r = absorb(await api('/maintenance/writeoff', 'POST', {
+          unit: u,
+          driverFault: bv(`wo-fault-${u}`),
+          scrapRecovery: fv(`wo-scrap-${u}`),
+          notes: sv(`wo-note-${u}`),
+        }));
+        const w = r.writeOff;
+        modal(`<div class="panel-head"><h2>Unit ${esc(w.unit)} written off</h2>
+            <div class="spacer"></div>
+            <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+          <div class="callout stop">
+            ${w.instructions.map((x) => `<p>${esc(x)}</p>`).join('')}
+          </div>
+          <div class="meters">
+            ${fkpi('Insurance', money(w.insurancePayout))}
+            ${fkpi('Deductible', money(-w.deductible), w.driverFault ? 'bad' : '')}
+            ${fkpi('Scrap', money(w.scrapRecovery))}
+            ${fkpi('Net recovery', money(w.netRecovery), w.netRecovery >= 0 ? 'ok' : 'bad')}
+          </div>`);
+      });
+    }
     case 'create-wo': {
       if (!sv('wo-desc')) return toast('Describe what needs doing.', 'bad');
       const leaveOpen = bv('wo-open');
@@ -4087,8 +4214,15 @@ function collectSettings() {
     maintenance: {
       ...s.maintenance,
       monitorPct: fv('mt-report'), reportPct: fv('mt-report'),
+      stopDispatchPct: fv('mt-stop'),
       mandatoryReviewPct: fv('mt-review'), outOfServicePct: fv('mt-oos'),
+      totalLossPct: fv('mt-total'),
+      writeOffLifeMiles: fv('mt-life'), writeOffWearFactor: fv('mt-wear'),
+      writeOffFloorPct: fv('mt-floor'),
       preventiveIntervalMiles: fv('mt-pm'),
+      runHomeMaxDamagePct: fv('mt-runhome-pct'), runHomeMaxHours: hv('mt-runhome-h'),
+      repairHoursPerPoint: hv('mt-perpoint'), trailerRepairFactor: fv('mt-trfactor'),
+      companyShopFactor: fv('mt-shopfactor'), totalLossDeductible: fv('mt-deduct'),
     },
     scoring: {
       ...s.scoring,

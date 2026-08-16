@@ -1170,6 +1170,56 @@ public class MaintenanceThresholds
     /// <summary>At or above this: out of service, stop and contact operations.</summary>
     public double OutOfServicePct { get; set; } = 30;
     public double PreventiveIntervalMiles { get; set; } = 25000;
+
+    /// <summary>
+    /// At or above this on tractor or trailer, no new loads are issued — the driver goes to a shop.
+    /// A default, not a law: some players want a harder line and some want none at all.
+    /// </summary>
+    public double StopDispatchPct { get; set; } = 10;
+
+    /// <summary>
+    /// Write-off line for a <b>fresh</b> tractor. The line a given unit is actually held to falls with
+    /// its odometer — see <see cref="WriteOffLifeMiles"/>. Nobody scraps a truck with 60,000 miles on
+    /// it over damage they would happily fix; nobody puts that money into one with 600,000.
+    /// </summary>
+    public double TotalLossPct { get; set; } = 40;
+
+    /// <summary>The mileage at which a tractor is treated as fully worn for write-off purposes.</summary>
+    public double WriteOffLifeMiles { get; set; } = 800_000;
+
+    /// <summary>
+    /// How much of the write-off line a full life of miles eats. At 0.6, a worn-out tractor is written
+    /// off at 40% of the fresh threshold — around 16% damage against 40% for a new one.
+    /// </summary>
+    public double WriteOffWearFactor { get; set; } = 0.6;
+
+    /// <summary>The lowest the line can fall, however many miles are on it. A truck is still a truck.</summary>
+    public double WriteOffFloorPct { get; set; } = 15;
+
+    /// <summary>
+    /// Under this much damage, running home for the repair is preferred to the nearest shop — labour
+    /// is cheaper at a company yard and the truck ends up where it needs to be. Above it the unit is
+    /// too far gone to gamble another day's driving on.
+    /// </summary>
+    public double RunHomeMaxDamagePct { get; set; } = 20;
+
+    /// <summary>How far home can be and still be worth running to instead of the nearest shop.</summary>
+    public double RunHomeMaxHours { get; set; } = 11;
+
+    /// <summary>Shop time per point of tractor damage. Twenty minutes is the working assumption.</summary>
+    public double RepairHoursPerPoint { get; set; } = 1.0 / 3.0;
+
+    /// <summary>Trailer work runs at roughly half the tractor rate — less to take apart.</summary>
+    public double TrailerRepairFactor { get; set; } = 0.5;
+
+    /// <summary>A company shop with our own people in it turns work round faster than a dealer.</summary>
+    public double CompanyShopFactor { get; set; } = 0.7;
+
+    /// <summary>Insurance deductible on a written-off unit. Doubled when the damage was driver-fault.</summary>
+    public decimal TotalLossDeductible { get; set; } = 2500;
+
+    /// <summary>Share of the unit's value insurance settles at. Nobody is made whole on a write-off.</summary>
+    public double TotalLossPayoutFactor { get; set; } = 0.8;
 }
 
 public class ScoringWeights

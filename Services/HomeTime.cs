@@ -446,6 +446,22 @@ public static class HomeTime
                 ? $"The {home!.City} yard has its own shop, so labour is cheaper here than anywhere on the road."
                 : $"The {home?.City ?? "home"} yard has no shop — book it into a dealer or service centre nearby.");
 
+        // If the damage is what brought them here, say how long it takes and be explicit that this is
+        // home time, not a detour off it. Otherwise the driver reads "run it home" as losing their days.
+        var stopPct = s.Settings.Maintenance.StopDispatchPct;
+        var worst = Math.Max(truck is { InGameGarage: true } ? truck.DamagePct : 0,
+                             trailer is { InGameGarage: true } ? trailer.DamagePct : 0);
+        if (worst >= stopPct)
+        {
+            var quote = Shop.Quote(s, truck is { InGameGarage: true } ? truck.DamagePct : 0,
+                                      trailer is { InGameGarage: true } ? trailer.DamagePct : 0, hasShop, truck);
+            b.Shop.Add($"This is the repair that stopped your dispatch — reckon on about {Hhmm.Of(quote.WaitHours)} in the shop.");
+            b.Shop.Add("Fixing it here counts as your home time. You are at the yard with the truck in pieces; " +
+                       "that is home time, and the clock on the next one has already started over from today.");
+            b.Shop.Add($"Same expectation as any home time: sit the {restart:0.#}-hour restart while you are here. " +
+                       "You are not going anywhere until the shop is finished, so take the reset and go back out on a full 70.");
+        }
+
         // ---- equipment waiting on them
         if (EquipmentService.OpenOrder(s) is { } order)
             b.Equipment.Add($"{order.Number}: {order.Instruction}");
