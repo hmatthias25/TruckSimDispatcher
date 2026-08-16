@@ -36,7 +36,7 @@ public static class PacketService
             b.AppendLine("Company dispatch policy in force:");
             b.AppendLine();
             b.AppendLine($"- Feasibility is confirmed BEFORE I hook, never after. Once loaded, we are committed to the freight barring a genuine emergency.");
-            b.AppendLine($"- Never plan a load that consumes every remaining minute of HOS. Required slack after parking allowance: **{s.Settings.SafetyBufferHours:0.#} h**.");
+            b.AppendLine($"- Never plan a load that consumes every remaining minute of HOS. Required slack after parking allowance: **{Hhmm.Of(s.Settings.SafetyBufferHours)}**.");
             b.AppendLine($"- My HOS display is the authoritative source for my clocks. Never confuse the break clock with available driving time.");
             b.AppendLine($"- A normal overnight rest does NOT restore the {s.Settings.Hos.CycleLimit:0.#}-hour cycle. Only a {s.Settings.Hos.CycleRestartHours:0.#}-hour restart does.");
             b.AppendLine("- After a delivery I show you jobs at the receiver first. Evaluate those before ordering an empty move.");
@@ -88,7 +88,7 @@ public static class PacketService
         b.AppendLine($"| Status | {s.Driver.Status}{(s.Driver.Probation.Active ? " — probation active" : "")} |");
         b.AppendLine($"| Hired | {GameClock.Pretty(s.Driver.HiredGameDate)} (game time) |");
         b.AppendLine($"| Pay | ${s.Driver.Pay.LoadedCpm:0.000}/loaded mi · ${s.Driver.Pay.DeadheadCpm:0.000}/empty mi |");
-        b.AppendLine($"| Accessorials | detention ${s.Driver.Pay.DetentionPerHour:0.00}/h after {s.Driver.Pay.DetentionFreeHours:0.#} h free · layover ${s.Driver.Pay.LayoverPerDay:0.00}/day · breakdown ${s.Driver.Pay.BreakdownPerDay:0.00}/day · stop ${s.Driver.Pay.ExtraStopPay:0.00} · tarp ${s.Driver.Pay.TarpPay:0.00} |");
+        b.AppendLine($"| Accessorials | detention ${s.Driver.Pay.DetentionPerHour:0.00}/h after {Hhmm.Of(s.Driver.Pay.DetentionFreeHours)} free · layover ${s.Driver.Pay.LayoverPerDay:0.00}/day · breakdown ${s.Driver.Pay.BreakdownPerDay:0.00}/day · stop ${s.Driver.Pay.ExtraStopPay:0.00} · tarp ${s.Driver.Pay.TarpPay:0.00} |");
         b.AppendLine($"| Bonuses | on-time ${s.Driver.Pay.OnTimeBonusCpm:0.000}/loaded mi at 100% service · safety ${s.Driver.Pay.SafetyBonusPerSettlement:0.00}/settlement |");
         b.AppendLine($"| Qualifications | {(s.Driver.Qualifications.Count > 0 ? string.Join(", ", s.Driver.Qualifications) : "—")} |");
         b.AppendLine($"| Restrictions | {(s.Driver.Restrictions.Count > 0 ? string.Join(", ", s.Driver.Restrictions) : "none")} |");
@@ -138,23 +138,23 @@ public static class PacketService
         b.AppendLine();
         b.AppendLine("| Clock | Remaining | Limit |");
         b.AppendLine("|---|---|---|");
-        b.AppendLine($"| Drive | {hos.DriveRemaining:0.##} h | {hos.DriveLimit:0.#} h |");
-        b.AppendLine($"| Shift / on-duty window | {hos.ShiftRemaining:0.##} h | {hos.ShiftLimit:0.#} h |");
-        b.AppendLine($"| Break clock (driving until 30-min break) | {hos.BreakRemaining:0.##} h | {hos.BreakLimit:0.#} h |");
-        b.AppendLine($"| {hos.CycleLimit:0.#}-hour cycle | {hos.CycleRemaining:0.##} h | {hos.CycleLimit:0.#} h |");
+        b.AppendLine($"| Drive | {Hhmm.Of(hos.DriveRemaining)} | {Hhmm.Of(hos.DriveLimit)} |");
+        b.AppendLine($"| Shift / on-duty window | {Hhmm.Of(hos.ShiftRemaining)} | {Hhmm.Of(hos.ShiftLimit)} |");
+        b.AppendLine($"| Break clock (driving until 30-min break) | {Hhmm.Of(hos.BreakRemaining)} | {Hhmm.Of(hos.BreakLimit)} |");
+        b.AppendLine($"| {hos.CycleLimit:0.#}-hour cycle | {Hhmm.Of(hos.CycleRemaining)} | {Hhmm.Of(hos.CycleLimit)} |");
         b.AppendLine();
-        b.AppendLine($"- **Legally drivable right now: {hos.DrivableNowHours:0.##} h** (binding clock: {hos.BindingClock}) ≈ {hos.ProjectedMilesNow:N0} mi at {hos.EffectiveMph:0.#} mph effective.");
-        b.AppendLine($"- Single stint before the required break: {hos.StintBeforeBreakHours:0.##} h ≈ {hos.StintMiles:N0} mi.");
+        b.AppendLine($"- **Legally drivable right now: {Hhmm.Of(hos.DrivableNowHours)}** (binding clock: {hos.BindingClock}) ≈ {hos.ProjectedMilesNow:N0} mi at {hos.EffectiveMph:0.#} mph effective.");
+        b.AppendLine($"- Single stint before the required break: {Hhmm.Of(hos.StintBeforeBreakHours)} ≈ {hos.StintMiles:N0} mi.");
         b.AppendLine($"- Next required action: {hos.NextRequiredAction}");
         if (s.Hos.Recap.Count > 0)
-            b.AppendLine($"- Projected recap: {string.Join(", ", s.Hos.Recap.OrderBy(r => r.InDays).Select(r => $"+{r.Hours:0.#} h in {r.InDays} day(s)"))} (total {hos.RecapHours:0.#} h).");
+            b.AppendLine($"- Projected recap: {string.Join(", ", s.Hos.Recap.OrderBy(r => r.InDays).Select(r => $"+{Hhmm.Of(r.Hours)} in {r.InDays} day(s)"))} (total {Hhmm.Of(hos.RecapHours)}).");
         if (!string.IsNullOrWhiteSpace(hos.ResetWatch)) b.AppendLine($"- **{hos.ResetWatch}**");
         if (!string.IsNullOrWhiteSpace(s.Hos.Notes)) b.AppendLine($"- Driver note: {s.Hos.Notes}");
         b.AppendLine();
         b.AppendLine($"Rule set in force: {s.Settings.Hos.DriveLimit:0.#}/{s.Settings.Hos.ShiftLimit:0.#}, " +
-                     $"{s.Settings.Hos.BreakLength * 60:0}-min break after {s.Settings.Hos.DrivingBeforeBreak:0.#} h driving, " +
+                     $"{s.Settings.Hos.BreakLength * 60:0}-min break after {Hhmm.Of(s.Settings.Hos.DrivingBeforeBreak)} driving, " +
                      $"{s.Settings.Hos.CycleLimit:0.#}-in-{s.Settings.Hos.CycleDays}, " +
-                     $"{s.Settings.Hos.OffDutyReset:0.#} h off resets drive/shift, {s.Settings.Hos.CycleRestartHours:0.#} h restarts the cycle." +
+                     $"{Hhmm.Of(s.Settings.Hos.OffDutyReset)} off resets drive/shift, {Hhmm.Of(s.Settings.Hos.CycleRestartHours)} restarts the cycle." +
                      (s.Settings.UsesHosMod ? $" Source: {s.Settings.HosModName} (mod values — use these, not real FMCSA)." : " Source: real FMCSA defaults as the roleplay layer."));
         b.AppendLine();
 
@@ -166,7 +166,7 @@ public static class PacketService
             b.AppendLine($"{active.Cargo} · {DispatchEngine.Place(active.OriginCity, active.OriginState)} → {DispatchEngine.Place(active.DestCity, active.DestState)}");
             b.AppendLine($"Dispatched {active.DispatchedMiles:N0} mi loaded + {active.DeadheadMiles:N0} mi deadhead · revenue ${active.GameRevenue:N2} · due {GameClock.Pretty(active.DueGameTime)}");
             if (active.FeasibilityAtDispatch is { } fz)
-                b.AppendLine($"Feasibility at dispatch: **{fz.Verdict}** — {fz.SlackHours:0.#} h slack, {fz.RestsRequired} rest(s), {fz.BreaksRequired} break(s), {fz.FuelStopsRequired} fuel stop(s).");
+                b.AppendLine($"Feasibility at dispatch: **{fz.Verdict}** — {Hhmm.Of(fz.SlackHours)} slack, {fz.RestsRequired} rest(s), {fz.BreaksRequired} break(s), {fz.FuelStopsRequired} fuel stop(s).");
             b.AppendLine($"Authorization rationale: {active.AuthorizationRationale}");
             if (active.Events.Count > 0)
             {
@@ -189,7 +189,7 @@ public static class PacketService
                 var total = l.LoadedMiles + l.DeadheadMiles;
                 var rpm = total > 0 ? l.GameRevenue / (decimal)total : 0;
                 b.AppendLine($"| {l.Cargo} | {DispatchEngine.Place(l.OriginCity, l.OriginState)} | {DispatchEngine.Place(l.DestCity, l.DestState)} | " +
-                             $"{l.LoadedMiles:N0} | {l.DeadheadMiles:N0} | ${l.GameRevenue:N0} | ${rpm:0.00} | {l.DeadlineHours:0.#} h | {l.TrailerType} |");
+                             $"{l.LoadedMiles:N0} | {l.DeadheadMiles:N0} | ${l.GameRevenue:N0} | ${rpm:0.00} | {Hhmm.Of(l.DeadlineHours)} | {l.TrailerType} |");
             }
             b.AppendLine();
 
@@ -200,7 +200,7 @@ public static class PacketService
             foreach (var e in decision.Evaluations)
             {
                 b.AppendLine($"- **{e.Recommendation}** — {e.Load.Cargo} to {DispatchEngine.Place(e.Load.DestCity, e.Load.DestState)}: " +
-                             $"${e.AllInRpm:0.00}/mi all-in, feasibility {e.Feasibility.Verdict} ({e.Feasibility.SlackHours:0.#} h slack), " +
+                             $"${e.AllInRpm:0.00}/mi all-in, feasibility {e.Feasibility.Verdict} ({Hhmm.Of(e.Feasibility.SlackHours)} slack), " +
                              $"tier-{e.DestTier} destination, score {e.Score:0.00}.");
                 foreach (var hf in e.HardFails) b.AppendLine($"  - HARD FAIL: {hf}");
                 foreach (var bl in e.Feasibility.Blockers) b.AppendLine($"  - BLOCKER: {bl}");
@@ -323,7 +323,7 @@ public static class PacketService
         b.AppendLine($"- HOS mod: {(s.Settings.UsesHosMod ? s.Settings.HosModName : "none — real FMCSA rules used as a roleplay layer")}");
         b.AppendLine($"- Economy mod: {(s.Settings.UsesEconomyMod ? "yes — ATS revenue treated as realistic" : $"no — revenue discounted ×{s.Settings.RevenueFactor:0.##}")}");
         b.AppendLine($"- Effective planning speed: {hos.EffectiveMph:0.#} mph ({s.Settings.GovernedMph} mph governed × {s.Settings.SpeedFactor:0.00} factor)");
-        b.AppendLine($"- Parking buffer {s.Settings.ParkingBufferHours:0.##} h · pre-trip {s.Settings.PreTripHours:0.##} h · default load {s.Settings.DefaultLoadingHours:0.##} h · default unload {s.Settings.DefaultUnloadingHours:0.##} h");
+        b.AppendLine($"- Parking buffer {Hhmm.Of(s.Settings.ParkingBufferHours)} · pre-trip {Hhmm.Of(s.Settings.PreTripHours)} · default load {Hhmm.Of(s.Settings.DefaultLoadingHours)} · default unload {Hhmm.Of(s.Settings.DefaultUnloadingHours)}");
         b.AppendLine();
         b.AppendLine("---");
         b.AppendLine();
@@ -345,8 +345,8 @@ public static class PacketService
                      $"game clock {GameClock.Pretty(s.Status.GameTime)}, fuel {s.Status.FuelPct:0}%, " +
                      $"tractor {s.Status.TruckDamagePct:0.#}% / trailer {s.Status.TrailerDamagePct:0.#}% damage.");
         b.AppendLine();
-        b.AppendLine($"HOS: drive {hos.DriveRemaining:0.##} h, shift {hos.ShiftRemaining:0.##} h, break clock {hos.BreakRemaining:0.##} h, " +
-                     $"cycle {hos.CycleRemaining:0.##} h. Drivable now {hos.DrivableNowHours:0.##} h (~{hos.ProjectedMilesNow:N0} mi at {hos.EffectiveMph:0.#} mph). " +
+        b.AppendLine($"HOS: drive {Hhmm.Of(hos.DriveRemaining)}, shift {Hhmm.Of(hos.ShiftRemaining)}, break clock {Hhmm.Of(hos.BreakRemaining)}, " +
+                     $"cycle {Hhmm.Of(hos.CycleRemaining)}. Drivable now {Hhmm.Of(hos.DrivableNowHours)} (~{hos.ProjectedMilesNow:N0} mi at {hos.EffectiveMph:0.#} mph). " +
                      hos.NextRequiredAction);
         if (!string.IsNullOrWhiteSpace(hos.ResetWatch)) b.AppendLine($"{hos.ResetWatch}");
         b.AppendLine();
@@ -365,7 +365,7 @@ public static class PacketService
             var rpm = total > 0 ? l.GameRevenue / (decimal)total : 0;
             b.AppendLine($"- {l.Cargo}: {DispatchEngine.Place(l.OriginCity, l.OriginState)} → {DispatchEngine.Place(l.DestCity, l.DestState)}, " +
                          $"{l.LoadedMiles:N0} loaded + {l.DeadheadMiles:N0} DH, ${l.GameRevenue:N0} (${rpm:0.00}/mi all-in), " +
-                         $"deliver within {l.DeadlineHours:0.#} h, {l.TrailerType}" +
+                         $"deliver within {Hhmm.Of(l.DeadlineHours)}, {l.TrailerType}" +
                          (l.WeightLbs > 0 ? $", {l.WeightLbs:N0} lb" : "") +
                          (l.IsUrgent ? ", URGENT" : "") + (l.IsFragile ? ", fragile" : "") +
                          (l.IsHazmat ? ", HAZMAT" : "") + (l.IsOversize ? ", oversize" : "") + ".");

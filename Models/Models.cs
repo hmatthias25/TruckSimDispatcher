@@ -4,6 +4,8 @@ namespace TruckSimDispatcher.Models;
 public class AppState
 {
     public int SchemaVersion { get; set; } = 1;
+    /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
+    public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
     public string CreatedUtc { get; set; } = DateTime.UtcNow.ToString("o");
 

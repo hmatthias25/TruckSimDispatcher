@@ -133,7 +133,7 @@ public static class DispatchEngine
                 $"{Place(pick.Load.DestCity, pick.Load.DestState)}, {pick.Load.Cargo}.";
             decision.Rationale = BuildRationale(s, pick, clear.Skip(1).FirstOrDefault(), decision.ResetWatch);
             decision.DispatchNotes.Add($"Run it at ${pick.AllInRpm:0.00}/mi all-in on {pick.Load.LoadedMiles + pick.Load.DeadheadMiles:0} total miles.");
-            decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {pick.Feasibility.SlackHours:0.#} h of slack after parking allowance.");
+            decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
             if (pick.Feasibility.RestsRequired > 0)
                 decision.DispatchNotes.Add($"Plan on {pick.Feasibility.RestsRequired} × {s.Settings.Hos.OffDutyReset:0.#}-hour reset and {pick.Feasibility.BreaksRequired} required break(s) en route.");
             if (pick.Feasibility.FuelStopsRequired > 0)
@@ -156,7 +156,7 @@ public static class DispatchEngine
             decision.OutOfHours = true;
             decision.NeedsRestart = restartNeeded;
             decision.Headline = restartNeeded
-                ? $"You are out of cycle — {s.Hos.CycleRemaining:0.#} h left on the {s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}."
+                ? $"You are out of cycle — {Hhmm.Of(s.Hos.CycleRemaining)} left on the {s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}."
                 : "You are out of hours for today. Nothing on this board can be run legally.";
             decision.Rationale = restNote;
             decision.DispatchNotes.Add(restNote);
@@ -196,7 +196,7 @@ public static class DispatchEngine
         if (tight != null)
         {
             tight.Recommendation = "Backup";
-            decision.DispatchNotes.Add($"Closest to runnable: {Place(tight.Load.OriginCity, tight.Load.OriginState)} → {Place(tight.Load.DestCity, tight.Load.DestState)} {tight.Load.Cargo}, but it leaves only {tight.Feasibility.SlackHours:0.#} h of slack against our {s.Settings.SafetyBufferHours:0.#} h buffer. I will not authorize that on a normal day. If you want it, say so and I will authorize it as an exception and own the call.");
+            decision.DispatchNotes.Add($"Closest to runnable: {Place(tight.Load.OriginCity, tight.Load.OriginState)} → {Place(tight.Load.DestCity, tight.Load.DestState)} {tight.Load.Cargo}, but it leaves only {Hhmm.Of(tight.Feasibility.SlackHours)} of slack against our {Hhmm.Of(s.Settings.SafetyBufferHours)} buffer. I will not authorize that on a normal day. If you want it, say so and I will authorize it as an exception and own the call.");
         }
 
         if (onlyLocal)
@@ -209,7 +209,7 @@ public static class DispatchEngine
         }
 
         decision.DispatchNotes.Add(decision.ResetWatch
-            ? $"Cycle is down to {s.Hos.CycleRemaining:0.#} h. Reposition toward a restart location rather than chasing this board — see the reset options list."
+            ? $"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Reposition toward a restart location rather than chasing this board — see the reset options list."
             : "Reposition and pull a fresh board. I would rather run empty a short distance than tie the truck to bad freight.");
 
         return decision;
@@ -255,9 +255,9 @@ public static class DispatchEngine
             ? $"A {rules.OffDutyReset:0.#}-hour rest will not fix this — a normal overnight does not touch the " +
               $"{rules.CycleLimit:0}-hour cycle. You need the {rules.CycleRestartHours:0.#}-hour restart, and somewhere " +
               "with real parking and services to sit it. That is the only thing that puts the 70 back."
-            : $"Drive is at {s.Hos.DriveRemaining:0.##} h and your window at {s.Hos.ShiftRemaining:0.##} h. Find a truck " +
+            : $"Drive is at {Hhmm.Of(s.Hos.DriveRemaining)} and your window at {Hhmm.Of(s.Hos.ShiftRemaining)}. Find a truck " +
               $"stop with legal parking and take the {rules.OffDutyReset:0.#}-hour reset. That restores your drive and " +
-              $"shift clocks — but not the cycle, which stays at {s.Hos.CycleRemaining:0.#} h.";
+              $"shift clocks — but not the cycle, which stays at {Hhmm.Of(s.Hos.CycleRemaining)}.";
 
         return true;
     }
@@ -449,18 +449,18 @@ public static class DispatchEngine
         {
             var resetPts = (e.DestResetFriendly ? 1.0 : -0.8) * w.ResetPositioning;
             score += resetPts;
-            detail.Add($"Reset watch active ({s.Hos.CycleRemaining:0.#} h cycle) and destination is {(e.DestResetFriendly ? "reset-capable" : "NOT a good restart location")}: {resetPts:+0.00;-0.00}");
+            detail.Add($"Reset watch active ({Hhmm.Of(s.Hos.CycleRemaining)} cycle) and destination is {(e.DestResetFriendly ? "reset-capable" : "NOT a good restart location")}: {resetPts:+0.00;-0.00}");
         }
 
         detail.Add(dock.Learned
-            ? $"Dock time assumed {dock.Loading:0.#} h to load and {dock.Unloading:0.#} h to unload, " +
+            ? $"Dock time assumed {Hhmm.Of(dock.Loading)} to load and {Hhmm.Of(dock.Unloading)} to unload, " +
               $"measured off your last {dock.Samples} {FacilityLearning.Normalise(load.TrailerType).ToLowerInvariant()} load(s)."
-            : $"Dock time assumed {dock.Loading:0.#} h to load and {dock.Unloading:0.#} h to unload — a starting " +
+            : $"Dock time assumed {Hhmm.Of(dock.Loading)} to load and {Hhmm.Of(dock.Unloading)} to unload — a starting " +
               "estimate until we have run a few of these.");
 
         var slackPts = Math.Clamp(e.Feasibility.SlackHours / 8.0, -2.0, 1.5) * w.HosSlack;
         score += slackPts;
-        detail.Add($"HOS slack {e.Feasibility.SlackHours:0.#} h: {slackPts:+0.00;-0.00}");
+        detail.Add($"HOS slack {Hhmm.Of(e.Feasibility.SlackHours)}: {slackPts:+0.00;-0.00}");
 
         var division = DivisionFor(load, trailer);
         var app = s.Application;
@@ -496,7 +496,7 @@ public static class DispatchEngine
         if (e.DestResetFriendly && s.Hos.CycleRemaining <= w.ResetWatchCycleHours)
             e.Pros.Add("Destination can hold a restart.");
         if (e.Feasibility.Verdict == "Feasible" && e.Feasibility.SlackHours >= s.Settings.SafetyBufferHours * 2)
-            e.Pros.Add($"Comfortable window — {e.Feasibility.SlackHours:0.#} h of slack.");
+            e.Pros.Add($"Comfortable window — {Hhmm.Of(e.Feasibility.SlackHours)} of slack.");
         if (e.EstimatedMargin > 0) e.Pros.Add($"Contributes ~${e.EstimatedMargin:N0} after fuel, wages and overhead.");
 
         if (e.AllInRpm < floorRpm)
@@ -628,8 +628,8 @@ public static class DispatchEngine
 
         if (resetWatch)
             parts.Add(pick.DestResetFriendly
-                ? $"With {s.Hos.CycleRemaining:0.#} h of cycle left this also drops you somewhere you can sit the restart."
-                : $"Cycle is at {s.Hos.CycleRemaining:0.#} h — this is the last load before we plan the restart.");
+                ? $"With {Hhmm.Of(s.Hos.CycleRemaining)} of cycle left this also drops you somewhere you can sit the restart."
+                : $"Cycle is at {Hhmm.Of(s.Hos.CycleRemaining)} — this is the last load before we plan the restart.");
 
         if (pick.Load.DeadheadMiles > 0)
             parts.Add($"{pick.Load.DeadheadMiles:0} mi of deadhead is acceptable to get under this freight.");
@@ -677,10 +677,10 @@ public static class DispatchEngine
         {
             if (!overrideTight)
                 throw new InvalidOperationException(
-                    $"Cannot authorize: only {eval.Feasibility.SlackHours:0.#} h of slack against the required {eval.Feasibility.RequiredBufferHours:0.#} h buffer.");
+                    $"Cannot authorize: only {Hhmm.Of(eval.Feasibility.SlackHours)} of slack against the required {Hhmm.Of(eval.Feasibility.RequiredBufferHours)} buffer.");
             if (!privileges.CanOverrideTightLoad)
                 throw new InvalidOperationException(
-                    $"Only {eval.Feasibility.SlackHours:0.#} h of slack against a {eval.Feasibility.RequiredBufferHours:0.#} h buffer, and this is not your call to make. " +
+                    $"Only {Hhmm.Of(eval.Feasibility.SlackHours)} of slack against a {Hhmm.Of(eval.Feasibility.RequiredBufferHours)} buffer, and this is not your call to make. " +
                     privileges.Summary);
         }
 
@@ -723,7 +723,7 @@ public static class DispatchEngine
             FeasibilityAtDispatch = eval.Feasibility,
             AuthorizationRationale = string.IsNullOrWhiteSpace(rationaleOverride)
                 ? $"${eval.AllInRpm:0.00}/mi all-in on {load.LoadedMiles + load.DeadheadMiles:N0} total miles, " +
-                  $"{eval.Feasibility.SlackHours:0.#} h of slack against a {eval.Feasibility.RequiredBufferHours:0.#} h buffer, " +
+                  $"{Hhmm.Of(eval.Feasibility.SlackHours)} of slack against a {Hhmm.Of(eval.Feasibility.RequiredBufferHours)} buffer, " +
                   $"tier-{eval.DestTier} destination{(eval.DestResetFriendly ? " with restart capability" : "")}."
                 : rationaleOverride
         };

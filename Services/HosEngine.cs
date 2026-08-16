@@ -230,7 +230,7 @@ public static class HosEngine
                 var before = cycle;
                 cycle = Math.Min(rules.CycleLimit, cycle + recap.Hours);
                 if (cycle > before)
-                    result.Warnings.Add($"Recap returns {cycle - before:0.#} h to the cycle after the reset on {clock:ddd MMM d} (driver-reported projection).");
+                    result.Warnings.Add($"Recap returns {Hhmm.Of(cycle - before)} to the cycle after the reset on {clock:ddd MMM d} (driver-reported projection).");
             }
         }
 
@@ -317,11 +317,11 @@ public static class HosEngine
         }
         else if (result.SlackHours < 0)
         {
-            result.Blockers.Add($"Projected arrival {GameClock.Pretty(clock)} misses the {GameClock.Pretty(due)} appointment by {Math.Abs(result.SlackHours):0.#} h after parking allowance. Not deliverable legally.");
+            result.Blockers.Add($"Projected arrival {GameClock.Pretty(clock)} misses the {GameClock.Pretty(due)} appointment by {Hhmm.Of(Math.Abs(result.SlackHours))} after parking allowance. Not deliverable legally.");
         }
         else if (result.SlackHours < result.RequiredBufferHours)
         {
-            result.Warnings.Add($"Only {result.SlackHours:0.#} h of slack against a {result.RequiredBufferHours:0.#} h required buffer. One bad scale line or construction zone and we are late.");
+            result.Warnings.Add($"Only {Hhmm.Of(result.SlackHours)} of slack against a {Hhmm.Of(result.RequiredBufferHours)} required buffer. One bad scale line or construction zone and we are late.");
         }
 
         if (result.CycleRestartRequired)
@@ -330,7 +330,7 @@ public static class HosEngine
         if (cycle <= 0.01)
             result.Warnings.Add("Cycle lands at zero on delivery — the truck will be parked until a restart.");
         else if (cycle < 8)
-            result.Warnings.Add($"Only {cycle:0.#} h of cycle left on delivery. Reset planning starts now, not later.");
+            result.Warnings.Add($"Only {Hhmm.Of(cycle)} of cycle left on delivery. Reset planning starts now, not later.");
 
         if (result.FuelStopsRequired == 0 && result.TotalMiles > req.UsableFuelRangeMiles)
             result.Warnings.Add("Fuel range check could not be resolved — confirm the fuel level.");
@@ -387,12 +387,12 @@ public static class HosEngine
         else if (r.RequireBreak && h.BreakRemaining <= 0.01)
             v.NextRequiredAction = $"{r.BreakLength * 60:0}-minute break required before driving again.";
         else if (r.RequireBreak)
-            v.NextRequiredAction = $"Clear to drive {v.StintBeforeBreakHours:0.#} h before the {r.BreakLength * 60:0}-minute break is due.";
+            v.NextRequiredAction = $"Clear to drive {Hhmm.Of(v.StintBeforeBreakHours)} before the {r.BreakLength * 60:0}-minute break is due.";
         else
-            v.NextRequiredAction = $"Clear to drive {v.DrivableNowHours:0.#} h — breaks are switched off, so the {r.ShiftLimit:0.#}-hour window is your next stop.";
+            v.NextRequiredAction = $"Clear to drive {Hhmm.Of(v.DrivableNowHours)} — breaks are switched off, so the {r.ShiftLimit:0.#}-hour window is your next stop.";
 
         if (h.CycleRemaining > 0 && h.CycleRemaining <= 18)
-            v.ResetWatch = $"Reset watch: {h.CycleRemaining:0.#} h of cycle left. Dispatch is now selecting freight that ends somewhere we can sit a restart.";
+            v.ResetWatch = $"Reset watch: {Hhmm.Of(h.CycleRemaining)} of cycle left. Dispatch is now selecting freight that ends somewhere we can sit a restart.";
 
         return v;
     }

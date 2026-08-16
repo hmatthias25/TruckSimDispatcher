@@ -1062,6 +1062,9 @@ app.MapGet("/api/backups", () => Results.Ok(new
     dataDir = store.DataDirectory,
     stateFile = store.StateFile,
     files = store.ListBackups(),
+    // The build that last wrote this career, so an update can be told apart from a fresh file.
+    careerVersion = store.State.AppVersion,
+    appVersion = Build.Version,
     // Careers left behind by an older copy of the app, so an update never looks like a lost save.
     otherCareers = store.OtherCareerFiles()
 }));
@@ -1093,8 +1096,8 @@ app.MapGet("/api/events", (int? take) => Results.Ok(store.State.Events.Take(take
 
 var url = $"http://127.0.0.1:{port}/";
 Console.WriteLine();
-Console.WriteLine("  TruckSim Dispatcher");
-Console.WriteLine("  ===================");
+Console.WriteLine($"  TruckSim Dispatcher {Build.Display}");
+Console.WriteLine("  ===================================");
 Console.WriteLine($"  Console:   {url}");
 Console.WriteLine($"  Data file: {store.StateFile}");
 Console.WriteLine($"  Backups:   {Path.Combine(store.DataDirectory, "backups")}");
@@ -1125,6 +1128,8 @@ object Snapshot(AppState? given = null)
 
     return new
     {
+        version = Build.Version,
+        versionDisplay = Build.Display,
         onboarded = s.Onboarded,
         company = s.Company,
         driver = s.Driver,
@@ -1191,6 +1196,11 @@ object Snapshot(AppState? given = null)
             dispatchBlockers = DispatchEngine.DispatchBlockers(s, truck, trailer),
             infoNeeded = DispatchEngine.MissingContext(s),
             activeTrip = TripService.Active(s),
+            // What close-out measures the run against. A trip that was already rolling before the app
+            // captured one falls back to the last reading the driver reported.
+            startOdometer = TripService.Active(s) is { StartOdometer: > 0 } at
+                ? at.StartOdometer
+                : TripService.LastReportedOdometer(s, TripService.Active(s)),
             nextNumbers = new
             {
                 freight = DispatchEngine.PeekNumber(s, "Freight"),

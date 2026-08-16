@@ -68,6 +68,8 @@ public class TripAudit
     public string Headline { get; set; } = "";
     public List<string> ServiceFindings { get; set; } = new();
     public List<string> MileageFindings { get; set; } = new();
+    /// <summary>Numbers that look wrong and were posted anyway. Surfaced loudly, never blocking.</summary>
+    public List<string> Warnings { get; set; } = new();
     public List<string> MoneyFindings { get; set; } = new();
     public List<string> EquipmentFindings { get; set; } = new();
     public List<string> Directives { get; set; } = new();
@@ -151,8 +153,12 @@ public static class TripService
 
         // ---- record what the driver reported
         trip.DeliveredGameTime = string.IsNullOrWhiteSpace(req.DeliveredGameTime) ? req.GameTime : req.DeliveredGameTime;
-        trip.ActualMiles = req.ActualMiles > 0 ? req.ActualMiles : trip.DispatchedMiles;
+        // Miles come off the odometer, because that is the number ATS shows. The typed figure is only
+        // an override for a reading that was missed or fat-fingered.
+        var mileage = DeriveMiles(s, trip, req.ActualMiles, req.EndOdometer);
+        trip.ActualMiles = mileage.LoadedMiles;
         trip.EndOdometer = req.EndOdometer;
+        if (trip.StartOdometer <= 0 && mileage.StartOdometer > 0) trip.StartOdometer = mileage.StartOdometer;
         if (req.ActualRevenue.HasValue && req.ActualRevenue.Value > 0)
         {
             trip.GameRevenue = req.ActualRevenue.Value;
@@ -190,8 +196,8 @@ public static class TripService
         {
             var type = FacilityLearning.Normalise(trip.TrailerType).ToLowerInvariant();
             audit.ServiceFindings.Add(
-                $"Dock time for {type} updated: load {dockBefore.Loading:0.##} → {dockAfter.Loading:0.##} h, " +
-                $"unload {dockBefore.Unloading:0.##} → {dockAfter.Unloading:0.##} h, now off {dockAfter.Samples} " +
+                $"Dock time for {type} updated: load {dockBefore.Loading:0.##} → {Hhmm.Of(dockAfter.Loading)}, " +
+                $"unload {dockBefore.Unloading:0.##} → {Hhmm.Of(dockAfter.Unloading)}, now off {dockAfter.Samples} " +
                 $"measured load(s). I plan every {type} run on those figures from here.");
         }
         trip.LayoverDays = req.LayoverDays;
@@ -222,13 +228,9 @@ public static class TripService
             if (pct > 12)
                 audit.MileageFindings.Add("Out-of-route miles are high. Either the routing was wrong or you took a detour — either way it costs fuel and hours.");
         }
-        if (trip.StartOdometer > 0 && trip.EndOdometer > 0)
-        {
-            var odo = trip.EndOdometer - trip.StartOdometer;
-            audit.MileageFindings.Add($"Odometer {trip.StartOdometer:N0} → {trip.EndOdometer:N0} = {odo:N0} mi.");
-            if (odo > 0 && Math.Abs(odo - (trip.ActualMiles + trip.DeadheadMiles)) > Math.Max(25, (trip.ActualMiles + trip.DeadheadMiles) * 0.1))
-                audit.MileageFindings.Add($"Odometer delta does not match reported trip miles ({trip.ActualMiles + trip.DeadheadMiles:N0} mi). Check the numbers before I post them.");
-        }
+        audit.MileageFindings.AddRange(mileage.Explain);
+        audit.MileageFindings.AddRange(mileage.Warnings);
+        audit.Warnings.AddRange(mileage.Warnings);
 
         if (trip.FeasibilityAtDispatch is { } f && GameClock.TryParse(trip.DeliveredGameTime) is DateTime del
             && GameClock.TryParse(f.ProjectedArrivalGameTime) is DateTime proj)
@@ -509,9 +511,9 @@ public static class TripService
         f.UnloadDerived = unloaded != null;
 
         if (loaded != null)
-            f.Explain.Add($"Loading {loaded.Value:0.##} h from the log ({Stamp(trip, "BeginLoad")} → {Stamp(trip, "EndLoad")}).");
+            f.Explain.Add($"Loading {Hhmm.Of(loaded.Value)} from the log ({Stamp(trip, "BeginLoad")} → {Stamp(trip, "EndLoad")}).");
         if (unloaded != null)
-            f.Explain.Add($"Unloading {unloaded.Value:0.##} h from the log ({Stamp(trip, "BeginUnload")} → {Stamp(trip, "EndUnload")}).");
+            f.Explain.Add($"Unloading {Hhmm.Of(unloaded.Value)} from the log ({Stamp(trip, "BeginUnload")} → {Stamp(trip, "EndUnload")}).");
 
         if (loaded == null && unloaded == null)
         {
@@ -520,9 +522,9 @@ public static class TripService
             f.DetentionHours = Math.Round(Math.Max(0, typedDetention - free), 2);
             if (typedDetention > 0)
                 f.Explain.Add(f.DetentionHours > 0
-                    ? $"Detention {f.DetentionHours:0.##} h billable from the {typedDetention:0.##} h you reported, " +
-                      $"less {free:0.#} h free. No Begin/End pairs in the log to check it against."
-                    : $"Detention {typedDetention:0.##} h as reported is inside the {free:0.#} h free window — not payable.");
+                    ? $"Detention {Hhmm.Of(f.DetentionHours)} billable from the {Hhmm.Of(typedDetention)} you reported, " +
+                      $"less {Hhmm.Of(free)} free. No Begin/End pairs in the log to check it against."
+                    : $"Detention {Hhmm.Of(typedDetention)} as reported is inside the {Hhmm.Of(free)} free window — not payable.");
             return f;
         }
 
@@ -533,19 +535,19 @@ public static class TripService
         if (f.DetentionHours > 0)
         {
             var parts = new List<string>();
-            if (atShipper > 0) parts.Add($"{atShipper:0.##} h at the shipper");
-            if (atReceiver > 0) parts.Add($"{atReceiver:0.##} h at the receiver");
-            f.Explain.Add($"Detention {f.DetentionHours:0.##} h — {string.Join(" plus ", parts)}, " +
-                          $"after {free:0.#} h free at each stop.");
+            if (atShipper > 0) parts.Add($"{Hhmm.Of(atShipper)} at the shipper");
+            if (atReceiver > 0) parts.Add($"{Hhmm.Of(atReceiver)} at the receiver");
+            f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)} — {string.Join(" plus ", parts)}, " +
+                          $"after {Hhmm.Of(free)} free at each stop.");
         }
         else
         {
-            f.Explain.Add($"No detention — both stops came in inside the {free:0.#} h free window.");
+            f.Explain.Add($"No detention — both stops came in inside the {Hhmm.Of(free)} free window.");
         }
 
         // A typed figure that disagrees with the log is worth saying out loud rather than discarding.
         if (typedDetention > 0 && Math.Abs(typedDetention - f.DetentionHours) > 0.25)
-            f.Explain.Add($"You reported {typedDetention:0.##} h of detention; the log works out to {f.DetentionHours:0.##} h. " +
+            f.Explain.Add($"You reported {Hhmm.Of(typedDetention)} of detention; the log works out to {Hhmm.Of(f.DetentionHours)}. " +
                           "I am paying the log.");
 
         return f;
@@ -557,6 +559,97 @@ public static class TripService
             .Select(x => GameClock.TryParse(x.GameTime)).Where(d => d != null)
             .OrderBy(d => d!.Value).FirstOrDefault();
         return e == null ? "?" : GameClock.Pretty(e.Value);
+    }
+
+    public class MileageReading
+    {
+        public double LoadedMiles { get; set; }
+        public double StartOdometer { get; set; }
+        public double OdometerMiles { get; set; }
+        public bool Derived { get; set; }
+        public List<string> Explain { get; set; } = new();
+        public List<string> Warnings { get; set; } = new();
+    }
+
+    /// <summary>
+    /// The last odometer reading the driver reported, for a trip that was already rolling before the
+    /// app started capturing one at authorization. The most recent close-out is the better source than
+    /// the running status, because status can be updated mid-trip and would shorten the delta.
+    /// </summary>
+    public static double LastReportedOdometer(AppState s, Trip? exclude = null)
+    {
+        var last = s.Trips
+            .Where(t => t.Id != exclude?.Id && t.EndOdometer > 0)
+            .OrderByDescending(t => GameClock.TryParse(t.DeliveredGameTime) ?? DateTime.MinValue)
+            .FirstOrDefault();
+        if (last != null && last.EndOdometer > 0) return last.EndOdometer;
+        return Math.Max(0, s.Status.AtsOdometer);
+    }
+
+    /// <summary>
+    /// Works out how far the truck actually ran.
+    ///
+    /// The odometer is the number ATS puts on the screen, so it is the number the app trusts: end
+    /// minus start is the distance, and loaded miles are that less the deadhead already on the
+    /// dispatch. Asking for the odometer *and* the miles run is asking for the same fact twice and
+    /// then arguing with the answer — so the typed figure is only an override for when the reading was
+    /// missed or mistyped.
+    ///
+    /// A reading that did not move, went backwards, or lands nowhere near the routing is flagged
+    /// before the trip posts. It is a warning and not a block: this app reconciles what the driver saw,
+    /// it does not overrule it.
+    /// </summary>
+    public static MileageReading DeriveMiles(AppState s, Trip trip, double typedMiles, double endOdometer)
+    {
+        var m = new MileageReading();
+        var deadhead = Math.Max(0, trip.DeadheadMiles);
+        var planned = Math.Max(0, trip.DispatchedMiles) + deadhead;
+
+        var start = trip.StartOdometer > 0 ? trip.StartOdometer : LastReportedOdometer(s, trip);
+        m.StartOdometer = start;
+
+        if (endOdometer > 0 && start > 0)
+        {
+            var delta = endOdometer - start;
+            m.OdometerMiles = delta;
+
+            if (delta < 0)
+                m.Warnings.Add($"The ending odometer ({endOdometer:N0}) is lower than the starting one ({start:N0}). " +
+                               "An odometer does not run backwards — check for a mistyped digit, or a reading off a different truck.");
+            else if (delta < 0.5)
+                m.Warnings.Add($"The odometer has not moved off {start:N0}. Either it was not updated after the run, " +
+                               "or this reading came from before you rolled.");
+            else if (planned > 0 && delta > Math.Max(planned * 2.5, planned + 250))
+                m.Warnings.Add($"The odometer says {delta:N0} mi against a routing of {planned:N0} mi. That is far more than the run — " +
+                               "a stray digit puts an odometer out by a factor of ten.");
+            else if (planned > 0 && delta < planned * 0.5 && planned - delta > 50)
+                m.Warnings.Add($"The odometer says {delta:N0} mi against a routing of {planned:N0} mi. That is well short of the run — " +
+                               "check the reading before I post it.");
+            else
+            {
+                m.Derived = true;
+                m.LoadedMiles = Math.Round(Math.Max(0, delta - deadhead), 0);
+                m.Explain.Add(deadhead > 0
+                    ? $"Miles from the odometer: {start:N0} → {endOdometer:N0} = {delta:N0} mi, less {deadhead:N0} mi deadhead = {m.LoadedMiles:N0} loaded."
+                    : $"Miles from the odometer: {start:N0} → {endOdometer:N0} = {delta:N0} mi.");
+            }
+        }
+
+        if (typedMiles > 0)
+        {
+            if (m.Derived && Math.Abs(typedMiles - m.LoadedMiles) > Math.Max(20, m.LoadedMiles * 0.05))
+                m.Explain.Add($"You overrode the odometer with {typedMiles:N0} mi; it works out to {m.LoadedMiles:N0}. Using yours.");
+            m.LoadedMiles = typedMiles;
+            m.Derived = false;
+        }
+        else if (!m.Derived)
+        {
+            m.LoadedMiles = trip.DispatchedMiles;
+            if (endOdometer > 0 || start > 0)
+                m.Explain.Add($"Falling back to the dispatched {trip.DispatchedMiles:N0} mi — the odometer could not settle it and nothing was typed.");
+        }
+
+        return m;
     }
 
     /// <summary>
@@ -634,8 +727,8 @@ public static class TripService
         {
             var margin = (due.Value - del.Value).TotalHours;
             note = margin >= 0
-                ? $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {margin:0.#} h early."
-                : $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Math.Abs(margin):0.#} h LATE.";
+                ? $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Hhmm.Of(margin)} early."
+                : $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Hhmm.Of(Math.Abs(margin))} LATE.";
             return margin < 0;
         }
 
@@ -663,7 +756,7 @@ public static class TripService
         if (f != null)
         {
             if (f.Verdict == "Tight" || f.SlackHours < f.RequiredBufferHours)
-                return ("Dispatcher", $"Dispatcher fault. This load was authorized with only {f.SlackHours:0.#} h of slack against a {f.RequiredBufferHours:0.#} h required buffer — I booked it too tight. Not on your record.");
+                return ("Dispatcher", $"Dispatcher fault. This load was authorized with only {Hhmm.Of(f.SlackHours)} of slack against a {Hhmm.Of(f.RequiredBufferHours)} required buffer — I booked it too tight. Not on your record.");
             if (f.CycleRestartRequired)
                 return ("Dispatcher", "Dispatcher fault. The plan required a cycle restart mid-trip. That was my planning error.");
         }
@@ -684,7 +777,7 @@ public static class TripService
         if (Mentions(reason, "overslept", "slept", "stopped", "forgot", "parked", "late start", "took my time"))
             return ("Driver", "Driver-preventable. The plan had adequate slack and it was not used.");
 
-        return ("Driver", $"Driver-preventable by default: the load was authorized with {f?.SlackHours:0.#} h of slack and the plan was sound. If there is more to it, tell me and I will re-attribute it.");
+        return ("Driver", $"Driver-preventable by default: the load was authorized with {Hhmm.Of(f?.SlackHours)} of slack and the plan was sound. If there is more to it, tell me and I will re-attribute it.");
     }
 
     private static bool Mentions(string text, params string[] words) => words.Any(text.Contains);

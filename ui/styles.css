@@ -60,7 +60,11 @@ body{
 }
 .brand-name{font-weight:680;font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.005em}
 .brand-sub{font:11px/1.5 var(--mono);color:var(--ink3);letter-spacing:.02em}
-.topbar-actions{margin-left:auto}
+.topbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.verchip{
+  font:10px/1 var(--mono);color:var(--ink3);letter-spacing:.04em;text-transform:uppercase;
+  border:1px solid var(--line2);border-radius:999px;padding:4px 8px;white-space:nowrap
+}
 
 /* Gauge cluster */
 .statstrip{display:flex;gap:5px;flex-wrap:wrap;flex:1 1 340px}

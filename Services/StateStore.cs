@@ -200,6 +200,8 @@ public class StateStore
 
     private void Save()
     {
+        // Stamp the build that wrote this file, so a career can always say where it came from.
+        _state.AppVersion = Build.Version;
         var text = JsonSerializer.Serialize(_state, Json);
         var tmp = _file + ".tmp";
         File.WriteAllText(tmp, text);

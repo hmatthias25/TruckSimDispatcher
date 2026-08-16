@@ -46,12 +46,42 @@ const fvn = (id) => {
   return isNaN(n) ? null : n;
 };
 const bv = (id) => !!$(id)?.checked;
+
+/* ---- durations in HH:MM
+   Every HOS display in the world reads 8:45, not 8.75. Converting in your head on every report is
+   friction, and typing 8.45 for eight-and-three-quarters is an eighteen-minute error that propagates
+   silently into every projection. Stored as decimal hours; only entry and display change. */
+const hhmm = (hours) => {
+  const h = Math.max(0, +hours || 0);
+  let whole = Math.floor(h + 1e-9);
+  let mins = Math.round((h - whole) * 60);
+  if (mins === 60) { whole += 1; mins = 0; }
+  return `${whole}:${String(mins).padStart(2, '0')}`;
+};
+
+/** Reads an HH:MM field back to decimal hours. A decimal typed in anyway is accepted and converted. */
+const hv = (id) => {
+  const raw = ($(id)?.value ?? '').trim();
+  if (!raw) return 0;
+  if (raw.includes(':')) {
+    const [h, m] = raw.split(':');
+    return (parseInt(h, 10) || 0) + (parseInt(m, 10) || 0) / 60;
+  }
+  const n = parseFloat(raw);
+  return isNaN(n) ? 0 : n;
+};
+
+/** Same, but blank stays blank — for optional clocks that must not read as zero. */
+const hvn = (id) => {
+  const raw = ($(id)?.value ?? '').trim();
+  return raw === '' ? null : hv(id);
+};
 const list = (id) => sv(id).split(',').map((x) => x.trim()).filter(Boolean);
 
 const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money0 = (n) => (n < 0 ? '-$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const num = (n, d = 0) => (+n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
-const hrs = (n) => (+n || 0).toFixed(2) + ' h';
+const hrs = (n) => hhmm(n);
 const pct = (n, d = 1) => (+n || 0).toFixed(d) + '%';
 
 /* ---- the game clock -------------------------------------------------------
@@ -381,6 +411,12 @@ document.addEventListener('change', (ev) => {
   })), `${el.dataset.kind} ${el.dataset.unit} re-homed.`);
 });
 
+/* The odometer is the one number a typo makes silently wrong, so it is checked as it is typed
+   rather than argued about after the trip has posted. */
+document.addEventListener('input', (ev) => {
+  if (ev.target.id === 'c-odo' || ev.target.id === 'c-miles') paintOdometerHint();
+});
+
 document.addEventListener('click', (ev) => { if (ev.target.id === 'modal') closeModal(); });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeModal(); });
 
@@ -500,6 +536,7 @@ function render() {
   $('tabs').innerHTML = TABS.map(([k, label]) =>
     `<button data-act="tab" data-tab="${k}" class="${TAB === k ? 'on' : ''}">${label}${pips[k] || ''}</button>`).join('');
 
+  $('tb-version').textContent = S.views.versionDisplay || '';
   $('banner').innerHTML = bannerHtml();
 
   const view = ({
@@ -520,7 +557,10 @@ function render() {
     console.error(e);
   }
 
-  $('foot-data').textContent = `Career file saved on every change · trip numbers ${S.views.nextNumbers.freight} next`;
+  if ($('c-milehint')) paintOdometerHint();
+
+  $('foot-data').textContent = `Career file saved on every change · trip numbers ${S.views.nextNumbers.freight} next`
+    + ` · TruckSim Dispatcher ${S.views.versionDisplay || ''}`;
 }
 
 const stat = (k, v, cls = '') => `<div class="stat ${cls}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`;
@@ -625,12 +665,12 @@ function viewDispatch() {
           <p>These clocks were last read at ${gt(h.asOfGameTime)} and a load has run since. Re-read your
             HOS display before I plan anything off them.</p></div>` : ''}
         <div class="${v.hos.breakEnforced ? 'grid4' : 'grid3'}">
-          <label>Drive left<input id="h-drive" type="number" step="0.25" min="0" value="${h.driveRemaining}"></label>
-          <label>Shift left<input id="h-shift" type="number" step="0.25" min="0" value="${h.shiftRemaining}"></label>
+          <label>Drive left<input id="h-drive" inputmode="numeric" placeholder="8:45" value="${hhmm(h.driveRemaining)}"></label>
+          <label>Shift left<input id="h-shift" inputmode="numeric" placeholder="11:30" value="${hhmm(h.shiftRemaining)}"></label>
           ${v.hos.breakEnforced
-            ? `<label>Break clock<input id="h-break" type="number" step="0.25" min="0" value="${h.breakRemaining}"></label>`
+            ? `<label>Break clock<input id="h-break" inputmode="numeric" placeholder="6:15" value="${hhmm(h.breakRemaining)}"></label>`
             : ''}
-          <label>Cycle left<input id="h-cycle" type="number" step="0.25" min="0" value="${h.cycleRemaining}"></label>
+          <label>Cycle left<input id="h-cycle" inputmode="numeric" placeholder="52:00" value="${hhmm(h.cycleRemaining)}"></label>
         </div>
         ${v.hos.breakEnforced
           ? `<p class="hint">Break clock = hours of <em>driving</em> left before the
@@ -640,7 +680,7 @@ function viewDispatch() {
              window is the binding stop.</p>`}
         <div class="grid2">
           <label>Recap projection (optional)
-            <input id="h-recap" placeholder="e.g. 8 in 1, 10.5 in 2" value="${esc((h.recap || []).map((r) => `${r.hours} in ${r.inDays}`).join(', '))}"></label>
+            <input id="h-recap" placeholder="e.g. 8:00 in 1, 10:30 in 2" value="${esc((h.recap || []).map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', '))}"></label>
           <label>Source<input id="h-source" value="${esc(h.source)}" placeholder="e.g. Realistic HOS mod ELD"></label>
         </div>
         <label>Note to dispatch<input id="h-notes" value="${esc(h.notes)}" placeholder="optional"></label>
@@ -652,7 +692,7 @@ function viewDispatch() {
           <p><b>${esc(v.hos.nextRequiredAction)}</b></p>
           <p>Binding clock: ${esc(v.hos.bindingClock)}. At ${num(v.hos.effectiveMph, 1)} mph effective that is about
             <b>${num(v.hos.projectedMilesNow)} mi</b> today, ${num(v.hos.stintMiles)} mi before the break.</p>
-          ${v.hos.recapHours > 0 ? `<p>Recap projects ${num(v.hos.recapHours, 1)} h returning to the cycle.</p>` : ''}
+          ${v.hos.recapHours > 0 ? `<p>Recap projects ${hhmm(v.hos.recapHours)} returning to the cycle.</p>` : ''}
         </div>
       </div>
     </div>
@@ -691,9 +731,9 @@ function viewDispatch() {
           <label>Loaded miles<input id="b-miles" type="number" step="1" min="0" placeholder="ATS distance"></label>
           ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead miles<input id="b-dh" type="number" step="1" min="0" value="0"></label>`}
           <label>Job revenue $<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
-          <label>Hours to deliver<input id="b-deadline" type="number" step="0.5" min="0" placeholder="from the job listing"></label>
+          <label>Time to deliver<input id="b-deadline" inputmode="numeric" placeholder="h:mm from the listing"></label>
           <label>Weight lb<input id="b-weight" type="number" step="1" min="0" placeholder="optional"></label>
-          <label>ATS nav estimate (h)<input id="b-nav" type="number" step="0.1" min="0" placeholder="optional"></label>
+          <label>ATS nav estimate<input id="b-nav" inputmode="numeric" placeholder="h:mm, optional"></label>
           <label>Shipper<input id="b-shipper" placeholder="optional"></label>
           <label>Receiver<input id="b-receiver" placeholder="optional"></label>
           <label>Extra stops<input id="b-stops" type="number" step="1" min="0" value="0"></label>
@@ -725,12 +765,56 @@ function viewDispatch() {
   ${extractHtml()}`;
 }
 
+/**
+ * Reads the odometer back to the driver as they type it — the miles it works out to, and whether it
+ * looks wrong. Mirrors the server's check so nothing is a surprise after the trip posts. It never
+ * disables the button: a warning is the app saying "check this", not refusing the number.
+ */
+function paintOdometerHint() {
+  const el = $('c-milehint');
+  const t = S.views.activeTrip;
+  if (!el || !t) return;
+
+  const start = +S.views.startOdometer || 0;
+  const end = fv('c-odo');
+  const dh = +t.deadheadMiles || 0;
+  const planned = (+t.dispatchedMiles || 0) + dh;
+  const typed = fv('c-miles');
+
+  if (typed > 0) {
+    el.className = 'hint';
+    el.textContent = `Using your ${num(typed)} loaded mi instead of the odometer.`;
+    return;
+  }
+  if (!start || !end) {
+    el.className = 'hint';
+    el.textContent = start
+      ? `Started at ${num(start)}. Enter the ending odometer and I will work the miles out.`
+      : 'No starting odometer on file — type the miles run instead.';
+    return;
+  }
+
+  const delta = end - start;
+  let warn = '';
+  if (delta < 0) warn = `That reads ${num(end)} against a start of ${num(start)} — an odometer does not run backwards.`;
+  else if (delta < 0.5) warn = `The odometer has not moved off ${num(start)}.`;
+  else if (planned > 0 && delta > Math.max(planned * 2.5, planned + 250))
+    warn = `${num(delta)} mi against a ${num(planned)} mi routing — that looks like a stray digit.`;
+  else if (planned > 0 && delta < planned * 0.5 && planned - delta > 50)
+    warn = `${num(delta)} mi against a ${num(planned)} mi routing — that is well short of the run.`;
+
+  el.className = warn ? 'hint bad' : 'hint';
+  el.textContent = warn
+    ? `${warn} Check it, or type the miles to override.`
+    : `${num(start)} → ${num(end)} = ${num(delta)} mi${dh > 0 ? `, less ${num(dh)} deadhead = ${num(delta - dh)} loaded` : ''}.`;
+}
+
 function metersHtml(h) {
   const m = (lbl, val, lim) => {
     const p = lim > 0 ? Math.max(0, Math.min(100, (val / lim) * 100)) : 0;
     const cls = p <= 8 ? 'bad' : p <= 25 ? 'warn' : 'ok';
-    return `<div class="meter ${cls}"><div class="lbl">${lbl}</div><div class="big">${val.toFixed(2)}</div>
-      <div class="of">of ${lim.toFixed(1)} h</div><div class="bar"><i style="width:${p}%"></i></div></div>`;
+    return `<div class="meter ${cls}"><div class="lbl">${lbl}</div><div class="big">${hhmm(val)}</div>
+      <div class="of">of ${hhmm(lim)}</div><div class="bar"><i style="width:${p}%"></i></div></div>`;
   };
   return `<div class="meters">
     ${m('Drive', h.driveRemaining, h.driveLimit)}
@@ -809,7 +893,7 @@ function extractHtml() {
 
     <div class="tablewrap"><table>
       <thead><tr><th></th><th>Cargo</th><th>Origin</th><th>ST</th><th>Destination</th><th>ST</th>
-        <th class="num">Loaded mi</th><th class="num">Revenue</th><th class="num">Deliver in h</th>
+        <th class="num">Loaded mi</th><th class="num">Revenue</th><th class="num">Deliver in</th>
         <th class="num">Weight lb</th><th>Trailer</th><th>Read</th></tr></thead>
       <tbody>${rows.map((l, i) => {
         const missing = (l.unreadable || []);
@@ -823,7 +907,7 @@ function extractHtml() {
           <td>${cell(i, 'dstate', l.destState, '44px')}</td>
           <td><span${bad('loadedMiles')}>${cell(i, 'miles', l.loadedMiles || '', '72px')}</span></td>
           <td><span${bad('gameRevenue')}>${cell(i, 'rev', l.gameRevenue || '', '82px')}</span></td>
-          <td><span${bad('deadlineHours')}>${cell(i, 'dl', l.deadlineHours || '', '72px')}</span></td>
+          <td><span${bad('deadlineHours')}>${cell(i, 'dl', l.deadlineHours ? hhmm(l.deadlineHours) : '', '72px')}</span></td>
           <td>${cell(i, 'wt', l.weightLbs || '', '82px')}</td>
           <td>${cell(i, 'trailer', l.trailerType, '92px')}</td>
           <td>${conf(l.confidence)}${missing.length ? '<br>' + badge('bad', 'gaps') : ''}</td>
@@ -856,7 +940,7 @@ function boardTableHtml() {
           <td class="num">${num(l.loadedMiles)}</td><td class="num">${num(l.deadheadMiles)}</td>
           <td class="num">${money0(l.gameRevenue)}</td>
           <td class="num">${tot > 0 ? '$' + (l.gameRevenue / tot).toFixed(2) : '—'}</td>
-          <td class="num">${num(l.deadlineHours, 1)} h</td>
+          <td class="num">${hhmm(l.deadlineHours)}</td>
           <td><button class="btn tiny ghost" data-act="board-del" data-id="${l.id}">✕</button></td></tr>`;
       }).join('')}</tbody></table></div></div>`;
 }
@@ -924,8 +1008,8 @@ function loadCardHtml(e, d) {
       <span>all-in <b>$${e.allInRpm.toFixed(2)}</b>/mi</span>
       <span>loaded <b>$${e.loadedRpm.toFixed(2)}</b>/mi</span>
       <span>${num(e.load.loadedMiles)} mi + <b>${num(e.load.deadheadMiles)}</b> DH</span>
-      <span>slack <b>${num(e.feasibility.slackHours, 1)} h</b></span>
-      <span>drive <b>${num(e.feasibility.driveHours, 1)} h</b></span>
+      <span>slack <b>${hhmm(e.feasibility.slackHours)}</b></span>
+      <span>drive <b>${hhmm(e.feasibility.driveHours)}</b></span>
       <span>rests <b>${e.feasibility.restsRequired}</b></span>
       <span>fuel <b>${e.feasibility.fuelStopsRequired}</b></span>
       <span>your pay <b>${money(e.estimatedDriverPay)}</b></span>
@@ -933,7 +1017,7 @@ function loadCardHtml(e, d) {
     </div>
     <div class="kv"><span>ETA <b>${gt(e.feasibility.projectedArrivalGameTime)}</b></span>
       <span>due <b>${gt(e.feasibility.dueGameTime)}</b></span>
-      <span>cycle after <b>${num(e.feasibility.cycleRemainingAfter, 1)} h</b></span></div>
+      <span>cycle after <b>${hhmm(e.feasibility.cycleRemainingAfter)}</b></span></div>
     ${e.hardFails.length ? `<ul class="reasons bad">${e.hardFails.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${e.requiresSwap && e.swapPlan ? swapPlanHtml(e.swapPlan) : ''}
     ${e.pros.length ? `<ul class="reasons good">${e.pros.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
@@ -979,13 +1063,13 @@ function swapPlanHtml(plan) {
 function timelineHtml(f) {
   if (!f.timeline?.length) return '';
   return `<div class="tablewrap"><table class="tl">
-    <thead><tr><th>Segment</th><th>From</th><th>To</th><th class="num">Hours</th><th class="num">Miles</th>
+    <thead><tr><th>Segment</th><th>From</th><th>To</th><th class="num">Time</th><th class="num">Miles</th>
       <th class="num">Drive</th><th class="num">Shift</th><th class="num">Break</th><th class="num">Cycle</th></tr></thead>
     <tbody>${f.timeline.map((s) => `<tr class="${s.kind}">
       <td>${esc(s.label)}</td><td>${gt(s.startGameTime)}</td><td>${gt(s.endGameTime)}</td>
-      <td class="num">${s.hours.toFixed(2)}</td><td class="num">${s.miles ? num(s.miles) : ''}</td>
-      <td class="num">${s.driveRemainingAfter.toFixed(1)}</td><td class="num">${s.shiftRemainingAfter.toFixed(1)}</td>
-      <td class="num">${s.breakRemainingAfter.toFixed(1)}</td><td class="num">${s.cycleRemainingAfter.toFixed(1)}</td>
+      <td class="num">${hhmm(s.hours)}</td><td class="num">${s.miles ? num(s.miles) : ''}</td>
+      <td class="num">${hhmm(s.driveRemainingAfter)}</td><td class="num">${hhmm(s.shiftRemainingAfter)}</td>
+      <td class="num">${hhmm(s.breakRemainingAfter)}</td><td class="num">${hhmm(s.cycleRemainingAfter)}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -1029,9 +1113,9 @@ function viewActive() {
     </dl>
     ${f ? `<h3 class="sect">Plan captured at authorization</h3>
       <div class="callout ${f.verdict === 'Feasible' ? 'go' : 'warn'}">
-        <p><b>${esc(f.verdict)}</b> — ${num(f.slackHours, 1)} h slack against a ${num(f.requiredBufferHours, 1)} h required buffer.
+        <p><b>${esc(f.verdict)}</b> — ${hhmm(f.slackHours)} slack against a ${hhmm(f.requiredBufferHours)} required buffer.
           ${f.restsRequired} rest(s), ${f.breaksRequired} break(s), ${f.fuelStopsRequired} fuel stop(s),
-          ${num(f.driveHours, 1)} h driving over ${num(f.totalMiles)} mi.</p>
+          ${hhmm(f.driveHours)} driving over ${num(f.totalMiles)} mi.</p>
         ${f.warnings.length ? `<ul>${f.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
       </div>
       <details class="score"><summary>Full HOS timeline</summary>${timelineHtml(f)}</details>` : ''}
@@ -1075,8 +1159,8 @@ function viewActive() {
       <div class="panel-head"><h2>Close the load out</h2><span class="sub">Operations audits the trip from these numbers.</span></div>
       <div class="grid2">
         ${dayTimeInput('c-time', S.status.gameTime, 'Delivered at (game)')}
-        <label>Actual miles run<input id="c-miles" type="number" step="1" value="${Math.round(t.dispatchedMiles)}"></label>
         <label>Ending odometer<input id="c-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
+        <label>Miles run — override<input id="c-miles" type="number" step="1" placeholder="from odometer"></label>
         <label>Actual payout $<input id="c-rev" type="number" step="1" value="${Math.round(t.gameRevenue)}"></label>
         <label>Tolls $<input id="c-tolls" type="number" step="0.01" value="0"></label>
         <label>Repairs $<input id="c-repair" type="number" step="0.01" value="0"></label>
@@ -1087,6 +1171,7 @@ function viewActive() {
         <label>Cargo damage %<input id="c-cargo" type="number" step="0.1" min="0" max="100" value="0"></label>
         <label>Fuel % now<input id="c-fuelpct" type="number" step="1" min="0" max="100" value="${S.status.fuelPct}"></label>
       </div>
+      <p class="hint" id="c-milehint"></p>
       ${fuelStopsHtml(t)}
       ${clocksAtDeliveryHtml()}
       ${facilityHtml(t)}
@@ -1260,7 +1345,7 @@ function facilityHtml(t) {
 
   const line = (label, hours, a, b) => hours === null
     ? `<tr><td>${label}</td><td colspan="2" class="sub">not logged — log <b>${a}</b> and <b>${b}</b>, or type it below</td></tr>`
-    : `<tr><td>${label}</td><td class="num"><b>${num(hours, 2)} h</b></td>
+    : `<tr><td>${label}</td><td class="num"><b>${hhmm(hours)}</b></td>
         <td class="sub">${gt(at(a))} → ${gt(at(b))}</td></tr>`;
 
   return `<fieldset><legend>Facility time — from your trip log</legend>
@@ -1268,14 +1353,14 @@ function facilityHtml(t) {
       ${line('Loading', load, 'BeginLoad', 'EndLoad')}
       ${line('Unloading', unload, 'BeginUnload', 'EndUnload')}
       ${det === null ? '' : `<tr><td><b>Detention</b></td>
-        <td class="num"><b style="color:${det > 0 ? 'var(--amber2)' : 'var(--ink3)'}">${num(det, 2)} h</b></td>
-        <td class="sub">${det > 0 ? `beyond ${num(free, 1)} h free at each stop — this is paid`
-          : `both stops inside the ${num(free, 1)} h free window`}</td></tr>`}
+        <td class="num"><b style="color:${det > 0 ? 'var(--amber2)' : 'var(--ink3)'}">${hhmm(det)}</b></td>
+        <td class="sub">${det > 0 ? `beyond ${hhmm(free)} free at each stop — this is paid`
+          : `both stops inside the ${hhmm(free)} free window`}</td></tr>`}
     </tbody></table></div>
     ${load === null || unload === null ? `<div class="grid3" style="margin-top:8px">
-      <label>Loading h<input id="c-load" type="number" step="0.25" value="${t.loadingHours || 0}"></label>
-      <label>Unloading h<input id="c-unload" type="number" step="0.25" value="${t.unloadingHours || 0}"></label>
-      <label>Detention h<input id="c-det" type="number" step="0.25" value="0"></label>
+      <label>Loading<input id="c-load" inputmode="numeric" placeholder="h:mm" value="${hhmm(t.loadingHours)}"></label>
+      <label>Unloading<input id="c-unload" inputmode="numeric" placeholder="h:mm" value="${hhmm(t.unloadingHours)}"></label>
+      <label>Detention<input id="c-det" inputmode="numeric" placeholder="h:mm" value="0:00"></label>
     </div>
     <p class="hint">Fallback for what you did not log. Log the pairs next time and this works itself out.</p>`
       : `<p class="hint">Derived from the log, so there is nothing to type. The audit shows the times it used.</p>`}
@@ -1288,10 +1373,10 @@ function clocksAtDeliveryHtml() {
   const brk = S.views.hos.breakEnforced;
   return `<fieldset><legend>Clocks at delivery — optional, saves reporting them again</legend>
     <div class="${brk ? 'grid4' : 'grid3'}">
-      <label>Drive left<input id="c-hdrive" type="number" step="0.25" min="0" placeholder="—"></label>
-      <label>Shift left<input id="c-hshift" type="number" step="0.25" min="0" placeholder="—"></label>
-      ${brk ? `<label>Break clock<input id="c-hbreak" type="number" step="0.25" min="0" placeholder="—"></label>` : ''}
-      <label>Cycle left<input id="c-hcycle" type="number" step="0.25" min="0" placeholder="—"></label>
+      <label>Drive left<input id="c-hdrive" inputmode="numeric" placeholder="h:mm"></label>
+      <label>Shift left<input id="c-hshift" inputmode="numeric" placeholder="h:mm"></label>
+      ${brk ? `<label>Break clock<input id="c-hbreak" inputmode="numeric" placeholder="h:mm"></label>` : ''}
+      <label>Cycle left<input id="c-hcycle" inputmode="numeric" placeholder="h:mm"></label>
     </div>
     <p class="hint">Read them off your HOS display while you are stopped at the receiver and dispatch can
       plan the next load straight away. Leave blank and I will ask for them on the Dispatch tab.</p>
@@ -1375,6 +1460,11 @@ function auditModal(a) {
       <h4>${esc(a.headline)}</h4>
       ${a.faultRationale ? `<p>${esc(a.faultRationale)}</p>` : ''}
     </div>
+
+    ${(a.warnings || []).length ? `<div class="callout warn">
+      <h4>Check these numbers</h4>
+      ${a.warnings.map((w) => `<p>${esc(w)}</p>`).join('')}
+      <p class="hint" style="margin:0">Posted as reported — correct it on the trip if it was a typo.</p></div>` : ''}
 
     ${a.homeTimeNote ? `<div class="callout ${a.gotYouHome ? 'go' : 'info'}">
       <h4>${a.gotYouHome ? 'That load got you home' : 'Home time'}</h4>
@@ -1495,7 +1585,7 @@ function tripDetailModal(id) {
       ${row('Tractor damage', pct(t.truckDamageBefore) + ' → ' + pct(t.truckDamageAfter))}
       ${row('Trailer damage', pct(t.trailerDamageBefore) + ' → ' + pct(t.trailerDamageAfter))}
       ${row('Cargo damage', pct(t.cargoDamagePct))}
-      ${row('Detention / layover / breakdown', num(t.detentionHours, 1) + ' h · ' + num(t.layoverDays, 1) + ' d · ' + num(t.breakdownDays, 1) + ' d')}
+      ${row('Detention / layover / breakdown', hhmm(t.detentionHours) + ' · ' + num(t.layoverDays, 1) + ' d · ' + num(t.breakdownDays, 1) + ' d')}
       ${row('Fault', esc(t.faultAttribution))}
       ${row('Driver pay', money(t.pay.total) + (t.settlementNumber ? ' (paid on ' + esc(t.settlementNumber) + ')' : ' (unsettled)'))}
       ${t.cancelReason ? row('Cancelled because', esc(t.cancelReason)) : ''}
@@ -2114,7 +2204,7 @@ function viewPayroll() {
         <dt>Loaded mile</dt><dd>$${p.loadedCpm.toFixed(3)}</dd>
         <dt>Empty mile</dt><dd>$${p.deadheadCpm.toFixed(3)}</dd>
         <dt>Reefer / hazmat / oversize</dt><dd>+$${p.reeferCpm.toFixed(3)} / +$${p.hazmatCpm.toFixed(3)} / +$${p.oversizeCpm.toFixed(3)}</dd>
-        <dt>Detention</dt><dd>${money(p.detentionPerHour)}/h after ${num(p.detentionFreeHours, 1)} h free</dd>
+        <dt>Detention</dt><dd>${money(p.detentionPerHour)}/h after ${hhmm(p.detentionFreeHours)} free</dd>
         <dt>Layover / breakdown</dt><dd>${money(p.layoverPerDay)} / ${money(p.breakdownPerDay)} per day</dd>
         <dt>Stop / tarp</dt><dd>${money(p.extraStopPay)} / ${money(p.tarpPay)}</dd>
         <dt>On-time bonus</dt><dd>$${p.onTimeBonusCpm.toFixed(3)}/loaded mi at 100% service</dd>
@@ -2837,12 +2927,12 @@ function facilityTimesHtml() {
     <p class="hint">The planner uses the figure for whatever is hooked. Measured close-outs train it;
       a hand-typed fallback never does. Set one yourself and it stops moving until you release it.</p>
     <div class="tablewrap"><table>
-      <thead><tr><th>Trailer</th><th class="num">Load h</th><th class="num">Unload h</th>
+      <thead><tr><th>Trailer</th><th class="num">Load</th><th class="num">Unload</th>
         <th class="num">Loads</th><th>Source</th><th></th></tr></thead>
       <tbody>${rows.map((f, i) => `<tr>
         <td>${esc(f.trailerType)}</td>
-        <td><input id="ftl-${i}" type="number" step="0.25" min="0" style="width:74px" value="${f.loadingHours}"></td>
-        <td><input id="ftu-${i}" type="number" step="0.25" min="0" style="width:74px" value="${f.unloadingHours}"></td>
+        <td><input id="ftl-${i}" inputmode="numeric" style="width:74px" value="${hhmm(f.loadingHours)}"></td>
+        <td><input id="ftu-${i}" inputmode="numeric" style="width:74px" value="${hhmm(f.unloadingHours)}"></td>
         <td class="num">${f.samples}</td>
         <td>${f.manual ? badge('warn', 'yours') : f.learned ? badge('ok', 'measured') : badge('mute', 'estimate')}</td>
         <td>${f.manual
@@ -2884,14 +2974,14 @@ function viewSettings() {
       <div class="panel-head"><h2>HOS rule set</h2>
         <span class="sub">Your mod wins — type its numbers here.</span></div>
       <div class="grid2">
-        <label>Drive limit h<input id="hr-drive" type="number" step="0.5" value="${h.driveLimit}"></label>
-        <label>Shift window h<input id="hr-shift" type="number" step="0.5" value="${h.shiftLimit}"></label>
-        <label>Driving before break h<input id="hr-beforebreak" type="number" step="0.5" value="${h.drivingBeforeBreak}"></label>
-        <label>Break length h<input id="hr-breaklen" type="number" step="0.25" value="${h.breakLength}"></label>
-        <label>Cycle limit h<input id="hr-cycle" type="number" step="1" value="${h.cycleLimit}"></label>
+        <label>Drive limit<input id="hr-drive" inputmode="numeric" value="${hhmm(h.driveLimit)}"></label>
+        <label>Shift window<input id="hr-shift" inputmode="numeric" value="${hhmm(h.shiftLimit)}"></label>
+        <label>Driving before break<input id="hr-beforebreak" inputmode="numeric" value="${hhmm(h.drivingBeforeBreak)}"></label>
+        <label>Break length<input id="hr-breaklen" inputmode="numeric" value="${hhmm(h.breakLength)}"></label>
+        <label>Cycle limit<input id="hr-cycle" inputmode="numeric" value="${hhmm(h.cycleLimit)}"></label>
         <label>Cycle days<input id="hr-cycledays" type="number" step="1" value="${h.cycleDays}"></label>
-        <label>Off-duty reset h<input id="hr-reset" type="number" step="0.5" value="${h.offDutyReset}"></label>
-        <label>Cycle restart h<input id="hr-restart" type="number" step="0.5" value="${h.cycleRestartHours}"></label>
+        <label>Off-duty reset<input id="hr-reset" inputmode="numeric" value="${hhmm(h.offDutyReset)}"></label>
+        <label>Cycle restart<input id="hr-restart" inputmode="numeric" value="${hhmm(h.cycleRestartHours)}"></label>
       </div>
       <label class="chk"><input type="checkbox" id="hr-requirebreak" ${h.requireBreak ? 'checked' : ''}> Enforce the ${(h.breakLength * 60).toFixed(0)}-minute break</label>
       <p class="hint">ATS runs on compressed time, which makes a short mandatory break awkward to
@@ -2910,13 +3000,13 @@ function viewSettings() {
       <div class="grid2">
         <label>Governed mph<input id="op-gov" type="number" step="1" value="${s.governedMph}"></label>
         <label>Speed factor<input id="op-factor" type="number" step="0.01" min="0.3" max="1" value="${s.speedFactor}"></label>
-        <label>Safety buffer h<input id="op-buffer" type="number" step="0.25" value="${s.safetyBufferHours}"></label>
-        <label>Parking buffer h<input id="op-park" type="number" step="0.25" value="${s.parkingBufferHours}"></label>
-        <label>Pre-trip h<input id="op-pre" type="number" step="0.05" value="${s.preTripHours}"></label>
-        <label>Post-trip h<input id="op-post" type="number" step="0.05" value="${s.postTripHours}"></label>
-        <label>Fallback loading h<input id="op-load" type="number" step="0.25" value="${s.defaultLoadingHours}"></label>
-        <label>Fallback unloading h<input id="op-unload" type="number" step="0.25" value="${s.defaultUnloadingHours}"></label>
-        <label>Fuel stop h<input id="op-fuelstop" type="number" step="0.05" value="${s.fuelStopHours}"></label>
+        <label>Safety buffer<input id="op-buffer" inputmode="numeric" value="${hhmm(s.safetyBufferHours)}"></label>
+        <label>Parking buffer<input id="op-park" inputmode="numeric" value="${hhmm(s.parkingBufferHours)}"></label>
+        <label>Pre-trip<input id="op-pre" inputmode="numeric" value="${hhmm(s.preTripHours)}"></label>
+        <label>Post-trip<input id="op-post" inputmode="numeric" value="${hhmm(s.postTripHours)}"></label>
+        <label>Fallback loading<input id="op-load" inputmode="numeric" value="${hhmm(s.defaultLoadingHours)}"></label>
+        <label>Fallback unloading<input id="op-unload" inputmode="numeric" value="${hhmm(s.defaultUnloadingHours)}"></label>
+        <label>Fuel stop<input id="op-fuelstop" inputmode="numeric" value="${hhmm(s.fuelStopHours)}"></label>
         <label>Planned fuel range mi<input id="op-range" type="number" step="10" value="${s.fuelRangeMiles}"></label>
         <label>Fuel price $/gal<input id="op-fuelprice" type="number" step="0.01" value="${s.fuelPricePerGal}"></label>
       </div>
@@ -3257,14 +3347,17 @@ async function handleAction(act, d, ev) {
     }, 'Noted — I will stop suggesting it.');
 
     case 'save-hos': {
+      // "8:30 in 1" and "8.5 in 1" both mean the same thing to a driver, so both are read.
       const recap = sv('h-recap').split(',').map((p) => {
-        const m = p.match(/([\d.]+)\s*in\s*(\d+)/i);
-        return m ? { hours: parseFloat(m[1]), inDays: parseInt(m[2], 10) } : null;
+        const m = p.match(/(\d+)\s*:\s*(\d+)\s*in\s*(\d+)/i);
+        if (m) return { hours: (+m[1]) + (+m[2]) / 60, inDays: parseInt(m[3], 10) };
+        const dec = p.match(/([\d.]+)\s*in\s*(\d+)/i);
+        return dec ? { hours: parseFloat(dec[1]), inDays: parseInt(dec[2], 10) } : null;
       }).filter(Boolean);
-      const breakLeft = S.views.hos.breakEnforced ? fv('h-break') : S.settings.hos.drivingBeforeBreak;
+      const breakLeft = S.views.hos.breakEnforced ? hv('h-break') : S.settings.hos.drivingBeforeBreak;
       return run(async () => absorb(await api('/hos', 'POST', {
-        driveRemaining: fv('h-drive'), shiftRemaining: fv('h-shift'),
-        breakRemaining: breakLeft, cycleRemaining: fv('h-cycle'),
+        driveRemaining: hv('h-drive'), shiftRemaining: hv('h-shift'),
+        breakRemaining: breakLeft, cycleRemaining: hv('h-cycle'),
         recap, source: sv('h-source'), notes: sv('h-notes'), asOfGameTime: readDayTime('st-time') || S.status.gameTime,
       })), 'Clocks recorded.');
     }
@@ -3278,8 +3371,8 @@ async function handleAction(act, d, ev) {
         originCity: sv('b-ocity'), originState: sv('b-ostate'),
         destCity: sv('b-dcity'), destState: sv('b-dstate'),
         loadedMiles: fv('b-miles'), deadheadMiles: fv('b-dh'),
-        gameRevenue: fv('b-rev'), deadlineHours: fv('b-deadline'),
-        weightLbs: fv('b-weight'), navEstimateHours: fv('b-nav') || null,
+        gameRevenue: fv('b-rev'), deadlineHours: hv('b-deadline'),
+        weightLbs: fv('b-weight'), navEstimateHours: hvn('b-nav'),
         shipper: sv('b-shipper'), receiver: sv('b-receiver'),
         extraStops: fv('b-stops'), broker: sv('b-broker'),
         isUrgent: bv('b-urgent'), isFragile: bv('b-fragile'), isHazmat: bv('b-hazmat'),
@@ -3337,7 +3430,7 @@ async function handleAction(act, d, ev) {
           originCity: sv(`x-ocity-${i}`), originState: sv(`x-ostate-${i}`),
           destCity: sv(`x-dcity-${i}`), destState: sv(`x-dstate-${i}`),
           loadedMiles: fv(`x-miles-${i}`), gameRevenue: fv(`x-rev-${i}`),
-          deadlineHours: fv(`x-dl-${i}`), weightLbs: fv(`x-wt-${i}`),
+          deadlineHours: hv(`x-dl-${i}`), weightLbs: fv(`x-wt-${i}`),
           trailerType: sv(`x-trailer-${i}`),
           shipper: l.shipper || '', receiver: l.receiver || '',
           deadheadMiles: 0, extraStops: 0,
@@ -3440,12 +3533,12 @@ async function handleAction(act, d, ev) {
         fuelStops: harvestFuel(), tolls: fv('c-tolls'),
         repairCost: fv('c-repair'), fines: fv('c-fines'), otherExpense: fv('c-other'),
         truckDamageAfter: fv('c-tdmg'), trailerDamageAfter: fv('c-trdmg'), cargoDamagePct: fv('c-cargo'),
-        loadingHours: fv('c-load'), unloadingHours: fv('c-unload'), detentionHours: fv('c-det'),
+        loadingHours: hv('c-load'), unloadingHours: hv('c-unload'), detentionHours: hv('c-det'),
         layoverDays: fv('c-lay'), breakdownDays: fv('c-bd'), extraStops: fv('c-stops'), tarpsUsed: fv('c-tarps'),
         delayReason: sv('c-delay'), damageCause: sv('c-dmgcause'), notes: sv('c-notes'),
         locationKind: 'Receiver', fuelPct: fv('c-fuelpct'), gameTime: readDayTime('c-time'),
-        hosDriveRemaining: fvn('c-hdrive'), hosShiftRemaining: fvn('c-hshift'),
-        hosBreakRemaining: fvn('c-hbreak'), hosCycleRemaining: fvn('c-hcycle'),
+        hosDriveRemaining: hvn('c-hdrive'), hosShiftRemaining: hvn('c-hshift'),
+        hosBreakRemaining: hvn('c-hbreak'), hosCycleRemaining: hvn('c-hcycle'),
       });
       absorb(r); TRIP_AUDIT = r.audit;
       FUEL = { tripId: null, seeded: 0, rows: [] };
@@ -3897,7 +3990,7 @@ async function handleAction(act, d, ev) {
 
     /* ---- settings & data */
     case 'facility-set': return run(async () => absorb(await api('/settings/facility-time', 'POST', {
-      trailerType: d.type, loadingHours: fv(`ftl-${d.i}`), unloadingHours: fv(`ftu-${d.i}`), manual: true,
+      trailerType: d.type, loadingHours: hv(`ftl-${d.i}`), unloadingHours: hv(`ftu-${d.i}`), manual: true,
     })), `${d.type} dock time fixed — it will not move on its own now.`);
     case 'facility-release': return run(async () => absorb(await api('/settings/facility-time', 'POST', {
       trailerType: d.type, loadingHours: 0, unloadingHours: 0, manual: false,
@@ -3920,6 +4013,9 @@ async function handleAction(act, d, ev) {
       const r = await api('/backups');
       $('backup-list').innerHTML = `<h3 class="sect">Career file</h3>
         <p class="mono sub">${esc(r.stateFile)}</p>
+        <p class="hint">Running TruckSim Dispatcher <b>${esc(S.views.versionDisplay || '')}</b>${
+          r.careerVersion && r.careerVersion !== S.views.version
+            ? ` · this career was last written by v${esc(r.careerVersion)}` : ''}</p>
         ${(r.otherCareers || []).length ? `<div class="callout warn">
           <h4>Another career file exists on this machine</h4>
           <p>Probably left by an earlier copy of the app. Adopting one replaces what is loaded now —
@@ -3971,18 +4067,18 @@ function collectSettings() {
     carrierRoster: sv('se-roster') || s.carrierRoster,
     hos: {
       ...s.hos,
-      driveLimit: fv('hr-drive'), shiftLimit: fv('hr-shift'),
-      drivingBeforeBreak: fv('hr-beforebreak'), breakLength: fv('hr-breaklen'),
-      cycleLimit: fv('hr-cycle'), cycleDays: fv('hr-cycledays'),
-      offDutyReset: fv('hr-reset'), cycleRestartHours: fv('hr-restart'),
+      driveLimit: hv('hr-drive'), shiftLimit: hv('hr-shift'),
+      drivingBeforeBreak: hv('hr-beforebreak'), breakLength: hv('hr-breaklen'),
+      cycleLimit: hv('hr-cycle'), cycleDays: fv('hr-cycledays'),
+      offDutyReset: hv('hr-reset'), cycleRestartHours: hv('hr-restart'),
       requireBreak: bv('hr-requirebreak'),
       breakConsumesShift: bv('hr-breakshift'), sleeperSplitAllowed: bv('hr-split'),
     },
     governedMph: fv('op-gov'), speedFactor: fv('op-factor'),
-    safetyBufferHours: fv('op-buffer'), parkingBufferHours: fv('op-park'),
-    preTripHours: fv('op-pre'), postTripHours: fv('op-post'),
-    defaultLoadingHours: fv('op-load'), defaultUnloadingHours: fv('op-unload'),
-    fuelStopHours: fv('op-fuelstop'), fuelRangeMiles: fv('op-range'), fuelPricePerGal: fv('op-fuelprice'),
+    safetyBufferHours: hv('op-buffer'), parkingBufferHours: hv('op-park'),
+    preTripHours: hv('op-pre'), postTripHours: hv('op-post'),
+    defaultLoadingHours: hv('op-load'), defaultUnloadingHours: hv('op-unload'),
+    fuelStopHours: hv('op-fuelstop'), fuelRangeMiles: fv('op-range'), fuelPricePerGal: fv('op-fuelprice'),
     revenueFactor: fv('ec-revfactor'), payMileMultiplier: fv('ec-paymult'),
     maintenanceReservePct: fv('ec-maintpct'), payrollReservePct: fv('ec-paypct'),
     overheadPerLoad: fv('ec-overhead'), cancellationPenalty: fv('ec-cancel'),

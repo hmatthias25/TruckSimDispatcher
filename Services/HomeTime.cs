@@ -408,7 +408,7 @@ public static class HomeTime
                           "the clock on the next one starts when you report in here again.");
         var restart = s.Settings.Hos.CycleRestartHours;
         if (s.Hos.CycleRemaining < s.Settings.Hos.CycleLimit * 0.5)
-            b.Parking.Add($"Cycle is down to {s.Hos.CycleRemaining:0.#} h. Sit a {restart:0.#}-hour restart while you " +
+            b.Parking.Add($"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Sit a {restart:0.#}-hour restart while you " +
                           "are stopped and you go back out with a full 70.");
 
         // ---- the shop, unit by unit. Only equipment ATS actually knows about.
