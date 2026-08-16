@@ -235,8 +235,9 @@ public static class EquipmentService
                 TerminalId = homeYard?.Id ?? "",
                 TerminalLabel = homeLabel,
                 AvailableFromGameTime = s.Status.GameTime,
-                Instruction = $"Next tour is {requiredType.ToLowerInvariant()} freight. Drop {(current == null ? "your trailer" : current.Unit)} " +
-                              $"and hook trailer {free.Unit} ({free.Year} {free.Make}, {free.Length} {free.Type}) at {at}. " +
+                Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, free.Subtype)} freight. " +
+                              $"Drop {(current == null ? "your trailer" : current.Unit)} and hook trailer {free.Unit} " +
+                              $"({free.Year} {free.Make}, {free.Length} {TrailerSpec.Describe(free.Type, free.Subtype)}) at {at}. " +
                               "Do the swap in ATS, then mark this order complete.",
                 Notes = "Trailer is on the property and free."
             });
@@ -264,7 +265,8 @@ public static class EquipmentService
                 TerminalLabel = homeLabel,
                 AvailableFromGameTime = back,
                 HeldByDriverName = taken.Driver!.Name,
-                Instruction = $"Next tour is {requiredType.ToLowerInvariant()} freight, and our {requiredType.ToLowerInvariant()} " +
+                Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, taken.Trailer.Subtype)} freight, and our " +
+                              $"{TrailerSpec.Describe(taken.Trailer.Type, taken.Trailer.Subtype)} " +
                               $"({taken.Trailer.Unit}) is out with {taken.Driver!.Name}. They are due back at {homeLabel} around " +
                               $"{GameClock.Pretty(back)} — about {days:0.#} day(s). Stay home until then; it comes out of your home time, not your hours. " +
                               $"When the trailer is in, hook {taken.Trailer.Unit} and mark this order complete.",
@@ -283,9 +285,10 @@ public static class EquipmentService
             TerminalLabel = homeLabel,
             MustPurchase = true,
             AvailableFromGameTime = s.Status.GameTime,
-            Instruction = $"Next tour is {requiredType.ToLowerInvariant()} freight and the company has no {requiredType.ToLowerInvariant()} " +
-                          $"trailer available. Buy one in ATS at {homeLabel} while you are home, add it on the Fleet tab, " +
-                          "then hook it and mark this order complete.",
+            Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, null)} freight and the company has none " +
+                          $"available. While you are home, buy one in ATS at {homeLabel}: " +
+                          $"{(TrailerSpec.IsTanker(requiredType) ? TrailerSpec.BuyingAdvice(s, requiredType, null) : $"a {requiredType.ToLowerInvariant()}.")} " +
+                          "Add it on the Fleet tab, hook it, then mark this order complete.",
             Notes = $"No {requiredType} on the property."
         });
     }

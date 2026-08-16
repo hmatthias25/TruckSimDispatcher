@@ -99,8 +99,15 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     var wentHome = HomeTime.Touch(s);
     if (wentHome)
         store.Log(s, "career", $"Home time taken at {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)}.");
+    var homeBrief = wentHome ? HomeTime.ArrivalBrief(s) : null;
 
-    return new { snapshot = Snapshot(s), discovery, wentHome };
+    // Payday is Friday. The app cannot see the game, so it settles the moment it is told the clock has
+    // crossed one — and pays each Friday in turn if several have gone by.
+    var paid = PayEngine.RunDuePaydays(s);
+    foreach (var st in paid)
+        store.Log(s, "pay", $"{st.Number} paid — ${st.Gross:N2} gross, ${st.Stub?.Net ?? st.Gross:N2} net.", st.Number);
+
+    return new { snapshot = Snapshot(s), discovery, wentHome, homeBrief, paid };
 })));
 
 // ---------------------------------------------------------------- discovery
@@ -196,12 +203,16 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     var open = s.Trips.FirstOrDefault(t => t.Status is "Authorized" or "InTransit");
     if (open != null)
         throw new InvalidOperationException($"{open.Number} is still open. Finish or cancel it before you resign.");
-    if (s.Driver.UnsettledPay > 0)
-        throw new InvalidOperationException($"You have ${s.Driver.UnsettledPay:N2} in unsettled pay. Run a settlement first — you will not see it after you leave.");
-
     var decision = Carriers.Screen(s, req.Code);
     if (!decision.Hired)
         return new { hired = false, decision, snapshot = (object?)null };
+
+    // Settle up before anything else. You do not leave wages on a previous employer's books, and the
+    // driver should not have to remember to press a button to avoid it.
+    var finalPay = PayEngine.SettleOnLeaving(s);
+    if (finalPay != null)
+        store.Log(s, "pay", $"{finalPay.Number} — final settlement from {s.Company.Name}, " +
+                            $"${finalPay.Gross:N2} gross, ${finalPay.Stub?.Net ?? finalPay.Gross:N2} net.", finalPay.Number);
 
     // Close out the stint that is ending.
     var stats = CareerService.Compute(s);
@@ -227,9 +238,11 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     var leaving = s.Company.Name;
 
     // New employer: new books, new fleet, new probation. The driver's record carries over.
+    //
+    // Settlements are deliberately NOT cleared. They are the driver's pay history, not the company's
+    // books — including the final stub issued moments ago, which they have not even seen yet.
     s.Trips.Clear();
     s.Board.Clear();
-    s.Settlements.Clear();
     s.Ledger.Clear();
     s.WorkOrders.Clear();
     s.Incidents.Clear();
@@ -272,6 +285,7 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     return new
     {
         hired = true, decision, truck, trailer,
+        finalPay,
         setup = Carriers.SetupChecklist(s),
         snapshot = (object?)Snapshot(s)
     };
@@ -350,7 +364,7 @@ app.MapPost("/api/board", (List<BoardLoad> loads) => Results.Ok(store.Mutate(s =
         l.OriginState = (l.OriginState ?? "").Trim().ToUpperInvariant();
         l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
     }
-    return DispatchEngine.EvaluateBoard(s);
+    return EvaluateBoard(s);
 })));
 
 app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
@@ -361,22 +375,23 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
     l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
     if (string.IsNullOrWhiteSpace(l.TrailerType)) l.TrailerType = DispatchEngine.AssignedTrailer(s)?.Type ?? "";
     s.Board.Add(l);
-    return DispatchEngine.EvaluateBoard(s);
+    return EvaluateBoard(s);
 })));
 
 app.MapDelete("/api/board/{id}", (string id) => Results.Ok(store.Mutate(s =>
 {
     s.Board.RemoveAll(b => b.Id == id);
-    return DispatchEngine.EvaluateBoard(s);
+    return EvaluateBoard(s);
 })));
 
 app.MapPost("/api/board/clear", () => Results.Ok(store.Mutate(s =>
 {
     s.Board.Clear();
-    return DispatchEngine.EvaluateBoard(s);
+    return EvaluateBoard(s);
 })));
 
-app.MapGet("/api/board/evaluate", () => Results.Ok(DispatchEngine.EvaluateBoard(store.State)));
+app.MapPost("/api/board/evaluate", () => Results.Ok(store.Mutate(EvaluateBoard)));
+app.MapGet("/api/board/evaluate", () => Results.Ok(store.Mutate(EvaluateBoard)));
 
 /// Reads freight-board screenshots into candidate loads. Deliberately does NOT touch the board —
 /// the driver confirms the numbers first, because a misread payout or mileage would silently
@@ -866,7 +881,12 @@ app.MapPost("/api/discipline/reinstate", (NoteRequest req) => Results.Ok(store.M
 
 // ---------------------------------------------------------------- payroll & money
 
-app.MapPost("/api/settlements/run", (NoteRequest req) => Results.Ok(store.Mutate(s =>
+// Payday is Friday and a job change settles up — there is no "run one now". Kept as an endpoint so an
+// older UI gets a clear answer rather than a 404.
+app.MapPost("/api/settlements/run", (NoteRequest _) =>
+    Results.BadRequest(new { error = "Settlements run themselves. Payday is Friday, and changing employer settles the old one first." }));
+
+app.MapPost("/api/settlements/legacy-run", (NoteRequest req) => Results.Ok(store.Mutate(s =>
 {
     var settlement = PayEngine.RunSettlement(s, req.Notes);
     store.Log(s, "pay", $"{settlement.Number} issued — gross ${settlement.Gross:N2} over {settlement.TripNumbers.Count} trip(s).", settlement.Number);
@@ -963,6 +983,12 @@ app.MapPost("/api/career/home-time", (HomeTimeRequest req) => Results.Ok(store.M
         s.Driver.LastHomeGameTime = string.IsNullOrWhiteSpace(s.Driver.HiredGameDate) ? s.Status.GameTime : s.Driver.HiredGameDate;
 
     store.Log(s, "career", $"Home-time arrangement changed to {HomeTime.LabelFor(req.Preference)}.");
+    return Snapshot(s);
+})));
+
+app.MapPost("/api/settings/facility-time", (FacilityTimeRequest req) => Results.Ok(store.Mutate(s =>
+{
+    FacilityLearning.SetManual(s, req.TrailerType, req.LoadingHours, req.UnloadingHours, req.Manual);
     return Snapshot(s);
 })));
 
@@ -1121,6 +1147,17 @@ object Snapshot(AppState? given = null)
         {
             garageOpportunities = DiscoveryService.GarageOpportunityView(s),
             unacknowledged = SafetyService.Unacknowledged(s),
+            facilityTimes = FacilityLearning.View(s),
+            payroll = new
+            {
+                nextPaydayDay = PayEngine.NextPayday(s).Day,
+                daysToPayday = PayEngine.NextPayday(s).DaysAway,
+                s.Driver.UnsettledPay,
+                healthPremium = s.Settings.HealthPremiumPerPeriod,
+                stateCode = (HomeTime.HomeTerminal(s)?.State ?? s.Company.TerminalState ?? "").ToUpperInvariant(),
+                stateRate = PayrollTax.StateRate(HomeTime.HomeTerminal(s)?.State ?? s.Company.TerminalState),
+                ytdGross = PayrollTax.YtdGross(s)
+            },
             dedicated = new
             {
                 carrierRuns = Dedicated.CarrierRunsDedicated(s),
@@ -1174,6 +1211,26 @@ object Snapshot(AppState? given = null)
             aiConfigured = AiService.Configured(s.Settings)
         }
     };
+}
+
+/// <summary>
+/// Evaluates the board and clears it when the driver is out of hours.
+///
+/// A board that failed purely on the clock is stale by definition — the driver is going to sleep, and
+/// the jobs will have turned over by the time they are legal. Leaving it up invites authorizing a load
+/// that no longer exists.
+/// </summary>
+BoardDecision EvaluateBoard(AppState s)
+{
+    var decision = DispatchEngine.EvaluateBoard(s);
+    if (decision.OutOfHours && s.Board.Count > 0)
+    {
+        s.Board.Clear();
+        store.Log(s, "dispatch", decision.NeedsRestart
+            ? "Board cleared — out of cycle, 34-hour restart required."
+            : "Board cleared — out of hours, 10-hour reset required.");
+    }
+    return decision;
 }
 
 /// <summary>Equipment and yards on the book that ATS knows nothing about, so the UI can offer a trim.</summary>
@@ -1265,6 +1322,7 @@ record ForgiveRequest(string? Reason, bool Force);
 record TerminateRequest(string DriverId, string? Reason);
 record RetireRequest(string Unit, string? ReplacementUnit);
 record DedicatedRequest(bool OnDedicated, string? Account);
+record FacilityTimeRequest(string TrailerType, double LoadingHours, double UnloadingHours, bool Manual);
 record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? TransmissionPreference, bool AddTrailers);
 record AdoptRequest(string Path);
 record HomeTimeRequest(string Preference);

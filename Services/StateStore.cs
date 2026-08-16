@@ -371,8 +371,37 @@ public static class GameClock
         return FromDay(day, hh, mm);
     }
 
+    /// <summary>
+    /// The weekday a game day falls on. ATS has no calendar, so the app defines one: <b>Day 1 is a
+    /// Monday</b>. That is the whole rule, and it is what makes payday mean something — Fridays are
+    /// days 5, 12, 19, 26 and so on.
+    /// </summary>
+    public static DayOfWeek WeekdayOf(int day) =>
+        (DayOfWeek)(((Math.Max(1, day) - 1) % 7 + 1) % 7);   // day 1 -> Monday
+
+    public static DayOfWeek? WeekdayOf(string? value) =>
+        DayOf(value) is { } d ? WeekdayOf(d) : null;
+
+    public static bool IsPayday(int day) => WeekdayOf(day) == DayOfWeek.Friday;
+
+    /// <summary>The next payday on or after this day. Day 5 is the first one of a career.</summary>
+    public static int NextPayday(int day)
+    {
+        for (var d = Math.Max(1, day); d < day + 8; d++)
+            if (IsPayday(d)) return d;
+        return day;
+    }
+
+    /// <summary>Every payday strictly after <paramref name="fromDay"/> and up to <paramref name="toDay"/>.</summary>
+    public static IEnumerable<int> PaydaysBetween(int fromDay, int toDay)
+    {
+        for (var d = fromDay + 1; d <= toDay; d++)
+            if (IsPayday(d)) yield return d;
+    }
+
     /// <summary>How the clock is shown everywhere the player reads it.</summary>
-    public static string PrettyDay(DateTime dt) => $"Day {DayOf(dt)} · {dt:HH\\:mm}";
+    public static string PrettyDay(DateTime dt) =>
+        $"{WeekdayOf(DayOf(dt)).ToString()[..3]} Day {DayOf(dt)} · {dt:HH\\:mm}";
 
     public static string PrettyDay(string? value) =>
         TryParse(value) is { } dt ? PrettyDay(dt) : (value ?? "—");

@@ -147,6 +147,29 @@ public static class DispatchEngine
             return decision;
         }
 
+        // Out of hours is not the same as a bad board. If every load fails on the clock rather than on
+        // rate, routing or equipment, the freight is fine and the driver simply cannot legally run it.
+        // Telling them to reposition would be worse than useless.
+        if (OutOfHoursOnly(s, decision, out var restNote, out var restartNeeded))
+        {
+            decision.RejectAll = true;
+            decision.OutOfHours = true;
+            decision.NeedsRestart = restartNeeded;
+            decision.Headline = restartNeeded
+                ? $"You are out of cycle — {s.Hos.CycleRemaining:0.#} h left on the {s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}."
+                : "You are out of hours for today. Nothing on this board can be run legally.";
+            decision.Rationale = restNote;
+            decision.DispatchNotes.Add(restNote);
+
+            foreach (var opt in Markets.ResetOptions(s, s.Status.LocationState).Take(3))
+                decision.DispatchNotes.Add($"{Place(opt.City, opt.State)} can hold a restart — parking, fuel and services.");
+
+            decision.DispatchNotes.Add("I am clearing the board. By the time you are legal these jobs will have " +
+                                       "turned over anyway — pull a fresh one when you are back on duty.");
+            foreach (var e in decision.Evaluations) e.Recommendation = "Reject";
+            return decision;
+        }
+
         // Nothing clean. Reject the board, but name the closest thing to a runnable load.
         decision.RejectAll = true;
         var tight = decision.Evaluations.FirstOrDefault(e => e.HardFails.Count == 0 && e.Feasibility.Verdict == "Tight");
@@ -193,6 +216,52 @@ public static class DispatchEngine
     }
 
     /// <summary>Things that must be answered before ANY load can be authorized.</summary>
+    /// <summary>
+    /// Whether the board failed purely on hours.
+    ///
+    /// Deliberately strict: every load must be blocked, and blocked by the clock rather than by rate,
+    /// equipment or qualification. A board that is half bad freight and half out-of-hours is an
+    /// ordinary rejection with an ordinary answer.
+    /// </summary>
+    private static bool OutOfHoursOnly(AppState s, BoardDecision decision, out string note, out bool restartNeeded)
+    {
+        note = "";
+        restartNeeded = false;
+        if (decision.Evaluations.Count == 0) return false;
+
+        // Judge this off the clocks, not off the wording of a blocker. Blocker text is prose and
+        // changes; the driver's remaining hours are a fact.
+        foreach (var e in decision.Evaluations)
+        {
+            // A hard fail is a rate, equipment, qualification or account problem — not the clock.
+            if (e.HardFails.Count > 0) return false;
+            // Anything still runnable means the board is fine and the driver is not stuck.
+            if (e.Feasibility.Verdict != "Infeasible") return false;
+        }
+
+        var rules = s.Settings.Hos;
+        var view = HosEngine.Describe(s, AssignedTruck(s));
+
+        // Out of cycle is the serious one: only a restart fixes it.
+        restartNeeded = s.Hos.CycleRemaining <= Math.Max(1.0, rules.DriveLimit * 0.25);
+        // Out of drive or shift for the day is the ordinary one: a 10-hour reset fixes it.
+        var outOfDay = view.DrivableNowHours <= 0.5;
+
+        // Everything infeasible but the driver has hours in hand? Then the freight is the problem,
+        // not the clock, and this is an ordinary rejection.
+        if (!restartNeeded && !outOfDay) return false;
+
+        note = restartNeeded
+            ? $"A {rules.OffDutyReset:0.#}-hour rest will not fix this — a normal overnight does not touch the " +
+              $"{rules.CycleLimit:0}-hour cycle. You need the {rules.CycleRestartHours:0.#}-hour restart, and somewhere " +
+              "with real parking and services to sit it. That is the only thing that puts the 70 back."
+            : $"Drive is at {s.Hos.DriveRemaining:0.##} h and your window at {s.Hos.ShiftRemaining:0.##} h. Find a truck " +
+              $"stop with legal parking and take the {rules.OffDutyReset:0.#}-hour reset. That restores your drive and " +
+              $"shift clocks — but not the cycle, which stays at {s.Hos.CycleRemaining:0.#} h.";
+
+        return true;
+    }
+
     public static List<string> MissingContext(AppState s)
     {
         var need = new List<string>();
@@ -331,12 +400,14 @@ public static class DispatchEngine
 
         // ---- HOS feasibility
         var fuelRange = HosEngine.UsableRange(s.Settings, truck, s.Status.FuelPct);
+        // Dock time for whatever is actually hooked, not one figure for every trailer on the map.
+        var dock = FacilityLearning.For(s, string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
         e.Feasibility = HosEngine.Plan(s, new PlanRequest
         {
             DeadheadMiles = load.DeadheadMiles,
             LoadedMiles = load.LoadedMiles,
-            LoadingHours = s.Settings.DefaultLoadingHours,
-            UnloadingHours = s.Settings.DefaultUnloadingHours,
+            LoadingHours = dock.Loading,
+            UnloadingHours = dock.Unloading,
             NavEstimateHours = load.NavEstimateHours,
             ExtraStops = load.ExtraStops,
             DeadlineHours = load.DeadlineHours,
@@ -380,6 +451,12 @@ public static class DispatchEngine
             score += resetPts;
             detail.Add($"Reset watch active ({s.Hos.CycleRemaining:0.#} h cycle) and destination is {(e.DestResetFriendly ? "reset-capable" : "NOT a good restart location")}: {resetPts:+0.00;-0.00}");
         }
+
+        detail.Add(dock.Learned
+            ? $"Dock time assumed {dock.Loading:0.#} h to load and {dock.Unloading:0.#} h to unload, " +
+              $"measured off your last {dock.Samples} {FacilityLearning.Normalise(load.TrailerType).ToLowerInvariant()} load(s)."
+            : $"Dock time assumed {dock.Loading:0.#} h to load and {dock.Unloading:0.#} h to unload — a starting " +
+              "estimate until we have run a few of these.");
 
         var slackPts = Math.Clamp(e.Feasibility.SlackHours / 8.0, -2.0, 1.5) * w.HosSlack;
         score += slackPts;

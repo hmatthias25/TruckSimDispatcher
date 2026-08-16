@@ -87,6 +87,14 @@ public class TripAudit
     public DiscoveryService.DiscoveryNotice? Discovery { get; set; }
     /// <summary>Home-time instructions: report to the yard, and what to put through the shop while there.</summary>
     public List<string> HomeTimeInstructions { get; set; } = new();
+    /// <summary>
+    /// Where this delivery leaves the driver on home time. Read at the moment a load closes, which is
+    /// exactly when they are deciding what to do next — and when a lower-paying ride home stops looking
+    /// like a mistake.
+    /// </summary>
+    public string HomeTimeNote { get; set; } = "";
+    /// <summary>This load was the ride home, and they are close enough to take it now.</summary>
+    public bool GotYouHome { get; set; }
 }
 
 /// <summary>Closes a load out: service audit, pay accrual, ledger postings, equipment and career updates.</summary>
@@ -167,6 +175,25 @@ public static class TripService
         if (facility.UnloadingHours > 0) trip.UnloadingHours = facility.UnloadingHours;
         trip.DetentionHours = facility.DetentionHours;
         audit.ServiceFindings.AddRange(facility.Explain);
+
+        // Only measured times train the planner. A typed fallback is the driver's recollection, and
+        // baking a guess into every future projection is how the old flat 1.0 went wrong.
+        var dockBefore = FacilityLearning.For(s, trip.TrailerType);
+        FacilityLearning.Record(s, trip.TrailerType,
+            facility.LoadDerived ? facility.LoadingHours : null,
+            facility.UnloadDerived ? facility.UnloadingHours : null);
+        var dockAfter = FacilityLearning.For(s, trip.TrailerType);
+
+        // Say so when this load moved the planning assumption — it changes every future projection.
+        if (Math.Abs(dockAfter.Loading - dockBefore.Loading) >= 0.05
+            || Math.Abs(dockAfter.Unloading - dockBefore.Unloading) >= 0.05)
+        {
+            var type = FacilityLearning.Normalise(trip.TrailerType).ToLowerInvariant();
+            audit.ServiceFindings.Add(
+                $"Dock time for {type} updated: load {dockBefore.Loading:0.##} → {dockAfter.Loading:0.##} h, " +
+                $"unload {dockBefore.Unloading:0.##} → {dockAfter.Unloading:0.##} h, now off {dockAfter.Samples} " +
+                $"measured load(s). I plan every {type} run on those figures from here.");
+        }
         trip.LayoverDays = req.LayoverDays;
         trip.BreakdownDays = req.BreakdownDays;
         if (req.ExtraStops > 0) trip.ExtraStops = req.ExtraStops;
@@ -306,6 +333,32 @@ public static class TripService
         audit.Discovery = DiscoveryService.Note(s, s.Status.LocationCity, s.Status.LocationState,
             trip.DeliveredGameTime, trip.Number);
 
+        // ---- and where does it leave us on home time?
+        var homeNow = HomeTime.Status(s);
+        if (homeNow.Tracked)
+        {
+            if (homeNow.AtHome && (homeNow.DueSoon || homeNow.Overdue))
+            {
+                audit.GotYouHome = true;
+                audit.HomeTimeNote =
+                    $"That load got you home. You are {homeNow.MilesFromHome:N0} mi from {homeNow.TerminalLabel} " +
+                    $"and {homeNow.DaysOut:0.#} days out on a {homeNow.IntervalDays}-day arrangement. " +
+                    "Run in to the yard and report at the terminal to take it.";
+            }
+            else if (homeNow.Overdue)
+                audit.HomeTimeNote =
+                    $"Home time is overdue — {homeNow.DaysOut:0.#} days out. You are still " +
+                    $"{homeNow.MilesFromHome:N0} mi from {homeNow.TerminalLabel}, so the next load is going that way.";
+            else if (homeNow.DueSoon)
+                audit.HomeTimeNote =
+                    $"Home time is due in {homeNow.DaysUntilDue:0.#} days and you are {homeNow.MilesFromHome:N0} mi " +
+                    $"from {homeNow.TerminalLabel}. The next load will be the one that gets you back, which is why " +
+                    "I may pass over something that pays better.";
+            else
+                audit.HomeTimeNote =
+                    $"{homeNow.DaysOut:0.#} days out, home time in {homeNow.DaysUntilDue:0.#}. Nothing to plan around yet.";
+        }
+
         // ---- safety record
         if (late && fault == "Driver")
         {
@@ -388,11 +441,11 @@ public static class TripService
         // The load that was run to get them home ends with the instruction to actually go home.
         if (trip.IsHomeRun || HomeTime.Status(s).Overdue)
         {
-            var homeNow = HomeTime.HomeRunInstructions(s, s.Status.LocationCity, s.Status.LocationState);
-            if (homeNow.Count > 0)
+            var homeSteps = HomeTime.HomeRunInstructions(s, s.Status.LocationCity, s.Status.LocationState);
+            if (homeSteps.Count > 0)
             {
-                audit.HomeTimeInstructions.AddRange(homeNow);
-                audit.Directives.Add(homeNow[0]);
+                audit.HomeTimeInstructions.AddRange(homeSteps);
+                audit.Directives.Add(homeSteps[0]);
             }
         }
         if (audit.MaintenanceStatus is "MandatoryReview" or "OutOfService")

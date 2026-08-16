@@ -878,6 +878,14 @@ function decisionHtml() {
     </div>
     ${d.infoNeeded.length ? `<div class="callout warn"><h4>I need this before committing freight</h4>
       <ul>${d.infoNeeded.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''}
+    ${d.outOfHours ? `<div class="callout stop">
+      <h4>${d.needsRestart ? 'You need the 34-hour restart' : 'You are out of hours'}</h4>
+      <p>${esc(d.rationale)}</p>
+      <p class="hint" style="margin:0">The board has been cleared — those jobs will have turned over by
+        the time you are legal. Report your clock when you are back on duty and enter a fresh one.</p>
+      <div class="row-actions">
+        <button class="btn" data-act="tab" data-tab="dispatch">Report my clocks</button>
+      </div></div>` : ''}
     ${d.evaluations.map((e) => loadCardHtml(e, d)).join('')}
     ${d.localOnly ? `<div class="callout info">
       <h4>Next step: the wider board</h4>
@@ -1289,6 +1297,126 @@ function clocksAtDeliveryHtml() {
       plan the next load straight away. Leave blank and I will ask for them on the Dispatch tab.</p>
   </fieldset>`;
 }
+
+/* Everything a status report can set off. Payday and arriving home both happen because the clock
+   moved, so they surface here rather than being something the driver has to go looking for. */
+function afterStatus(r, fallback = 'Status updated.') {
+  const paid = r.paid || [];
+  if (paid.length) return paydayModal(paid);
+  if (r.homeBrief) return homeBriefModal(r.homeBrief);
+  toast(DISCOVERY ? DISCOVERY.headline : fallback, 'ok');
+}
+
+/* Payday. Getting paid should not be a line in a log you scroll past. */
+function paydayModal(paid) {
+  const total = paid.reduce((a, p) => a + (p.stub ? p.stub.net : p.gross), 0);
+  modal(`<div class="panel-head"><h2>${paid.length > 1 ? 'You have been paid' : 'Payday'}</h2>
+      ${badge('ok', money(total) + ' net')}
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+
+    ${paid.map((p) => p.stub ? `
+      <h3 class="sect">${esc(p.number)} — ${esc(p.notes)}</h3>
+      ${stubTableHtml(p)}` : `
+      <h3 class="sect">${esc(p.number)}</h3>
+      <p>${money(p.gross)} gross.</p>`).join('')}
+
+    <p class="hint">Payday is every Friday. Nothing to press — it runs when your clock crosses one.
+      Full stubs are on the Payroll tab.</p>
+    <div class="row-actions">
+      <div style="flex:1"></div>
+      <button class="btn" data-act="tab" data-tab="payroll">Open Payroll</button>
+      <button class="btn primary" data-act="close-modal">Got it</button>
+    </div>`);
+}
+
+/* The brief handed over when the driver reports in at their home yard. */
+function homeBriefModal(b) {
+  const sec = (title, items, cls) => items && items.length
+    ? `<div class="callout ${cls}"><h4>${title}</h4>
+        <ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
+
+  modal(`<div class="panel-head"><h2>Home</h2>
+      ${badge('ok', esc(b.terminal))}
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+
+    <div class="callout go"><p style="margin:0">${esc(b.headline)}</p></div>
+
+    ${b.nothingToDo ? `<div class="callout info">
+      <h4>Nothing needs doing</h4>
+      <p style="margin:0">Equipment is inside every threshold and there is no paperwork outstanding.
+        Park it and take your days.</p></div>` : ''}
+
+    ${sec('Parking and your reset', b.parking, 'info')}
+    ${sec('The shop', b.shop, 'warn')}
+    ${sec('Equipment', b.equipment, 'info')}
+    ${sec('Paperwork while you are standing still', b.paperwork, 'mute')}
+
+    <div class="row-actions">
+      <div style="flex:1"></div>
+      <button class="btn" data-act="tab" data-tab="maint">Maintenance</button>
+      <button class="btn primary" data-act="close-modal">Got it</button>
+    </div>`);
+}
+
+/* The audit, shown the moment a load closes. It used to render inline on the tab, where it sat until
+   the next dispatch was taken — by which point it was about the wrong trip and easily missed. */
+function auditModal(a) {
+  const late = a.trip.serviceResult === 'Late';
+  const cls = late ? (a.faultAttribution === 'Driver' ? 'stop' : 'warn') : 'go';
+
+  modal(`<div class="panel-head"><h2>${esc(a.trip.number)} closed</h2>
+      ${badge(late ? 'bad' : 'ok', a.trip.serviceResult)}
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+
+    <div class="callout ${cls}">
+      <h4>${esc(a.headline)}</h4>
+      ${a.faultRationale ? `<p>${esc(a.faultRationale)}</p>` : ''}
+    </div>
+
+    ${a.homeTimeNote ? `<div class="callout ${a.gotYouHome ? 'go' : 'info'}">
+      <h4>${a.gotYouHome ? 'That load got you home' : 'Home time'}</h4>
+      <p style="margin:0">${esc(a.homeTimeNote)}</p></div>` : ''}
+
+    <div class="cols">
+      <div>
+        ${auditSection('Service', a.serviceFindings)}
+        ${auditSection('Mileage', a.mileageFindings)}
+        ${auditSection('Money', a.moneyFindings)}
+      </div>
+      <div>
+        ${auditSection('Equipment', a.equipmentFindings)}
+        ${a.trip.pay.lines.length ? `<h3 class="sect">Your pay — ${money(a.driverPay)}</h3>
+          <ul class="reasons">${a.trip.pay.lines.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${a.carriedForward && a.carriedForward.length ? `<h3 class="sect">Carried forward</h3>
+          <ul class="reasons">${a.carriedForward.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      </div>
+    </div>
+
+    ${a.homeTimeInstructions && a.homeTimeInstructions.length ? `<div class="callout go">
+      <h4>When you get in</h4>
+      <ul>${a.homeTimeInstructions.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+
+    ${a.directives.length ? `<div class="callout ${a.maintenanceStatus === 'OutOfService' ? 'stop' : 'info'}">
+      <h4>What happens next</h4>
+      <ul>${a.directives.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+
+    ${a.disciplineRecommendation ? `<div class="callout stop">
+      <h4>Safety has issued: ${esc(a.disciplineRecommendation.replace(/([a-z])([A-Z])/g, '$1 $2'))}</h4>
+      <p>Incident ${esc(a.incidentNumber || '')} was opened. Acknowledge it on the Safety tab.</p></div>` : ''}
+
+    ${a.discovery ? discoveryHtml(a.discovery) : ''}
+
+    <div class="row-actions">
+      <div style="flex:1"></div>
+      <button class="btn primary" data-act="close-modal">Got it</button>
+    </div>`);
+}
+
+const auditSection = (title, items) => items && items.length
+  ? `<h3 class="sect">${title}</h3><ul class="reasons">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
 
 function auditHtml(a) {
   const sec = (title, items) => items.length
@@ -1902,24 +2030,81 @@ const dmgBadge = (d) => d >= S.settings.maintenance.outOfServicePct ? 'bad'
     : d >= S.settings.maintenance.reportPct ? 'info' : 'ok';
 
 /* ============================================================ PAYROLL */
+/* A pay stub, laid out the way a real one is: earnings, what comes off before tax, what the
+   government takes, and what actually reaches the bank. */
+function stubTableHtml(st) {
+  const b = st.stub;
+  if (!b) return `<p class="hint">This settlement predates pay stubs — gross only, ${money(st.gross)}.</p>`;
+  const row = (label, amount, cls) => `<tr><td>${label}</td>
+    <td class="num" style="${cls || ''}">${money(amount)}</td></tr>`;
+
+  return `<div class="tablewrap"><table><tbody>
+    <tr><td colspan="2" style="padding-top:6px"><b>EARNINGS</b></td></tr>
+    ${st.linehaulPay ? row(`Loaded miles ${num(st.loadedMiles)}`, st.linehaulPay) : ''}
+    ${st.deadheadPay ? row(`Empty miles ${num(st.deadheadMiles)}`, st.deadheadPay) : ''}
+    ${st.divisionPremium ? row('Division / endorsement premium', st.divisionPremium) : ''}
+    ${st.accessorials ? row('Accessorials', st.accessorials) : ''}
+    ${st.onTimeBonus ? row('On-time bonus', st.onTimeBonus) : ''}
+    ${st.safetyBonus ? row('Safety bonus', st.safetyBonus) : ''}
+    ${st.guaranteeMakeup ? row('Weekly guarantee make-up', st.guaranteeMakeup) : ''}
+    ${st.chargebacks ? row('Chargebacks', -st.chargebacks, 'color:var(--red)') : ''}
+    <tr><td><b>GROSS PAY</b></td><td class="num"><b>${money(b.gross)}</b></td></tr>
+
+    <tr><td colspan="2" style="padding-top:8px"><b>PRE-TAX DEDUCTIONS</b></td></tr>
+    ${row('Medical (single)', -b.medical, 'color:var(--amber2)')}
+    <tr><td><b>TAXABLE WAGES</b></td><td class="num"><b>${money(b.taxableWages)}</b></td></tr>
+
+    <tr><td colspan="2" style="padding-top:8px"><b>TAXES WITHHELD</b></td></tr>
+    ${row('Federal income tax (single)', -b.federal, 'color:var(--amber2)')}
+    ${row('Social Security 6.2%', -b.socialSecurity, 'color:var(--amber2)')}
+    ${row('Medicare 1.45%', -b.medicare, 'color:var(--amber2)')}
+    ${row(b.stateHasTax
+        ? `State income tax (${esc(b.stateCode)} ${pct(b.stateRate * 100, 2)})`
+        : `State income tax (${esc(b.stateCode || '—')} — no wage tax)`,
+      -b.stateTax, 'color:var(--amber2)')}
+    <tr><td><b>NET PAY</b></td>
+      <td class="num" style="font-weight:700;color:var(--green)">${money(b.net)}</td></tr>
+
+    <tr><td class="sub" style="padding-top:8px">Year to date, gross</td>
+      <td class="num sub" style="padding-top:8px">${money(b.ytdGross)}</td></tr>
+  </tbody></table></div>
+  <p class="hint">Withholding is approximated: the period is annualised over ${b.periodsPerYear} pay
+    periods and run through the current single-filer brackets. Close enough to feel real, not close
+    enough to file a return from.</p>`;
+}
+
 function viewPayroll() {
   const unsettled = S.trips.filter((t) => !t.settlementNumber && (t.status === 'Delivered' || t.status === 'Cancelled') && t.pay.total !== 0);
   const total = unsettled.reduce((a, t) => a + t.pay.total, 0);
   const p = S.driver.pay;
+  const pr = S.views.payroll || { nextPaydayDay: 0, daysToPayday: 0, healthPremium: 0, stateCode: '', stateRate: 0 };
   return `
   <div class="cols">
     <div class="panel">
-      <div class="panel-head"><h2>Open settlement</h2><span class="sub">${unsettled.length} trip(s) awaiting pay</span></div>
+      <div class="panel-head"><h2>Next payday</h2>
+        ${badge(pr.daysToPayday <= 1 ? 'ok' : 'info', 'Day ' + pr.nextPaydayDay)}
+        <div class="spacer"></div><span class="sub">${unsettled.length} trip(s) accrued</span></div>
+
+      <div class="callout info">
+        <p style="margin:0"><b>Payday is Friday.</b> There is nothing to press — a settlement runs
+          itself the moment your reported clock crosses one, and again whenever you change employer.
+          ${pr.daysToPayday <= 0 ? 'Report your clock to trigger it.'
+            : `Next one is <b>Day ${pr.nextPaydayDay}</b>, ${num(pr.daysToPayday, 0)} day(s) away.`}</p>
+      </div>
+
       ${unsettled.length ? `<div class="tablewrap"><table>
         <thead><tr><th>Trip</th><th>Lane</th><th class="num">Loaded</th><th class="num">Empty</th><th class="num">Pay</th></tr></thead>
         <tbody>${unsettled.map((t) => `<tr><td class="mono">${esc(t.number)}</td>
           <td>${esc(t.destCity)}, ${esc(t.destState)}</td>
           <td class="num">${num(t.pay.loadedMiles)}</td><td class="num">${num(t.pay.deadheadMiles)}</td>
           <td class="num">${money(t.pay.total)}</td></tr>`).join('')}
-          <tr><td colspan="4"><b>Accrued</b></td><td class="num"><b>${money(total)}</b></td></tr></tbody></table></div>
-        <label style="margin-top:12px">Settlement note<input id="pay-note" placeholder="optional"></label>
-        <div class="row-actions"><button class="btn go" data-act="run-settlement">Issue settlement</button></div>`
-        : '<div class="empty">Nothing to settle. Deliver a load first.</div>'}
+          <tr><td colspan="4"><b>Accrued, gross</b></td><td class="num"><b>${money(total)}</b></td></tr></tbody></table></div>`
+        : '<div class="empty">Nothing accrued. Deliver a load first.</div>'}
+
+      <p class="hint">Withholding comes off at settlement: federal at single rate, Social Security,
+        Medicare, and ${pr.stateRate > 0 ? `${esc(pr.stateCode)} state tax at ${pct(pr.stateRate * 100, 2)}`
+          : `no state tax — ${esc(pr.stateCode || 'your state')} does not tax wages`}.
+        Medical of ${money(pr.healthPremium)} comes off before tax.</p>
     </div>
 
     <div class="panel">
@@ -1947,14 +2132,23 @@ function viewPayroll() {
       <div class="loadcard ${s.onTimePct >= 100 ? 'auth' : 'backup'}">
         <div class="loadcard-head"><span class="lane">${esc(s.number)}</span>
           ${badge(s.onTimePct >= 100 ? 'ok' : 'warn', pct(s.onTimePct) + ' on time')}
-          <div class="spacer"></div><b style="font-family:var(--mono)">${money(s.gross)}</b></div>
+          ${s.trigger === 'JobChange' ? badge('violet', 'final settlement') : ''}
+          <div class="spacer"></div>
+          <b style="font-family:var(--mono)">${money(s.gross)}</b>
+          ${s.stub ? `<span class="sub">gross</span>
+            <b style="font-family:var(--mono);color:var(--green)">${money(s.stub.net)}</b>
+            <span class="sub">net</span>` : ''}</div>
         <div class="kv"><span>trips <b>${s.tripNumbers.length}</b></span>
           <span>loaded <b>${num(s.loadedMiles)} mi</b></span><span>empty <b>${num(s.deadheadMiles)} mi</b></span>
           <span>linehaul <b>${money(s.linehaulPay)}</b></span><span>accessorials <b>${money(s.accessorials)}</b></span>
           <span>bonuses <b>${money(s.onTimeBonus + s.safetyBonus)}</b></span></div>
         <ul class="reasons">${s.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
         <p class="hint">Trips: ${esc(s.tripNumbers.join(', '))}</p>
-      </div>`).join('') : '<div class="empty">No settlements issued yet.</div>'}
+        <div class="row-actions">
+          <button class="btn ${s.stub ? '' : 'ghost'}" data-act="show-stub" data-num="${esc(s.number)}">
+            ${s.stub ? 'Pay stub' : 'Details'}</button>
+        </div>
+      </div>`).join('') : '<div class="empty">No settlements issued yet. Payday is Friday.</div>'}
   </div>`;
 }
 
@@ -2631,6 +2825,35 @@ function viewPacket() {
   </div>`;
 }
 
+/* ---- what a dock actually costs, per trailer type
+   One global figure could not serve a reefer that takes four hours and a flatbed that takes one, so
+   the app measures instead of assuming. These converge as loads are delivered. */
+function facilityTimesHtml() {
+  const rows = S.views.facilityTimes || [];
+  if (!rows.length) return '';
+
+  return `<details class="score" style="margin-top:10px">
+    <summary>Dock time by trailer — learned from your loads</summary>
+    <p class="hint">The planner uses the figure for whatever is hooked. Measured close-outs train it;
+      a hand-typed fallback never does. Set one yourself and it stops moving until you release it.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Trailer</th><th class="num">Load h</th><th class="num">Unload h</th>
+        <th class="num">Loads</th><th>Source</th><th></th></tr></thead>
+      <tbody>${rows.map((f, i) => `<tr>
+        <td>${esc(f.trailerType)}</td>
+        <td><input id="ftl-${i}" type="number" step="0.25" min="0" style="width:74px" value="${f.loadingHours}"></td>
+        <td><input id="ftu-${i}" type="number" step="0.25" min="0" style="width:74px" value="${f.unloadingHours}"></td>
+        <td class="num">${f.samples}</td>
+        <td>${f.manual ? badge('warn', 'yours') : f.learned ? badge('ok', 'measured') : badge('mute', 'estimate')}</td>
+        <td>${f.manual
+          ? `<button class="btn tiny ghost" data-act="facility-release" data-type="${esc(f.trailerType)}"
+               title="Go back to learning from your loads">Release</button>`
+          : `<button class="btn tiny ghost" data-act="facility-set" data-type="${esc(f.trailerType)}" data-i="${i}"
+               title="Fix these figures">Set</button>`}</td>
+      </tr>`).join('')}</tbody></table></div>
+  </details>`;
+}
+
 /* ============================================================ SETTINGS */
 function viewSettings() {
   const s = S.settings, h = s.hos, m = s.maintenance, w = s.scoring;
@@ -2691,12 +2914,13 @@ function viewSettings() {
         <label>Parking buffer h<input id="op-park" type="number" step="0.25" value="${s.parkingBufferHours}"></label>
         <label>Pre-trip h<input id="op-pre" type="number" step="0.05" value="${s.preTripHours}"></label>
         <label>Post-trip h<input id="op-post" type="number" step="0.05" value="${s.postTripHours}"></label>
-        <label>Default loading h<input id="op-load" type="number" step="0.25" value="${s.defaultLoadingHours}"></label>
-        <label>Default unloading h<input id="op-unload" type="number" step="0.25" value="${s.defaultUnloadingHours}"></label>
+        <label>Fallback loading h<input id="op-load" type="number" step="0.25" value="${s.defaultLoadingHours}"></label>
+        <label>Fallback unloading h<input id="op-unload" type="number" step="0.25" value="${s.defaultUnloadingHours}"></label>
         <label>Fuel stop h<input id="op-fuelstop" type="number" step="0.05" value="${s.fuelStopHours}"></label>
         <label>Planned fuel range mi<input id="op-range" type="number" step="10" value="${s.fuelRangeMiles}"></label>
         <label>Fuel price $/gal<input id="op-fuelprice" type="number" step="0.01" value="${s.fuelPricePerGal}"></label>
       </div>
+      ${facilityTimesHtml()}
       <p class="hint">Effective planning speed is governed mph × speed factor — currently
         <b>${num(s.governedMph * s.speedFactor, 1)} mph</b>.</p>
     </div>
@@ -2711,6 +2935,7 @@ function viewSettings() {
         <label>Overhead per load $<input id="ec-overhead" type="number" step="1" value="${s.overheadPerLoad}"></label>
         <label>Cancellation penalty $<input id="ec-cancel" type="number" step="1" value="${s.cancellationPenalty}"></label>
         <label>Settlement period days<input id="ec-period" type="number" step="1" value="${s.settlementPeriodDays}"></label>
+        <label>Medical $/period (pre-tax)<input id="ec-health" type="number" step="5" min="0" value="${s.healthPremiumPerPeriod}"></label>
       </div>
       <p class="hint"><b>Revenue factor:</b> vanilla ATS payouts are inflated against real linehaul rates.
         A factor below 1 discounts them before the company books revenue. With an economy mod, leave it at 1.00.<br>
@@ -2832,7 +3057,7 @@ const BLANK_TRUCK = {
   purchasePrice: 0, monthlyPayment: 0, notes: '',
 };
 const BLANK_TRAILER = {
-  unit: '', type: 'Dry Van', division: 'Dry Van', year: new Date().getFullYear(), make: '',
+  unit: '', type: 'Dry Van', subtype: '', division: 'Dry Van', year: new Date().getFullYear(), make: '',
   length: "53'", axles: 'Tandem', inGameGarage: true, damagePct: 0, serviceMiles: 0,
   status: 'InService', homeTerminal: '', currentLocation: '', assignedTruckUnit: '',
   isCompanyOwned: true, notes: '',
@@ -2951,6 +3176,11 @@ function editTrailerModal(unit) {
     </fieldset>
     <div class="grid2">
       <label>Type<input id="er-type" value="${esc(t.type)}"></label>
+      <label>If a tanker, which kind
+        <select id="er-subtype"><option value="">(not a tanker)</option>
+          ${['Fuel', 'Chemical', 'Food Grade', 'Dry Bulk', 'Gas'].map((x) =>
+            `<option value="${x}" ${t.subtype === x ? 'selected' : ''}>${x}</option>`).join('')}
+        </select></label>
       <label>Division<input id="er-div" value="${esc(t.division)}"></label>
       <label>Make<input id="er-make" value="${esc(t.make)}"></label>
       <label>Year<input id="er-year" type="number" step="1" value="${t.year}"></label>
@@ -2997,7 +3227,7 @@ async function handleAction(act, d, ev) {
         dutyStatus: sv('st-duty'), atsBankBalance: fvn('st-bank'),
       }));
       DISCOVERY = r.discovery || null;
-      toast(DISCOVERY ? DISCOVERY.headline : 'Status updated.', 'ok');
+      afterStatus(r);
       return r;
     });
 
@@ -3013,7 +3243,7 @@ async function handleAction(act, d, ev) {
         atsBankBalance: S.status.atsBankBalance,
       }));
       DISCOVERY = r.discovery || null;
-      toast('Confirmed.', 'ok');
+      afterStatus(r, 'Confirmed.');
       return r;
     });
 
@@ -3221,7 +3451,9 @@ async function handleAction(act, d, ev) {
       FUEL = { tripId: null, seeded: 0, rows: [] };
       // New dock, new starting point: show me what is going out from here before the whole city.
       BOARD_STAGE = 'local';
-      toast(r.audit.headline, r.audit.trip.serviceResult === 'Late' ? 'bad' : 'ok');
+      // The audit belongs in front of the driver the moment the load closes, not sitting on a tab
+      // until they have already taken the next one.
+      auditModal(r.audit);
     });
     case 'show-cancel': return cancelModal(d.id);
     case 'do-cancel': return run(async () => {
@@ -3483,7 +3715,8 @@ async function handleAction(act, d, ev) {
       return run(async () => {
         absorb(await api('/fleet/trailer', 'POST', {
           ...base, unit,
-          type: sv('er-type'), division: sv('er-div'), make: sv('er-make'), year: fv('er-year'),
+          type: sv('er-type'), subtype: sv('er-subtype'), division: sv('er-div'),
+          make: sv('er-make'), year: fv('er-year'),
           length: sv('er-len'), axles: sv('er-axles'), damagePct: fv('er-dmg'), status: sv('er-status'),
           inGameGarage: bv('er-garage'),
           serviceMiles: fv('er-svc'), currentLocation: sv('er-loc'), notes: sv('er-notes'),
@@ -3504,10 +3737,19 @@ async function handleAction(act, d, ev) {
     }
 
     /* ---- payroll & money */
-    case 'run-settlement': return run(async () => {
-      const r = absorb(await api('/settlements/run', 'POST', { notes: sv('pay-note') }));
-      toast(`${r.settlement.number} issued — ${money(r.settlement.gross)}.`, 'ok');
-    });
+    case 'show-stub': {
+      const st = S.settlements.find((x) => x.number === d.num);
+      if (!st) return;
+      return modal(`<div class="panel-head"><h2>Pay stub — ${esc(st.number)}</h2>
+          ${st.trigger === 'JobChange' ? badge('violet', 'final settlement') : badge('ok', 'payday')}
+          <div class="spacer"></div>
+          <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+        <p class="sub">${esc(S.driver.name)} · ${esc(S.driver.rankTitle)} · period ${gt(st.periodStartGame)}
+          to ${gt(st.periodEndGame)}${st.notes ? ' · ' + esc(st.notes) : ''}</p>
+        ${stubTableHtml(st)}
+        <div class="row-actions"><div style="flex:1"></div>
+          <button class="btn primary" data-act="close-modal">Close</button></div>`);
+    }
     case 'post-entry': {
       if (!fv('le-amt')) return toast('Amount cannot be zero.', 'bad');
       return run(async () => { absorb(await api('/finance/entry', 'POST', {
@@ -3654,6 +3896,12 @@ async function handleAction(act, d, ev) {
     }
 
     /* ---- settings & data */
+    case 'facility-set': return run(async () => absorb(await api('/settings/facility-time', 'POST', {
+      trailerType: d.type, loadingHours: fv(`ftl-${d.i}`), unloadingHours: fv(`ftu-${d.i}`), manual: true,
+    })), `${d.type} dock time fixed — it will not move on its own now.`);
+    case 'facility-release': return run(async () => absorb(await api('/settings/facility-time', 'POST', {
+      trailerType: d.type, loadingHours: 0, unloadingHours: 0, manual: false,
+    })), `${d.type} back to learning from your loads.`);
     case 'save-settings': return run(async () => absorb(await api('/settings', 'POST', collectSettings())), 'Settings saved.');
     case 'snapshot': return run(async () => {
       const r = await api('/backups/snapshot', 'POST', { notes: 'manual' });
@@ -3739,6 +3987,7 @@ function collectSettings() {
     maintenanceReservePct: fv('ec-maintpct'), payrollReservePct: fv('ec-paypct'),
     overheadPerLoad: fv('ec-overhead'), cancellationPenalty: fv('ec-cancel'),
     settlementPeriodDays: fv('ec-period'),
+    healthPremiumPerPeriod: fv('ec-health'),
     maintenance: {
       ...s.maintenance,
       monitorPct: fv('mt-report'), reportPct: fv('mt-report'),

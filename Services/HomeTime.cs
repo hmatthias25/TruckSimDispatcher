@@ -362,6 +362,120 @@ public static class HomeTime
         return jobs;
     }
 
+    /// <summary>What the driver should actually do now that they are home.</summary>
+    public class ArrivalBriefing
+    {
+        public string Headline { get; set; } = "";
+        public string Terminal { get; set; } = "";
+        public double DaysOut { get; set; }
+        public int IntervalDays { get; set; }
+        public List<string> Parking { get; set; } = new();
+        public List<string> Shop { get; set; } = new();
+        public List<string> Equipment { get; set; } = new();
+        public List<string> Paperwork { get; set; } = new();
+        public bool NothingToDo { get; set; }
+    }
+
+    /// <summary>
+    /// The brief handed over when the driver reports in at their home yard.
+    ///
+    /// Arriving home is the one point in the loop where the truck is standing still at a company yard
+    /// with nothing hooked to it, which makes it the moment for everything that cannot be done on the
+    /// road. This pulls what is scattered across Maintenance, Fleet and Equipment into one place, at
+    /// the one time it all applies — and says so plainly when the answer is "nothing, take your days".
+    /// </summary>
+    public static ArrivalBriefing ArrivalBrief(AppState s)
+    {
+        var home = HomeTerminal(s);
+        var b = new ArrivalBriefing
+        {
+            Terminal = home == null ? "the yard" : DispatchEngine.Place(home.City, home.State),
+            IntervalDays = s.Driver.HomeTimeIntervalDays
+        };
+
+        var last = GameClock.TryParse(s.Driver.LastHomeGameTime);
+        var hired = GameClock.TryParse(s.Driver.HiredGameDate);
+        var previous = s.Driver.HomeTimesTaken > 1 ? last : hired;
+        b.DaysOut = previous != null && last != null ? Math.Max(0, (last.Value - previous.Value).TotalDays) : 0;
+
+        b.Headline = $"Home at {b.Terminal}. That is home time number {s.Driver.HomeTimesTaken} — " +
+                     $"you have been out {(b.DaysOut > 0 ? $"{b.DaysOut:0.#} days" : "since your last reset")}.";
+
+        // ---- parking and how long they have
+        b.Parking.Add($"Park it at the {b.Terminal} yard. Nothing is dispatched against you while you are home.");
+        if (s.Driver.HomeTimeIntervalDays > 0)
+            b.Parking.Add($"Your arrangement is home every {s.Driver.HomeTimeIntervalDays} days. Take the time — " +
+                          "the clock on the next one starts when you report in here again.");
+        var restart = s.Settings.Hos.CycleRestartHours;
+        if (s.Hos.CycleRemaining < s.Settings.Hos.CycleLimit * 0.5)
+            b.Parking.Add($"Cycle is down to {s.Hos.CycleRemaining:0.#} h. Sit a {restart:0.#}-hour restart while you " +
+                          "are stopped and you go back out with a full 70.");
+
+        // ---- the shop, unit by unit. Only equipment ATS actually knows about.
+        var m = s.Settings.Maintenance;
+        var truck = DispatchEngine.AssignedTruck(s);
+        var trailer = DispatchEngine.AssignedTrailer(s);
+        var hasShop = home?.HasShop ?? false;
+
+        if (truck is { InGameGarage: true })
+        {
+            if (truck.DamagePct >= m.MandatoryReviewPct)
+                b.Shop.Add($"Unit {truck.Unit} is at {truck.DamagePct:0.#}% — over our {m.MandatoryReviewPct:0}% review line. Repair it before you go back out.");
+            else if (truck.DamagePct >= m.ReportPct)
+                b.Shop.Add($"Unit {truck.Unit} is at {truck.DamagePct:0.#}%. Worth putting through the shop while it is standing.");
+            else
+                b.Shop.Add($"Unit {truck.Unit} is fine at {truck.DamagePct:0.#}% — nothing needed.");
+
+            var since = truck.ServiceMiles - truck.LastServiceMiles;
+            if (since >= truck.ServiceIntervalMiles)
+                b.Shop.Add($"Unit {truck.Unit} is {since - truck.ServiceIntervalMiles:N0} mi PAST its {truck.ServiceIntervalMiles:N0}-mile PM. Do it now.");
+            else if (since >= truck.ServiceIntervalMiles * 0.85)
+                b.Shop.Add($"PM due on unit {truck.Unit} in {truck.ServiceIntervalMiles - since:N0} mi. Cheaper to do it here than on the road.");
+        }
+
+        if (trailer is { InGameGarage: true })
+        {
+            if (trailer.DamagePct >= m.ReportPct)
+                b.Shop.Add($"Trailer {trailer.Unit} is at {trailer.DamagePct:0.#}% — get it done at the same time.");
+            else
+                b.Shop.Add($"Trailer {trailer.Unit} is fine at {trailer.DamagePct:0.#}%.");
+        }
+
+        if (b.Shop.Any(x => x.Contains("Repair") || x.Contains("PM") || x.Contains("shop") || x.Contains("done")))
+            b.Shop.Add(hasShop
+                ? $"The {home!.City} yard has its own shop, so labour is cheaper here than anywhere on the road."
+                : $"The {home?.City ?? "home"} yard has no shop — book it into a dealer or service centre nearby.");
+
+        // ---- equipment waiting on them
+        if (EquipmentService.OpenOrder(s) is { } order)
+            b.Equipment.Add($"{order.Number}: {order.Instruction}");
+
+        var spare = s.Trucks.FirstOrDefault(t => !t.Retired && t.InGameGarage
+                                                 && t.Unit != s.Driver.AssignedTruckUnit
+                                                 && t.HomeTerminalId == home?.Id
+                                                 && string.IsNullOrWhiteSpace(t.AssignedDriver)
+                                                 && truck != null && t.Year > truck.Year);
+        if (spare != null)
+            b.Equipment.Add($"There is a better unit sitting here: {spare.Unit} ({spare.Year} {spare.Make} {spare.Model}, " +
+                            $"{spare.ServiceMiles:N0} mi) against your {truck!.Year} {truck.Make}. Ask operations to move you into it.");
+
+        // ---- paperwork that can be closed while standing still
+        var open = s.WorkOrders.Count(w => w.Status == "Open");
+        if (open > 0)
+            b.Paperwork.Add($"{open} work order(s) still open. Close them out on the Maintenance tab while the truck is here.");
+
+        var unack = SafetyService.Unacknowledged(s).Count;
+        if (unack > 0)
+            b.Paperwork.Add($"{unack} disciplinary action(s) waiting on your signature — Safety tab.");
+
+        if (FleetOpsService.DueCheck(s) is { IsDue: true })
+            b.Paperwork.Add("The fleet report is due. Good time to pull the hired drivers' numbers off the game.");
+
+        b.NothingToDo = b.Shop.All(x => x.Contains("fine at") || x.Contains("nothing needed"))
+                        && b.Equipment.Count == 0 && b.Paperwork.Count == 0;
+        return b;
+    }
+
     /// <summary>A dispatch-note line for the board decision, when home time is a live consideration.</summary>
     public static string? BoardNote(HomeStatus st)
     {

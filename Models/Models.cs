@@ -195,6 +195,8 @@ public class Driver
     public ProbationPlan Probation { get; set; } = new();
     /// <summary>Driver pay accrued but not yet paid out on a settlement.</summary>
     public decimal UnsettledPay { get; set; }
+    /// <summary>Game day of the last payday processed, so a Friday is never paid twice.</summary>
+    public int LastPaydayDay { get; set; }
     public decimal LifetimeEarnings { get; set; }
 
     /// <summary>Loads run for previous employers. A carrier screens on your whole record, not
@@ -341,6 +343,13 @@ public class Trailer
     public string Unit { get; set; } = "";
     /// <summary>Dry Van, Reefer, Flatbed, Step Deck, Tanker, Dump, Lowboy, Car Hauler, Livestock, Log</summary>
     public string Type { get; set; } = "";
+    /// <summary>
+    /// What kind of tanker: Fuel, Chemical, Food Grade, Dry Bulk, Gas. "Tanker" on its own is not
+    /// something a driver can act on — a fuel tanker, a food-grade tanker and a pneumatic dry-bulk
+    /// tanker are different trailers hauling different freight under different endorsements, and
+    /// "buy a tanker" sends someone to a dealer with the decision still to make.
+    /// </summary>
+    public string Subtype { get; set; } = "";
     public string Division { get; set; } = "";
     public int Year { get; set; }
     public string Make { get; set; } = "";
@@ -695,7 +704,42 @@ public class Settlement
     public double SafetyBonusShare { get; set; } = 1;
     public string Notes { get; set; } = "";
     public List<string> Lines { get; set; } = new();
+    /// <summary>
+    /// Gross-to-net breakdown. Null on settlements issued before pay stubs existed — those still
+    /// render, they simply show gross only.
+    /// </summary>
+    public PayStub? Stub { get; set; }
+    /// <summary>Payday | JobChange — why this settlement ran.</summary>
+    public string Trigger { get; set; } = "Payday";
     public string IssuedUtc { get; set; } = DateTime.UtcNow.ToString("o");
+}
+
+/// <summary>
+/// What actually reaches the driver's bank. A game approximation of real withholding — enough to make
+/// the gap between gross and net feel real, not enough to file a return from.
+/// </summary>
+public class PayStub
+{
+    public string SettlementNumber { get; set; } = "";
+    public decimal Gross { get; set; }
+    /// <summary>Pre-tax medical. Comes off before federal, state and FICA.</summary>
+    public decimal Medical { get; set; }
+    public decimal TaxableWages { get; set; }
+
+    public decimal Federal { get; set; }
+    public decimal SocialSecurity { get; set; }
+    public decimal Medicare { get; set; }
+    public decimal StateTax { get; set; }
+    public string StateCode { get; set; } = "";
+    public decimal StateRate { get; set; }
+    /// <summary>False for the nine states with no wage income tax — shown as a zero line, not hidden.</summary>
+    public bool StateHasTax { get; set; }
+
+    public decimal TotalTaxes { get; set; }
+    public decimal Net { get; set; }
+    public decimal YtdGross { get; set; }
+    /// <summary>Periods the pay was annualised over to find the federal rate.</summary>
+    public int PeriodsPerYear { get; set; } = 52;
 }
 
 // ---------------------------------------------------------------- ops records
@@ -991,8 +1035,15 @@ public class AppSettings
     public double ParkingBufferHours { get; set; } = 0.75;
     public double PreTripHours { get; set; } = 0.25;
     public double PostTripHours { get; set; } = 0.25;
+    /// <summary>Fallback only. Real dock time is learned per trailer type — see <see cref="FacilityTimes"/>.</summary>
     public double DefaultLoadingHours { get; set; } = 1.0;
     public double DefaultUnloadingHours { get; set; } = 1.0;
+    /// <summary>
+    /// Measured dock time per trailer type. A reefer takes three or four hours to load and a flatbed
+    /// can be one; planning both at the same figure made every reefer projection optimistic enough to
+    /// authorize loads that could not be run. These converge on the truth as loads are delivered.
+    /// </summary>
+    public List<FacilityTimeSample> FacilityTimes { get; set; } = new();
     public double FuelStopHours { get; set; } = 0.35;
     /// <summary>Miles of range planned between fuel stops.</summary>
     public double FuelRangeMiles { get; set; } = 900;
@@ -1042,6 +1093,11 @@ public class AppSettings
     // --- settlement
     public int SettlementPeriodDays { get; set; } = 7;
     /// <summary>
+    /// The driver's share of the medical premium, per pay period. Pre-tax, so it comes off before
+    /// federal, state and FICA. Roughly a typical single-coverage employee contribution.
+    /// </summary>
+    public decimal HealthPremiumPerPeriod { get; set; } = 60m;
+    /// <summary>
     /// Game days between fleet reports. The hired fleet keeps running whether or not the player is
     /// looking at it, so operations asks for its numbers on a cycle rather than waiting to be told.
     /// </summary>
@@ -1086,6 +1142,19 @@ public class HosRules
     /// <summary>Does off-duty time other than a full reset extend the 14-hour window? False under real rules.</summary>
     public bool OffDutyExtendsShift { get; set; }
     public string Notes { get; set; } = "";
+}
+
+/// <summary>What a dock actually costs in hours, for one trailer type.</summary>
+public class FacilityTimeSample
+{
+    public string TrailerType { get; set; } = "";
+    public double LoadingHours { get; set; }
+    public double UnloadingHours { get; set; }
+    /// <summary>Measured close-outs behind these figures. 0 = still the starting estimate.</summary>
+    public int Samples { get; set; }
+    /// <summary>The driver set these by hand, so they stop moving.</summary>
+    public bool Manual { get; set; }
+    public string LastGameTime { get; set; } = "";
 }
 
 public class MaintenanceThresholds
@@ -1271,6 +1340,14 @@ public class BoardDecision
     /// "show me the wider city board", not "reposition" — the city has not been looked at yet.
     /// </summary>
     public bool LocalOnly { get; set; }
+    /// <summary>
+    /// Every load failed on the clock rather than on the freight. The driver is not looking at a bad
+    /// board — they are out of hours, and the answer is a rest, not a reposition. The board is cleared
+    /// when this is set, because it will have turned over by the time they are legal again.
+    /// </summary>
+    public bool OutOfHours { get; set; }
+    /// <summary>The 34-hour restart is required — a normal overnight will not fix the cycle.</summary>
+    public bool NeedsRestart { get; set; }
     public bool ResetWatch { get; set; }
     public string NextTripNumberPreview { get; set; } = "";
 }

@@ -196,6 +196,9 @@ public static class PayEngine
 
         foreach (var t in unsettled) t.SettlementNumber = st.Number;
 
+        // Gross to net. Computed before the settlement is filed so year-to-date does not count itself.
+        st.Stub = PayrollTax.Compute(s, st, PayrollTax.YtdGross(s), PayrollTax.YtdSocialSecurityWages(s));
+
         s.Settlements.Insert(0, st);
         s.Driver.UnsettledPay = Math.Round(Math.Max(0, s.Driver.UnsettledPay - unsettled.Sum(t => t.Pay.Total)), 2);
         if (Math.Abs(s.Driver.UnsettledPay) < 0.01m) s.Driver.UnsettledPay = 0;
@@ -203,5 +206,62 @@ public static class PayEngine
 
         LedgerService.PostPayroll(s, st);
         return st;
+    }
+
+    /// <summary>
+    /// Runs any settlement the calendar owes the driver.
+    ///
+    /// Payday is Friday, and the app cannot see the game, so this fires when the driver reports a clock
+    /// that has crossed one. Several Fridays can pass if they jump the clock forward — each is settled
+    /// in turn rather than lumped together, so per-period bonuses and the guarantee stay honest.
+    /// </summary>
+    public static List<Settlement> RunDuePaydays(AppState s)
+    {
+        var issued = new List<Settlement>();
+        var now = GameClock.DayOf(s.Status.GameTime);
+        if (now == null) return issued;
+
+        var lastPaid = s.Driver.LastPaydayDay > 0
+            ? s.Driver.LastPaydayDay
+            // First run of a career: only look back to the hire date, not to day one.
+            : (GameClock.DayOf(s.Driver.HiredGameDate) ?? 1) - 1;
+
+        foreach (var payday in GameClock.PaydaysBetween(lastPaid, now.Value))
+        {
+            s.Driver.LastPaydayDay = payday;
+            var owed = s.Trips.Any(t => string.IsNullOrEmpty(t.SettlementNumber)
+                                        && t.Status is "Delivered" or "Cancelled" && t.Pay.Total != 0);
+            if (!owed) continue;   // a quiet week is not an error, it just does not produce a stub
+
+            var st = RunSettlement(s, $"Payday — Friday, Day {payday}.");
+            st.Trigger = "Payday";
+            issued.Add(st);
+        }
+        return issued;
+    }
+
+    /// <summary>
+    /// Settling up on the way out. Leaving an employer with wages on their books is not something the
+    /// driver should have to remember to avoid, so accepting a new job closes the old one out first.
+    /// </summary>
+    public static Settlement? SettleOnLeaving(AppState s)
+    {
+        var owed = s.Trips.Any(t => string.IsNullOrEmpty(t.SettlementNumber)
+                                    && t.Status is "Delivered" or "Cancelled" && t.Pay.Total != 0);
+        if (!owed) return null;
+
+        var st = RunSettlement(s, $"Final settlement — leaving {s.Company.Name}.");
+        st.Trigger = "JobChange";
+        return st;
+    }
+
+    /// <summary>When the next payday falls, for the Payroll tab.</summary>
+    public static (int Day, double DaysAway) NextPayday(AppState s)
+    {
+        var now = GameClock.DayOf(s.Status.GameTime) ?? 1;
+        var next = GameClock.NextPayday(now);
+        // Today counts only if the clock has not already passed this week's payday.
+        if (next == now && s.Driver.LastPaydayDay >= now) next = GameClock.NextPayday(now + 1);
+        return (next, next - now);
     }
 }

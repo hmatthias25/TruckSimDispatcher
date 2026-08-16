@@ -723,11 +723,15 @@ public static class Carriers
         if (trailer != null)
             steps.Add(new SetupStep
             {
-                Title = $"Decide on trailers — you are assigned {trailer.Unit}, a {trailer.Length} {trailer.Type}",
+                Title = $"Decide on trailers — you are assigned {trailer.Unit}, a {trailer.Length} " +
+                        $"{TrailerSpec.Describe(trailer.Type, trailer.Subtype)}",
                 Detail = $"{s.Company.Name} runs {string.Join(", ", s.Company.Divisions)}. You can either buy your own " +
-                         $"{trailer.Type.ToLowerInvariant()} in ATS and run company trailers, or just take market trailers " +
-                         "with each job and treat the company trailer as paperwork. Either works — the app only needs to " +
-                         "know which trailer type you are pulling so it can gate freight correctly.",
+                         (TrailerSpec.IsTanker(trailer.Type)
+                            ? $"in ATS — {TrailerSpec.BuyingAdvice(s, trailer.Type, trailer.Subtype)} — and run company trailers, "
+                            : $"{trailer.Type.ToLowerInvariant()} in ATS and run company trailers, ") +
+                         "or just take market trailers with each job and treat the company trailer as paperwork. " +
+                         "Either works — the app only needs to know which trailer type you are pulling so it can gate " +
+                         "freight correctly.",
                 Why = "Freight requiring a trailer you cannot pull is hard-rejected at dispatch."
             });
 
