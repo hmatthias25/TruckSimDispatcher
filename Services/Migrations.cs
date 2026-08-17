@@ -23,6 +23,31 @@ public static class Migrations
         EnsureHomeTimeArrangement(s);
         ClearPhantomBankBalance(s);
         EnsureEquipmentStandard(s);
+        EnsureCarrierNetwork(s);
+    }
+
+    /// <summary>
+    /// Careers written before the employer's terminal network was stored have nothing to check garage
+    /// opportunities against, so the app offered a yard in every city the truck reached. Look the
+    /// network up from the carrier code.
+    ///
+    /// Yards the driver already owns are left alone, even off-network — they bought those garages in
+    /// ATS and they are real. This only affects what gets offered from here on.
+    /// </summary>
+    private static void EnsureCarrierNetwork(AppState s)
+    {
+        if (s.Company.NetworkCities.Count > 0) return;
+        var net = Carriers.NetworkCitiesFor(s.Company.Code);
+        if (net.Count == 0) return;      // fictional carrier: no real network to be faithful to
+
+        // Anywhere we already have a yard belongs on the network too, or the app would start telling
+        // the driver their own terminal is somewhere the company does not operate.
+        foreach (var t in s.Company.Terminals)
+        {
+            var key = $"{t.City},{t.State}";
+            if (!net.Any(n => n.Equals(key, StringComparison.OrdinalIgnoreCase))) net.Add(key);
+        }
+        s.Company.NetworkCities = net;
     }
 
     /// <summary>

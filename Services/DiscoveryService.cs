@@ -98,6 +98,24 @@ public static class DiscoveryService
             return notice;
         }
 
+        // Off our employer's network. Still a city we have now reached — which matters, because the
+        // freight board here becomes readable — but not somewhere the carrier is opening a terminal.
+        // Asking a company driver whether to expand into Wichita is asking the wrong person.
+        if (!OnNetwork(s, c, st))
+        {
+            notice.GarageAvailable = false;
+            notice.Headline = $"First run into {notice.Place}. Noted — it is on our map now.";
+            notice.Detail.Add(NetworkSummary(s) +
+                              $" {notice.Place} is not on that network, so there is no yard here to open. " +
+                              "That is not your call to make and it is not mine either.");
+            if (market != null)
+                notice.Detail.Add($"Tier-{tier} freight market{(market.ResetFriendly ? ", with the parking and services for a 34-hour restart" : "")} — " +
+                                  "worth knowing when I am picking loads that end here.");
+            entry.Notified = true;
+            store_Log(s, $"Discovered {notice.Place} — off network, no yard offered.");
+            return notice;
+        }
+
         // Worth a yard? Freight strength and reset facilities are what make one pay for itself.
         notice.Recommended = tier <= 2;
         notice.Headline = $"New city discovered: {notice.Place}. ATS will sell you a garage here.";
@@ -129,17 +147,87 @@ public static class DiscoveryService
     }
 
     /// <summary>
+    /// Is this city somewhere our employer actually runs terminals?
+    ///
+    /// A company driver does not pick where the carrier opens yards. Prime runs Springfield, Salt Lake
+    /// City, Denver and Pittston — delivering to Wichita does not make Wichita a candidate. An empty
+    /// network means a fictional carrier with nothing to be faithful to, so anywhere reached counts.
+    /// </summary>
+    public static bool OnNetwork(AppState s, string? city, string? state)
+    {
+        var net = s.Company.NetworkCities;
+        if (net == null || net.Count == 0) return true;
+        return net.Any(n =>
+        {
+            var parts = n.Split(',', StringSplitOptions.TrimEntries);
+            if (parts.Length == 0 || !Same(parts[0], city)) return false;
+            var ns = parts.ElementAtOrDefault(1);
+            return string.IsNullOrWhiteSpace(ns) || string.IsNullOrWhiteSpace(state) || Same(ns, state);
+        });
+    }
+
+    /// <summary>How the employer's network reads, for explaining why a city is not on the list.</summary>
+    public static string NetworkSummary(AppState s)
+    {
+        var net = s.Company.NetworkCities ?? new List<string>();
+        if (net.Count == 0) return "";
+        var places = net.Select(n =>
+        {
+            var p = n.Split(',', StringSplitOptions.TrimEntries);
+            return DispatchEngine.Place(p.ElementAtOrDefault(0) ?? "", p.ElementAtOrDefault(1) ?? "");
+        }).ToList();
+        var name = string.IsNullOrWhiteSpace(s.Company.Name) ? "We" : s.Company.Name;
+        return places.Count == 1
+            ? $"{name} runs out of {places[0]}."
+            : $"{name} runs out of {string.Join(", ", places.Take(places.Count - 1))} and {places[^1]}.";
+    }
+
+    /// <summary>
     /// Cities we have reached, could buy a yard in, and have not yet decided about. This is the list
     /// the dispatch screen nags about — gently, once each.
+    ///
+    /// Limited to the employer's own network. Offering a yard in every town the truck passes through
+    /// makes the driver the one choosing where the carrier expands, which is not the job they have.
     /// </summary>
     public static List<DiscoveredCity> GarageOpportunities(AppState s)
     {
         SyncOwnership(s);
         return s.Discovered
             .Where(d => d.GarageAvailable && !d.GarageOwned && !d.Declined)
+            .Where(d => OnNetwork(s, d.City, d.State))
             .OrderBy(d => Markets.Find(s, d.City, d.State)?.Tier ?? 2)
             .ThenBy(d => d.City)
             .ToList();
+    }
+
+    /// <summary>Every city reached, with what can actually be done about a yard there.</summary>
+    public static List<object> ReachedView(AppState s)
+    {
+        SyncOwnership(s);
+        return s.Discovered
+            .OrderByDescending(d => GameClock.TryParse(d.DiscoveredGameTime) ?? DateTime.MinValue)
+            .ThenBy(d => d.City)
+            .Select(d =>
+            {
+                var m = Markets.Find(s, d.City, d.State);
+                var onNet = OnNetwork(s, d.City, d.State);
+                var status = d.GarageOwned ? "Yard here"
+                    : !d.GarageAvailable ? "No garage"
+                    : !onNet ? "Off network"
+                    : d.Declined ? "Dismissed"
+                    : "Could buy";
+                return (object)new
+                {
+                    city = d.City,
+                    state = d.State,
+                    discoveredGameTime = d.DiscoveredGameTime,
+                    tripNumber = d.TripNumber,
+                    tier = m?.Tier,
+                    resetFriendly = m?.ResetFriendly ?? false,
+                    onNetwork = onNet,
+                    status
+                };
+            }).ToList();
     }
 
     /// <summary>

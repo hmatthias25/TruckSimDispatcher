@@ -1185,6 +1185,11 @@ object Snapshot(AppState? given = null)
         views = new
         {
             garageOpportunities = DiscoveryService.GarageOpportunityView(s),
+            // Everywhere the truck has been, with what can be done about a yard there. The opportunity
+            // list above is a hard-filtered subset and used to carry this heading, which made a career
+            // with a dozen cities look like it had lost nine of them.
+            reached = DiscoveryService.ReachedView(s),
+            networkSummary = DiscoveryService.NetworkSummary(s),
             unacknowledged = SafetyService.Unacknowledged(s),
             facilityTimes = FacilityLearning.View(s),
             payroll = new

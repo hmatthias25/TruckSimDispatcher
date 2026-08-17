@@ -760,6 +760,7 @@ function viewDispatch() {
       ${homeTimeHtml()}
       ${DISCOVERY ? discoveryHtml(DISCOVERY) : ''}
       ${garageOpportunitiesHtml()}
+      ${citiesReachedHtml()}
       ${resetOptionsHtml()}
     </div>
   </div>
@@ -1353,25 +1354,63 @@ function discoveryHtml(n) {
   </div>`;
 }
 
+/**
+ * Yards the company would actually open — which is a much smaller list than everywhere you have been.
+ * Limited to the employer's own network: you are a driver, not the person who decides where Prime
+ * builds terminals.
+ */
 function garageOpportunitiesHtml() {
   const ops = S.views.garageOpportunities || [];
   if (!ops.length) return '';
-  const show = ops.slice(0, 6);
   return `<div class="panel">
-    <div class="panel-head"><h2>Cities you have reached</h2>
-      <span class="sub">${ops.length} without a yard of ours</span></div>
-    <p class="hint">A garage is only worth buying where you have actually driven — ATS will not generate
-      cargo in a city you revealed with an editor rather than discovered.</p>
+    <div class="panel-head"><h2>Yards you could open</h2>
+      <span class="sub">${ops.length} on our network, reached, not ours yet</span></div>
+    <p class="hint">These are cities <b>${esc(S.company.name || 'we')}</b> runs terminals in that you have driven to
+      and we do not have a yard in. A garage is only worth buying somewhere you have actually been — ATS
+      will not generate cargo in a city you revealed with an editor rather than discovered.</p>
     <div class="tablewrap"><table>
-      <thead><tr><th>City</th><th>Discovered</th><th>Market</th><th></th></tr></thead><tbody>
-      ${show.map((c) => `<tr>
+      <thead><tr><th>City</th><th>Reached</th><th>Market</th><th></th></tr></thead><tbody>
+      ${ops.map((c) => `<tr>
         <td><b>${esc(c.city)}</b>${c.state ? ', ' + esc(c.state) : ''}</td>
-        <td>${gt(c.discoveredGameTime)}</td>
+        <td>${c.discoveredGameTime ? gt(c.discoveredGameTime) : '—'}</td>
         <td>${c.tier ? `Tier ${c.tier}${c.resetFriendly ? ' · reset-friendly' : ''}` : '—'}</td>
         <td><button class="btn tiny ghost" data-act="decline-garage"
           data-city="${esc(c.city)}" data-state="${esc(c.state)}">Dismiss</button></td></tr>`).join('')}
     </tbody></table></div>
-    ${ops.length > show.length ? `<p class="sub">+ ${ops.length - show.length} more.</p>` : ''}
+  </div>`;
+}
+
+/**
+ * Everywhere the truck has actually been. This used to be the heading on the opportunity list above,
+ * which is filtered down hard — so a career with a dozen cities showed three and looked like it had
+ * lost the rest. They were always in the career file; nothing was ever dropped.
+ */
+function citiesReachedHtml() {
+  const all = S.views.reached || [];
+  if (!all.length) return '';
+
+  const cls = (st) => st === 'Yard here' ? 'ok' : st === 'Could buy' ? 'warn' : 'mute';
+  const owned = all.filter((c) => c.status === 'Yard here').length;
+  const open = all.filter((c) => c.status === 'Could buy').length;
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Cities you have reached</h2>
+      <span class="sub">${all.length} total · ${owned} with a yard · ${open} we could open</span></div>
+    <p class="hint">Every city you have reported being in. Reaching one is what makes its freight board
+      readable to dispatch, whether or not there is ever a yard there.
+      ${S.views.networkSummary ? esc(S.views.networkSummary) + ' A city off that network is still on the map — it is just not somewhere the company opens terminals.' : ''}</p>
+    <details class="score" ${all.length <= 12 ? 'open' : ''}>
+      <summary>${all.length} ${all.length === 1 ? 'city' : 'cities'}, most recent first</summary>
+      <div class="tablewrap"><table>
+        <thead><tr><th>City</th><th>Reached</th><th>On</th><th>Market</th><th>Yard</th></tr></thead><tbody>
+        ${all.map((c) => `<tr>
+          <td><b>${esc(c.city)}</b>${c.state ? ', ' + esc(c.state) : ''}</td>
+          <td>${c.discoveredGameTime ? gt(c.discoveredGameTime) : '<span class="sub">before tracking</span>'}</td>
+          <td class="sub">${esc(c.tripNumber || '—')}</td>
+          <td>${c.tier ? `Tier ${c.tier}${c.resetFriendly ? ' · reset' : ''}` : '<span class="sub">unknown</span>'}</td>
+          <td>${badge(cls(c.status), c.status)}</td></tr>`).join('')}
+      </tbody></table></div>
+    </details>
   </div>`;
 }
 

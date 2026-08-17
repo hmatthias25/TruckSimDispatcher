@@ -75,8 +75,11 @@ async function fileReport(lines) {
   ok('termination recommended for the weak driver', !!term, term ? term.headline : '(none)');
   ok('it is pending, not done', term?.pending === true);
   ok('the case is evidenced', (term?.evidence || []).length >= 2, (term?.evidence || []).join(' | '));
-  ok('the good driver is untouched', !rep.personnel.some((p) => p.driverName === 'B. Solid'),
-    rep.personnel.map((p) => p.driverName).join(', ') || 'none');
+  // Not recommended for termination — which is the claim. A driver may still resign on any period,
+  // that being a seeded 7% roll, and a resignation is not the company judging their performance.
+  ok('the good driver is not up for termination',
+    !rep.personnel.some((p) => p.driverName === 'B. Solid' && p.kind === 'Terminated'),
+    rep.personnel.map((p) => `${p.driverName}:${p.kind}`).join(', ') || 'none');
 
   let fo = await api('/fleetops');
   ok('surfaced as a pending decision', fo.pendingTerminations.length === 1, `${fo.pendingTerminations.length}`);

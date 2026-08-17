@@ -9,6 +9,18 @@ namespace TruckSimDispatcher.Services;
 /// </summary>
 public static class Carriers
 {
+    /// <summary>
+    /// The cities a carrier actually runs terminals in: headquarters plus its published yards, as
+    /// "City,ST". This is the network a company driver works within — the app offers a yard here and
+    /// nowhere else, because a driver does not decide where their employer opens terminals.
+    /// </summary>
+    private static List<string> NetworkFor(Spec spec)
+    {
+        var cities = new List<string> { $"{spec.HqCity},{spec.HqState}" };
+        cities.AddRange(spec.OtherYards.Select(y => y.Replace(", ", ",").Trim()));
+        return cities.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
     private record Spec(
         string Name, string Code, string[] Divisions,
         string Size, string HqCity, string HqState, string[] OtherYards,
@@ -554,6 +566,17 @@ public static class Carriers
         return spec == null ? 3 : spec.EquipmentStars;
     }
 
+    /// <summary>
+    /// The terminal cities a carrier code runs, for backfilling a career written before the network was
+    /// stored. Empty for a code we do not recognise — a fictional carrier has no real network to honour,
+    /// and returning a guess would invent terminals the company does not have.
+    /// </summary>
+    public static List<string> NetworkCitiesFor(string? code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        return spec == null ? new List<string>() : NetworkFor(spec);
+    }
+
     /// <summary>Turns a chosen carrier into the player's employer: company, terminals, pay.</summary>
 
     public static void Employ(AppState s, string code, DriverApplication app)
@@ -575,8 +598,14 @@ public static class Carriers
             Founded = "2009",
             EquipmentStars = spec.EquipmentStars,
             Divisions = spec.Divisions.ToList(),
-            OperatingAuthorityNotes = $"48-state common carrier authority. {string.Join(" / ", spec.Divisions)} divisions."
+            OperatingAuthorityNotes = $"48-state common carrier authority. {string.Join(" / ", spec.Divisions)} divisions.",
+            // Where this carrier actually runs terminals. A company driver does not decide where their
+            // employer opens yards, so this is what garage opportunities are checked against — without
+            // it the app offers a yard in every town the truck passes through.
+            NetworkCities = NetworkFor(spec)
         };
+
+        s.Company.NetworkCities = NetworkFor(spec);
 
         // Yards the driver already owns stay theirs — they bought those garages in ATS and switching
         // employer does not repossess them. Only the headquarters moves.
@@ -597,6 +626,10 @@ public static class Carriers
         }
         foreach (var t in s.Company.Terminals) t.IsHeadquarters = t == hq;
         Migrations.SyncHeadquarters(s);
+
+        // The yard you are based out of counts as reached — you are standing in it. Seed does this for
+        // a generated carrier; without it here, hiring at a real one left the home city off the map.
+        DiscoveryService.Note(s, spec.HqCity, spec.HqState, s.Status.GameTime);
         DiscoveryService.SyncOwnership(s);
         s.Settings.FreightPrefix = spec.Code;
 

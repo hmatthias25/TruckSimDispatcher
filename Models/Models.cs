@@ -124,6 +124,15 @@ public class Company
     public string TerminalState { get; set; } = "";
     /// <summary>Every yard the carrier operates. The headquarters is flagged inside.</summary>
     public List<Terminal> Terminals { get; set; } = new();
+
+    /// <summary>
+    /// Cities this carrier runs terminals in, as "City,ST" — headquarters plus its published yards.
+    ///
+    /// A company driver does not decide where their employer opens terminals, so this is what garage
+    /// opportunities are checked against. Empty means a fictional carrier with no real network to be
+    /// faithful to, and anywhere the driver has reached is fair game.
+    /// </summary>
+    public List<string> NetworkCities { get; set; } = new();
     [Obsolete("Superseded by Terminals; retained so older career files still load.")]
     public List<string> SecondaryTerminals { get; set; } = new();
     public string Founded { get; set; } = "";
