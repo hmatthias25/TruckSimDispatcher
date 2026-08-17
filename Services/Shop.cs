@@ -38,9 +38,15 @@ public static class Shop
     }
 
     /// <summary>
-    /// How long the shop needs. Roughly twenty minutes a point on the tractor, half that rate on the
-    /// trailer, and the two run in parallel because a shop does not queue them one behind the other.
-    /// Our own yard is quicker than a roadside dealer — our people, our bays, no waiting for a slot.
+    /// How long the shop needs. Roughly <b>forty minutes a point</b> on the tractor and about a third
+    /// of that rate on the trailer, with the two running in parallel because a shop does not queue them
+    /// one behind the other. Our own yard is quicker than a roadside dealer — our people, our bays, no
+    /// waiting for a slot.
+    ///
+    /// The tractor rate is deliberately heavy. If ten points of damage cost two hours, being routed
+    /// home for it would be absurd — the whole point is that real body work on a tractor is most of a
+    /// day, which is what makes "run it to our own shop and take your home time while it is in" the
+    /// obviously right call instead of an inconvenience.
     /// </summary>
     public static RepairQuote Quote(AppState s, double truckDamagePct, double trailerDamagePct,
         bool atCompanyShop, Truck? truck = null)

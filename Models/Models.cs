@@ -1206,11 +1206,18 @@ public class MaintenanceThresholds
     /// <summary>How far home can be and still be worth running to instead of the nearest shop.</summary>
     public double RunHomeMaxHours { get; set; } = 11;
 
-    /// <summary>Shop time per point of tractor damage. Twenty minutes is the working assumption.</summary>
-    public double RepairHoursPerPoint { get; set; } = 1.0 / 3.0;
+    /// <summary>
+    /// Shop time per point of tractor damage — forty minutes. A tractor is an engine, a cab, air
+    /// systems and electronics, and real body work on one is a day in the bay, not an afternoon. This
+    /// has to be long enough that routing a truck home for it is a decision rather than a detour.
+    /// </summary>
+    public double RepairHoursPerPoint { get; set; } = 2.0 / 3.0;
 
-    /// <summary>Trailer work runs at roughly half the tractor rate — less to take apart.</summary>
-    public double TrailerRepairFactor { get; set; } = 0.5;
+    /// <summary>
+    /// Trailer work runs at a fraction of the tractor rate — a box on wheels has far less to take
+    /// apart, and a shop turns one round in a morning.
+    /// </summary>
+    public double TrailerRepairFactor { get; set; } = 0.35;
 
     /// <summary>A company shop with our own people in it turns work round faster than a dealer.</summary>
     public double CompanyShopFactor { get; set; } = 0.7;
