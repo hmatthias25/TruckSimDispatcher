@@ -679,10 +679,11 @@ function viewDispatch() {
              so dispatch never plans one and the break clock is not tracked. Your ${num(S.settings.hos.shiftLimit, 0)}-hour
              window is the binding stop.</p>`}
         <div class="grid2">
-          <label>Recap projection (optional)
-            <input id="h-recap" placeholder="e.g. 8:00 in 1, 10:30 in 2" value="${esc((h.recap || []).map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', '))}"></label>
+          <label>Hours coming back (recap)
+            <input id="h-recap" placeholder="8:00 in 1, 10:30 in 2" value="${esc((h.recap || []).map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', '))}"></label>
           <label>Source<input id="h-source" value="${esc(h.source)}" placeholder="e.g. Realistic HOS mod ELD"></label>
         </div>
+        ${recapExplainerHtml()}
         <label>Note to dispatch<input id="h-notes" value="${esc(h.notes)}" placeholder="optional"></label>
         <div class="row-actions"><button class="btn primary" data-act="save-hos">Report clocks</button></div>
 
@@ -692,8 +693,8 @@ function viewDispatch() {
           <p><b>${esc(v.hos.nextRequiredAction)}</b></p>
           <p>Binding clock: ${esc(v.hos.bindingClock)}. At ${num(v.hos.effectiveMph, 1)} mph effective that is about
             <b>${num(v.hos.projectedMilesNow)} mi</b> today, ${num(v.hos.stintMiles)} mi before the break.</p>
-          ${v.hos.recapHours > 0 ? `<p>Recap projects ${hhmm(v.hos.recapHours)} returning to the cycle.</p>` : ''}
         </div>
+        ${recapAdviceHtml()}
       </div>
     </div>
 
@@ -807,6 +808,112 @@ function paintOdometerHint() {
   el.textContent = warn
     ? `${warn} Check it, or type the miles to override.`
     : `${num(start)} → ${num(end)} = ${num(delta)} mi${dh > 0 ? `, less ${num(dh)} deadhead = ${num(delta - dh)} loaded` : ''}.`;
+}
+
+/**
+ * Out of window on a customer's property. This is legal, it is not the driver's fault, and they still
+ * cannot move the truck — three facts that surprise almost everyone, so they get stated outright.
+ */
+function strandedHtml() {
+  const st = S.views.stranded;
+  if (!st || !st.isStranded) return '';
+  return `<div class="panel">
+    <div class="panel-head"><h2>You are out of hours where you are standing</h2>
+      ${badge('warn', 'not a violation')}
+      <div class="spacer"></div>
+      <span class="sub">${esc(st.fault)} fault &middot; nothing on your record</span></div>
+    <div class="callout stop">
+      <h4>${esc(st.headline)}</h4>
+      ${st.lines.map((l) => `<p>${esc(l)}</p>`).join('')}
+    </div>
+    <div class="meters">
+      ${fkpi('Drive left', hhmm(st.driveRemaining), st.driveRemaining <= 0.1 ? 'bad' : '')}
+      ${fkpi('Window left', hhmm(st.shiftRemaining), st.shiftRemaining <= 0.1 ? 'bad' : '')}
+      ${fkpi('Where', esc(st.where || '—'))}
+      ${fkpi('Rest needed', hhmm(S.settings.hos.offDutyReset), 'warn')}
+    </div>
+  </div>`;
+}
+
+/**
+ * The four things dispatch asks for after loading. They used to be asked for with nowhere to put them,
+ * which is worse than not asking — the driver goes looking and concludes they have missed something.
+ */
+function loadedReportHtml(t) {
+  const loaded = (t.events || []).some((e) => e.kind === 'EndLoad' || e.kind === 'Loaded');
+  const done = t.loadedReported;
+  return `<div class="panel">
+    <div class="panel-head"><h2>Report after loading</h2>
+      ${done ? badge('ok', 'reported') : loaded ? badge('warn', 'due now') : badge('mute', 'once you are loaded')}
+      <div class="spacer"></div>
+      <span class="sub">${done ? 'dispatch has what it asked for' : 'weight and trailer condition as you pull out'}</span></div>
+
+    ${done ? `<div class="callout go">
+      <p>Reported: ${t.weightLbs > 0 ? `<b>${num(t.weightLbs)} lb</b>` : 'no weight given'}${
+        t.weightVarianceNote ? ` — ${esc(t.weightVarianceNote)}` : ''}. Trailer at ${num(t.trailerDamageAtHook, 1)}%,
+        odometer ${num(t.startOdometer)}.</p>
+      <p class="hint" style="margin:0">Nothing more needed on this load until you deliver.</p>
+    </div>` : `
+    <div class="grid3">
+      <label>Actual weight lb<input id="ld-weight" type="number" step="100" placeholder="${t.weightLbs > 0 ? num(t.weightLbs) : 'from the job'}"></label>
+      <label>Trailer damage % now<input id="ld-trdmg" type="number" step="0.1" min="0" max="100" value="${S.status.trailerDamagePct}"></label>
+      <label>Odometer<input id="ld-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
+    </div>
+    <p class="hint">The weight is often not what the board said — scaled heavy is worth having on the record. Trailer
+      damage here is the reading the shop rules work from, so a trailer you hooked at ${num(S.settings.maintenance.stopDispatchPct, 0)}%
+      or worse stops dispatch now rather than at the next delivery. Leave anything blank and it stays as it was.</p>
+    <div class="row-actions">
+      <button class="btn primary" data-act="report-loaded" data-id="${t.id}">Report it</button>
+    </div>`}
+  </div>`;
+}
+
+/**
+ * What recap is, in the two sentences it actually takes. Collapsed, because a driver who knows does
+ * not need it and a driver who does not will open it exactly once.
+ */
+function recapExplainerHtml() {
+  const h = S.settings.hos;
+  return `<details class="score" style="margin:0 0 10px">
+    <summary>What is recap, and why does it matter?</summary>
+    <p class="hint" style="margin:6px 0">Your ${num(h.cycleLimit, 0)}-hour cycle is a <b>rolling ${h.cycleDays}-day window</b>, not a tank
+      that empties and gets refilled. Each midnight, the hours you worked ${h.cycleDays} days ago drop out of the
+      window and come back to you. That is recap. You do not have to do anything to earn it — it happens
+      because time passed.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th style="width:1.4in"></th><th>What you get back</th><th>What it costs</th></tr></thead>
+      <tbody>
+        <tr><td><b>Recap</b></td><td>Only the hours you worked ${h.cycleDays} days ago</td><td>Waiting until midnight</td></tr>
+        <tr><td><b>${num(h.cycleRestartHours, 0)}-hour restart</b></td><td>The full ${num(h.cycleLimit, 0)}, all at once</td><td>${num(h.cycleRestartHours, 0)} hours parked</td></tr>
+      </tbody>
+    </table></div>
+    <p class="hint" style="margin:6px 0 0">Read the projection off your HOS display and type it as
+      <code>8:00 in 1</code> — eight hours returning one day from now. I will work out which is the better play,
+      and tell you. Note the restart <b>wipes the window clean</b>, so taking it throws any pending recap away.</p>
+  </details>`;
+}
+
+/** Dispatch's call on recap versus the 34, with the arithmetic shown. */
+function recapAdviceHtml() {
+  const r = S.views.recap;
+  if (!r || r.verdict === 'None') return '';
+
+  // Only worth the space when the cycle is actually the problem.
+  const cyc = S.views.hos.cycleRemaining;
+  const watching = cyc <= S.settings.scoring.resetWatchCycleHours;
+  if (!watching && r.verdict === 'NoData') return '';
+
+  const cls = r.verdict === 'Wait' ? 'go' : r.verdict === 'Restart' ? 'warn' : 'info';
+  return `<div class="callout ${cls}" style="margin-top:12px">
+    <h4>${esc(r.headline)}</h4>
+    ${r.lines.map((l) => `<p>${esc(l)}</p>`).join('')}
+    ${r.verdict === 'Wait' ? `<div class="meters" style="margin-top:8px">
+      ${fkpi('Wait', hhmm(r.waitHours), 'ok')}
+      ${fkpi('You get back', hhmm(r.nextHours))}
+      ${fkpi('Cycle after', hhmm(r.cycleAfter))}
+      ${fkpi('vs restart', hhmm(S.settings.hos.cycleRestartHours), 'warn')}
+    </div>` : ''}
+  </div>`;
 }
 
 function metersHtml(h) {
@@ -1120,6 +1227,9 @@ function viewActive() {
       </div>
       <details class="score"><summary>Full HOS timeline</summary>${timelineHtml(f)}</details>` : ''}
   </div>
+
+  ${strandedHtml()}
+  ${loadedReportHtml(t)}
 
   <div class="cols">
     <div class="panel">
@@ -3082,6 +3192,7 @@ function viewSettings() {
         <label>Speed factor<input id="op-factor" type="number" step="0.01" min="0.3" max="1" value="${s.speedFactor}"></label>
         <label>Safety buffer<input id="op-buffer" inputmode="numeric" value="${hhmm(s.safetyBufferHours)}"></label>
         <label>Parking buffer<input id="op-park" inputmode="numeric" value="${hhmm(s.parkingBufferHours)}"></label>
+        <label>Window left when empty<input id="op-strand" inputmode="numeric" value="${hhmm(s.strandedMarginHours)}"></label>
         <label>Pre-trip<input id="op-pre" inputmode="numeric" value="${hhmm(s.preTripHours)}"></label>
         <label>Post-trip<input id="op-post" inputmode="numeric" value="${hhmm(s.postTripHours)}"></label>
         <label>Fallback loading<input id="op-load" inputmode="numeric" value="${hhmm(s.defaultLoadingHours)}"></label>
@@ -3093,6 +3204,10 @@ function viewSettings() {
       ${facilityTimesHtml()}
       <p class="hint">Effective planning speed is governed mph × speed factor — currently
         <b>${num(s.governedMph * s.speedFactor, 1)} mph</b>.</p>
+      <p class="hint"><b>Window left when empty</b> is a different risk from the safety buffer. That one is about
+        missing an appointment; this one is about a dock holding you until your 14 runs out — at which point
+        finishing the work is legal but moving the truck is not, and you are parked on their property for a
+        ${num(s.hos.offDutyReset, 0)}. A load that delivers with less than this in hand gets flagged before you take it.</p>
     </div>
 
     <div class="panel">
@@ -3975,6 +4090,16 @@ async function handleAction(act, d, ev) {
     }, 'Balance cleared — treated as unreported.');
 
     /* ---- maintenance */
+    case 'report-loaded': {
+      return run(async () => {
+        const r = absorb(await api(`/trips/${d.id}/loaded`, 'POST', {
+          weightLbs: fvn('ld-weight'),
+          trailerDamagePct: fvn('ld-trdmg'),
+          odometer: fvn('ld-odo'),
+        }));
+        toast((r.notes || []).join(' ') || 'Reported.', 'ok');
+      });
+    }
     case 'write-off': {
       const u = d.unit;
       if (!confirm(`Write unit ${u} off? It leaves the fleet permanently and the insurance claim is filed. `
@@ -4203,6 +4328,7 @@ function collectSettings() {
     },
     governedMph: fv('op-gov'), speedFactor: fv('op-factor'),
     safetyBufferHours: hv('op-buffer'), parkingBufferHours: hv('op-park'),
+    strandedMarginHours: hv('op-strand'),
     preTripHours: hv('op-pre'), postTripHours: hv('op-post'),
     defaultLoadingHours: hv('op-load'), defaultUnloadingHours: hv('op-unload'),
     fuelStopHours: hv('op-fuelstop'), fuelRangeMiles: fv('op-range'), fuelPricePerGal: fv('op-fuelprice'),

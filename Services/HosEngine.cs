@@ -304,6 +304,10 @@ public static class HosEngine
         result.ElapsedHours = Math.Round((clock - start.Value).TotalHours, 2);
         result.ProjectedArrivalGameTime = GameClock.Format(clock);
         result.CycleRemainingAfter = Math.Round(cycle, 2);
+        // The window left once they are empty and standing at the receiver. This is what decides
+        // whether a dock holding them a little longer strands them on the property overnight.
+        result.ShiftRemainingOnArrival = Math.Round(shift, 2);
+        result.DriveRemainingOnArrival = Math.Round(drive, 2);
 
         var due = start.Value.AddHours(req.DeadlineHours);
         result.DueGameTime = GameClock.Format(due);
@@ -331,6 +335,19 @@ public static class HosEngine
             result.Warnings.Add("Cycle lands at zero on delivery — the truck will be parked until a restart.");
         else if (cycle < 8)
             result.Warnings.Add($"Only {Hhmm.Of(cycle)} of cycle left on delivery. Reset planning starts now, not later.");
+
+        // Being stranded on the receiver's property is a different risk from being late, and it is the
+        // one nobody sees coming. Say it before they accept, in the terms it will actually happen in.
+        var strandMargin = Math.Max(0, s.StrandedMarginHours);
+        if (req.UnloadingHours > 0 && shift <= 0.01)
+            result.Warnings.Add(
+                $"Your window closes while you are still at the receiver. Finishing the unload is legal, but you will not be " +
+                $"able to move the truck afterwards — plan on a {rules.OffDutyReset:0.#} on their property.");
+        else if (req.UnloadingHours > 0 && shift < strandMargin)
+            result.Warnings.Add(
+                $"This delivers with only {Hhmm.Of(shift)} of window left once you are empty. If they hold you " +
+                $"{Hhmm.Of(shift)} longer than planned, the window shuts while you are on the property and you are parked " +
+                $"there for a {rules.OffDutyReset:0.#}. Worth asking about overnight parking before you back in.");
 
         if (result.FuelStopsRequired == 0 && result.TotalMiles > req.UsableFuelRangeMiles)
             result.Warnings.Add("Fuel range check could not be resolved — confirm the fuel level.");
@@ -392,7 +409,12 @@ public static class HosEngine
             v.NextRequiredAction = $"Clear to drive {Hhmm.Of(v.DrivableNowHours)} — breaks are switched off, so the {r.ShiftLimit:0.#}-hour window is your next stop.";
 
         if (h.CycleRemaining > 0 && h.CycleRemaining <= 18)
+        {
             v.ResetWatch = $"Reset watch: {Hhmm.Of(h.CycleRemaining)} of cycle left. Dispatch is now selecting freight that ends somewhere we can sit a restart.";
+            // Unless recap is about to make the restart unnecessary, which is the whole point of it.
+            if (Recap.NextBatch(state) is { } batch)
+                v.ResetWatch += $" Though you have {Hhmm.Of(batch.Hours)} of recap due — that may be all you need.";
+        }
 
         return v;
     }

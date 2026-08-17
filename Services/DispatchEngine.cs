@@ -153,7 +153,9 @@ public static class DispatchEngine
                 if (!string.IsNullOrWhiteSpace(rh.LateWarning)) decision.DispatchNotes.Add(rh.LateWarning);
             }
             if (Dedicated.BoardNote(s) is { } dedNote) decision.DispatchNotes.Add(dedNote);
-            decision.DispatchNotes.Add("After you are loaded, report: loaded game time, odometer, actual trailer weight and trailer damage.");
+            decision.DispatchNotes.Add(
+                "Once you are loaded, log the End load event and fill in Report after loading on the Active tab — " +
+                "actual weight, trailer damage as hooked, and the odometer pulling out.");
             return decision;
         }
 
@@ -279,13 +281,36 @@ public static class DispatchEngine
         // not the clock, and this is an ordinary rejection.
         if (!restartNeeded && !outOfDay) return false;
 
-        note = restartNeeded
-            ? $"A {rules.OffDutyReset:0.#}-hour rest will not fix this — a normal overnight does not touch the " +
-              $"{rules.CycleLimit:0}-hour cycle. You need the {rules.CycleRestartHours:0.#}-hour restart, and somewhere " +
-              "with real parking and services to sit it. That is the only thing that puts the 70 back."
-            : $"Drive is at {Hhmm.Of(s.Hos.DriveRemaining)} and your window at {Hhmm.Of(s.Hos.ShiftRemaining)}. Find a truck " +
-              $"stop with legal parking and take the {rules.OffDutyReset:0.#}-hour reset. That restores your drive and " +
-              $"shift clocks — but not the cycle, which stays at {Hhmm.Of(s.Hos.CycleRemaining)}.";
+        if (restartNeeded)
+        {
+            // Out of cycle does not automatically mean a 34. If the driver has recap coming and it is
+            // enough, waiting until midnight beats sitting thirty-four hours by most of a day — and
+            // taking the restart anyway destroys the recap. So weigh it before giving the order.
+            var need = decision.Evaluations
+                .Where(e => e.Feasibility.DriveHours > 0)
+                .Select(e => e.Feasibility.DriveHours)
+                .DefaultIfEmpty(0).Min();
+            var recap = Recap.Assess(s, need);
+
+            if (recap.Verdict == "Wait")
+            {
+                // Not a restart after all — the cycle fills itself if they sit still for a few hours.
+                restartNeeded = false;
+                note = recap.Headline + " " + string.Join(" ", recap.Lines);
+                return true;
+            }
+
+            note = $"A {rules.OffDutyReset:0.#}-hour rest will not fix this — a normal overnight does not touch the " +
+                   $"{rules.CycleLimit:0}-hour cycle. You need the {rules.CycleRestartHours:0.#}-hour restart, and somewhere " +
+                   "with real parking and services to sit it. That is the only thing that puts the 70 back.";
+            if (recap.Verdict is "Restart" or "NoData")
+                note += " " + string.Join(" ", recap.Lines);
+            return true;
+        }
+
+        note = $"Drive is at {Hhmm.Of(s.Hos.DriveRemaining)} and your window at {Hhmm.Of(s.Hos.ShiftRemaining)}. Find a truck " +
+               $"stop with legal parking and take the {rules.OffDutyReset:0.#}-hour reset. That restores your drive and " +
+               $"shift clocks — but not the cycle, which stays at {Hhmm.Of(s.Hos.CycleRemaining)}.";
 
         return true;
     }

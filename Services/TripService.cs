@@ -142,6 +142,70 @@ public static class TripService
             DiscoveryService.Note(s, ev.City, ev.State, ev.GameTime, trip.Number);
     }
 
+    /// <summary>
+    /// What dispatch asks for once the trailer is loaded: the real weight, the trailer's condition as
+    /// hooked, and the odometer pulling out. Everything is optional — a blank field leaves what was
+    /// there rather than overwriting it with zero, because a driver who could not find the number in
+    /// game should not have it recorded as none.
+    /// </summary>
+    public static (Trip Trip, List<string> Notes) ReportLoaded(AppState s, string tripId,
+        double? weightLbs, double? trailerDamagePct, double? odometer)
+    {
+        var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
+                   ?? throw new InvalidOperationException("Trip not found.");
+        if (trip.Status is "Delivered" or "Cancelled")
+            throw new InvalidOperationException($"{trip.Number} is already closed.");
+
+        var notes = new List<string>();
+
+        if (weightLbs is > 0)
+        {
+            var booked = trip.WeightLbs;
+            trip.WeightLbs = weightLbs.Value;
+            if (booked > 0 && Math.Abs(weightLbs.Value - booked) > Math.Max(500, booked * 0.03))
+            {
+                var diff = weightLbs.Value - booked;
+                trip.WeightVarianceNote =
+                    $"scaled {Math.Abs(diff):N0} lb {(diff > 0 ? "heavier" : "lighter")} than the {booked:N0} lb on the board";
+                notes.Add($"Weight came in at {weightLbs.Value:N0} lb against {booked:N0} lb booked — {trip.WeightVarianceNote}. " +
+                          (diff > 0
+                              ? "Heavier freight costs fuel and hill time; it is on the record."
+                              : "Lighter than billed. Worth knowing if it repeats on this lane."));
+            }
+            else
+            {
+                trip.WeightVarianceNote = "";
+                notes.Add($"Weight confirmed at {weightLbs.Value:N0} lb.");
+            }
+        }
+
+        if (trailerDamagePct is >= 0)
+        {
+            trip.TrailerDamageAtHook = trailerDamagePct.Value;
+            s.Status.TrailerDamagePct = trailerDamagePct.Value;
+            var trailer = s.Trailers.FirstOrDefault(x => x.Unit == s.Driver.AssignedTrailerUnit);
+            if (trailer != null) trailer.DamagePct = trailerDamagePct.Value;
+
+            var stop = s.Settings.Maintenance.StopDispatchPct;
+            if (trailerDamagePct.Value >= stop)
+                notes.Add($"That trailer is at {trailerDamagePct.Value:0.#}%, at or past our {stop:0}% line. " +
+                          "It goes through the shop before it goes out again — see the shop order.");
+        }
+
+        if (odometer is > 0)
+        {
+            trip.StartOdometer = odometer.Value;
+            s.Status.AtsOdometer = odometer.Value;
+            var truck = s.Trucks.FirstOrDefault(x => x.Unit == s.Driver.AssignedTruckUnit);
+            if (truck != null) truck.AtsOdometer = odometer.Value;
+            notes.Add($"Odometer {odometer.Value:N0} recorded as the start of this leg — close-out measures the run from it.");
+        }
+
+        trip.LoadedReported = true;
+        if (notes.Count == 0) notes.Add("Nothing to change. Marked as reported so I stop asking.");
+        return (trip, notes);
+    }
+
     public static TripAudit Complete(AppState s, string tripId, CompleteTripRequest req)
     {
         var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
@@ -763,6 +827,20 @@ public static class TripService
         else
         {
             return ("Dispatcher", "Dispatcher fault. This load was committed without a recorded feasibility check, which is a violation of our own dispatch policy.");
+        }
+
+        // The window closing while they were still at the dock. Judged from the clocks they reported
+        // rather than from whether they thought to write "detention" in the notes — a driver stuck on a
+        // receiver's property should not have to know the magic word to avoid a mark on their record.
+        if (req.HosShiftRemaining is <= 0.1 || req.HosDriveRemaining is <= 0.1)
+        {
+            if (f != null && f.ShiftRemainingOnArrival < s.Settings.StrandedMarginHours)
+                return ("Dispatcher",
+                    $"Dispatcher fault. The plan had you finishing with {Hhmm.Of(f.ShiftRemainingOnArrival)} of window in hand, " +
+                    "and the dock took the rest. Booking a load that tight to the window is my error, not yours.");
+            return ("Unavoidable",
+                "The dock held you until your hours ran out. Finishing the work was legal, moving the truck was not, and " +
+                "sitting there was the only lawful option. Detention applies and nothing attaches to your record.");
         }
 
         var reason = (req.DelayReason ?? "").ToLowerInvariant();

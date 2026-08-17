@@ -520,6 +520,16 @@ public class Trip
     public double StartOdometer { get; set; }
     public double EndOdometer { get; set; }
 
+    /// <summary>
+    /// Set once the driver has reported what dispatch asks for after loading. Until then the
+    /// instruction keeps asking; after it, the instruction stops. Same rule as the clocks carry-forward.
+    /// </summary>
+    public bool LoadedReported { get; set; }
+    /// <summary>Trailer condition as hooked, which may not be the trailer they had yesterday.</summary>
+    public double TrailerDamageAtHook { get; set; }
+    /// <summary>Set when the scaled weight differed from what the board said.</summary>
+    public string WeightVarianceNote { get; set; } = "";
+
     public decimal GameRevenue { get; set; }
     /// <summary>Revenue actually booked to the company after the realism factor.</summary>
     public decimal CompanyRevenue { get; set; }
@@ -1035,6 +1045,17 @@ public class AppSettings
     public double SafetyBufferHours { get; set; } = 2.0;
     /// <summary>Time reserved at the end of a shift to find legal parking.</summary>
     public double ParkingBufferHours { get; set; } = 0.75;
+
+    /// <summary>
+    /// How much 14-hour window a load should still have in hand once the driver is empty at the
+    /// receiver. Below this the load is flagged before it is accepted: if the dock holds them even a
+    /// little, the window closes while they are on the property and they cannot legally move the truck.
+    ///
+    /// Deliberately separate from <see cref="SafetyBufferHours"/>. That one is about missing an
+    /// appointment; this one is about being stranded after making it. Different risks, different number.
+    /// </summary>
+    public double StrandedMarginHours { get; set; } = 1.5;
+
     public double PreTripHours { get; set; } = 0.25;
     public double PostTripHours { get; set; } = 0.25;
     /// <summary>Fallback only. Real dock time is learned per trailer type — see <see cref="FacilityTimes"/>.</summary>
@@ -1169,6 +1190,8 @@ public class MaintenanceThresholds
     public double MandatoryReviewPct { get; set; } = 15;
     /// <summary>At or above this: out of service, stop and contact operations.</summary>
     public double OutOfServicePct { get; set; } = 30;
+
+    // (dock-margin setting lives on AppSettings — see StrandedMarginHours)
     public double PreventiveIntervalMiles { get; set; } = 25000;
 
     /// <summary>
@@ -1337,6 +1360,13 @@ public class FeasibilityResult
     public int FuelStopsRequired { get; set; }
     public bool CycleRestartRequired { get; set; }
     public double CycleRemainingAfter { get; set; }
+    /// <summary>
+    /// The 14-hour window left once the driver is empty at the receiver. Thin here means a dock that
+    /// holds them even briefly closes the window while they are still on the property — at which point
+    /// they cannot legally move the truck and are parked there for a 10.
+    /// </summary>
+    public double ShiftRemainingOnArrival { get; set; }
+    public double DriveRemainingOnArrival { get; set; }
     public double EffectiveMph { get; set; }
     public List<TimelineStep> Timeline { get; set; } = new();
 }

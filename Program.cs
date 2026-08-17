@@ -460,6 +460,15 @@ app.MapPost("/api/trips/{id}/event", (string id, TripEvent ev) => Results.Ok(sto
     return Snapshot(s);
 })));
 
+// What dispatch asks for once the trailer is on: real weight, trailer condition as hooked, odometer.
+// It used to ask with nowhere to answer, which sent players looking for a field that did not exist.
+app.MapPost("/api/trips/{id}/loaded", (string id, LoadedReportRequest req) => Results.Ok(store.Mutate(s =>
+{
+    var (trip, notes) = TripService.ReportLoaded(s, id, req.WeightLbs, req.TrailerDamagePct, req.Odometer);
+    store.Log(s, "dispatch", $"{trip.Number} loaded report: {string.Join(" ", notes)}", trip.Number);
+    return new { trip, notes, snapshot = Snapshot(s) };
+})));
+
 app.MapPost("/api/trips/{id}/complete", (string id, CompleteTripRequest req) => Results.Ok(store.Mutate(s =>
 {
     var audit = TripService.Complete(s, id, req);
@@ -1215,6 +1224,10 @@ object Snapshot(AppState? given = null)
             homeTimeOptions = HomeTime.Options.Select(o => new { key = o.Key, label = o.Label, days = o.Days, note = o.Note }).ToList(),
             backdrop = Backdrop(s),
             hos = HosEngine.Describe(s, truck),
+            // Recap versus the 34, weighed for them. The decision drivers get wrong most often.
+            recap = Recap.Assess(s),
+            // Out of window on a customer's property: legal, not their fault, and they cannot move.
+            stranded = Stranded.Assess(s),
             finance = LedgerService.Summary(s),
             career = CareerService.Review(s),
             maintenanceAlerts = MaintenanceService.FleetAlerts(s),
@@ -1354,6 +1367,7 @@ record NoteRequest(string? Notes, string? SafetyNotes, string? FaultAttribution)
 record AssignRequest(string? TruckUnit, string? TrailerUnit, bool Force);
 record CompleteWoRequest(decimal Cost, double DamageAfter, string Vendor, string PaidBy, string Notes);
 record WriteOffRequest(string Unit, bool DriverFault, decimal ScrapRecovery, string? Notes);
+record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? Odometer);
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
 record ReconcileRequest(string? Account, decimal Amount, string Memo, decimal? FixUnsettledPay, int? FixFreightCounter);
 record CareerActionRequest(string? Rank, string? Note, bool Force);
