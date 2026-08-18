@@ -22,7 +22,12 @@ const day = (n, hhmm = '06:00') => `2000-01-${String(n).padStart(2, '0')}T${hhmm
   let h = S.views.homeTime;
   check('arrangement stored as 14 days', S.driver.homeTimeIntervalDays === 14, `${S.driver.homeTimeIntervalDays}`);
   check('tracked', h.tracked === true);
-  check('label resolved', /every other week/i.test(h.arrangement), h.arrangement);
+  // A probationary driver is on mandatory fortnightly reviews, which overrides whatever they picked.
+  check('probation overrides the chosen arrangement while it lasts',
+    /Probation/i.test(h.arrangement), h.arrangement);
+  S = (await api('/career/promote', 'POST', { rank: 'company', note: 'test setup', force: true })).snapshot;
+  h = S.views.homeTime;
+  check('label resolved once off probation', /every other week/i.test(h.arrangement), h.arrangement);
   check('home yard identified', !!h.terminalLabel, h.terminalLabel);
   check('not due yet', h.dueSoon === false && h.overdue === false, h.headline);
   check('options exposed for the dropdown', (S.views.homeTimeOptions || []).length === 6);
@@ -122,6 +127,8 @@ const day = (n, hhmm = '06:00') => `2000-01-${String(n).padStart(2, '0')}T${hhmm
   check('now 30 days', S.driver.homeTimeIntervalDays === 30, `${S.driver.homeTimeIntervalDays}`);
   S = await api('/career/home-time', 'POST', { preference: 'none' });
   check('"none" turns routing off', S.views.homeTime.tracked === false, S.views.homeTime.headline);
+  check('and points at asking instead', /Ask for home time/i.test(S.views.homeTime.headline),
+    S.views.homeTime.headline);
   let bad = null;
   try { await api('/career/home-time', 'POST', { preference: 'whenever' }); } catch (e) { bad = e.message; }
   check('rejects an unknown arrangement', bad !== null, bad || '(accepted!)');

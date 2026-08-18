@@ -57,6 +57,13 @@ public static class HomeTime
         public string Headline { get; set; } = "";
         public string LastHomeGameTime { get; set; } = "";
         public int HomeTimesTaken { get; set; }
+        /// <summary>Operations approved a request, so dispatch is routing home off-schedule.</summary>
+        public bool Granted { get; set; }
+        /// <summary>
+        /// Advice rather than an instruction — surfaced when a driver on no arrangement has been out a
+        /// very long time. It changes nothing on its own.
+        /// </summary>
+        public string Suggestion { get; set; } = "";
         /// <summary>Set when a trailer reassignment is holding the driver at the yard.</summary>
         public string WaitingOn { get; set; } = "";
         public string WaitingUntil { get; set; } = "";
@@ -71,18 +78,48 @@ public static class HomeTime
     {
         var st = new HomeStatus
         {
-            IntervalDays = s.Driver.HomeTimeIntervalDays,
-            Arrangement = LabelFor(s.Application?.HomeTimePreference),
+            // A probationary driver comes in every fortnight whatever they signed up for — including
+            // "no arrangement", which is not on offer to somebody still being assessed.
+            IntervalDays = Probation.EffectiveIntervalDays(s),
+            Arrangement = Probation.IsOn(s)
+                ? $"Probation — in every {Probation.ReviewIntervalDays} days for review"
+                : LabelFor(s.Application?.HomeTimePreference),
             HomeTimesTaken = s.Driver.HomeTimesTaken,
             LastHomeGameTime = s.Driver.LastHomeGameTime
         };
 
         var home = HomeTerminal(s);
-        if (home == null || st.IntervalDays <= 0)
+        if (home == null)
         {
-            st.Headline = st.IntervalDays <= 0
-                ? "No home-time arrangement on file — dispatch will not route you home."
-                : "No home terminal set, so there is nowhere to route you.";
+            st.Headline = "No home terminal set, so there is nowhere to route you.";
+            return st;
+        }
+
+        // No arrangement and nothing approved: they elected to stay out, and that is the whole answer.
+        // A granted request falls through below and is tracked like any other trip home.
+        if (st.IntervalDays <= 0 && !s.Driver.HomeTimeGranted)
+        {
+            st.TerminalId = home.Id;
+            st.TerminalLabel = DispatchEngine.Place(home.City, home.State);
+
+            var lastHome = GameClock.TryParse(s.Driver.LastHomeGameTime)
+                           ?? GameClock.TryParse(s.Driver.HiredGameDate);
+            var at = GameClock.TryParse(s.Status.GameTime);
+            if (lastHome != null && at != null) st.DaysOut = Math.Max(0, (at.Value - lastHome.Value).TotalDays);
+
+            st.Headline = "No home-time arrangement on file — dispatch will not route you home. " +
+                          "Ask for home time on the Career tab when you want it.";
+
+            // Nobody actually stays out forever. Past a long stretch the app says something — and it
+            // is a suggestion, not a directive. They chose this arrangement and it is still their call;
+            // operations is just the colleague pointing out you have been gone two months.
+            if (st.DaysOut >= SuggestHomeAfterDays)
+            {
+                st.Suggestion =
+                    $"You have been out {st.DaysOut:0} days. There is no arrangement on your file so I am not going to " +
+                    $"route you anywhere — but that is a long stretch, and {st.TerminalLabel} is still your yard. " +
+                    "Put in for home time whenever you want it and I will work you back.";
+            }
             return st;
         }
 
@@ -101,6 +138,15 @@ public static class HomeTime
         st.DueSoon = st.DaysOut >= st.IntervalDays * 0.75;
         st.Overdue = st.DaysOut >= st.IntervalDays;
 
+        // Operations approved a request, so they are going home whether the clock says due or not.
+        // For a driver on no arrangement this is the only thing that ever puts them on the road home.
+        if (s.Driver.HomeTimeGranted)
+        {
+            st.Granted = true;
+            st.DueSoon = true;
+            st.Overdue = true;
+        }
+
         st.MilesFromHome = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
         st.AtHome = st.MilesFromHome is { } m && m <= s.Settings.Scoring.HomeRadiusMiles;
 
@@ -113,6 +159,14 @@ public static class HomeTime
             st.WaitingUntil = wait.AvailableFromGameTime;
             st.Headline = $"Home, and held here until {st.WaitingOn} — around {GameClock.Pretty(wait.AvailableFromGameTime)}. " +
                           "The wait is home time, not hours.";
+            return st;
+        }
+
+        if (st.Granted)
+        {
+            st.Headline = st.AtHome
+                ? "Home time approved and you are here. Take it."
+                : $"Home time approved — dispatch is working freight back toward {st.TerminalLabel}.";
             return st;
         }
 
@@ -130,9 +184,28 @@ public static class HomeTime
     /// Records a visit home when the driver reports being at (or near) their home terminal. Called on
     /// every status report — being home is something we observe, not something we schedule.
     /// </summary>
+    /// <summary>
+    /// How long a driver on no arrangement can be out before the app mentions it. Roughly two months —
+    /// long enough that it is genuinely unusual, short enough that somebody has not simply forgotten
+    /// they have a house.
+    /// </summary>
+    public const double SuggestHomeAfterDays = 60;
+
     public static bool Touch(AppState s)
     {
-        if (s.Driver.HomeTimeIntervalDays <= 0) return false;
+        // Arriving satisfies an approved request as much as a scheduled one.
+        if (s.Driver.HomeTimeGranted)
+        {
+            var here = HomeTerminal(s);
+            var fromHome = here == null ? null
+                : Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, here.City, here.State);
+            if (fromHome is { } away && away <= s.Settings.Scoring.HomeRadiusMiles)
+            {
+                s.Driver.HomeTimeGranted = false;
+                s.Driver.HomeTimeGrantedGameTime = "";
+            }
+        }
+        if (Probation.EffectiveIntervalDays(s) <= 0) return false;
         var home = HomeTerminal(s);
         if (home == null) return false;
 
@@ -149,6 +222,13 @@ public static class HomeTime
 
         s.Driver.LastHomeGameTime = s.Status.GameTime;
         s.Driver.HomeTimesTaken++;
+
+        // Reporting in is the whole point of probation. Somebody goes through the period with them and
+        // writes a verdict; three good ones in a row is what ends it.
+        var review = Probation.ReviewOnArrival(s);
+        if (review is { ClearedProbation: true })
+            CareerService.ClearProbation(s, force: true, note: $"Cleared on {review.Number} — {Probation.PassesToClear} good reviews in a row.");
+
         ConsiderTrailerReassignment(s);
         return true;
     }

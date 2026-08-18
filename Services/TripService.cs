@@ -97,6 +97,13 @@ public class TripAudit
     public string HomeTimeNote { get; set; } = "";
     /// <summary>This load was the ride home, and they are close enough to take it now.</summary>
     public bool GotYouHome { get; set; }
+    /// <summary>
+    /// What operations came back with on anything the driver asked for. Answered at close-out because
+    /// that is when a dispatcher actually gets to it.
+    /// </summary>
+    public List<string> RequestAnswers { get; set; } = new();
+    /// <summary>Set when a home-time request was approved on this close-out.</summary>
+    public bool HomeRequestGranted { get; set; }
 }
 
 /// <summary>Closes a load out: service audit, pay accrual, ledger postings, equipment and career updates.</summary>
@@ -399,6 +406,19 @@ public static class TripService
         audit.Discovery = DiscoveryService.Note(s, s.Status.LocationCity, s.Status.LocationState,
             trip.DeliveredGameTime, trip.Number);
 
+        // ---- anything the driver asked operations for gets answered now.
+        //
+        // Deliberately here rather than at the moment they ask. A dispatcher does not drop what they
+        // are doing to answer a text mid-lane, and answering on the spot would make a home-time request
+        // a free way out of the load in front of them.
+        if (Requests.Answer(s) is { } homeReq)
+        {
+            audit.RequestAnswers.Add($"{homeReq.Number} — home time: {homeReq.Answer}");
+            audit.HomeRequestGranted = homeReq.Status == "Granted";
+        }
+        if (Requests.AnswerTrailerRequest(s) is { } trailerReq)
+            audit.RequestAnswers.Add($"{trailerReq.Number} — {trailerReq.RequestedType}: {trailerReq.Answer}");
+
         // ---- and where does it leave us on home time?
         var homeNow = HomeTime.Status(s);
         if (homeNow.Tracked)
@@ -423,6 +443,11 @@ public static class TripService
             else
                 audit.HomeTimeNote =
                     $"{homeNow.DaysOut:0.#} days out, home time in {homeNow.DaysUntilDue:0.#}. Nothing to plan around yet.";
+        }
+        else if (!string.IsNullOrWhiteSpace(homeNow.Suggestion))
+        {
+            // No arrangement, but a very long time out. Worth saying once they are stopped and reading.
+            audit.HomeTimeNote = homeNow.Suggestion;
         }
 
         // ---- safety record

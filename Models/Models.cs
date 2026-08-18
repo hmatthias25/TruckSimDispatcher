@@ -36,6 +36,12 @@ public class AppState
     public List<EquipmentOrder> EquipmentOrders { get; set; } = new();
     /// <summary>Trailers the company has asked for. The player buys them in ATS and reports the price.</summary>
     public List<TrailerRequest> TrailerRequests { get; set; } = new();
+    /// <summary>Home time the driver has asked for, and what operations said.</summary>
+    public List<HomeTimeRequest> HomeTimeRequests { get; set; } = new();
+    /// <summary>Fortnightly reviews while on probation. Kept on the file afterwards.</summary>
+    public List<ProbationReview> ProbationReviews { get; set; } = new();
+    /// <summary>Trailer types the driver has asked to be re-rigged onto.</summary>
+    public List<TrailerTypeRequest> TrailerTypeRequests { get; set; } = new();
 
     public Counters Counters { get; set; } = new();
     public List<LogEvent> Events { get; set; } = new();
@@ -193,9 +199,32 @@ public class Driver
     public string Status { get; set; } = "Probation";
     /// <summary>Rank key from CareerService ladder.</summary>
     public string Rank { get; set; } = "probationary";
+
+    /// <summary>
+    /// Operations approved a home-time request, so dispatch is routing home whether or not the
+    /// interval says they are due. Cleared when they actually get there.
+    ///
+    /// For a driver on no arrangement this is the only thing that ever routes them home — which is the
+    /// deal they signed when they elected to stay out.
+    /// </summary>
+    public bool HomeTimeGranted { get; set; }
+    public string HomeTimeGrantedGameTime { get; set; } = "";
     public string RankTitle { get; set; } = "Probationary Company Driver";
     public PayPlan Pay { get; set; } = new();
+    /// <summary>
+    /// Company unlocks — what the carrier permits this driver to run. Written by rank promotion.
+    /// NOT the driver's licence: see <see cref="Endorsements"/>.
+    /// </summary>
     public List<string> Qualifications { get; set; } = new();
+
+    /// <summary>
+    /// CDL endorsements the driver actually holds. Hazmat, Tanker, Doubles/Triples.
+    ///
+    /// Deliberately separate from <see cref="Qualifications"/>. Promotion to company driver lifts the
+    /// company's hazmat restriction, which is not the same thing as the driver having sat the exam —
+    /// conflating the two hands out an endorsement nobody earned. Both have to be true to haul it.
+    /// </summary>
+    public List<string> Endorsements { get; set; } = new();
     public List<string> Restrictions { get; set; } = new();
     public string AssignedTruckUnit { get; set; } = "";
     public string AssignedTrailerUnit { get; set; } = "";
@@ -1085,6 +1114,81 @@ public class FleetReport
 /// type, and why. The player buys it in game if they want it and reports what they paid — nothing is
 /// booked against a price the app made up.
 /// </summary>
+/// <summary>
+/// A driver asking to go home.
+///
+/// Not answered on the spot — a dispatcher does not drop what they are doing to answer a text
+/// mid-lane. It is answered when the next load closes out, which also stops the request being a free
+/// "cancel my current load" button.
+/// </summary>
+/// <summary>
+/// One fortnightly look at a probationary driver, written when they report in at the yard.
+///
+/// Kept on the file after probation ends. It is the driver's record of how they started, and a fail is
+/// not discipline — it never touches the safety record, it means the probation carries on.
+/// </summary>
+public class ProbationReview
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Number { get; set; } = "";
+    public int ReviewNumber { get; set; }
+    public string GameTime { get; set; } = "";
+    public string PeriodStartGameTime { get; set; } = "";
+    public double DaysCovered { get; set; }
+
+    public int LoadsDelivered { get; set; }
+    public double OnTimePct { get; set; }
+    public int PreventableFaults { get; set; }
+
+    /// <summary>Pass | Fail</summary>
+    public string Verdict { get; set; } = "Fail";
+    public string Summary { get; set; } = "";
+    /// <summary>What went well, in the words the review used.</summary>
+    public List<string> Strengths { get; set; } = new();
+    /// <summary>What did not, and what has to be different.</summary>
+    public List<string> Concerns { get; set; } = new();
+    /// <summary>Where they stand afterwards, and when they are back.</summary>
+    public string NextStep { get; set; } = "";
+    /// <summary>Passes standing after this one.</summary>
+    public int PassesInARow { get; set; }
+    /// <summary>This review is the one that ended probation.</summary>
+    public bool ClearedProbation { get; set; }
+}
+
+public class HomeTimeRequest
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Number { get; set; } = "";
+    public string RequestedGameTime { get; set; } = "";
+    /// <summary>Why they are asking. Optional, and it does not change the answer.</summary>
+    public string Reason { get; set; } = "";
+    /// <summary>Days off the yard when they asked. The whole argument, recorded.</summary>
+    public double DaysOutAtRequest { get; set; }
+    public double DaysOutAtAnswer { get; set; }
+    /// <summary>Open | Granted | Refused</summary>
+    public string Status { get; set; } = "Open";
+    public string Answer { get; set; } = "";
+    public string AnsweredGameTime { get; set; } = "";
+}
+
+/// <summary>
+/// A driver asking to be re-rigged onto a different trailer type. Off probation only, and only for
+/// something the company actually has at their yard.
+/// </summary>
+public class TrailerTypeRequest
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Number { get; set; } = "";
+    public string RequestedType { get; set; } = "";
+    public string RequestedGameTime { get; set; } = "";
+    /// <summary>Open | Granted | Refused</summary>
+    public string Status { get; set; } = "Open";
+    public string Answer { get; set; } = "";
+    public string AnsweredGameTime { get; set; } = "";
+    /// <summary>The swap order raised when it is granted, so the two can be followed together.</summary>
+    public string EquipmentOrderNumber { get; set; } = "";
+}
+
 public class TrailerRequest
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];

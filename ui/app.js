@@ -1624,6 +1624,10 @@ function auditModal(a) {
       ${a.faultRationale ? `<p>${esc(a.faultRationale)}</p>` : ''}
     </div>
 
+    ${(a.requestAnswers || []).length ? `<div class="callout ${a.homeRequestGranted ? 'go' : 'info'}">
+      <h4>Operations came back to you</h4>
+      ${a.requestAnswers.map((x) => `<p>${esc(x)}</p>`).join('')}</div>` : ''}
+
     ${(a.warnings || []).length ? `<div class="callout warn">
       <h4>Check these numbers</h4>
       ${a.warnings.map((w) => `<p>${esc(w)}</p>`).join('')}
@@ -1953,10 +1957,16 @@ function terminalsHtml() {
       <button class="btn" data-act="settle-transfer" data-id="${esc(t.id)}">
         Check on the ${esc(t.toTerminalName)} request (${t.loadsRequired} loads asked)</button></div>`).join('')}
 
+    ${probationHtml()}
+
     <h3 class="sect">Home-time arrangement</h3>
     <p class="hint">What you agreed to when you signed on. Dispatch routes for it: as the date gets
       close, loads finishing near your home yard start outranking better-paying freight going the other
       way, and you are told when a load is your ride home.</p>
+    ${S.views.probation?.on ? `<div class="callout warn">
+      <p style="margin:0">While you are on probation this is overridden — you report to the yard every
+        <b>${S.views.probation.intervalDays} days</b> for review whatever is set here. Your own arrangement
+        takes over once probation is cleared.</p></div>` : ''}
     <div class="grid3">
       <label>Arrangement
         <select id="ht-pref">${(S.views.homeTimeOptions || []).map((o) =>
@@ -1967,7 +1977,119 @@ function terminalsHtml() {
         ? `<p class="hint" style="margin-top:22px">${num(S.views.homeTime.daysOut, 1)} days out of
            ${S.views.homeTime.intervalDays}.</p>` : ''}</div>
     </div>
+
+    ${askHomeHtml()}
+    ${askTrailerHtml()}
+    ${endorsementsHtml()}
   </div>`;
+}
+
+/* ---- probation: fortnightly reviews at the yard, not a silent threshold ---- */
+function probationHtml() {
+  const p = S.views.probation;
+  if (!p) return '';
+  const reviews = p.reviews || [];
+  if (!p.on && !reviews.length) return '';
+
+  return `<h3 class="sect">Probation</h3>
+    <div class="callout ${p.on ? 'warn' : 'go'}">
+      <h4>${esc(p.standing)}</h4>
+      ${p.on ? `<p>You report to the home terminal every <b>${p.intervalDays} days</b>. Each time you come in,
+        operations goes through the period with you and writes it up. <b>${p.passesNeeded} good reviews in a
+        row</b> ends it — a fail resets the run, which is what makes each one count.</p>
+        <p class="hint" style="margin:0">A failed review is not discipline and never touches your safety
+          record. It means the probation carries on.${p.thresholds
+            ? ` You also still need the numbers: ${esc(p.thresholds)}` : ''}</p>` : ''}
+    </div>
+    ${reviews.map((r) => `<div class="loadcard ${r.verdict === 'Pass' ? 'auth' : 'reject'}">
+      <div class="loadcard-head">
+        <span class="lane">${esc(r.number)}</span>
+        ${badge(r.verdict === 'Pass' ? 'ok' : 'bad', r.verdict)}
+        <span class="sub">${gt(r.gameTime)} · ${num(r.daysCovered, 0)} days</span>
+        <div class="spacer"></div>
+        ${r.clearedProbation ? badge('ok', 'cleared probation') : ''}</div>
+      <div class="kv">
+        <span>loads <b>${r.loadsDelivered}</b></span>
+        <span>on time <b>${num(r.onTimePct, 1)}%</b></span>
+        <span>preventable <b>${r.preventableFaults}</b></span>
+        <span>run <b>${r.passesInARow}/${p.passesNeeded}</b></span>
+      </div>
+      ${(r.strengths || []).length ? `<ul class="reasons good">${r.strengths.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${(r.concerns || []).length ? `<ul class="reasons bad">${r.concerns.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${r.nextStep ? `<p class="hint" style="margin:6px 0 0">${esc(r.nextStep)}</p>` : ''}
+    </div>`).join('')}`;
+}
+
+/* ---- asking to go home ---- */
+function askHomeHtml() {
+  const rq = S.views.requests || {};
+  const open = rq.home;
+  const recent = (rq.recentHome || []).filter((r) => r.status !== 'Open');
+
+  return `<h3 class="sect">Ask for home time</h3>
+    <p class="hint">Put in for a trip home and operations answers it when you close your next load out —
+      not on the spot, because a dispatcher does not drop what they are doing to answer a text mid-lane.
+      How long you have been out is what decides it.</p>
+    ${open ? `<div class="callout info">
+        <h4>${esc(open.number)} is with operations</h4>
+        <p>Asked ${gt(open.requestedGameTime)} after ${num(open.daysOutAtRequest, 1)} days out.
+          ${open.reason ? `You said: ${esc(open.reason)}` : ''}</p>
+        <p class="hint" style="margin:0">You will have an answer on your next trip summary.</p></div>`
+      : `<div class="grid2">
+          <label>Why, if you want to say<input id="hr-reason" placeholder="optional — it does not change the answer"></label>
+          <label style="align-self:end"><button class="btn primary wide" data-act="ask-home">Request home time</button></label>
+        </div>`}
+    ${recent.map((r) => `<div class="callout ${r.status === 'Granted' ? 'go' : 'stop'}" style="margin-top:8px">
+      <h4>${esc(r.number)} — ${esc(r.status)}</h4>
+      <p style="margin:0">${esc(r.answer)}</p></div>`).join('')}`;
+}
+
+/* ---- asking for a different trailer ---- */
+function askTrailerHtml() {
+  const rq = S.views.requests || {};
+  const types = rq.trailerTypes || [];
+  const open = rq.trailer;
+  const recent = (rq.recentTrailer || []).filter((r) => r.status !== 'Open');
+
+  return `<h3 class="sect">Ask for a different trailer</h3>
+    ${!rq.canRequestTrailer ? `<p class="hint">You are still on probation. Take what you are given until
+      that is behind you, then you can ask.</p>`
+    : `<p class="hint">You can ask to be re-rigged onto anything the company keeps at your yard. It can be
+        turned down — the freight out of your terminal decides it, and the more you have behind you the
+        better a hearing it gets. Granted, you swap at the house on your next home time.</p>
+      ${open ? `<div class="callout info">
+          <h4>${esc(open.number)} — asked for ${esc(open.requestedType)}</h4>
+          <p class="hint" style="margin:0">Answer comes with your next close-out.</p></div>`
+        : types.length ? `<div class="grid2">
+            <label>Trailer type<select id="tr-type">${types.map((x) =>
+              `<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select></label>
+            <label style="align-self:end"><button class="btn primary wide" data-act="ask-trailer">Request it</button></label>
+          </div>`
+          : `<p class="hint">There is nothing else based at your yard to put you on.</p>`}`}
+    ${recent.map((r) => `<div class="callout ${r.status === 'Granted' ? 'go' : 'stop'}" style="margin-top:8px">
+      <h4>${esc(r.number)} — ${esc(r.requestedType)} — ${esc(r.status)}</h4>
+      <p style="margin:0">${esc(r.answer)}</p></div>`).join('')}`;
+}
+
+/* ---- endorsements: the driver telling the app about their own licence ---- */
+function endorsementsHtml() {
+  const e = S.views.endorsements || { held: [], all: [] };
+  const held = e.held || [];
+
+  return `<h3 class="sect">Endorsements</h3>
+    <p class="hint">What you are licensed to haul. The app never works this out for you — record it when
+      you get one and dispatch stops refusing that freight straight away.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Endorsement</th><th>Status</th><th>Opens up</th><th></th></tr></thead>
+      <tbody>${(e.all || []).map((x) => {
+        const has = held.includes(x.key);
+        return `<tr>
+          <td><b>${esc(x.label)}</b></td>
+          <td>${badge(has ? 'ok' : 'mute', has ? 'on file' : 'not held')}</td>
+          <td class="sub">${esc(x.unlocks)}</td>
+          <td><button class="btn tiny ${has ? 'ghost' : 'primary'}" data-act="set-endorsement"
+                data-kind="${esc(x.key)}" data-has="${has ? '' : '1'}">${has ? 'Remove' : 'I have this'}</button></td>
+        </tr>`; }).join('')}</tbody></table></div>`;
 }
 
 /**
@@ -3689,6 +3811,22 @@ async function handleAction(act, d, ev) {
       return r;
     });
 
+    case 'ask-home': return run(async () => {
+      const r = await api('/career/request-home', 'POST', { reason: sv('hr-reason') });
+      absorb(r);
+      toast(r.message, 'ok');
+    });
+    case 'ask-trailer': return run(async () => {
+      const r = await api('/career/request-trailer', 'POST', { trailerType: sv('tr-type') });
+      absorb(r);
+      toast(r.message, 'ok');
+    });
+    case 'set-endorsement': return run(async () => {
+      const r = await api('/career/endorsement', 'POST',
+        { kind: d.kind, has: d.has === '1', gameTime: S.status.gameTime });
+      absorb(r);
+      toast(r.message, 'ok');
+    });
     case 'save-home-time': return run(async () => absorb(await api('/career/home-time', 'POST',
       { preference: sv('ht-pref') })), 'Home-time arrangement updated.');
 

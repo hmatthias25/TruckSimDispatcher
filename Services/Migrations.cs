@@ -24,8 +24,28 @@ public static class Migrations
         ClearPhantomBankBalance(s);
         EnsureEquipmentStandard(s);
         EnsureCarrierNetwork(s);
+        EnsureEndorsements(s);
         EnsureCarrierStanding(s);
         EnsureFleetStars(s);
+    }
+
+    /// <summary>
+    /// Endorsements used to live in the qualifications list, which rank promotion also writes company
+    /// unlocks into — so being promoted to company driver handed the driver a hazmat endorsement they
+    /// never sat an exam for. They have their own list now.
+    ///
+    /// Carried across from the application flags only. A "Hazmat" that arrived through promotion is NOT
+    /// moved over, because it was never a licence — it was the carrier lifting its own restriction, and
+    /// treating it as an endorsement is the bug being fixed.
+    /// </summary>
+    private static void EnsureEndorsements(AppState s)
+    {
+        if (s.Driver.Endorsements.Count > 0) return;
+        if (s.Application == null) return;
+
+        if (s.Application.HasHazmat) s.Driver.Endorsements.Add(Endorsements.Hazmat);
+        if (s.Application.HasTanker) s.Driver.Endorsements.Add(Endorsements.Tanker);
+        if (s.Application.HasDoublesTriples) s.Driver.Endorsements.Add(Endorsements.DoublesTriples);
     }
 
     /// <summary>

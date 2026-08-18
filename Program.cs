@@ -1024,7 +1024,33 @@ app.MapPost("/api/career/promote", (CareerActionRequest req) => Results.Ok(store
     return new { message, snapshot = Snapshot(s) };
 })));
 
-app.MapPost("/api/career/home-time", (HomeTimeRequest req) => Results.Ok(store.Mutate(s =>
+// The driver asking to go home. Answered when the next load closes out, not now.
+app.MapPost("/api/career/request-home", (AskHomeRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var r = Requests.SubmitHomeRequest(s, req.Reason ?? "");
+    store.Log(s, "career", $"{r.Number}: home time requested after {r.DaysOutAtRequest:0.#} days out.", r.Number);
+    return new { snapshot = Snapshot(s), request = r,
+                 message = "Request is in. I will give you an answer when you close your next load out." };
+})));
+
+// Asking to be re-rigged onto a different trailer type. Off probation only.
+app.MapPost("/api/career/request-trailer", (AskTrailerRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var r = Requests.SubmitTrailerRequest(s, req.TrailerType);
+    store.Log(s, "career", $"{r.Number}: requested {r.RequestedType}.", r.Number);
+    return new { snapshot = Snapshot(s), request = r,
+                 message = $"Asked operations for {r.RequestedType.ToLowerInvariant()}. Answer comes with your next close-out." };
+})));
+
+// Recording a licence endorsement. The player telling the app about their own CDL.
+app.MapPost("/api/career/endorsement", (EndorsementRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var message = Endorsements.Record(s, req.Kind, req.Has, req.GameTime ?? "");
+    store.Log(s, "career", message);
+    return new { snapshot = Snapshot(s), message };
+})));
+
+app.MapPost("/api/career/home-time", (HomeTimeArrangementRequest req) => Results.Ok(store.Mutate(s =>
 {
     var days = HomeTime.DaysFor(req.Preference);
     if (days <= 0 && !string.Equals(req.Preference, "none", StringComparison.OrdinalIgnoreCase))
@@ -1255,6 +1281,31 @@ object Snapshot(AppState? given = null)
             stranded = Stranded.Assess(s),
             finance = LedgerService.Summary(s),
             career = CareerService.Review(s),
+            // Things the driver has asked for, what they hold, and where probation stands.
+            requests = new
+            {
+                home = Requests.OpenHomeRequest(s),
+                trailer = Requests.OpenTrailerRequest(s),
+                trailerTypes = Requests.RequestableTrailerTypes(s),
+                canRequestTrailer = s.Driver.Rank != "probationary",
+                recentHome = s.HomeTimeRequests.Take(4).ToList(),
+                recentTrailer = s.TrailerTypeRequests.Take(4).ToList()
+            },
+            endorsements = new
+            {
+                held = Endorsements.Held(s),
+                all = Endorsements.All.Select(e => new { key = e.Key, label = e.Label, unlocks = e.Unlocks }).ToList()
+            },
+            probation = new
+            {
+                on = Probation.IsOn(s),
+                standing = Probation.Standing(s),
+                intervalDays = Probation.ReviewIntervalDays,
+                passesNeeded = Probation.PassesToClear,
+                passesInARow = Probation.ConsecutivePasses(s),
+                reviews = s.ProbationReviews.Take(6).ToList(),
+                thresholds = Probation.MeetsCompanyThresholds(s).Shortfall
+            },
             maintenanceAlerts = MaintenanceService.FleetAlerts(s),
             dispatchBlockers = DispatchEngine.DispatchBlockers(s, truck, trailer),
             // Condition of the equipment and what the company wants done about it, quoted in hours.
@@ -1409,8 +1460,11 @@ record TerminateRequest(string DriverId, string? Reason);
 record RetireRequest(string Unit, string? ReplacementUnit);
 record TrailerBoughtRequest(string RequestId, string Unit, decimal PaidPrice, string? GameTime, string? GameId);
 record TrailerDeclineRequest(string RequestId, string? GameTime);
+record AskHomeRequest(string? Reason);
+record AskTrailerRequest(string TrailerType);
+record EndorsementRequest(string Kind, bool Has, string? GameTime);
 record DedicatedRequest(bool OnDedicated, string? Account);
 record FacilityTimeRequest(string TrailerType, double LoadingHours, double UnloadingHours, bool Manual);
 record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? TransmissionPreference, bool AddTrailers);
 record AdoptRequest(string Path);
-record HomeTimeRequest(string Preference);
+record HomeTimeArrangementRequest(string Preference);

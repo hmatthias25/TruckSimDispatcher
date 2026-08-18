@@ -620,11 +620,11 @@ public static class DispatchEngine
                     (load.TrailerType ?? "").Contains(no, StringComparison.OrdinalIgnoreCase))
                     fails.Add($"You listed \"{no}\" as freight you will not haul — I do not force freight.");
             }
-            if (load.IsHazmat && !app.HasHazmat && !s.Driver.Qualifications.Contains("Hazmat"))
-                fails.Add("Hazmat load and you have no hazmat endorsement on file.");
-            if (division.Equals("Tanker", StringComparison.OrdinalIgnoreCase) && !app.HasTanker
-                && !s.Driver.Qualifications.Contains("Tanker"))
-                fails.Add("Tanker load and you have no tanker endorsement on file.");
+            if (load.IsHazmat && !Endorsements.Has(s, Endorsements.Hazmat))
+                fails.Add("Hazmat load and you have no hazmat endorsement on file. Record it on the Career tab once you have it.");
+            if (division.Equals("Tanker", StringComparison.OrdinalIgnoreCase)
+                && !Endorsements.Has(s, Endorsements.Tanker))
+                fails.Add("Tanker load and you have no tanker endorsement on file. Record it on the Career tab once you have it.");
         }
 
         foreach (var r in s.Driver.Restrictions)

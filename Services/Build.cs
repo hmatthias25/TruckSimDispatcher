@@ -10,7 +10,7 @@ namespace TruckSimDispatcher.Services;
 public static class Build
 {
     /// <summary>Rising in 0.1 steps through alpha. Beta will have its own numbering.</summary>
-    public const string Version = "0.7";
+    public const string Version = "0.8";
 
     /// <summary>Alpha | Beta | Release — shown alongside the number.</summary>
     public const string Stage = "alpha";
