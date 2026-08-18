@@ -3,133 +3,181 @@ using TruckSimDispatcher.Models;
 namespace TruckSimDispatcher.Services;
 
 /// <summary>
-/// What the driver is licensed to haul.
+/// What the driver is cleared to haul — as <b>American Truck Simulator</b> models it.
 ///
-/// This used to be captured once on the job application and never again, so a driver who went and got
-/// their hazmat had no way to tell the app — dispatch just kept refusing the freight. Endorsements are
-/// a licence, and licences change.
+/// ATS does not use CDL endorsements. It gates dangerous freight on <b>HazMat classes</b>, six of them,
+/// unlocked individually and in any order, and the class is what decides whether a given load can be
+/// taken. Classes 5, 7 and 9 do not appear in the game.
 ///
-/// <see cref="Driver.Endorsements"/> is the single source of truth. The application flags are kept in
-/// step with it so nothing that reads either one disagrees, but the list is what is actually consulted.
+/// Two things that look like endorsements are not:
+/// <list type="bullet">
+///   <item><b>Tanker is not an endorsement.</b> A tanker is a trailer; what gates it is what is inside.
+///     A fuel tanker is class 3, a gas tanker is class 2, a food-grade tanker needs nothing at all.</item>
+///   <item><b>Doubles and triples are not an endorsement.</b> They are trailer configurations available
+///     in particular states — nothing to do with the driver's licence.</item>
+/// </list>
 ///
-/// Note this is NOT the qualifications list. Rank promotion writes company unlocks into that one, and
-/// lifting the carrier's hazmat restriction is a different thing from the driver having sat the exam —
-/// conflating them hands out an endorsement nobody earned. Nothing here is ever inferred: the app does not decide a driver has an
-/// endorsement because they hauled something. They tell it, and it records that.
+/// <see cref="Driver.Endorsements"/> holds the classes the driver has unlocked. Deliberately separate
+/// from the qualifications list, which rank promotion writes company unlocks into — lifting the
+/// carrier's own hazmat restriction is a different thing from the driver being cleared for a class, and
+/// both have to be true. Nothing here is ever inferred: the driver tells the app, and it records that.
 /// </summary>
 public static class Endorsements
 {
-    public const string Hazmat = "Hazmat";
-    public const string Tanker = "Tanker";
-    public const string DoublesTriples = "Doubles/Triples";
+    /// <summary>A HazMat class as ATS presents it.</summary>
+    public record HazClass(string Key, string Label, string Covers, string Examples);
 
-    /// <summary>The ones that actually gate freight, with what having them opens up.</summary>
-    public static readonly (string Key, string Label, string Unlocks)[] All =
+    /// <summary>
+    /// The six classes in ATS. Class 2 carries subclasses (2.1 flammable, 2.2 non-flammable and
+    /// cryogenic, 2.3 poisonous) but is unlocked as one class, so the subclasses describe what is
+    /// inside rather than being separate unlocks.
+    /// </summary>
+    public static readonly HazClass[] All =
     {
-        (Hazmat, "Hazmat (H)",
-            "placarded freight — explosives, corrosives, flammables, and the hazmat side of tanker work"),
-        (Tanker, "Tanker (N)",
-            "the tanker division: food-grade and dry-bulk straight away, and with hazmat alongside it, fuel, chemical and gas"),
-        (DoublesTriples, "Doubles/Triples (T)",
-            "pulling more than one trailer, where the map and your carrier's freight allow it"),
+        new("1", "Class 1 — Explosives",
+            "explosive substances and articles",
+            "dynamite, fireworks, ammunition"),
+        new("2", "Class 2 — Gases",
+            "compressed, liquefied and cryogenic gases — 2.1 flammable, 2.2 non-flammable, 2.3 poisonous",
+            "acetylene and hydrogen; nitrogen and neon; chlorine"),
+        new("3", "Class 3 — Flammable liquids",
+            "flammable liquids, which is most fuel haulage",
+            "gasoline, diesel, kerosene"),
+        new("4", "Class 4 — Flammable solids",
+            "flammable solids and spontaneously combustible materials",
+            "matches, some metal powders"),
+        new("6", "Class 6 — Toxic substances",
+            "toxic and infectious substances",
+            "pesticides, medical waste"),
+        new("8", "Class 8 — Corrosives",
+            "corrosive substances",
+            "acids, batteries, caustic soda"),
     };
 
-    /// <summary>
-    /// Does the driver hold this endorsement?
-    ///
-    /// Checks the endorsement list first, then falls back to the application flags so a career written
-    /// before any of this still answers correctly.
-    /// </summary>
-    public static bool Has(AppState s, string key)
+    public static HazClass? Find(string? key)
     {
-        var k = (key ?? "").Trim();
-        if (k.Length == 0) return false;
-
-        if (s.Driver.Endorsements.Any(q => q.Equals(k, StringComparison.OrdinalIgnoreCase)))
-            return true;
-
-        var app = s.Application;
-        if (app == null) return false;
-        return k switch
-        {
-            Hazmat => app.HasHazmat,
-            Tanker => app.HasTanker,
-            DoublesTriples => app.HasDoublesTriples,
-            _ => false
-        };
+        var k = Normalise(key);
+        return All.FirstOrDefault(c => c.Key == k);
     }
 
-    /// <summary>Everything the driver currently holds, for display and for carrier screening.</summary>
+    /// <summary>
+    /// Reads a class off whatever the player or a screenshot gave us. "3", "Class 3", "2.1" and
+    /// "Flammable liquids" all resolve; a subclass collapses to its parent, because that is the unlock.
+    /// </summary>
+    public static string Normalise(string? key)
+    {
+        var raw = (key ?? "").Trim();
+        if (raw.Length == 0) return "";
+
+        // "Class 2.1" / "2.1" -> "2". The subclass says what is in the tank, not what you unlock.
+        var digits = new string(raw.TakeWhile(char.IsDigit).ToArray());
+        if (digits.Length == 0)
+        {
+            var m = raw.IndexOf("class", StringComparison.OrdinalIgnoreCase);
+            if (m >= 0)
+                digits = new string(raw[(m + 5)..].TrimStart().TakeWhile(char.IsDigit).ToArray());
+        }
+        if (digits.Length > 0) return digits;
+
+        // Fall back to the name.
+        var byName = All.FirstOrDefault(c =>
+            c.Label.Contains(raw, StringComparison.OrdinalIgnoreCase) ||
+            c.Covers.Contains(raw, StringComparison.OrdinalIgnoreCase));
+        return byName?.Key ?? "";
+    }
+
+    /// <summary>Is the driver cleared for this class?</summary>
+    public static bool Has(AppState s, string? key)
+    {
+        var k = Normalise(key);
+        if (k.Length == 0) return false;
+        return s.Driver.Endorsements.Any(q => Normalise(q) == k);
+    }
+
+    /// <summary>Cleared for anything at all — what a hazmat load with no stated class needs.</summary>
+    public static bool HasAny(AppState s) => s.Driver.Endorsements.Any(q => Find(q) != null);
+
+    /// <summary>Classes currently held, in game order.</summary>
     public static List<string> Held(AppState s) =>
-        All.Where(e => Has(s, e.Key)).Select(e => e.Key).ToList();
+        All.Where(c => Has(s, c.Key)).Select(c => c.Key).ToList();
 
     /// <summary>
-    /// Records the driver gaining or losing an endorsement, and says what it changes.
-    ///
-    /// Both stores are written so the endorsement list and the application flags cannot drift apart —
-    /// the dispatch engine and the carrier market read different ones, and a driver whose endorsement is
-    /// visible to one but not the other is the bug this replaces.
+    /// The class a tanker subtype needs. Food-grade and dry-bulk need none — milk and cement are not
+    /// placarded, and pretending otherwise would refuse perfectly ordinary freight.
     /// </summary>
+    public static string ClassForTanker(string? subtype) => (subtype ?? "").Trim().ToLowerInvariant() switch
+    {
+        "fuel" => "3",          // gasoline, diesel — flammable liquid
+        "gas" => "2",           // pressurised and cryogenic
+        "chemical" => "8",      // corrosives are the common chemical haul
+        _ => ""                 // food grade, dry bulk: nothing needed
+    };
+
+    /// <summary>Records the driver gaining or losing a class, and says what it changes.</summary>
     public static string Record(AppState s, string key, bool has, string gameTime)
     {
-        var known = All.FirstOrDefault(e => e.Key.Equals((key ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
-        if (known.Key == null)
-            throw new InvalidOperationException(
-                $"That is not an endorsement I track. I know about: {string.Join(", ", All.Select(e => e.Label))}.");
+        var cls = Find(key)
+                  ?? throw new InvalidOperationException(
+                      $"ATS does not have that class. It uses {string.Join(", ", All.Select(c => c.Key))} — " +
+                      "there is no tanker or doubles endorsement, and no classes 5, 7 or 9.");
 
-        var already = Has(s, known.Key);
+        var already = Has(s, cls.Key);
         var when = string.IsNullOrWhiteSpace(gameTime) ? s.Status.GameTime : gameTime;
 
-        if (has && already)
-            return $"You already have {known.Label} on file. Nothing to change.";
-        if (!has && !already)
-            return $"There is no {known.Label} on your file to remove.";
+        if (has && already) return $"{cls.Label} is already on your file. Nothing to change.";
+        if (!has && !already) return $"You do not have {cls.Label} to remove.";
 
         if (has)
         {
-            s.Driver.Endorsements.Add(known.Key);
-            SetFlag(s, known.Key, true);
-            var msg = $"{known.Label} added to your file as of {GameClock.Pretty(when)}. That opens up {known.Unlocks}.";
+            s.Driver.Endorsements.Add(cls.Key);
+            SyncLegacyFlags(s);
+            var msg = $"{cls.Label} added as of {GameClock.Pretty(when)} — {cls.Covers} ({cls.Examples}).";
 
-            // Tanker and hazmat are worth more together than apart, and a driver who has just got one
-            // should be told plainly what the other would add.
-            if (known.Key == Tanker && !Has(s, Hazmat))
-                msg += " Note the placarded tankers — fuel, chemical, gas — still need hazmat alongside this.";
-            if (known.Key == Hazmat && Has(s, Tanker))
-                msg += " With your tanker endorsement that now includes fuel, chemical and gas tankers.";
+            // Say what it opens up in equipment terms, which is what the driver is actually asking.
+            var tankers = TrailerSpec.TankerKinds
+                .Where(t => ClassForTanker(t.Key) == cls.Key)
+                .Select(t => t.Label)
+                .ToList();
+            if (tankers.Count > 0)
+                msg += $" That also covers {string.Join(" and ", tankers)}.";
             return msg;
         }
 
-        s.Driver.Endorsements.RemoveAll(q => q.Equals(known.Key, StringComparison.OrdinalIgnoreCase));
-        SetFlag(s, known.Key, false);
-        return $"{known.Label} removed from your file as of {GameClock.Pretty(when)}. " +
-               "Dispatch will stop assigning you freight that needs it.";
-    }
-
-    private static void SetFlag(AppState s, string key, bool value)
-    {
-        if (s.Application == null) return;
-        switch (key)
-        {
-            case Hazmat: s.Application.HasHazmat = value; break;
-            case Tanker: s.Application.HasTanker = value; break;
-            case DoublesTriples: s.Application.HasDoublesTriples = value; break;
-        }
+        s.Driver.Endorsements.RemoveAll(q => Normalise(q) == cls.Key);
+        SyncLegacyFlags(s);
+        return $"{cls.Label} removed as of {GameClock.Pretty(when)}. Dispatch will stop assigning freight that needs it.";
     }
 
     /// <summary>
-    /// Brings a career's two stores into agreement on load. Additive: an endorsement recorded in
-    /// either place ends up in both, and nothing is ever taken away.
+    /// Keeps the old application flags roughly in step, for anything still reading them.
+    ///
+    /// Approximate on purpose: the flags describe a model ATS does not use, so they are derived from
+    /// the classes rather than the other way round. Any class means "hazmat" to an old reader, and the
+    /// tanker flag follows from holding what a placarded tanker actually needs.
     /// </summary>
-    public static void Reconcile(AppState s)
+    private static void SyncLegacyFlags(AppState s)
     {
         if (s.Application == null) return;
-        foreach (var e in All)
-        {
-            if (!Has(s, e.Key)) continue;
-            if (!s.Driver.Endorsements.Any(q => q.Equals(e.Key, StringComparison.OrdinalIgnoreCase)))
-                s.Driver.Endorsements.Add(e.Key);
-            SetFlag(s, e.Key, true);
-        }
+        s.Application.HasHazmat = HasAny(s);
+        s.Application.HasTanker = Has(s, "3") || Has(s, "2") || Has(s, "8");
     }
+
+    /// <summary>
+    /// Migrates a career off the CDL-endorsement model.
+    ///
+    /// A stored "Hazmat" said nothing about which class, and guessing would let somebody take a load
+    /// they are not cleared for — so it is dropped and the driver is asked to pick their classes. The
+    /// application flag is left alone so the career remembers something was there.
+    /// </summary>
+    public static bool MigrateFromCdlModel(AppState s)
+    {
+        var stale = s.Driver.Endorsements.Where(e => Find(e) == null).ToList();
+        if (stale.Count == 0) return false;
+        s.Driver.Endorsements.RemoveAll(e => Find(e) == null);
+        return true;
+    }
+
+    /// <summary>Set when the driver has hazmat on their old application but no classes chosen yet.</summary>
+    public static bool NeedsClassesChosen(AppState s) =>
+        (s.Application?.HasHazmat ?? false) && !HasAny(s);
 }

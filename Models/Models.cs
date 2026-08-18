@@ -599,6 +599,13 @@ public class BoardLoad
     public bool IsUrgent { get; set; }
     public bool IsFragile { get; set; }
     public bool IsHazmat { get; set; }
+    /// <summary>
+    /// Which ATS HazMat class this load needs — "1", "2", "3", "4", "6" or "8".
+    ///
+    /// Blank on a hazmat load means the listing did not say, and dispatch falls back to requiring at
+    /// least one class rather than guessing which.
+    /// </summary>
+    public string HazmatClass { get; set; } = "";
     public bool IsOversize { get; set; }
     public bool RequiresTarp { get; set; }
     public int ExtraStops { get; set; }
@@ -701,6 +708,8 @@ public class Trip
     public int ExtraStops { get; set; }
     public int TarpsUsed { get; set; }
     public bool IsHazmat { get; set; }
+    /// <summary>The ATS HazMat class this load needed. See <see cref="BoardLoad.HazmatClass"/>.</summary>
+    public string HazmatClass { get; set; } = "";
     public bool IsOversize { get; set; }
 
     public PayBreakdown Pay { get; set; } = new();

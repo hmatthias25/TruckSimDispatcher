@@ -753,6 +753,11 @@ function viewDispatch() {
           <label>Receiver<input id="b-receiver" placeholder="optional"></label>
           <label>Extra stops<input id="b-stops" type="number" step="1" min="0" value="0"></label>
           <label>Broker / market<input id="b-broker" placeholder="optional"></label>
+          <label>HazMat class<select id="b-hazclass">
+            <option value="">none</option>
+            ${(S.views.endorsements?.all || []).map((x) =>
+              `<option value="${esc(x.key)}">${esc(x.label)}</option>`).join('')}
+          </select></label>
         </div>
         <fieldset>
           <legend>Flags</legend>
@@ -2071,20 +2076,29 @@ function endorsementsHtml() {
   const e = S.views.endorsements || { held: [], all: [] };
   const held = e.held || [];
 
-  return `<h3 class="sect">Endorsements</h3>
-    <p class="hint">What you are licensed to haul. The app never works this out for you — record it when
-      you get one and dispatch stops refusing that freight straight away.</p>
+  return `<h3 class="sect">HazMat classes</h3>
+    <p class="hint">ATS gates dangerous freight on <b>HazMat classes</b>, unlocked one at a time and in
+      any order. Record what you have unlocked in game and dispatch stops refusing that freight straight
+      away. The app never works this out for you.</p>
+    ${e.needsChoosing ? `<div class="callout warn">
+      <h4>Your classes need selecting</h4>
+      <p style="margin:0">Your file says you have hazmat, but not which classes — earlier builds tracked
+        a single blanket endorsement, which is not how the game works. Tick the ones you have actually
+        unlocked. Nothing was assumed on your behalf, because getting it wrong would put you on freight
+        you are not cleared for.</p></div>` : ''}
     <div class="tablewrap"><table>
-      <thead><tr><th>Endorsement</th><th>Status</th><th>Opens up</th><th></th></tr></thead>
+      <thead><tr><th>Class</th><th>Status</th><th>Covers</th><th></th></tr></thead>
       <tbody>${(e.all || []).map((x) => {
         const has = held.includes(x.key);
         return `<tr>
           <td><b>${esc(x.label)}</b></td>
-          <td>${badge(has ? 'ok' : 'mute', has ? 'on file' : 'not held')}</td>
-          <td class="sub">${esc(x.unlocks)}</td>
+          <td>${badge(has ? 'ok' : 'mute', has ? 'cleared' : 'not cleared')}</td>
+          <td class="sub">${esc(x.covers)}<br><span style="opacity:.7">${esc(x.examples)}</span></td>
           <td><button class="btn tiny ${has ? 'ghost' : 'primary'}" data-act="set-endorsement"
                 data-kind="${esc(x.key)}" data-has="${has ? '' : '1'}">${has ? 'Remove' : 'I have this'}</button></td>
-        </tr>`; }).join('')}</tbody></table></div>`;
+        </tr>`; }).join('')}</tbody></table></div>
+    <p class="hint">There is no tanker or doubles endorsement in ATS. A tanker is a trailer — what gates
+      it is what is inside, so a fuel tanker needs class 3 and a food-grade one needs nothing at all.</p>`;
 }
 
 /**
@@ -3873,6 +3887,7 @@ async function handleAction(act, d, ev) {
         loadedMiles: fv('b-miles'), deadheadMiles: fv('b-dh'),
         gameRevenue: fv('b-rev'), deadlineHours: hv('b-deadline'),
         weightLbs: fv('b-weight'), navEstimateHours: hvn('b-nav'),
+        hazmatClass: sv('b-hazclass'),
         shipper: sv('b-shipper'), receiver: sv('b-receiver'),
         extraStops: fv('b-stops'), broker: sv('b-broker'),
         isUrgent: bv('b-urgent'), isFragile: bv('b-fragile'), isHazmat: bv('b-hazmat'),
@@ -3931,6 +3946,7 @@ async function handleAction(act, d, ev) {
           destCity: sv(`x-dcity-${i}`), destState: sv(`x-dstate-${i}`),
           loadedMiles: fv(`x-miles-${i}`), gameRevenue: fv(`x-rev-${i}`),
           deadlineHours: hv(`x-dl-${i}`), weightLbs: fv(`x-wt-${i}`),
+          hazmatClass: l.hazmatClass || '',
           trailerType: sv(`x-trailer-${i}`),
           shipper: l.shipper || '', receiver: l.receiver || '',
           deadheadMiles: 0, extraStops: 0,

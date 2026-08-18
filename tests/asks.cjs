@@ -73,26 +73,69 @@ const V = () => S.views;
   let msg = await refuses(() => api('/career/request-trailer', 'POST', { trailerType: 'Reefer' }));
   ok('and asking is refused with the reason', /probation/i.test(msg || ''), msg);
 
-  head('3. Endorsements start from the application and can be recorded');
-  ok('no hazmat at hire', !(V().endorsements?.held || []).includes('Hazmat'),
+  head('3. HazMat classes — the six ATS actually has');
+  const classes = (V().endorsements?.all || []).map((x) => x.key);
+  ok('the six ATS classes are what is tracked',
+    JSON.stringify(classes) === JSON.stringify(['1', '2', '3', '4', '6', '8']), JSON.stringify(classes));
+  ok('no tanker endorsement', !classes.includes('Tanker'), JSON.stringify(classes));
+  ok('no doubles/triples endorsement', !classes.some((c) => /double|triple/i.test(c)), JSON.stringify(classes));
+  ok('nothing cleared at hire', (V().endorsements?.held || []).length === 0,
     JSON.stringify(V().endorsements?.held));
-  let r = await api('/career/endorsement', 'POST', { kind: 'Hazmat', has: true, gameTime: at(day) });
-  S = un(r);
-  ok('hazmat recorded', (V().endorsements.held || []).includes('Hazmat'), JSON.stringify(V().endorsements.held));
-  ok('and it says what it opens up', /placarded|explosives/i.test(r.message), r.message);
 
-  r = await api('/career/endorsement', 'POST', { kind: 'Tanker', has: true, gameTime: at(day) });
+  let r = await api('/career/endorsement', 'POST', { kind: '3', has: true, gameTime: at(day) });
   S = un(r);
-  ok('tanker recorded too', (V().endorsements.held || []).includes('Tanker'));
-  ok('and it notes the pair now covers placarded tankers', /fuel|chemical|gas/i.test(r.message), r.message);
+  ok('class 3 recorded', (V().endorsements.held || []).includes('3'), JSON.stringify(V().endorsements.held));
+  ok('and it names what it covers', /flammable liquid/i.test(r.message), r.message);
+  ok('and says it covers the fuel tanker', /fuel tanker/i.test(r.message), r.message);
 
-  msg = await refuses(() => api('/career/endorsement', 'POST', { kind: 'Nonsense', has: true }));
-  ok('an unknown endorsement is refused', /not an endorsement/i.test(msg || ''), msg);
-
-  r = await api('/career/endorsement', 'POST', { kind: 'Hazmat', has: false, gameTime: at(day) });
+  r = await api('/career/endorsement', 'POST', { kind: 'Class 2.1', has: true, gameTime: at(day) });
   S = un(r);
-  ok('it can be removed again', !(V().endorsements.held || []).includes('Hazmat'), JSON.stringify(V().endorsements.held));
-  await api('/career/endorsement', 'POST', { kind: 'Hazmat', has: true, gameTime: at(day) });
+  ok('a subclass collapses to its parent', (V().endorsements.held || []).includes('2'),
+    JSON.stringify(V().endorsements.held));
+
+  msg = await refuses(() => api('/career/endorsement', 'POST', { kind: 'Tanker', has: true }));
+  ok('asking for a tanker endorsement is refused', /does not have that class/i.test(msg || ''), msg);
+  msg = await refuses(() => api('/career/endorsement', 'POST', { kind: '7', has: true }));
+  ok('and so is a class ATS does not have', /does not have that class/i.test(msg || ''), msg);
+
+  r = await api('/career/endorsement', 'POST', { kind: '3', has: false, gameTime: at(day) });
+  S = un(r);
+  ok('a class can be removed again', !(V().endorsements.held || []).includes('3'),
+    JSON.stringify(V().endorsements.held));
+
+  head('3b. Freight is gated on the specific class');
+  await place('Denver', 'CO', 2);
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+  await api('/board/clear', 'POST', {});
+  let bd = await api('/board/add', 'POST', {
+    cargo: 'Gasoline', trailerType: S.trailers[0].type, originCity: 'Denver', originState: 'CO',
+    destCity: 'Salt Lake City', destState: 'UT', loadedMiles: 400, deadheadMiles: 0,
+    gameRevenue: 2400, deadlineHours: 60, weightLbs: 40000, isHazmat: true, hazmatClass: '3',
+  });
+  let fails = (bd.evaluations[0].hardFails || []).join(' | ');
+  ok('a class 3 load is refused without class 3', /Class 3|Flammable liquids/i.test(fails), fails || '(none)');
+  ok('and the refusal names the class, not "hazmat endorsement"',
+    !/hazmat endorsement/i.test(fails), fails);
+
+  S = un(await api('/career/endorsement', 'POST', { kind: '3', has: true, gameTime: at(day) }));
+  await api('/board/clear', 'POST', {});
+  bd = await api('/board/add', 'POST', {
+    cargo: 'Gasoline', trailerType: S.trailers[0].type, originCity: 'Denver', originState: 'CO',
+    destCity: 'Salt Lake City', destState: 'UT', loadedMiles: 400, deadheadMiles: 0,
+    gameRevenue: 2400, deadlineHours: 60, weightLbs: 40000, isHazmat: true, hazmatClass: '3',
+  });
+  fails = (bd.evaluations[0].hardFails || []).join(' | ');
+  ok('cleared for class 3, it goes through', !/Class 3/i.test(fails), fails || '(no hard fails)');
+
+  await api('/board/clear', 'POST', {});
+  bd = await api('/board/add', 'POST', {
+    cargo: 'Dynamite', trailerType: S.trailers[0].type, originCity: 'Denver', originState: 'CO',
+    destCity: 'Salt Lake City', destState: 'UT', loadedMiles: 400, deadheadMiles: 0,
+    gameRevenue: 2400, deadlineHours: 60, weightLbs: 40000, isHazmat: true, hazmatClass: '1',
+  });
+  fails = (bd.evaluations[0].hardFails || []).join(' | ');
+  ok('but class 1 still is not', /Class 1|Explosives/i.test(fails), fails || '(none)');
+  await api('/board/clear', 'POST', {});
 
   head('4. Asking to go home is answered at the next close-out, not on the spot');
   await place('Denver', 'CO', 3);

@@ -61,9 +61,10 @@ public static class Migrations
         if (s.Driver.Endorsements.Count > 0) return;
         if (s.Application == null) return;
 
-        if (s.Application.HasHazmat) s.Driver.Endorsements.Add(Endorsements.Hazmat);
-        if (s.Application.HasTanker) s.Driver.Endorsements.Add(Endorsements.Tanker);
-        if (s.Application.HasDoublesTriples) s.Driver.Endorsements.Add(Endorsements.DoublesTriples);
+        // Nothing is carried across. The old flags said "has hazmat" without saying which class, and
+        // ATS gates on the class — guessing would let somebody take a load they are not cleared for.
+        // The flag stays on the application so the app can ask them to pick their classes.
+        Endorsements.MigrateFromCdlModel(s);
     }
 
     /// <summary>

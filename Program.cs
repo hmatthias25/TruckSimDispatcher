@@ -1294,7 +1294,11 @@ object Snapshot(AppState? given = null)
             endorsements = new
             {
                 held = Endorsements.Held(s),
-                all = Endorsements.All.Select(e => new { key = e.Key, label = e.Label, unlocks = e.Unlocks }).ToList()
+                all = Endorsements.All
+                    .Select(e => new { key = e.Key, label = e.Label, covers = e.Covers, examples = e.Examples })
+                    .ToList(),
+                // A career migrated off the old CDL model has hazmat on file but no classes chosen.
+                needsChoosing = Endorsements.NeedsClassesChosen(s)
             },
             probation = new
             {

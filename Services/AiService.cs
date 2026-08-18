@@ -36,6 +36,8 @@ public class ExtractedLoad
     public decimal GameRevenue { get; set; }
     public double DeadlineHours { get; set; }
     public double WeightLbs { get; set; }
+    /// <summary>ATS HazMat class off the listing, as a bare digit. Empty when nothing is placarded.</summary>
+    public string HazmatClass { get; set; } = "";
     public string TrailerType { get; set; } = "";
     public string Shipper { get; set; } = "";
     public string Receiver { get; set; } = "";
@@ -183,6 +185,10 @@ public static class AiService
         - deadlineHours: hours available to deliver. ATS often shows this as a remaining time or
           a delivery window rather than a number of hours — convert it to whole hours if you can.
         - weightLbs: cargo weight in pounds. If shown in tons, convert (1 ton = 2000 lb).
+        - hazmatClass: the ATS HazMat class the job needs, as a bare digit: "1" explosives,
+          "2" gases, "3" flammable liquids, "4" flammable solids, "6" toxic, "8" corrosive. A
+          subclass like 2.1 or 2.3 collapses to its parent ("2"). Leave empty when the listing
+          shows no hazard placard or class.
         - trailerType: the trailer needed, using one of exactly these words where it is clear:
           Dry Van, Reefer, Flatbed, Step Deck, Tanker, Lowboy, Car Hauler, Livestock, Log, Hopper,
           Dump. Use an empty string if you cannot tell.
@@ -220,7 +226,7 @@ public static class AiService
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["cargo","originCity","originState","destCity","destState","shipper",
-                             "receiver","loadedMiles","gameRevenue","deadlineHours","weightLbs",
+                             "receiver","loadedMiles","gameRevenue","deadlineHours","weightLbs","hazmatClass",
                              "trailerType","isUrgent","isFragile","isHazmat","confidence","unreadable"],
                 "properties": {
                   "cargo":        { "type": "string" },
@@ -234,6 +240,7 @@ public static class AiService
                   "gameRevenue":  { "type": "number" },
                   "deadlineHours":{ "type": "number" },
                   "weightLbs":    { "type": "number" },
+                "hazmatClass":  { "type": "string" },
                   "trailerType":  { "type": "string" },
                   "isUrgent":     { "type": "boolean" },
                   "isFragile":    { "type": "boolean" },

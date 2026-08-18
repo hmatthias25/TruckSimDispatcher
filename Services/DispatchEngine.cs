@@ -620,11 +620,22 @@ public static class DispatchEngine
                     (load.TrailerType ?? "").Contains(no, StringComparison.OrdinalIgnoreCase))
                     fails.Add($"You listed \"{no}\" as freight you will not haul — I do not force freight.");
             }
-            if (load.IsHazmat && !Endorsements.Has(s, Endorsements.Hazmat))
-                fails.Add("Hazmat load and you have no hazmat endorsement on file. Record it on the Career tab once you have it.");
-            if (division.Equals("Tanker", StringComparison.OrdinalIgnoreCase)
-                && !Endorsements.Has(s, Endorsements.Tanker))
-                fails.Add("Tanker load and you have no tanker endorsement on file. Record it on the Career tab once you have it.");
+            // ATS gates dangerous freight on HazMat CLASSES, not on CDL endorsements. A tanker is
+            // just a trailer — what gates it is what is in it, so a fuel tanker needs class 3 and a
+            // food-grade one needs nothing at all.
+            var needed = Endorsements.Normalise(load.HazmatClass);
+            if (needed.Length == 0 && TrailerSpec.IsTanker(load.TrailerType))
+                needed = Endorsements.ClassForTanker(trailer?.Subtype);
+
+            if (needed.Length > 0 && !Endorsements.Has(s, needed))
+            {
+                var cls = Endorsements.Find(needed);
+                fails.Add($"This is {cls?.Label ?? "HazMat class " + needed} freight and you are not cleared for it. " +
+                          "Unlock it in game, then record it on the Career tab.");
+            }
+            else if (needed.Length == 0 && load.IsHazmat && !Endorsements.HasAny(s))
+                fails.Add("Flagged hazmat with no class on the listing, and you hold no HazMat class at all. " +
+                          "Add the class to the load if you know it, or record what you are cleared for on the Career tab.");
         }
 
         foreach (var r in s.Driver.Restrictions)
@@ -793,6 +804,7 @@ public static class DispatchEngine
             UnloadingHours = s.Settings.DefaultUnloadingHours,
             ExtraStops = load.ExtraStops,
             IsHazmat = load.IsHazmat,
+            HazmatClass = load.HazmatClass,
             IsOversize = load.IsOversize,
             TarpsUsed = load.RequiresTarp ? 1 : 0,
             FeasibilityAtDispatch = eval.Feasibility,
