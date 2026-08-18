@@ -14,6 +14,7 @@ const head = (t) => console.log(`\n=== ${t} ===`);
 const refuses = async (fn) => { try { await fn(); return null; } catch (e) { return e.message; } };
 
 let S, day = 1;
+let dayCursor = 1;
 const at = (d) => `2000-${String(Math.floor((d - 1) / 28) + 1).padStart(2, '0')}-${String(((d - 1) % 28) + 1).padStart(2, '0')}T08:00`;
 
 async function place(city, state, d) {
@@ -150,7 +151,7 @@ const V = () => S.views;
   ok('the requirement is stated', V().probation.passesNeeded === 3, `${V().probation.passesNeeded}`);
 
   // Four clean loads per fortnight, run out on the road, then report in at the yard for the review.
-  let dayCursor = 36;
+  dayCursor = 36;
   for (let cycle = 0; cycle < 5 && V().probation.on; cycle++) {
     for (let i = 0; i < 4; i++) {
       await place('Salt Lake City', 'UT', dayCursor);
@@ -205,6 +206,29 @@ const V = () => S.views;
     ok('still on probation, and the standing is legible', !!V().probation.standing, V().probation.standing);
     ok('with the shortfall named if the numbers are short', true, V().probation.thresholds || '(thresholds met)');
   }
+
+
+  head('11. Sitting at home for days is ONE home time, not one a day');
+  await place('Salt Lake City', 'UT', dayCursor + 200);
+  const takenBefore = S.driver.homeTimesTaken;
+
+  await place('Denver', 'CO', dayCursor + 210);        // arrive
+  const afterArrival = S.driver.homeTimesTaken;
+  ok('arriving counts once', afterArrival === takenBefore + 1, `${takenBefore} -> ${afterArrival}`);
+
+  // Report clocks each morning while parked at the house, the way a driver sitting a 34 would.
+  await place('Denver', 'CO', dayCursor + 211);
+  await place('Denver', 'CO', dayCursor + 212);
+  await place('Denver', 'CO', dayCursor + 213);
+  ok('reporting in from the yard does not count again',
+    S.driver.homeTimesTaken === afterArrival, `${afterArrival} -> ${S.driver.homeTimesTaken}`);
+  ok('and days out stays at zero while they are there',
+    (V().homeTime?.daysOut ?? 0) < 1, `${V().homeTime?.daysOut}`);
+
+  await place('Salt Lake City', 'UT', dayCursor + 220);   // leave
+  await place('Denver', 'CO', dayCursor + 230);          // and come back
+  ok('leaving and returning counts a second one',
+    S.driver.homeTimesTaken === afterArrival + 1, `${afterArrival} -> ${S.driver.homeTimesTaken}`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

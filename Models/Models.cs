@@ -209,6 +209,15 @@ public class Driver
     /// </summary>
     public bool HomeTimeGranted { get; set; }
     public string HomeTimeGrantedGameTime { get; set; } = "";
+
+    /// <summary>
+    /// True while the driver is parked at their home yard.
+    ///
+    /// Home time is counted on the <b>transition</b> into the yard, not on every status report made
+    /// from it. Without this, a driver sitting out a 34 at the house and reporting their clocks each
+    /// day was recorded as taking home time again every day.
+    /// </summary>
+    public bool AtHomeYard { get; set; }
     public string RankTitle { get; set; } = "Probationary Company Driver";
     public PayPlan Pay { get; set; } = new();
     /// <summary>

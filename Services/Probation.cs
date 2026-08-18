@@ -190,21 +190,31 @@ public static class Probation
     }
 
     /// <summary>
-    /// The old thresholds, still the floor. Evaluations are the judgement, but a run of quiet
-    /// fortnights with four loads in them is not a case for promoting somebody.
+    /// The career's own probation terms, still the floor. Evaluations are the judgement, but a run of
+    /// quiet fortnights with four loads in them is not a case for promoting somebody.
+    ///
+    /// Read from <see cref="ProbationPlan"/> rather than hard-coded, because that is the same set of
+    /// numbers the requirements panel shows the driver — two different figures for the same rule is a
+    /// contradiction they would be right to complain about, and carriers shorten probation for verified
+    /// experience so the numbers genuinely vary between careers.
     /// </summary>
     public static (bool Met, string Shortfall) MeetsCompanyThresholds(AppState s)
     {
+        var plan = s.Driver.Probation;
         var delivered = s.Trips.Count(t => t.Status == "Delivered" && t.Kind == "Freight");
         var miles = s.Trips.Where(t => t.Status == "Delivered")
             .Sum(t => (t.ActualMiles > 0 ? t.ActualMiles : t.DispatchedMiles) + t.DeadheadMiles);
         var onTimeAll = delivered == 0 ? 0
             : s.Trips.Count(t => t.Status == "Delivered" && t.Kind == "Freight" && t.ServiceResult == "OnTime") * 100.0 / delivered;
+        var faults = SafetyService.CountingFaults(s).Count;
 
         var missing = new List<string>();
-        if (delivered < 10) missing.Add($"{delivered} of 10 loads");
-        if (miles < 6_000) missing.Add($"{miles:N0} of 6,000 mi");
-        if (onTimeAll < 95) missing.Add($"{onTimeAll:0.#}% of 95% on time");
+        if (delivered < plan.RequiredLoads) missing.Add($"{delivered} of {plan.RequiredLoads} loads");
+        if (miles < plan.RequiredMiles) missing.Add($"{miles:N0} of {plan.RequiredMiles:N0} mi");
+        if (onTimeAll < plan.RequiredOnTimePct)
+            missing.Add($"{onTimeAll:0.#}% of {plan.RequiredOnTimePct:0.#}% on time");
+        if (faults > plan.MaxDriverFaultIncidents)
+            missing.Add($"{faults} driver-fault incident(s) against an allowance of {plan.MaxDriverFaultIncidents}");
 
         return missing.Count == 0
             ? (true, "")

@@ -25,8 +25,26 @@ public static class Migrations
         EnsureEquipmentStandard(s);
         EnsureCarrierNetwork(s);
         EnsureEndorsements(s);
+        EnsureAtHomeFlag(s);
         EnsureCarrierStanding(s);
         EnsureFleetStars(s);
+    }
+
+    /// <summary>
+    /// Home time used to be counted on every status report made from the yard rather than on arriving
+    /// at it, so a driver sitting out a 34 at the house and reporting their clocks each morning was
+    /// recorded as taking home time again every day.
+    ///
+    /// Seeds the flag from where the truck actually is, so a career loaded while parked at home does
+    /// not get one final phantom count on the next report.
+    /// </summary>
+    private static void EnsureAtHomeFlag(AppState s)
+    {
+        if (s.Driver.AtHomeYard) return;
+        var home = HomeTime.HomeTerminal(s);
+        if (home == null) return;
+        var miles = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
+        if (miles is { } m && m <= 1) s.Driver.AtHomeYard = true;
     }
 
     /// <summary>

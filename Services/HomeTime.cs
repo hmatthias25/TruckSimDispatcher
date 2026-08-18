@@ -205,7 +205,11 @@ public static class HomeTime
                 s.Driver.HomeTimeGrantedGameTime = "";
             }
         }
-        if (Probation.EffectiveIntervalDays(s) <= 0) return false;
+        // No early-out on the arrangement. Being home is something we OBSERVE, and it happens whether
+        // or not a clock scheduled it — a driver who elected to stay out and then drove home anyway has
+        // still been home. Skipping it left their days-out climbing forever and the long-stretch
+        // suggestion nagging about a trip they had already taken. The arrangement decides ROUTING, not
+        // whether we notice where the truck is.
         var home = HomeTerminal(s);
         if (home == null) return false;
 
@@ -213,14 +217,23 @@ public static class HomeTime
         // Only the yard itself counts as actually taking home time. The radius is for planning loads,
         // not for claiming the driver got home when they are still two hours away.
         var atYard = miles is { } m && m <= 1;
-        if (!atYard) return false;
 
-        // Do not re-stamp repeatedly while parked at home; only when meaningfully out and back.
-        var last = GameClock.TryParse(s.Driver.LastHomeGameTime);
-        var now = GameClock.TryParse(s.Status.GameTime);
-        if (last != null && now != null && (now.Value - last.Value).TotalDays < 1) return false;
+        if (!atYard)
+        {
+            s.Driver.AtHomeYard = false;
+            return false;
+        }
 
+        // Days out is measured from the last day they were home, so it keeps ticking over to today for
+        // as long as they are standing at the yard. That is what makes it zero while they are here.
+        var arriving = !s.Driver.AtHomeYard;
         s.Driver.LastHomeGameTime = s.Status.GameTime;
+        s.Driver.AtHomeYard = true;
+
+        // Only ARRIVING is taking home time. Sitting out a 34 at the house and reporting clocks each
+        // morning is one home time, not four — counting each report was the bug this replaces.
+        if (!arriving) return false;
+
         s.Driver.HomeTimesTaken++;
 
         // Reporting in is the whole point of probation. Somebody goes through the period with them and

@@ -1957,8 +1957,6 @@ function terminalsHtml() {
       <button class="btn" data-act="settle-transfer" data-id="${esc(t.id)}">
         Check on the ${esc(t.toTerminalName)} request (${t.loadsRequired} loads asked)</button></div>`).join('')}
 
-    ${probationHtml()}
-
     <h3 class="sect">Home-time arrangement</h3>
     <p class="hint">What you agreed to when you signed on. Dispatch routes for it: as the date gets
       close, loads finishing near your home yard start outranking better-paying freight going the other
@@ -1978,9 +1976,6 @@ function terminalsHtml() {
            ${S.views.homeTime.intervalDays}.</p>` : ''}</div>
     </div>
 
-    ${askHomeHtml()}
-    ${askTrailerHtml()}
-    ${endorsementsHtml()}
   </div>`;
 }
 
@@ -3201,8 +3196,23 @@ function viewCareer() {
     </div>
   </div>
 
+  <div class="panel">
+    <div class="panel-head"><h2>Ask operations</h2>
+      <div class="spacer"></div>
+      <span class="sub">answers come back when you close your next load out</span></div>
+    ${askHomeHtml()}
+    ${askTrailerHtml()}
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Your licence</h2></div>
+    ${endorsementsHtml()}
+  </div>
+
+  ${probationHtml() ? `<div class="panel">${probationHtml()}</div>` : ''}
+
   ${c.probationActive ? `<div class="panel">
-    <div class="panel-head"><h2>Probation</h2>
+    <div class="panel-head"><h2>Probation requirements</h2>
       ${badge(c.probationMet ? 'ok' : 'warn', c.probationMet ? 'requirements met' : 'in progress')}
       <div class="spacer"></div><span class="sub">${S.driver.probation.durationDays}-day period · ${esc(S.driver.probation.notes)}</span></div>
     ${prog(c.probationProgress)}

@@ -11,8 +11,19 @@ const head = (t) => console.log(`\n=== ${t} ===`);
 const un = (r) => r.snapshot || r;
 const day = (n, hm = '08:00') => `2000-01-${String(n).padStart(2, '0')}T${hm}`;
 
+/**
+ * One trip home: out on the road, then back at the yard.
+ *
+ * The run out matters. Home time is counted on ARRIVING at the yard, so reporting from it twice in a
+ * row is one home time however many days apart — a driver has to actually leave to come home again.
+ */
 async function goHome(S, dayNum) {
   const home = S.company.terminals.find((t) => t.isHeadquarters);
+  await api('/status', 'POST', {
+    locationCity: 'Salt Lake City', locationState: 'UT', locationKind: 'TruckStop',
+    gameTime: day(Math.max(1, dayNum - 1)), fuelPct: 60, atsOdometer: 2000 + dayNum * 100 - 50,
+    truckDamagePct: 4, trailerDamagePct: 2, dutyStatus: 'Driving', atsBankBalance: 40000,
+  });
   return un(await api('/status', 'POST', {
     locationCity: home.city, locationState: home.state, locationKind: 'Terminal',
     gameTime: day(dayNum), fuelPct: 80, atsOdometer: 2000 + dayNum * 100,
