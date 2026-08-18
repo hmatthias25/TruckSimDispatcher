@@ -141,7 +141,7 @@ public static class FleetOpsService
                     trailer.Stars = line.TrailerStars;
                     trailer.StarsReportedGameTime = report.PeriodEndGame;
                     if (tStarsBefore > 0 && trailer.Stars < tStarsBefore)
-                        report.Findings.Add($"Trailer {trailer.Unit} dropped from {tStarsBefore:0.#} to {trailer.Stars:0.#} stars.");
+                        report.Findings.Add($"Trailer {trailer.Ref} dropped from {tStarsBefore:0.#} to {trailer.Stars:0.#} stars.");
                 }
                 // A trailer with no acquisition date on file gets one now, so age starts counting from
                 // the first period we saw it rather than never.
@@ -163,7 +163,7 @@ public static class FleetOpsService
                 {
                     var moved = line.TruckOdometer - truck.AtsOdometer;
                     if (moved < 0)
-                        report.Findings.Add($"Unit {truck.Unit}: odometer reads {line.TruckOdometer:N0}, lower than the {truck.AtsOdometer:N0} on file. Check the reading.");
+                        report.Findings.Add($"Unit {truck.Ref}: odometer reads {line.TruckOdometer:N0}, lower than the {truck.AtsOdometer:N0} on file. Check the reading.");
                     truck.ServiceMiles = Math.Round(truck.ServiceMiles + (moved > 0 ? moved : Math.Max(0, line.Miles)), 0);
                     truck.AtsOdometer = line.TruckOdometer;
                 }
@@ -178,12 +178,12 @@ public static class FleetOpsService
                     truck.Stars = line.TruckStars;
                     truck.StarsReportedGameTime = report.PeriodEndGame;
                     if (starsBefore > 0 && truck.Stars < starsBefore)
-                        report.Findings.Add($"Unit {truck.Unit} dropped from {starsBefore:0.#} to {truck.Stars:0.#} stars under {driver.Name}.");
+                        report.Findings.Add($"Unit {truck.Ref} dropped from {starsBefore:0.#} to {truck.Stars:0.#} stars under {driver.Name}.");
                 }
 
                 var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
                 if (sinceService >= truck.ServiceIntervalMiles)
-                    report.Findings.Add($"Unit {truck.Unit} is {sinceService - truck.ServiceIntervalMiles:N0} mi past its PM.");
+                    report.Findings.Add($"Unit {truck.Ref} is {sinceService - truck.ServiceIntervalMiles:N0} mi past its PM.");
             }
 
             driver.LifetimeMiles = Math.Round(driver.LifetimeMiles + line.Miles, 0);
@@ -605,7 +605,7 @@ public static class FleetOpsService
             // Your own truck goes to trade like anyone else's — the company just puts you in another.
             if (isMine)
                 evidence.Add(spare != null
-                    ? $"There is a spare on the property: unit {spare.Unit} ({spare.Year} {spare.Make} {spare.Model}, " +
+                    ? $"There is a spare on the property: unit {spare.Ref} ({spare.Year} {spare.Make} {spare.Model}, " +
                       $"{spare.ServiceMiles:N0} mi). Report to the yard and we will move you into it."
                     : $"Nothing spare on the property. Buy the replacement in ATS: {Seed.RecommendedTruck(s)}");
             else if (spare == null)
@@ -616,10 +616,10 @@ public static class FleetOpsService
                 Unit = t.Unit,
                 UnitKind = "Truck",
                 Headline = isMine
-                    ? $"Unit {t.Unit} ({t.Year} {t.Make} {t.Model}) — your own truck — is due for trade."
+                    ? $"Unit {t.Ref} ({t.Year} {t.Make} {t.Model}) — your own truck — is due for trade."
                     : wornOut
-                        ? $"Unit {t.Unit} ({t.Year} {t.Make} {t.Model}) is down to {t.Stars:0.#} stars. Recommend selling it and replacing it."
-                        : $"Unit {t.Unit} ({t.Year} {t.Make} {t.Model}) has done its time. Recommend trading it.",
+                        ? $"Unit {t.Ref} ({t.Year} {t.Make} {t.Model}) is down to {t.Stars:0.#} stars. Recommend selling it and replacing it."
+                        : $"Unit {t.Ref} ({t.Year} {t.Make} {t.Model}) has done its time. Recommend trading it.",
                 Evidence = evidence,
                 ServiceMiles = t.ServiceMiles,
                 RepairSpend = t.LifetimeRepairCost,
@@ -699,8 +699,8 @@ public static class FleetOpsService
                 Unit = tr.Unit,
                 UnitKind = "Trailer",
                 Headline = starsGone
-                    ? $"Trailer {tr.Unit} ({tr.Type}) is down to {tr.Stars:0.#} stars. Recommend replacing it."
-                    : $"Trailer {tr.Unit} ({tr.Type}) is old and not earning. Worth replacing.",
+                    ? $"Trailer {tr.Ref} ({tr.Type}) is down to {tr.Stars:0.#} stars. Recommend replacing it."
+                    : $"Trailer {tr.Ref} ({tr.Type}) is old and not earning. Worth replacing.",
                 Evidence = evidence,
                 ServiceMiles = tr.ServiceMiles,
                 DamagePct = 0,
@@ -708,7 +708,7 @@ public static class FleetOpsService
                 IsPlayerUnit = false
             });
 
-            report.Findings.Add($"Trailer {tr.Unit}: replacement recommended on {reason}.");
+            report.Findings.Add($"Trailer {tr.Ref}: replacement recommended on {reason}.");
         }
     }
 
@@ -721,7 +721,7 @@ public static class FleetOpsService
         var t = s.Trucks.FirstOrDefault(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException($"Unit {unit} is not in the fleet.");
         if (s.Trips.Any(x => x.Status is "Authorized" or "InTransit" && x.TruckUnit == t.Unit))
-            throw new InvalidOperationException($"Unit {t.Unit} is on an open load.");
+            throw new InvalidOperationException($"Unit {t.Ref} is on an open load.");
 
         var messages = new List<string>();
         var driverName = t.AssignedDriver;
@@ -746,7 +746,7 @@ public static class FleetOpsService
                 rep.InGameGarage = true;
                 s.Status.TruckDamagePct = rep.DamagePct;
                 s.Status.AtsOdometer = rep.AtsOdometer;
-                messages.Add($"You are now in unit {rep.Unit} ({rep.Year} {rep.Make} {rep.Model}).");
+                messages.Add($"You are now in unit {rep.Ref} ({rep.Year} {rep.Make} {rep.Model}).");
             }
             else
             {
@@ -756,14 +756,14 @@ public static class FleetOpsService
                     hired.AssignedTruckUnit = rep.Unit;
                     rep.AssignedDriver = hired.Name;
                     rep.InGameGarage = true;
-                    messages.Add($"{hired.Name} moves into unit {rep.Unit}.");
+                    messages.Add($"{hired.Name} moves into unit {rep.Ref}.");
                 }
             }
         }
         else if (t.Unit == s.Driver.AssignedTruckUnit)
         {
             throw new InvalidOperationException(
-                $"Unit {t.Unit} is the truck you are in and there is no spare on the property to put you in. " +
+                $"Unit {t.Ref} is the truck you are in and there is no spare on the property to put you in. " +
                 "Buy the replacement in ATS, add it on the Fleet tab, then retire this one against it.");
         }
 
@@ -771,7 +771,7 @@ public static class FleetOpsService
         t.Status = "Reserve";
         t.AssignedDriver = "";
         t.RetiredGameTime = s.Status.GameTime;
-        messages.Insert(0, $"Unit {t.Unit} retired at {t.ServiceMiles:N0} mi" +
+        messages.Insert(0, $"Unit {t.Ref} retired at {t.ServiceMiles:N0} mi" +
                            (t.LifetimeRepairCost > 0 ? $" and ${t.LifetimeRepairCost:N0} of repairs" : "") + ".");
         if (!string.IsNullOrWhiteSpace(driverName) && string.IsNullOrWhiteSpace(replacementUnit))
             messages.Add($"{driverName} has no unit — assign one or they are stood down.");

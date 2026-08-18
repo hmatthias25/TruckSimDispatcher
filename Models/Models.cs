@@ -322,6 +322,19 @@ public class ProbationPlan
 public class Truck
 {
     public string Unit { get; set; } = "";
+    /// <summary>
+    /// The ID ATS shows for this unit in game. Optional.
+    ///
+    /// This is the name the player can actually read off the truck when they walk up to it, so it is
+    /// what the app calls the unit everywhere the player reads about one. It is a <b>display name
+    /// only</b> — <see cref="Unit"/> stays the key that work orders, trips and driver assignments are
+    /// filed against, because a career file full of cross-references must not break because somebody
+    /// typed a plate in. Blank means nothing changes.
+    /// </summary>
+    public string GameId { get; set; } = "";
+
+    /// <summary>What to call this unit when telling the player about it.</summary>
+    public string Ref => string.IsNullOrWhiteSpace(GameId) ? Unit : GameId.Trim();
     public string Make { get; set; } = "";
     public string Model { get; set; } = "";
     public int Year { get; set; }
@@ -386,6 +399,19 @@ public class Truck
 public class Trailer
 {
     public string Unit { get; set; } = "";
+    /// <summary>
+    /// The ID ATS shows for this unit in game. Optional.
+    ///
+    /// This is the name the player can actually read off the truck when they walk up to it, so it is
+    /// what the app calls the unit everywhere the player reads about one. It is a <b>display name
+    /// only</b> — <see cref="Unit"/> stays the key that work orders, trips and driver assignments are
+    /// filed against, because a career file full of cross-references must not break because somebody
+    /// typed a plate in. Blank means nothing changes.
+    /// </summary>
+    public string GameId { get; set; } = "";
+
+    /// <summary>What to call this unit when telling the player about it.</summary>
+    public string Ref => string.IsNullOrWhiteSpace(GameId) ? Unit : GameId.Trim();
     /// <summary>Dry Van, Reefer, Flatbed, Step Deck, Tanker, Dump, Lowboy, Car Hauler, Livestock, Log</summary>
     public string Type { get; set; } = "";
     /// <summary>

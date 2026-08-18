@@ -223,7 +223,7 @@ public static class LedgerService
         }
 
         var category = wo.Kind == "Preventive" ? "Maintenance" : "Repairs";
-        var memo = $"{wo.Number} {wo.Unit}: {wo.Description}";
+        var memo = $"{wo.Number} {Equip.Label(s, wo.Unit)}: {wo.Description}";
         if (s.Settings.SingleCashAccount)
         {
             Post(s, Operating, -wo.Cost, category, memo, wo.Number);

@@ -134,7 +134,7 @@ public static class TrailerFleet
     }
 
     /// <summary>The player bought it. Record the trailer and book what they actually paid.</summary>
-    public static Trailer Confirm(AppState s, string requestId, string unit, decimal paidPrice, string gameTime)
+    public static Trailer Confirm(AppState s, string requestId, string unit, decimal paidPrice, string gameTime, string gameId = "")
     {
         var req = s.TrailerRequests.FirstOrDefault(r => r.Id == requestId || r.Number == requestId)
                   ?? throw new InvalidOperationException("No such trailer request.");
@@ -144,6 +144,7 @@ public static class TrailerFleet
             throw new InvalidOperationException("Give the trailer a unit number so the fleet can track it.");
         if (s.Trailers.Any(t => t.Unit.Equals(unit.Trim(), StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException($"Trailer {unit} is already on the books.");
+        Equip.GuardGameId(s, gameId, unit.Trim());
 
         var when = string.IsNullOrWhiteSpace(gameTime) ? s.Status.GameTime : gameTime;
         var yard = s.Company.Terminals.FirstOrDefault(x => x.Id == req.TerminalId);
@@ -151,6 +152,7 @@ public static class TrailerFleet
         var trailer = new Trailer
         {
             Unit = unit.Trim(),
+            GameId = (gameId ?? "").Trim(),
             Type = req.TrailerType,
             Subtype = req.Subtype,
             Division = TrailerSpec.DivisionFor(req.TrailerType),
@@ -173,7 +175,7 @@ public static class TrailerFleet
         // Only what the player says they paid goes on the books. Nothing estimated.
         if (paidPrice > 0)
             LedgerService.Post(s, LedgerService.Operating, -paidPrice, "Equipment",
-                $"Trailer {trailer.Unit} ({trailer.Type}) for {req.TerminalLabel}", req.Number);
+                $"Trailer {trailer.Ref} ({trailer.Type}) for {req.TerminalLabel}", req.Number);
 
         return trailer;
     }

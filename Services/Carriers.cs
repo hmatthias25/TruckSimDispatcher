@@ -762,7 +762,7 @@ public static class Carriers
                 Title = $"Buy a tractor — {truck.Year} {truck.Make} {truck.Model}",
                 Detail = $"Spec it with a {truck.Transmission} and governed around {truck.GovernedMph} mph if you can. " +
                          "Exact match is not required: buy what you can afford, then open Fleet → " +
-                         $"unit {truck.Unit} → Edit and change the make, model, transmission and governed speed " +
+                         $"unit {truck.Ref} → Edit and change the make, model, transmission and governed speed " +
                          "to what you actually bought. The planner uses those numbers for drive time.",
                 Why = "Governed speed and fuel capacity drive every feasibility calculation."
             });
@@ -770,7 +770,7 @@ public static class Carriers
         if (trailer != null)
             steps.Add(new SetupStep
             {
-                Title = $"Decide on trailers — you are assigned {trailer.Unit}, a {trailer.Length} " +
+                Title = $"Decide on trailers — you are assigned {trailer.Ref}, a {trailer.Length} " +
                         $"{TrailerSpec.Describe(trailer.Type, trailer.Subtype)}",
                 Detail = $"{s.Company.Name} runs {string.Join(", ", s.Company.Divisions)}. You can either buy your own " +
                          (TrailerSpec.IsTanker(trailer.Type)

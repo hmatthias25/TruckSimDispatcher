@@ -82,6 +82,20 @@ const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(+n || 0).toLocaleString('en
 const money0 = (n) => (n < 0 ? '-$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const num = (n, d = 0) => (+n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 const hrs = (n) => hhmm(n);
+
+/**
+ * What to call a unit. ATS gives every truck and trailer an ID that is visible in game, and where the
+ * player has entered one that is the name they can actually match against the equipment in front of
+ * them. Falls back to the number the app assigned.
+ *
+ * Display only — every lookup, assignment and work order still keys on the assigned unit number.
+ */
+const uref = (unit) => {
+  const u = (unit || '').trim();
+  if (!u) return '';
+  const hit = (S.trucks || []).find((x) => x.unit === u) || (S.trailers || []).find((x) => x.unit === u);
+  return hit && hit.gameId ? hit.gameId : u;
+};
 const pct = (n, d = 1) => (+n || 0).toFixed(d) + '%';
 
 /* ---- the game clock -------------------------------------------------------
@@ -1155,7 +1169,7 @@ function swapPlanHtml(plan) {
     <div class="tablewrap"><table>
       <thead><tr><th>Trailer</th><th>Type</th><th>Where</th><th class="num">Damage</th><th></th></tr></thead>
       <tbody>${plan.options.slice(0, 5).map((o) => `<tr>
-        <td><span class="unit">${esc(o.trailerUnit)}</span></td>
+        <td><span class="unit">${esc(uref(o.trailerUnit))}</span></td>
         <td>${esc(o.length)} ${esc(o.trailerType)}</td>
         <td>${esc(o.locationLabel)} ${o.hereNow ? badge('ok', 'here now') : o.atCompanyYard ? badge('info', 'our yard') : ''}</td>
         <td class="num">${pct(o.damagePct)}</td>
@@ -1769,7 +1783,7 @@ function viewFleet() {
     <div class="panel-head"><h2>Your assignment</h2></div>
     <div class="cols">
       <div>${t ? `<dl class="kvlist">
-        <dt>Unit</dt><dd>${esc(t.unit)}</dd>
+        <dt>Unit</dt><dd>${esc(t.gameId || t.unit)}${t.gameId ? ` <span class="sub">(unit ${esc(t.unit)})</span>` : ''}</dd>
         <dt>Tractor</dt><dd>${t.year} ${esc(t.make)} ${esc(t.model)}</dd>
         <dt>Driveline</dt><dd>${esc(t.engine)} · ${esc(t.transmission)}</dd>
         <dt>Spec</dt><dd>${esc(t.cabConfig)} · ${esc(t.wheelbase)} · governed ${t.governedMph} mph</dd>
@@ -1793,9 +1807,9 @@ function viewFleet() {
     <h3 class="sect">Reassign</h3>
     <div class="grid3">
       <label>Tractor<select id="as-truck"><option value="">(no change)</option>
-        ${S.trucks.map((x) => `<option value="${esc(x.unit)}">${esc(x.unit)} — ${x.year} ${esc(x.make)} ${esc(x.model)} (${esc(x.status)})</option>`).join('')}</select></label>
+        ${S.trucks.map((x) => `<option value="${esc(x.unit)}">${esc(x.gameId || x.unit)} — ${x.year} ${esc(x.make)} ${esc(x.model)} (${esc(x.status)})</option>`).join('')}</select></label>
       <label>Trailer<select id="as-trailer"><option value="">(no change)</option>
-        ${S.trailers.map((x) => `<option value="${esc(x.unit)}">${esc(x.unit)} — ${esc(x.length)} ${esc(x.type)} (${esc(x.status)})</option>`).join('')}</select></label>
+        ${S.trailers.map((x) => `<option value="${esc(x.unit)}">${esc(x.gameId || x.unit)} — ${esc(x.length)} ${esc(x.type)} (${esc(x.status)})</option>`).join('')}</select></label>
       <label style="align-self:end"><button class="btn primary wide" data-act="assign">Assign equipment</button></label>
     </div>
     <p class="hint">Operations normally decides equipment. Reassigning yourself is an override — it is logged.</p>
@@ -1847,7 +1861,9 @@ function viewFleet() {
       <thead><tr><th>Unit</th><th>Tractor</th><th>Driveline</th><th>Cab</th><th class="num">Gov</th>
         <th class="num">Service mi</th><th>Garage</th><th class="num">Damage</th><th>Status</th><th>Driver</th><th></th></tr></thead>
       <tbody>${S.trucks.map((x) => `<tr>
-        <td><span class="unit">${esc(x.unit)}</span></td><td>${x.year} ${esc(x.make)} ${esc(x.model)}</td>
+        <td><span class="unit">${esc(x.gameId || x.unit)}</span>${x.gameId
+            ? `<div class="sub" style="font-size:10px">unit ${esc(x.unit)}</div>` : ''}</td>
+          <td>${x.year} ${esc(x.make)} ${esc(x.model)}</td>
         <td>${esc(x.engine)}<br><span style="color:var(--ink3)">${esc(x.transmission)}</span></td>
         <td>${esc(x.cabConfig)}</td><td class="num">${x.governedMph}</td>
         <td class="num">${num(x.serviceMiles)}</td>
@@ -1867,7 +1883,9 @@ function viewFleet() {
       <thead><tr><th>Unit</th><th>Type</th><th>Division</th><th>Make</th><th>Garage</th><th class="num">Damage</th>
         <th>Status</th><th>Location</th><th></th></tr></thead>
       <tbody>${S.trailers.map((x) => `<tr>
-        <td><span class="unit">${esc(x.unit)}</span></td><td>${esc(x.length)} ${esc(x.type)}</td><td>${esc(x.division)}</td>
+        <td><span class="unit">${esc(x.gameId || x.unit)}</span>${x.gameId
+            ? `<div class="sub" style="font-size:10px">unit ${esc(x.unit)}</div>` : ''}</td>
+          <td>${esc(x.length)} ${esc(x.type)}</td><td>${esc(x.division)}</td>
         <td>${x.year} ${esc(x.make)}</td>
         <td>${x.inGameGarage ? badge('ok', 'in garage') : badge('mute', 'backdrop')}</td>
         <td class="num">${x.inGameGarage ? badge(dmgBadge(x.damagePct), pct(x.damagePct)) : '<span style="color:var(--ink3)">—</span>'}</td>
@@ -1968,7 +1986,7 @@ function equipmentByYardHtml() {
     const full = used >= y.truckCapacity;
 
     const unitRow = (u, kind) => `<tr>
-      <td><span class="unit">${esc(u.unit)}</span>
+      <td><span class="unit">${esc(uref(u.unit))}</span>
         ${u.unit === S.driver.assignedTruckUnit || u.unit === S.driver.assignedTrailerUnit
           ? ' ' + badge('ok', 'yours') : ''}
         ${u.assignedDriver && u.assignedDriver !== S.driver.name ? ' ' + badge('info', esc(u.assignedDriver)) : ''}</td>
@@ -2053,8 +2071,9 @@ function fleetDecisionsHtml() {
       <h4>${esc(ask.number)} — ${ask.kind === 'Add' ? 'another trailer' : 'trailer replacement'} for ${esc(ask.terminalLabel)}</h4>
       <p>${esc(ask.reason)}</p>
       <p><b>${esc(ask.instruction)}</b></p>
-      ${ask.unaffordable ? '' : `<div class="grid3" style="margin-top:8px">
+      ${ask.unaffordable ? '' : `<div class="grid2" style="margin-top:8px">
         <label>Unit number<input id="tq-unit" placeholder="e.g. T512"></label>
+        <label>ID shown in ATS — optional<input id="tq-gameid" placeholder="what the game calls it"></label>
         <label>What you paid $<input id="tq-price" type="number" step="1" min="0" placeholder="from ATS"></label>
         ${dayTimeInput('tq-time', S.status.gameTime, 'Bought (game)')}
       </div>`}
@@ -2078,7 +2097,7 @@ function fleetDecisionsHtml() {
       <ul>${r.evidence.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>
       <div class="row-actions">
         <button class="btn" data-act="retire-unit" data-unit="${esc(r.unit)}"
-          data-mine="${r.isPlayerUnit ? '1' : ''}">Trade unit ${esc(r.unit)}</button>
+          data-mine="${r.isPlayerUnit ? '1' : ''}">Trade unit ${esc(uref(r.unit))}</button>
       </div></div>`).join('')}
 
     ${open.length ? `<h3 class="sect">Trucks with nobody in them</h3>
@@ -2149,7 +2168,7 @@ function fleetOpsHtml() {
           const tk = S.trucks.find((x) => x.unit === d.assignedTruckUnit);
           return `<tr>
           <td><b>${esc(d.name)}</b>${d.onProbation ? ' ' + badge('warn', 'probation') : ''}</td>
-          <td><span class="unit">${esc(d.assignedTruckUnit || '—')}</span></td>
+          <td><span class="unit">${esc(uref(d.assignedTruckUnit) || '—')}</span></td>
           <td class="num">${d.level ? d.level : '<span class="sub">—</span>'}</td>
           <td class="num">${d.rating ? num(d.rating, 1) : '<span class="sub">—</span>'}</td>
           <td class="num">${last?.perDay ? money0(last.perDay) : '<span class="sub">—</span>'}</td>
@@ -2838,7 +2857,7 @@ function viewMaint() {
       <thead><tr><th>WO</th><th>Unit</th><th>Type</th><th>Description</th><th>Vendor</th>
         <th class="num">Damage</th><th class="num">Cost</th><th>Paid by</th></tr></thead>
       <tbody>${done.map((w) => `<tr><td class="mono">${esc(w.number)}</td>
-        <td class="mono">${esc(w.unit)}</td><td>${esc(w.kind)}</td><td>${esc(w.description)}</td>
+        <td class="mono">${esc(uref(w.unit))}</td><td>${esc(w.kind)}</td><td>${esc(w.description)}</td>
         <td>${esc(w.vendor || '—')}</td><td class="num">${pct(w.damageBefore)} → ${pct(w.damageAfter)}</td>
         <td class="num">${money(w.cost)}</td>
         <td>${badge(w.paidBy === 'Company' ? 'info' : 'warn', w.paidBy)}</td></tr>`).join('')}</tbody></table></div>`
@@ -3484,6 +3503,11 @@ function editTruckModal(unit) {
   modal(`<div class="panel-head"><h2>${isNew ? 'Add a tractor' : 'Unit ' + esc(t.unit)}</h2><div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
     ${isNew ? `<label>Unit number<input id="et-unit" placeholder="e.g. 119"></label>` : ''}
+    <label>ID shown in ATS — optional
+      <input id="et-gameid" value="${esc(t.gameId || '')}" placeholder="what the game calls this truck"></label>
+    <p class="hint">Enter what ATS shows for this unit and the app will use it everywhere instead of
+      ${isNew ? 'the number above' : 'unit ' + esc(t.unit)}. Leave it blank and nothing changes. The assigned
+      number stays what work orders and trips are filed against either way.</p>
     <fieldset><legend>Does ATS know about this unit?</legend>
       <label class="chk"><input type="checkbox" id="et-garage" ${t.inGameGarage ? 'checked' : ''}>
         This unit exists in my ATS garage</label>
@@ -3584,6 +3608,10 @@ function editTrailerModal(unit) {
   modal(`<div class="panel-head"><h2>${isNew ? 'Add a trailer' : 'Trailer ' + esc(t.unit)}</h2><div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
     ${isNew ? `<label>Unit number<input id="er-unit" placeholder="e.g. T521"></label>` : ''}
+    <label>ID shown in ATS — optional
+      <input id="er-gameid" value="${esc(t.gameId || '')}" placeholder="what the game calls this trailer"></label>
+    <p class="hint">Enter what ATS shows for this trailer and the app uses it everywhere. Blank keeps the
+      assigned number, which is what everything is filed against regardless.</p>
     <fieldset><legend>Does ATS know about this trailer?</legend>
       <label class="chk"><input type="checkbox" id="er-garage" ${t.inGameGarage ? 'checked' : ''}>
         This trailer exists in my ATS garage</label>
@@ -3995,7 +4023,8 @@ async function handleAction(act, d, ev) {
       if (!unit) return toast('Give the trailer a unit number.', 'bad');
       return run(async () => {
         absorb(await api('/fleetops/trailer-request/confirm', 'POST', {
-          requestId: d.id, unit, paidPrice: fv('tq-price'), gameTime: readDayTime('tq-time'),
+          requestId: d.id, unit, gameId: sv('tq-gameid'),
+          paidPrice: fv('tq-price'), gameTime: readDayTime('tq-time'),
         }));
         FLEETOPS = await api('/fleetops');
       }, `Trailer ${unit} added to the fleet.`);
@@ -4135,6 +4164,7 @@ async function handleAction(act, d, ev) {
           cabConfig: sv('et-cab'), governedMph: fv('et-gov'), fuelCapacityGal: fv('et-fuel'),
           avgMpg: fv('et-mpg'), damagePct: fv('et-dmg'), status: sv('et-status'),
           inGameGarage: bv('et-garage'), homeTerminalId: sv('et-yard'),
+          gameId: sv('et-gameid'),
           serviceMiles: fv('et-svc'), atsOdometer: fv('et-odo'),
           lastServiceMiles: fv('et-lastpm'), serviceIntervalMiles: fv('et-pm'), notes: sv('et-notes'),
         }));
@@ -4157,6 +4187,7 @@ async function handleAction(act, d, ev) {
           make: sv('er-make'), year: fv('er-year'),
           length: sv('er-len'), axles: sv('er-axles'), damagePct: fv('er-dmg'), status: sv('er-status'),
           inGameGarage: bv('er-garage'),
+          gameId: sv('er-gameid'),
           serviceMiles: fv('er-svc'), currentLocation: sv('er-loc'), notes: sv('er-notes'),
         }));
         closeModal();

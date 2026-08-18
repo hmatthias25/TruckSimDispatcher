@@ -897,13 +897,13 @@ public static class TripService
             truck.DamagePct = trip.TruckDamageAfter;
             s.Status.TruckDamagePct = trip.TruckDamageAfter;
             s.Status.AtsOdometer = truck.AtsOdometer;
-            audit.EquipmentFindings.Add($"Unit {truck.Unit}: {truck.DamagePct:0.#}% damage, {truck.ServiceMiles:N0} company-service mi, ATS odometer {truck.AtsOdometer:N0}.");
+            audit.EquipmentFindings.Add($"Unit {truck.Ref}: {truck.DamagePct:0.#}% damage, {truck.ServiceMiles:N0} company-service mi, ATS odometer {truck.AtsOdometer:N0}.");
 
             var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
             if (sinceService >= truck.ServiceIntervalMiles)
-                audit.Directives.Add($"Unit {truck.Unit} is {sinceService - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM. Schedule the service at the next terminal.");
+                audit.Directives.Add($"Unit {truck.Ref} is {sinceService - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM. Schedule the service at the next terminal.");
             else if (sinceService >= truck.ServiceIntervalMiles * 0.9)
-                audit.EquipmentFindings.Add($"PM due in {truck.ServiceIntervalMiles - sinceService:N0} mi on unit {truck.Unit}.");
+                audit.EquipmentFindings.Add($"PM due in {truck.ServiceIntervalMiles - sinceService:N0} mi on unit {truck.Ref}.");
         }
 
         if (trailer != null)
@@ -914,7 +914,7 @@ public static class TripService
                 string.IsNullOrWhiteSpace(req.LocationCity) ? trip.DestCity : req.LocationCity,
                 string.IsNullOrWhiteSpace(req.LocationState) ? trip.DestState : req.LocationState);
             s.Status.TrailerDamagePct = trip.TrailerDamageAfter;
-            audit.EquipmentFindings.Add($"Trailer {trailer.Unit}: {trailer.DamagePct:0.#}% damage, now at {trailer.CurrentLocation}.");
+            audit.EquipmentFindings.Add($"Trailer {trailer.Ref}: {trailer.DamagePct:0.#}% damage, now at {trailer.CurrentLocation}.");
         }
 
         var worst = Math.Max(trip.TruckDamageAfter, trip.TrailerDamageAfter);

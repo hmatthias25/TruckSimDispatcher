@@ -124,8 +124,8 @@ public static class Shop
         var miles = truck.AtsOdometer > 0 ? truck.AtsOdometer : truck.ServiceMiles;
         var line = TotalLossPctFor(s, truck);
         if (line >= m.TotalLossPct - 0.05)
-            return $"Unit {truck.Unit} has {miles:N0} mi on it, so it is worth fixing right up to {line:0.#}%.";
-        return $"Unit {truck.Unit} has {miles:N0} mi on it. We write that unit off at {line:0.#}%, not the " +
+            return $"Unit {truck.Ref} has {miles:N0} mi on it, so it is worth fixing right up to {line:0.#}%.";
+        return $"Unit {truck.Ref} has {miles:N0} mi on it. We write that unit off at {line:0.#}%, not the " +
                $"{m.TotalLossPct:0.#}% a fresh one gets — past a certain mileage the repair is worth more than the truck.";
     }
 
@@ -205,7 +205,7 @@ public static class Shop
         if (td >= writeOffAt)
         {
             order.Kind = "TotalLoss";
-            order.Headline = $"Unit {truck.Unit} is at {td:0.#}% — that is a total loss, not a repair.";
+            order.Headline = $"Unit {truck.Ref} is at {td:0.#}% — that is a total loss, not a repair.";
             order.Quote = Quote(s, td, rd, false, truck);
             order.Instructions.Add(ExplainTotalLossLine(s, truck));
             order.Instructions.Add("We do not put that kind of money into a unit and get a good truck back.");
@@ -221,9 +221,9 @@ public static class Shop
         order.Quote = Quote(s, td, rd, atShop, truck);
 
         var what = td >= m.StopDispatchPct && rd >= m.StopDispatchPct
-            ? $"Unit {truck.Unit} at {td:0.#}% and trailer {trailer?.Unit} at {rd:0.#}%"
-            : td >= m.StopDispatchPct ? $"Unit {truck.Unit} at {td:0.#}%"
-            : $"Trailer {trailer?.Unit} at {rd:0.#}%";
+            ? $"Unit {truck.Ref} at {td:0.#}% and trailer {trailer?.Ref} at {rd:0.#}%"
+            : td >= m.StopDispatchPct ? $"Unit {truck.Ref} at {td:0.#}%"
+            : $"Trailer {trailer?.Ref} at {rd:0.#}%";
 
         // Is home close enough to be the better shop?
         var home = HomeTime.HomeTerminal(s);
@@ -336,20 +336,20 @@ public static class Shop
 
         if (r.InsurancePayout > 0)
             LedgerService.Post(s, LedgerService.Operating, r.InsurancePayout, "InsuranceRecovery",
-                $"Insurance settlement on unit {truck.Unit} — total loss");
+                $"Insurance settlement on unit {truck.Ref} — total loss");
         if (r.Deductible > 0)
             LedgerService.Post(s, LedgerService.Operating, -r.Deductible, "InsuranceDeductible",
                 driverFault
-                    ? $"Deductible on unit {truck.Unit} — driver-fault, so the higher one applies"
-                    : $"Deductible on unit {truck.Unit}");
+                    ? $"Deductible on unit {truck.Ref} — driver-fault, so the higher one applies"
+                    : $"Deductible on unit {truck.Ref}");
         if (r.ScrapRecovery > 0)
             LedgerService.Post(s, LedgerService.Operating, r.ScrapRecovery, "ScrapRecovery",
-                $"Scrap value reported on unit {truck.Unit}");
+                $"Scrap value reported on unit {truck.Ref}");
 
         r.ReplacementSpec = Seed.RecommendedTruck(s);
 
         var home = HomeTime.HomeTerminal(s);
-        r.Instructions.Add($"Unit {truck.Unit} ({truck.Year} {truck.Make} {truck.Model}) is off the fleet as a total loss.");
+        r.Instructions.Add($"Unit {truck.Ref} ({truck.Year} {truck.Make} {truck.Model}) is off the fleet as a total loss.");
         r.Instructions.Add(r.InsurancePayout > 0
             ? $"Insurance settled ${r.InsurancePayout:N2} against a ${r.Deductible:N2} deductible" +
               (driverFault ? " — the higher one, because the damage was down to the driver." : ".")
@@ -365,7 +365,7 @@ public static class Shop
         s.Events.Insert(0, new LogEvent
         {
             Channel = "Maintenance",
-            Message = $"Unit {truck.Unit} written off as a total loss. Net recovery ${r.NetRecovery:N2}.",
+            Message = $"Unit {truck.Ref} written off as a total loss. Net recovery ${r.NetRecovery:N2}.",
             Ref = truck.Unit,
             GameTime = s.Status.GameTime
         });

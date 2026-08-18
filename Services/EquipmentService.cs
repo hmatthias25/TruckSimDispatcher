@@ -114,7 +114,7 @@ public static class EquipmentService
         var trailer = s.Trailers.FirstOrDefault(t => t.Unit.Equals(trailerUnit, StringComparison.OrdinalIgnoreCase))
                       ?? throw new InvalidOperationException($"Trailer {trailerUnit} is not in the fleet.");
         if (trailer.Status != "InService" && !force)
-            throw new InvalidOperationException($"Trailer {trailer.Unit} is {trailer.Status}.");
+            throw new InvalidOperationException($"Trailer {trailer.Ref} is {trailer.Status}.");
 
         var open = s.Trips.FirstOrDefault(t => t.Status is "Authorized" or "InTransit");
         if (open != null)
@@ -127,7 +127,7 @@ public static class EquipmentService
 
         if (!force && !trailerAt.Equals(here, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
-                $"Trailer {trailer.Unit} is at {trailerAt}; you are at {here}. Run an equipment move to collect it first.");
+                $"Trailer {trailer.Ref} is at {trailerAt}; you are at {here}. Run an equipment move to collect it first.");
 
         // Drop what we are on where we are standing.
         var previous = s.Trailers.FirstOrDefault(t => t.Unit == s.Driver.AssignedTrailerUnit);
@@ -143,8 +143,8 @@ public static class EquipmentService
         s.Status.TrailerDamagePct = trailer.DamagePct;
 
         return previous == null
-            ? $"Hooked trailer {trailer.Unit} ({trailer.Length} {trailer.Type}) at {here}."
-            : $"Dropped {previous.Unit} and hooked {trailer.Unit} ({trailer.Length} {trailer.Type}) at {here}.";
+            ? $"Hooked trailer {trailer.Ref} ({trailer.Length} {trailer.Type}) at {here}."
+            : $"Dropped {previous.Ref} and hooked {trailer.Ref} ({trailer.Length} {trailer.Type}) at {here}.";
     }
 
     /// <summary>
@@ -165,10 +165,10 @@ public static class EquipmentService
         var move = DispatchEngine.CreateMaintenanceMove(
             s, parts.ElementAtOrDefault(0) ?? "", parts.ElementAtOrDefault(1) ?? "", miles,
             string.IsNullOrWhiteSpace(reason)
-                ? $"Equipment move — collect trailer {trailer.Unit} ({trailer.Type})"
+                ? $"Equipment move — collect trailer {trailer.Ref} ({trailer.Type})"
                 : reason);
-        move.Cargo = $"Equipment move — trailer {trailer.Unit}";
-        move.Notes = $"On arrival, swap onto {trailer.Unit} ({trailer.Length} {trailer.Type}).";
+        move.Cargo = $"Equipment move — trailer {trailer.Ref}";
+        move.Notes = $"On arrival, swap onto {trailer.Ref} ({trailer.Length} {trailer.Type}).";
         return move;
     }
 
@@ -236,7 +236,7 @@ public static class EquipmentService
                 TerminalLabel = homeLabel,
                 AvailableFromGameTime = s.Status.GameTime,
                 Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, free.Subtype)} freight. " +
-                              $"Drop {(current == null ? "your trailer" : current.Unit)} and hook trailer {free.Unit} " +
+                              $"Drop {(current == null ? "your trailer" : current.Unit)} and hook trailer {free.Ref} " +
                               $"({free.Year} {free.Make}, {free.Length} {TrailerSpec.Describe(free.Type, free.Subtype)}) at {at}. " +
                               "Do the swap in ATS, then mark this order complete.",
                 Notes = "Trailer is on the property and free."
@@ -267,10 +267,10 @@ public static class EquipmentService
                 HeldByDriverName = taken.Driver!.Name,
                 Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, taken.Trailer.Subtype)} freight, and our " +
                               $"{TrailerSpec.Describe(taken.Trailer.Type, taken.Trailer.Subtype)} " +
-                              $"({taken.Trailer.Unit}) is out with {taken.Driver!.Name}. They are due back at {homeLabel} around " +
+                              $"({taken.Trailer.Ref}) is out with {taken.Driver!.Name}. They are due back at {homeLabel} around " +
                               $"{GameClock.Pretty(back)} — about {days:0.#} day(s). Stay home until then; it comes out of your home time, not your hours. " +
-                              $"When the trailer is in, hook {taken.Trailer.Unit} and mark this order complete.",
-                Notes = $"Waiting on {taken.Driver!.Name} to return {taken.Trailer.Unit}."
+                              $"When the trailer is in, hook {taken.Trailer.Ref} and mark this order complete.",
+                Notes = $"Waiting on {taken.Driver!.Name} to return {taken.Trailer.Ref}."
             });
         }
 
@@ -358,13 +358,13 @@ public static class EquipmentService
             TerminalId = better.HomeTerminalId,
             TerminalLabel = label,
             Instruction =
-                $"Report to the {label} yard and move into unit {better.Unit} — a {better.Year} {better.Make} " +
+                $"Report to the {label} yard and move into unit {better.Ref} — a {better.Year} {better.Make} " +
                 $"{better.Model}, {better.Engine}, {better.Transmission}. " +
                 (current != null
                     ? remote
-                        ? $"Drop {current.Unit} there; it becomes a {label} unit and {better.Unit} comes onto your " +
+                        ? $"Drop {current.Ref} there; it becomes a {label} unit and {better.Ref} comes onto your " +
                           $"{homeLabel} book. A straight swap, so neither yard changes headcount. "
-                        : $"Leave {current.Unit} at the yard. "
+                        : $"Leave {current.Ref} at the yard. "
                     : "") +
                 "Do the swap in ATS, then mark this order complete and the fleet records update themselves."
         });
@@ -399,7 +399,7 @@ public static class EquipmentService
             TerminalLabel = label,
             RestoreAfterLoads = restoreAfterLoads,
             Instruction =
-                $"Report to {label} and turn in {current?.Unit}. You are going into unit {worst.Unit} — " +
+                $"Report to {label} and turn in {current?.Ref}. You are going into unit {worst.Ref} — " +
                 $"a {worst.Year} {worst.Make} {worst.Model} with {worst.ServiceMiles:N0} miles on it. " +
                 $"Run {restoreAfterLoads} clean loads and we will talk about putting you back in something better."
         });
@@ -464,7 +464,7 @@ public static class EquipmentService
                 if (swapYard != null && old.HomeTerminalId != swapYard.Id)
                 {
                     old.HomeTerminalId = swapYard.Id;
-                    messages.Add($"Unit {old.Unit} is now based at {swapYard.City}, {swapYard.State} — you left it there.");
+                    messages.Add($"Unit {old.Ref} is now based at {swapYard.City}, {swapYard.State} — you left it there.");
                 }
             }
 
@@ -475,14 +475,14 @@ public static class EquipmentService
             if (homeYard != null && newTruck.HomeTerminalId != homeYard.Id)
             {
                 newTruck.HomeTerminalId = homeYard.Id;
-                messages.Add($"Unit {newTruck.Unit} re-domiciled to {homeYard.City}, {homeYard.State}.");
+                messages.Add($"Unit {newTruck.Ref} re-domiciled to {homeYard.City}, {homeYard.State}.");
             }
 
             s.Driver.AssignedTruckUnit = newTruck.Unit;
             s.Settings.GovernedMph = newTruck.GovernedMph;
             s.Status.TruckDamagePct = newTruck.DamagePct;
             s.Status.AtsOdometer = newTruck.AtsOdometer;
-            messages.Insert(0, $"Now on unit {newTruck.Unit} ({newTruck.Year} {newTruck.Make} {newTruck.Model}).");
+            messages.Insert(0, $"Now on unit {newTruck.Ref} ({newTruck.Year} {newTruck.Make} {newTruck.Model}).");
         }
 
         if (o.Kind == "TrailerSwap")
@@ -586,8 +586,8 @@ public static class EquipmentService
         var shops = ShopOptions(s);
         advice.ShopYards = shops.Select(t => $"{t.City}, {t.State} ({t.ShopLabourDiscount * 100:0}% off labour)").ToList();
         advice.Message = advice.Due
-            ? $"Unit {truck.Unit} is {since - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM."
-            : $"Unit {truck.Unit} is due a PM in {advice.MilesRemaining:N0} mi.";
+            ? $"Unit {truck.Ref} is {since - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM."
+            : $"Unit {truck.Ref} is due a PM in {advice.MilesRemaining:N0} mi.";
         if (shops.Count > 0)
             advice.Message += $" Our own shops: {string.Join("; ", advice.ShopYards)}.";
         else

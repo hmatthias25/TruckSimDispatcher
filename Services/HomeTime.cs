@@ -342,13 +342,13 @@ public static class HomeTime
         if (truck is { InGameGarage: true })
         {
             if (truck.DamagePct >= m.ReportPct)
-                jobs.Add($"Unit {truck.Unit} is at {truck.DamagePct:0.#}% — get it repaired.");
+                jobs.Add($"Unit {truck.Ref} is at {truck.DamagePct:0.#}% — get it repaired.");
             var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
             if (sinceService >= truck.ServiceIntervalMiles * 0.85)
-                jobs.Add($"Unit {truck.Unit} is {sinceService:N0} mi into a {truck.ServiceIntervalMiles:N0}-mile PM cycle — do the service now rather than on the road.");
+                jobs.Add($"Unit {truck.Ref} is {sinceService:N0} mi into a {truck.ServiceIntervalMiles:N0}-mile PM cycle — do the service now rather than on the road.");
         }
         if (trailer is { InGameGarage: true } && trailer.DamagePct >= m.ReportPct)
-            jobs.Add($"Trailer {trailer.Unit} is at {trailer.DamagePct:0.#}% — get it done at the same time.");
+            jobs.Add($"Trailer {trailer.Ref} is at {trailer.DamagePct:0.#}% — get it done at the same time.");
 
         var openWork = s.WorkOrders.Count(w => w.Status == "Open");
         if (openWork > 0)
@@ -420,25 +420,25 @@ public static class HomeTime
         if (truck is { InGameGarage: true })
         {
             if (truck.DamagePct >= m.MandatoryReviewPct)
-                b.Shop.Add($"Unit {truck.Unit} is at {truck.DamagePct:0.#}% — over our {m.MandatoryReviewPct:0}% review line. Repair it before you go back out.");
+                b.Shop.Add($"Unit {truck.Ref} is at {truck.DamagePct:0.#}% — over our {m.MandatoryReviewPct:0}% review line. Repair it before you go back out.");
             else if (truck.DamagePct >= m.ReportPct)
-                b.Shop.Add($"Unit {truck.Unit} is at {truck.DamagePct:0.#}%. Worth putting through the shop while it is standing.");
+                b.Shop.Add($"Unit {truck.Ref} is at {truck.DamagePct:0.#}%. Worth putting through the shop while it is standing.");
             else
-                b.Shop.Add($"Unit {truck.Unit} is fine at {truck.DamagePct:0.#}% — nothing needed.");
+                b.Shop.Add($"Unit {truck.Ref} is fine at {truck.DamagePct:0.#}% — nothing needed.");
 
             var since = truck.ServiceMiles - truck.LastServiceMiles;
             if (since >= truck.ServiceIntervalMiles)
-                b.Shop.Add($"Unit {truck.Unit} is {since - truck.ServiceIntervalMiles:N0} mi PAST its {truck.ServiceIntervalMiles:N0}-mile PM. Do it now.");
+                b.Shop.Add($"Unit {truck.Ref} is {since - truck.ServiceIntervalMiles:N0} mi PAST its {truck.ServiceIntervalMiles:N0}-mile PM. Do it now.");
             else if (since >= truck.ServiceIntervalMiles * 0.85)
-                b.Shop.Add($"PM due on unit {truck.Unit} in {truck.ServiceIntervalMiles - since:N0} mi. Cheaper to do it here than on the road.");
+                b.Shop.Add($"PM due on unit {truck.Ref} in {truck.ServiceIntervalMiles - since:N0} mi. Cheaper to do it here than on the road.");
         }
 
         if (trailer is { InGameGarage: true })
         {
             if (trailer.DamagePct >= m.ReportPct)
-                b.Shop.Add($"Trailer {trailer.Unit} is at {trailer.DamagePct:0.#}% — get it done at the same time.");
+                b.Shop.Add($"Trailer {trailer.Ref} is at {trailer.DamagePct:0.#}% — get it done at the same time.");
             else
-                b.Shop.Add($"Trailer {trailer.Unit} is fine at {trailer.DamagePct:0.#}%.");
+                b.Shop.Add($"Trailer {trailer.Ref} is fine at {trailer.DamagePct:0.#}%.");
         }
 
         if (b.Shop.Any(x => x.Contains("Repair") || x.Contains("PM") || x.Contains("shop") || x.Contains("done")))
@@ -472,7 +472,7 @@ public static class HomeTime
                                                  && string.IsNullOrWhiteSpace(t.AssignedDriver)
                                                  && truck != null && t.Year > truck.Year);
         if (spare != null)
-            b.Equipment.Add($"There is a better unit sitting here: {spare.Unit} ({spare.Year} {spare.Make} {spare.Model}, " +
+            b.Equipment.Add($"There is a better unit sitting here: {spare.Ref} ({spare.Year} {spare.Make} {spare.Model}, " +
                             $"{spare.ServiceMiles:N0} mi) against your {truck!.Year} {truck.Make}. Ask operations to move you into it.");
 
         // ---- paperwork that can be closed while standing still

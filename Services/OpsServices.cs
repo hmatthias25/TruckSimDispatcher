@@ -106,15 +106,15 @@ public static class MaintenanceService
 
         foreach (var t in s.Trucks.Where(t => Tracked(t.Unit, t.InGameGarage)))
         {
-            var (status, directive) = Assess(s.Settings, t.DamagePct, $"Unit {t.Unit}");
+            var (status, directive) = Assess(s.Settings, t.DamagePct, $"Unit {t.Ref}");
             if (status != "Monitor") alerts.Add(directive);
             var since = t.ServiceMiles - t.LastServiceMiles;
             if (since >= t.ServiceIntervalMiles)
-                alerts.Add($"Unit {t.Unit} PM overdue by {since - t.ServiceIntervalMiles:N0} mi.");
+                alerts.Add($"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi.");
         }
         foreach (var t in s.Trailers.Where(t => Tracked(t.Unit, t.InGameGarage)))
         {
-            var (status, directive) = Assess(s.Settings, t.DamagePct, $"Trailer {t.Unit}");
+            var (status, directive) = Assess(s.Settings, t.DamagePct, $"Trailer {t.Ref}");
             if (status is "MandatoryReview" or "OutOfService") alerts.Add(directive);
         }
         return alerts;

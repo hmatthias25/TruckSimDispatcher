@@ -109,14 +109,14 @@ public static class PacketService
         b.AppendLine();
         if (truck != null)
         {
-            b.AppendLine($"**Unit {truck.Unit}** — {truck.Year} {truck.Make} {truck.Model}, {truck.Engine}, {truck.Transmission} ({truck.TransmissionType}), {truck.CabConfig}.");
+            b.AppendLine($"**Unit {truck.Ref}** — {truck.Year} {truck.Make} {truck.Model}, {truck.Engine}, {truck.Transmission} ({truck.TransmissionType}), {truck.CabConfig}.");
             b.AppendLine($"Governed {truck.GovernedMph} mph · {truck.FuelCapacityGal:0} gal · ~{truck.AvgMpg:0.0} mpg · {truck.DamagePct:0.#}% damage.");
             b.AppendLine($"Company service odometer {truck.ServiceMiles:N0} mi · ATS odometer {truck.AtsOdometer:N0} mi · last PM at {truck.LastServiceMiles:N0} ({truck.ServiceIntervalMiles:N0} mi interval).");
         }
         else b.AppendLine("**No truck assigned.**");
         b.AppendLine();
         if (trailer != null)
-            b.AppendLine($"**Trailer {trailer.Unit}** — {trailer.Year} {trailer.Make}, {trailer.Length} {trailer.Type} ({trailer.Division} division), {trailer.DamagePct:0.#}% damage, currently {trailer.CurrentLocation}.");
+            b.AppendLine($"**Trailer {trailer.Ref}** — {trailer.Year} {trailer.Make}, {trailer.Length} {trailer.Type} ({trailer.Division} division), {trailer.DamagePct:0.#}% damage, currently {trailer.CurrentLocation}.");
         else b.AppendLine("**No trailer assigned.**");
         b.AppendLine();
 
@@ -280,7 +280,7 @@ public static class PacketService
             b.AppendLine("## Maintenance");
             b.AppendLine();
             foreach (var w in openWo)
-                b.AppendLine($"- **OPEN {w.Number}** — {w.UnitKind} {w.Unit}, {w.Kind}: {w.Description}");
+                b.AppendLine($"- **OPEN {w.Number}** — {w.UnitKind} {Equip.Label(s, w.Unit)}, {w.Kind}: {w.Description}");
             foreach (var a in alerts) b.AppendLine($"- {a}");
             b.AppendLine();
             b.AppendLine($"Thresholds: monitor below {s.Settings.Maintenance.ReportPct:0}% · report after delivery at {s.Settings.Maintenance.ReportPct:0}% · " +

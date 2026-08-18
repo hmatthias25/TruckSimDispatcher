@@ -360,9 +360,9 @@ public static class DispatchEngine
         else
         {
             if (truck.Status == "OutOfService")
-                stops.Add($"Unit {truck.Unit} is out of service.");
+                stops.Add($"Unit {truck.Ref} is out of service.");
             if (truck.Status == "Shop")
-                stops.Add($"Unit {truck.Unit} is in the shop.");
+                stops.Add($"Unit {truck.Ref} is in the shop.");
         }
         if (trailer == null) stops.Add("No trailer assigned.");
 
@@ -385,9 +385,9 @@ public static class DispatchEngine
             // A backdrop unit has no condition Shop.Assess will read, so the old out-of-service line
             // stays as the backstop for anything it deliberately ignores.
             if (truck != null && Math.Max(truck.DamagePct, s.Status.TruckDamagePct) is var dmg && dmg >= m.OutOfServicePct)
-                stops.Add($"Unit {truck.Unit} is at {dmg:0.#}% damage — at or above the {m.OutOfServicePct:0}% out-of-service threshold. Shop first.");
+                stops.Add($"Unit {truck.Ref} is at {dmg:0.#}% damage — at or above the {m.OutOfServicePct:0}% out-of-service threshold. Shop first.");
             if (trailer != null && Math.Max(trailer.DamagePct, s.Status.TrailerDamagePct) is var tdmg && tdmg >= m.OutOfServicePct)
-                stops.Add($"Trailer {trailer.Unit} is at {tdmg:0.#}% damage — out of service until repaired.");
+                stops.Add($"Trailer {trailer.Ref} is at {tdmg:0.#}% damage — out of service until repaired.");
         }
 
         // Re-rigged at home and the trailer is still out under one of our own drivers. Sending the
@@ -465,11 +465,11 @@ public static class DispatchEngine
             if (plan.Possible)
             {
                 e.RequiresSwap = true;
-                e.Cons.Add($"Needs a {load.TrailerType}; you are on {trailer.Unit} ({trailer.Type}). {plan.Reason}");
+                e.Cons.Add($"Needs a {load.TrailerType}; you are on {trailer.Ref} ({trailer.Type}). {plan.Reason}");
             }
             else
             {
-                e.HardFails.Add($"Needs a {load.TrailerType}; you are on {trailer.Unit} ({trailer.Type}). {plan.Reason}");
+                e.HardFails.Add($"Needs a {load.TrailerType}; you are on {trailer.Ref} ({trailer.Type}). {plan.Reason}");
             }
         }
 

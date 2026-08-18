@@ -497,6 +497,8 @@ app.MapPost("/api/trips/{id}/notes", (string id, NoteRequest req) => Results.Ok(
 app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
 {
     var existing = s.Trucks.FirstOrDefault(x => x.Unit == t.Unit);
+    // One game ID per unit, or the label is ambiguous in exactly the case it exists to resolve.
+    Equip.GuardGameId(s, t.GameId, t.Unit);
 
     // A yard can only hold what its tier allows. Check before committing the change, and only
     // when the unit is actually moving into a different yard.
@@ -519,6 +521,7 @@ app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
 
 app.MapPost("/api/fleet/trailer", (Trailer t) => Results.Ok(store.Mutate(s =>
 {
+    Equip.GuardGameId(s, t.GameId, t.Unit);
     var existing = s.Trailers.FirstOrDefault(x => x.Unit == t.Unit);
     if (existing == null) s.Trailers.Add(t);
     else s.Trailers[s.Trailers.IndexOf(existing)] = t;
@@ -573,7 +576,7 @@ app.MapPost("/api/fleet/assign", (AssignRequest req) => Results.Ok(store.Mutate(
         var truck = s.Trucks.FirstOrDefault(t => t.Unit == req.TruckUnit)
                     ?? throw new InvalidOperationException($"Unit {req.TruckUnit} is not in the fleet.");
         if (truck.Status is "OutOfService" or "Shop" && !req.Force)
-            throw new InvalidOperationException($"Unit {truck.Unit} is {truck.Status}. Repair it or force the assignment.");
+            throw new InvalidOperationException($"Unit {truck.Ref} is {truck.Status}. Repair it or force the assignment.");
         foreach (var t in s.Trucks.Where(t => t.AssignedDriver == s.Driver.Name)) t.AssignedDriver = "";
         truck.AssignedDriver = s.Driver.Name;
         s.Driver.AssignedTruckUnit = truck.Unit;
@@ -643,7 +646,7 @@ app.MapPost("/api/equipment/relocate", (RelocateRequest req) => Results.Ok(store
                  ?? throw new InvalidOperationException($"Trailer {req.Unit} is not in the fleet.");
         tr.HomeTerminalId = yard.Id;
         tr.CurrentLocation = $"{yard.City}, {yard.State}";
-        store.Log(s, "system", $"Trailer {tr.Unit} re-homed to {yard.City}, {yard.State}.");
+        store.Log(s, "system", $"Trailer {tr.Ref} re-homed to {yard.City}, {yard.State}.");
     }
     else
     {
@@ -653,7 +656,7 @@ app.MapPost("/api/equipment/relocate", (RelocateRequest req) => Results.Ok(store
             throw new InvalidOperationException(
                 $"{yard.City} holds {yard.TruckCapacity} tractor(s) and is full. Move something out first, or upgrade the yard.");
         tk.HomeTerminalId = yard.Id;
-        store.Log(s, "system", $"Unit {tk.Unit} re-homed to {yard.City}, {yard.State}.");
+        store.Log(s, "system", $"Unit {tk.Ref} re-homed to {yard.City}, {yard.State}.");
     }
     return Snapshot(s);
 })));
@@ -748,8 +751,8 @@ app.MapPost("/api/fleetops/retire", (RetireRequest req) => Results.Ok(store.Muta
 // The company asking for a trailer. It cannot buy one, so the player does and reports the price.
 app.MapPost("/api/fleetops/trailer-request/confirm", (TrailerBoughtRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
-    var trailer = TrailerFleet.Confirm(s, req.RequestId, req.Unit, req.PaidPrice, req.GameTime ?? "");
-    var message = $"Trailer {trailer.Unit} ({trailer.Type}) added to the fleet.";
+    var trailer = TrailerFleet.Confirm(s, req.RequestId, req.Unit, req.PaidPrice, req.GameTime ?? "", req.GameId ?? "");
+    var message = $"Trailer {trailer.Ref} ({trailer.Type}) added to the fleet.";
     store.Log(s, "maintenance", message);
     return new { snapshot = Snapshot(s), message };
 })));
@@ -851,7 +854,7 @@ app.MapPost("/api/terminals/transfer/{id}/settle", (string id) => Results.Ok(sto
 app.MapPost("/api/maintenance/workorder", (WorkOrder wo) => Results.Ok(store.Mutate(s =>
 {
     var created = MaintenanceService.OpenWorkOrder(s, wo);
-    store.Log(s, "maintenance", $"{created.Number} {created.Kind} on {created.UnitKind.ToLowerInvariant()} {created.Unit}: {created.Description}", created.Number);
+    store.Log(s, "maintenance", $"{created.Number} {created.Kind} on {created.UnitKind.ToLowerInvariant()} {Equip.Label(s, created.Unit)}: {created.Description}", created.Number);
     return new { workOrder = created, snapshot = Snapshot(s) };
 })));
 
@@ -882,7 +885,7 @@ app.MapPost("/api/maintenance/writeoff", (WriteOffRequest req) => Results.Ok(sto
 {
     var result = Shop.WriteOff(s, req.Unit, req.DriverFault, req.ScrapRecovery, req.Notes ?? "");
     store.Log(s, "maintenance",
-        $"Unit {result.Unit} written off — insurance ${result.InsurancePayout:N2} less ${result.Deductible:N2} deductible, " +
+        $"Unit {Equip.Label(s, result.Unit)} written off — insurance ${result.InsurancePayout:N2} less ${result.Deductible:N2} deductible, " +
         $"scrap ${result.ScrapRecovery:N2}, net ${result.NetRecovery:N2}.", result.Unit);
     return new { writeOff = result, snapshot = Snapshot(s) };
 })));
@@ -1326,8 +1329,8 @@ static string BuildFirstDispatch(AppState s, Truck? truck, Trailer? trailer)
     var terminal = DispatchEngine.Place(s.Company.TerminalCity, s.Company.TerminalState);
     return $"Welcome aboard, {s.Driver.Name}. You are {s.Driver.RankTitle} at {s.Company.Name}, employee {s.Driver.EmployeeId}, " +
            $"on a {s.Driver.Probation.DurationDays}-day probation at ${s.Driver.Pay.LoadedCpm:0.000} per loaded mile.\n\n" +
-           $"Your equipment is unit {truck?.Unit} — {truck?.Year} {truck?.Make} {truck?.Model}, {truck?.Transmission} — " +
-           $"pulling trailer {trailer?.Unit}, a {trailer?.Length} {trailer?.Type}. It is not the newest truck on the property; " +
+           $"Your equipment is unit {truck?.Ref} — {truck?.Year} {truck?.Make} {truck?.Model}, {truck?.Transmission} — " +
+           $"pulling trailer {trailer?.Ref}, a {trailer?.Length} {trailer?.Type}. It is not the newest truck on the property; " +
            $"that is how probation works. Take care of it and we will talk about equipment again when your probation clears.\n\n" +
            $"You are sitting at our {terminal} yard. The terminal is not a shipper, so there is no freight to pull directly off it. " +
            $"Open ATS, look at the jobs available from shippers around {s.Company.TerminalCity}, and enter them on the Dispatch tab. " +
@@ -1404,7 +1407,7 @@ record BalanceRequest(decimal? Balance, string? GameTime);
 record ForgiveRequest(string? Reason, bool Force);
 record TerminateRequest(string DriverId, string? Reason);
 record RetireRequest(string Unit, string? ReplacementUnit);
-record TrailerBoughtRequest(string RequestId, string Unit, decimal PaidPrice, string? GameTime);
+record TrailerBoughtRequest(string RequestId, string Unit, decimal PaidPrice, string? GameTime, string? GameId);
 record TrailerDeclineRequest(string RequestId, string? GameTime);
 record DedicatedRequest(bool OnDedicated, string? Account);
 record FacilityTimeRequest(string TrailerType, double LoadingHours, double UnloadingHours, bool Manual);
