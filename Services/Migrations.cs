@@ -24,6 +24,53 @@ public static class Migrations
         ClearPhantomBankBalance(s);
         EnsureEquipmentStandard(s);
         EnsureCarrierNetwork(s);
+        EnsureCarrierStanding(s);
+        EnsureFleetStars(s);
+    }
+
+    /// <summary>
+    /// Pay and home-time ratings were not stored, so retention had nothing to work from. Look them up
+    /// from the carrier code. A career at a generated carrier keeps zeros and falls back to neutral.
+    /// </summary>
+    private static void EnsureCarrierStanding(AppState s)
+    {
+        if (s.Company.PayStars > 0 || s.Company.HomeTimeStars > 0) return;
+        var (pay, home) = Carriers.StandingFor(s.Company.Code);
+        if (pay <= 0 && home <= 0) return;
+        s.Company.PayStars = pay;
+        s.Company.HomeTimeStars = home;
+    }
+
+    /// <summary>
+    /// Careers written before the app understood that ATS shows STARS for equipment under a hired
+    /// driver — never a damage percentage — have no star readings at all.
+    ///
+    /// Nothing is invented here. A star rating cannot be derived from a percentage the player was
+    /// wrongly asked to guess at, so units are left at zero stars, which the app reads as "not
+    /// reported" and simply asks for on the next fortnightly report. What does get set is the trailer
+    /// acquisition date, because age has to start counting from somewhere and the career's own hire
+    /// date is the honest floor.
+    /// </summary>
+    private static void EnsureFleetStars(AppState s)
+    {
+        var fallback = string.IsNullOrWhiteSpace(s.Driver.HiredGameDate)
+            ? s.Status.GameTime
+            : s.Driver.HiredGameDate;
+        if (string.IsNullOrWhiteSpace(fallback)) return;
+
+        foreach (var tr in s.Trailers)
+            if (string.IsNullOrWhiteSpace(tr.AcquiredGameTime))
+                tr.AcquiredGameTime = fallback;
+
+        // Yards had no trailer capacity, so an unset one would read as zero and refuse every purchase.
+        foreach (var yard in s.Company.Terminals)
+            if (yard.TrailerCapacity <= 0)
+                yard.TrailerCapacity = yard.Level switch
+                {
+                    "Large" => 12,
+                    "Medium" => 6,
+                    _ => 3
+                };
     }
 
     /// <summary>
@@ -458,20 +505,20 @@ public static class Migrations
         switch (level)
         {
             case "Large":
-                t.TruckCapacity = 5;
+                t.TruckCapacity = 5; t.TrailerCapacity = 12;
                 t.HasFuel = true; t.HasShop = true; t.HasParking = true;
                 t.HasTrailerDrop = true; t.HasDriverFacilities = true;
                 t.FuelPricePerGal = 3.58m; t.ShopLabourDiscount = 0.35; t.MonthlyCost = 4_200m;
                 break;
             case "Medium":
-                t.TruckCapacity = 3;
+                t.TruckCapacity = 3; t.TrailerCapacity = 6;
                 t.HasFuel = true; t.HasShop = true; t.HasParking = true;
                 t.HasTrailerDrop = true; t.HasDriverFacilities = false;
                 t.FuelPricePerGal = 3.72m; t.ShopLabourDiscount = 0.20; t.MonthlyCost = 2_400m;
                 break;
             default:
                 t.Level = "Small";
-                t.TruckCapacity = 1;
+                t.TruckCapacity = 1; t.TrailerCapacity = 3;
                 t.HasFuel = true; t.HasShop = false; t.HasParking = true;
                 t.HasTrailerDrop = true; t.HasDriverFacilities = false;
                 t.FuelPricePerGal = 3.85m; t.ShopLabourDiscount = 0; t.MonthlyCost = 1_150m;

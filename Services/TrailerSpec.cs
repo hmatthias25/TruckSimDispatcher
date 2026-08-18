@@ -56,6 +56,46 @@ public static class TrailerSpec
                $"The alternatives are {string.Join(", ", others)}. Set the subtype on the Fleet tab once you know.";
     }
 
+    /// <summary>
+    /// The trailer a division is pulled with. Used when the company needs to say what to go and buy,
+    /// so it names an actual trailer rather than a division.
+    /// </summary>
+    public static (string Type, string Subtype) ForDivision(string? division)
+    {
+        var d = (division ?? "").Trim();
+        return d.ToLowerInvariant() switch
+        {
+            "reefer" => ("Reefer", ""),
+            "flatbed" => ("Flatbed", ""),
+            "step deck" => ("Step Deck", ""),
+            "heavy haul" => ("Lowboy", ""),
+            "tanker" => ("Tanker", "Fuel"),
+            "livestock" => ("Livestock", ""),
+            "car hauler" => ("Car Hauler", ""),
+            "auto" => ("Car Hauler", ""),
+            "log" => ("Log", ""),
+            "dump" => ("Dump", ""),
+            "intermodal" => ("Dry Van", ""),
+            _ => ("Dry Van", "")
+        };
+    }
+
+    /// <summary>Which division a trailer type belongs to. The inverse of <see cref="ForDivision"/>.</summary>
+    public static string DivisionFor(string? type) =>
+        (type ?? "").Trim().ToLowerInvariant() switch
+        {
+            "reefer" => "Reefer",
+            "flatbed" => "Flatbed",
+            "step deck" => "Step Deck",
+            "lowboy" => "Heavy Haul",
+            "tanker" => "Tanker",
+            "livestock" => "Livestock",
+            "car hauler" => "Car Hauler",
+            "log" => "Log",
+            "dump" => "Dump",
+            _ => "Dry Van"
+        };
+
     /// <summary>The tanker a carrier's divisions and the driver's endorsements point at.</summary>
     public static (string Key, string Label, string Hauls, bool NeedsHazmat) LikelyFor(AppState s)
     {

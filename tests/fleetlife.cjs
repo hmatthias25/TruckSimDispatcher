@@ -61,20 +61,39 @@ async function fileReport(lines) {
   const solid = roster.find((d) => d.name === 'B. Solid');
   ok('two drivers on the roster', roster.length === 2, roster.map((d) => `${d.name}→${d.assignedTruckUnit}`).join(', '));
 
-  head('Three periods: one driver carries their unit, one does not');
-  let rep;
-  for (let i = 0; i < 3; i++) {
+  head('A fair first period, then a bad one, then a bad one');
+  // The figures the game actually shows. Without them nothing is judgeable, which is deliberate.
+  let rep = await fileReport([
+    { driverId: poor.id, truckUnit: poor.assignedTruckUnit, level: 5, rating: 7.0,
+      perMile: 1.50, perDay: 580, revenue: 8500, miles: 3000, truckStars: 5, repairs: 400 },
+    { driverId: solid.id, truckUnit: solid.assignedTruckUnit, level: 5, rating: 8.0,
+      perMile: 1.60, perDay: 620, revenue: 9000, miles: 4000, truckStars: 5, repairs: 0 },
+  ]);
+  ok('a fair period leaves nobody on notice',
+    !rep.personnel.some((p) => p.kind === 'Probation'),
+    rep.personnel.map((p) => `${p.driverName}:${p.kind}`).join(', ') || 'none');
+
+  for (let i = 0; i < 2; i++) {
     rep = await fileReport([
-      { driverId: poor.id, truckUnit: poor.assignedTruckUnit, revenue: 1800, miles: 3000, damagePctAfter: 12 + i * 4, repairs: 1400 },
-      { driverId: solid.id, truckUnit: solid.assignedTruckUnit, revenue: 9000, miles: 4000, damagePctAfter: 3, repairs: 0 },
+      { driverId: poor.id, truckUnit: poor.assignedTruckUnit, level: 5, rating: 5.0,
+        perMile: 0.42, perDay: 120, revenue: 1800, miles: 3000, truckStars: 5, repairs: 1400 },
+      { driverId: solid.id, truckUnit: solid.assignedTruckUnit, level: 5, rating: 8.2,
+        perMile: 1.62, perDay: 640, revenue: 9000, miles: 4000, truckStars: 5, repairs: 0 },
     ]);
-    console.log(`     ${rep.number}: fleet $${(rep.totalRevenue / rep.totalMiles).toFixed(2)}/mi, personnel ${rep.personnel.length}`);
+    console.log(`     ${rep.number}: personnel ${rep.personnel.map((p) => p.kind).join('/') || 'none'}`);
+    if (i === 0) {
+      const pr = rep.personnel.find((x) => x.kind === 'Probation' && x.driverName === 'A. Poor');
+      ok('the first bad period is probation, not a sacking', !!pr, pr ? pr.headline : '(none)');
+      ok('and no termination yet', !rep.personnel.some((x) => x.kind === 'Terminated'));
+    }
   }
 
   const term = rep.personnel.find((p) => p.kind === 'Terminated');
-  ok('termination recommended for the weak driver', !!term, term ? term.headline : '(none)');
+  ok('failing probation recommends termination', !!term, term ? term.headline : '(none)');
   ok('it is pending, not done', term?.pending === true);
   ok('the case is evidenced', (term?.evidence || []).length >= 2, (term?.evidence || []).join(' | '));
+  ok('and it cites the warning that came first',
+    (term?.evidence || []).some((e) => /Warned on/.test(e)), (term?.evidence || []).join(' | '));
   // Not recommended for termination — which is the claim. A driver may still resign on any period,
   // that being a seeded 7% roll, and a resignation is not the company judging their performance.
   ok('the good driver is not up for termination',
@@ -96,6 +115,8 @@ async function fileReport(lines) {
   ok('their unit released', gone.assignedTruckUnit === '', `"${gone.assignedTruckUnit}"`);
   ok('history kept', gone.reportsFiled === 3 && gone.periods.length === 3,
     `${gone.reportsFiled} reports, ${gone.periods.length} periods`);
+  ok('and the periods carry the game figures', gone.periods.every((x) => x.gameFiguresReported),
+    gone.periods.map((x) => `$${x.perDay}/day`).join(', '));
   ok('no longer pending', fo.pendingTerminations.length === 0);
 
   head('The empty seat becomes a decision');
@@ -113,7 +134,8 @@ async function fileReport(lines) {
   const WINDOW = 80;
   let resigned = SEEN_RESIGNATION;
   for (let i = 0; i < WINDOW && !resigned; i++) {
-    rep = await fileReport([{ driverId: solid.id, truckUnit: solid.assignedTruckUnit, revenue: 9000, miles: 4000, damagePctAfter: 3, repairs: 0 }]);
+    rep = await fileReport([{ driverId: solid.id, truckUnit: solid.assignedTruckUnit, level: 6, rating: 8.5,
+      perMile: 1.62, perDay: 640, revenue: 9000, miles: 4000, truckStars: 5, repairs: 0 }]);
     resigned = rep.personnel.find((p) => p.kind === 'Resigned') || SEEN_RESIGNATION;
   }
   ok('a driver eventually resigned', !!resigned, resigned ? `${resigned.headline} — ${resigned.evidence[0]}` : `(none in ${WINDOW} periods)`);

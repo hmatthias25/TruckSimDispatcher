@@ -34,6 +34,8 @@ public class AppState
     public List<HiredDriver> HiredDrivers { get; set; } = new();
     public List<FleetReport> FleetReports { get; set; } = new();
     public List<EquipmentOrder> EquipmentOrders { get; set; } = new();
+    /// <summary>Trailers the company has asked for. The player buys them in ATS and reports the price.</summary>
+    public List<TrailerRequest> TrailerRequests { get; set; } = new();
 
     public Counters Counters { get; set; } = new();
     public List<LogEvent> Events { get; set; } = new();
@@ -95,6 +97,11 @@ public class Terminal
     public string Level { get; set; } = "Small";
     /// <summary>Tractors the yard can hold. ATS tiers are roughly 1 / 3 / 5.</summary>
     public int TruckCapacity { get; set; } = 1;
+    /// <summary>
+    /// How many trailers this yard can hold. ATS garages take more trailers than tractors, so this is
+    /// deliberately roomier than <see cref="TruckCapacity"/>.
+    /// </summary>
+    public int TrailerCapacity { get; set; } = 3;
     public bool IsHeadquarters { get; set; }
 
     // --- services
@@ -133,6 +140,22 @@ public class Company
     /// faithful to, and anywhere the driver has reached is fair game.
     /// </summary>
     public List<string> NetworkCities { get; set; } = new();
+
+    /// <summary>
+    /// What this carrier is like to work for, 1-5, mirroring the ratings shown in the job market.
+    ///
+    /// These decide retention. A five-star outfit with good pay and good equipment keeps its people; a
+    /// two-star one trains drivers up and watches them leave. That gives working up the carrier ladder
+    /// a consequence on the fleet side, not just on the player's own payslip.
+    /// </summary>
+    public int PayStars { get; set; }
+    public int HomeTimeStars { get; set; }
+
+    /// <summary>Overall standing as an employer — the average of the three, 1-5. Zero means unknown.</summary>
+    public double EmployerStars =>
+        EquipmentStars + PayStars + HomeTimeStars <= 0
+            ? 0
+            : Math.Round(new[] { EquipmentStars, PayStars, HomeTimeStars }.Where(x => x > 0).Average(), 2);
     [Obsolete("Superseded by Terminals; retained so older career files still load.")]
     public List<string> SecondaryTerminals { get; set; } = new();
     public string Founded { get; set; } = "";
@@ -326,6 +349,17 @@ public class Truck
     /// <summary>Odometer as shown in ATS.</summary>
     public double AtsOdometer { get; set; }
     public double DamagePct { get; set; }
+
+    /// <summary>
+    /// Condition as ATS shows it for a unit the player is NOT driving: a star rating, five down to one.
+    ///
+    /// The game gives no damage percentage for a truck under a hired driver, only stars. So an AI unit's
+    /// maintenance rules are written in stars and its <see cref="DamagePct"/> is left alone — asking the
+    /// player for a percentage the game never displays is asking them to invent one.
+    /// </summary>
+    public double Stars { get; set; }
+    /// <summary>When the star rating was last read off the game.</summary>
+    public string StarsReportedGameTime { get; set; } = "";
     public string AssignedDriver { get; set; } = "";
     /// <summary>InService | Shop | OutOfService | Reserve</summary>
     public string Status { get; set; } = "InService";
@@ -370,6 +404,21 @@ public class Trailer
     public bool InGameGarage { get; set; }
     public double DamagePct { get; set; }
     public double ServiceMiles { get; set; }
+
+    /// <summary>
+    /// Condition as ATS shows it for a trailer under a hired driver — a star rating, five down to one.
+    /// Same reasoning as <see cref="Truck.Stars"/>: the game shows stars, not a percentage.
+    /// </summary>
+    public double Stars { get; set; }
+    public string StarsReportedGameTime { get; set; } = "";
+
+    /// <summary>
+    /// When this trailer joined the fleet. Trailers carry no odometer, so age is the only independent
+    /// signal of a tired unit — and star loss on a trailer may never come. An old box still earning is
+    /// fine; an old box earning nothing is the one to replace.
+    /// </summary>
+    public string AcquiredGameTime { get; set; } = "";
+
     /// <summary>InService | Shop | OutOfService | Reserve</summary>
     public string Status { get; set; } = "InService";
     /// <summary>Terminal this trailer is based out of.</summary>
@@ -379,6 +428,11 @@ public class Trailer
     public string CurrentLocation { get; set; } = "";
     public string AssignedTruckUnit { get; set; } = "";
     public bool IsCompanyOwned { get; set; } = true;
+    /// <summary>Replaced and out of the fleet — kept on the book so its trip history still resolves.</summary>
+    public bool Retired { get; set; }
+    public string RetiredGameTime { get; set; } = "";
+    /// <summary>What the player actually paid for it in ATS. Never estimated.</summary>
+    public decimal PurchasePrice { get; set; }
     public string Notes { get; set; } = "";
 }
 
@@ -867,6 +921,32 @@ public class HiredDriver
     public string HomeTerminalId { get; set; } = "";
     /// <summary>Trainee | Competent | Experienced | Veteran — mirrors the ATS driver skill tiers.</summary>
     public string Skill { get; set; } = "Competent";
+
+    /// <summary>
+    /// Driver level as ATS shows it. Open-ended — they keep climbing as they haul.
+    ///
+    /// This is the number that makes a driver worth poaching. A developed driver has options, and the
+    /// place they are most likely to use them is a company that cannot match what those options pay.
+    /// </summary>
+    public int Level { get; set; }
+
+    /// <summary>Rating as ATS shows it: 0.0 to 10.0, in tenths.</summary>
+    public double Rating { get; set; }
+
+    /// <summary>
+    /// On notice after a bad period. A carrier does not sack someone over one weak fortnight — it says
+    /// what has to change and looks again next report. Empty means not on probation.
+    /// </summary>
+    public string ProbationSince { get; set; } = "";
+    /// <summary>What put them on probation, in the words the report used.</summary>
+    public string ProbationReason { get; set; } = "";
+    /// <summary>The figure and number they have to clear to come off it.</summary>
+    public string ProbationTarget { get; set; } = "";
+    /// <summary>How many times they have been put on probation. A repeat is a different case to a first.</summary>
+    public int ProbationCount { get; set; }
+    /// <summary>Set when they cleared probation, so a recovery is on the record as one.</summary>
+    public string LastClearedProbationGameTime { get; set; } = "";
+    public bool OnProbation => !string.IsNullOrWhiteSpace(ProbationSince);
     /// <summary>Share of the revenue they generate that goes to their wages.</summary>
     public double WageShare { get; set; } = 0.30;
     public double LifetimeMiles { get; set; }
@@ -893,9 +973,28 @@ public class DriverPeriodResult
     public double Miles { get; set; }
     public decimal Wages { get; set; }
     public decimal Repairs { get; set; }
+    [Obsolete("ATS shows no damage percentage for an AI-driven unit. Kept so older careers still load.")]
     public double DamageAfter { get; set; }
-    /// <summary>Revenue per mile — the number a fleet manager actually judges a driver on.</summary>
+    /// <summary>Revenue per mile, derived from what was booked. See also <see cref="PerMile"/>.</summary>
     public decimal RatePerMile { get; set; }
+
+    // ---- read straight off the game, which is what makes them trustworthy
+
+    /// <summary>Driver level at the end of the period.</summary>
+    public int Level { get; set; }
+    /// <summary>Rating at the end of the period, 0.0-10.0.</summary>
+    public double Rating { get; set; }
+    /// <summary>Average income per mile, as ATS reports it for this driver.</summary>
+    public decimal PerMile { get; set; }
+    /// <summary>Average income per day, as ATS reports it. The productivity figure.</summary>
+    public decimal PerDay { get; set; }
+
+    /// <summary>
+    /// True when the player gave the figures the game shows. A period filed before the app collected
+    /// them is incomplete, not a period where the driver earned nothing — and the difference decides
+    /// whether it can be used as evidence against them.
+    /// </summary>
+    public bool GameFiguresReported { get; set; }
 }
 
 /// <summary>
@@ -953,6 +1052,38 @@ public class FleetReport
     public string FiledUtc { get; set; } = DateTime.UtcNow.ToString("o");
 }
 
+/// <summary>
+/// The company asking for another trailer at a yard.
+///
+/// The app cannot buy anything in ATS, so this is a request with a reason attached: which yard, what
+/// type, and why. The player buys it in game if they want it and reports what they paid — nothing is
+/// booked against a price the app made up.
+/// </summary>
+public class TrailerRequest
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Number { get; set; } = "";
+    /// <summary>Add | Replace — a new box for the yard, or one swapped out.</summary>
+    public string Kind { get; set; } = "Add";
+    public string TerminalId { get; set; } = "";
+    public string TerminalLabel { get; set; } = "";
+    public string TrailerType { get; set; } = "";
+    /// <summary>Which tanker, flatbed variant and so on — "buy a tanker" is not an instruction.</summary>
+    public string Subtype { get; set; } = "";
+    /// <summary>The unit being replaced, when this is a Replace.</summary>
+    public string ReplacingUnit { get; set; } = "";
+    public string Reason { get; set; } = "";
+    public string Instruction { get; set; } = "";
+    public string RaisedGameTime { get; set; } = "";
+    /// <summary>Open | Bought | Declined</summary>
+    public string Status { get; set; } = "Open";
+    /// <summary>What the player actually paid, once they confirm. Never estimated.</summary>
+    public decimal PaidPrice { get; set; }
+    public string ResolvedGameTime { get; set; } = "";
+    /// <summary>Set when the company cannot currently afford it, so the ask is honest about that.</summary>
+    public bool Unaffordable { get; set; }
+}
+
 /// <summary>A unit the fleet report sent for repair.</summary>
 public class RepairFlag
 {
@@ -973,9 +1104,28 @@ public class FleetReportLine
     public string TrailerUnit { get; set; } = "";
     public decimal Revenue { get; set; }
     public double Miles { get; set; }
-    /// <summary>Tractor damage read off the game at the end of the period.</summary>
+
+    // ---- the driver, as ATS shows them
+    /// <summary>Driver level. Open-ended.</summary>
+    public int Level { get; set; }
+    /// <summary>Driver rating, 0.0-10.0 in tenths.</summary>
+    public double Rating { get; set; }
+    /// <summary>Average income per mile, off the game.</summary>
+    public decimal PerMile { get; set; }
+    /// <summary>Average income per day, off the game. This is the productivity number.</summary>
+    public decimal PerDay { get; set; }
+
+    // ---- the equipment, as ATS shows it for a unit we are not sitting in
+    /// <summary>Tractor condition in stars, five down to one. Zero means not reported.</summary>
+    public double TruckStars { get; set; }
+    /// <summary>Tractor odometer read off the game. Zero means not reported.</summary>
+    public double TruckOdometer { get; set; }
+    /// <summary>Trailer condition in stars. Trailers have no odometer, so there is nothing else to read.</summary>
+    public double TrailerStars { get; set; }
+
+    [Obsolete("ATS shows no damage percentage for an AI-driven tractor. Kept so older careers still load.")]
     public double DamagePctAfter { get; set; }
-    /// <summary>Trailer damage read off the game at the end of the period.</summary>
+    [Obsolete("ATS shows no damage percentage for an AI-driven trailer. Kept so older careers still load.")]
     public double TrailerDamagePctAfter { get; set; }
     public decimal Wages { get; set; }
     public decimal Repairs { get; set; }
@@ -1215,6 +1365,21 @@ public class MaintenanceThresholds
     /// it over damage they would happily fix; nobody puts that money into one with 600,000.
     /// </summary>
     public double TotalLossPct { get; set; } = 40;
+
+    /// <summary>
+    /// Stars at or below which a hired driver's tractor should be sold and replaced. Five is a new
+    /// unit; three is worn enough that the company would rather put a fresh one under the driver.
+    /// </summary>
+    public double TruckReplaceStars { get; set; } = 3;
+
+    /// <summary>Stars at or below which a trailer should be replaced.</summary>
+    public double TrailerReplaceStars { get; set; } = 3;
+
+    /// <summary>
+    /// Years before a trailer counts as old. Age alone is not a reason to replace one — an old box
+    /// still earning is fine — but old and unproductive together is.
+    /// </summary>
+    public double TrailerOldYears { get; set; } = 8;
 
     /// <summary>The mileage at which a tractor is treated as fully worn for write-off purposes.</summary>
     public double WriteOffLifeMiles { get; set; } = 800_000;

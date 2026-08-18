@@ -571,6 +571,16 @@ public static class Carriers
     /// stored. Empty for a code we do not recognise — a fictional carrier has no real network to honour,
     /// and returning a guess would invent terminals the company does not have.
     /// </summary>
+    /// <summary>
+    /// What a carrier code is like to work for: pay stars and home-time stars. Zeroes for a code we do
+    /// not recognise, because a generated carrier has no published standing to look up.
+    /// </summary>
+    public static (int Pay, int HomeTime) StandingFor(string? code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        return spec == null ? (0, 0) : (spec.PayStars, spec.HomeTimeStars);
+    }
+
     public static List<string> NetworkCitiesFor(string? code)
     {
         var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
@@ -597,6 +607,10 @@ public static class Carriers
             TerminalState = spec.HqState,
             Founded = "2009",
             EquipmentStars = spec.EquipmentStars,
+            // What this carrier is like to work for. Decides how well the fleet holds onto drivers:
+            // a good outfit keeps its people, a poor one trains them up and watches them leave.
+            PayStars = spec.PayStars,
+            HomeTimeStars = spec.HomeTimeStars,
             Divisions = spec.Divisions.ToList(),
             OperatingAuthorityNotes = $"48-state common carrier authority. {string.Join(" / ", spec.Divisions)} divisions.",
             // Where this carrier actually runs terminals. A company driver does not decide where their

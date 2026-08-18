@@ -127,48 +127,59 @@ public static class FleetOpsService
                 LedgerService.Post(s, LedgerService.Operating, -line.Repairs, "Repairs",
                     $"Unit {line.TruckUnit} — {driver.Name}", report.Number);
 
-            // Trailer condition, where the driver is on a company trailer.
+            // Trailer condition, where the driver is on a company trailer. ATS shows stars for a
+            // trailer we are not hooked to, never a percentage, so stars are what we record.
             if (string.IsNullOrWhiteSpace(line.TrailerUnit)) line.TrailerUnit = driver.AssignedTrailerUnit;
             var trailer = s.Trailers.FirstOrDefault(t => t.Unit == line.TrailerUnit);
-            if (trailer != null && line.TrailerDamagePctAfter > 0)
+            if (trailer != null)
             {
-                trailer.DamagePct = line.TrailerDamagePctAfter;
                 trailer.ServiceMiles = Math.Round(trailer.ServiceMiles + line.Miles, 0);
                 trailer.InGameGarage = true;
-                var (tStatus, tDirective) = MaintenanceService.Assess(s.Settings, trailer.DamagePct, $"Trailer {trailer.Unit}");
-                if (tStatus is "MandatoryReview" or "OutOfService")
+                if (line.TrailerStars > 0)
                 {
-                    report.Findings.Add($"{driver.Name}: {tDirective}");
-                    report.RepairsNeeded.Add(new RepairFlag
-                    {
-                        Unit = trailer.Unit, UnitKind = "Trailer", DriverName = driver.Name,
-                        DamagePct = trailer.DamagePct, Directive = tDirective,
-                        OutOfService = tStatus == "OutOfService"
-                    });
+                    var tStarsBefore = trailer.Stars;
+                    trailer.Stars = line.TrailerStars;
+                    trailer.StarsReportedGameTime = report.PeriodEndGame;
+                    if (tStarsBefore > 0 && trailer.Stars < tStarsBefore)
+                        report.Findings.Add($"Trailer {trailer.Unit} dropped from {tStarsBefore:0.#} to {trailer.Stars:0.#} stars.");
                 }
+                // A trailer with no acquisition date on file gets one now, so age starts counting from
+                // the first period we saw it rather than never.
+                if (string.IsNullOrWhiteSpace(trailer.AcquiredGameTime))
+                    trailer.AcquiredGameTime = report.PeriodEndGame;
             }
 
-            // Equipment condition and mileage come from the game reading.
+            // Tractor condition and mileage come from the game reading: stars and an odometer. There
+            // is no damage percentage to be had for a unit we are not sitting in, so none is asked for.
             var truck = s.Trucks.FirstOrDefault(t => t.Unit == line.TruckUnit);
             if (truck != null)
             {
-                var before = truck.DamagePct;
-                truck.ServiceMiles = Math.Round(truck.ServiceMiles + line.Miles, 0);
-                truck.AtsOdometer = Math.Round(truck.AtsOdometer + line.Miles, 0);
-                truck.DamagePct = line.DamagePctAfter;
+                var starsBefore = truck.Stars;
                 truck.InGameGarage = true;
 
-                var (status, directive) = MaintenanceService.Assess(s.Settings, truck.DamagePct, $"Unit {truck.Unit}");
-                if (status != "Monitor") report.Findings.Add($"{driver.Name}: {directive}");
-                if (status is "MandatoryReview" or "OutOfService")
-                    report.RepairsNeeded.Add(new RepairFlag
-                    {
-                        Unit = truck.Unit, UnitKind = "Truck", DriverName = driver.Name,
-                        DamagePct = truck.DamagePct, Directive = directive,
-                        OutOfService = status == "OutOfService"
-                    });
-                if (line.DamagePctAfter - before >= 10)
-                    report.Findings.Add($"{driver.Name} put {line.DamagePctAfter - before:0.#} points on unit {truck.Unit} this period.");
+                // The odometer the player read off the game beats anything we accumulated from
+                // estimated trip miles. Where the two disagree, the game is right.
+                if (line.TruckOdometer > 0)
+                {
+                    var moved = line.TruckOdometer - truck.AtsOdometer;
+                    if (moved < 0)
+                        report.Findings.Add($"Unit {truck.Unit}: odometer reads {line.TruckOdometer:N0}, lower than the {truck.AtsOdometer:N0} on file. Check the reading.");
+                    truck.ServiceMiles = Math.Round(truck.ServiceMiles + (moved > 0 ? moved : Math.Max(0, line.Miles)), 0);
+                    truck.AtsOdometer = line.TruckOdometer;
+                }
+                else
+                {
+                    truck.ServiceMiles = Math.Round(truck.ServiceMiles + line.Miles, 0);
+                    truck.AtsOdometer = Math.Round(truck.AtsOdometer + line.Miles, 0);
+                }
+
+                if (line.TruckStars > 0)
+                {
+                    truck.Stars = line.TruckStars;
+                    truck.StarsReportedGameTime = report.PeriodEndGame;
+                    if (starsBefore > 0 && truck.Stars < starsBefore)
+                        report.Findings.Add($"Unit {truck.Unit} dropped from {starsBefore:0.#} to {truck.Stars:0.#} stars under {driver.Name}.");
+                }
 
                 var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
                 if (sinceService >= truck.ServiceIntervalMiles)
@@ -179,6 +190,12 @@ public static class FleetOpsService
             driver.LifetimeRevenue = Math.Round(driver.LifetimeRevenue + booked, 2);
             driver.LifetimeWages = Math.Round(driver.LifetimeWages + line.Wages, 2);
             driver.ReportsFiled++;
+
+            // Level and rating are the driver's standing now, so they sit on the driver as well as in
+            // the period: a trend needs the history, a decision needs the latest.
+            if (line.Level > 0) driver.Level = line.Level;
+            if (line.Rating > 0) driver.Rating = line.Rating;
+
             driver.Periods.Insert(0, new DriverPeriodResult
             {
                 ReportNumber = report.Number,
@@ -187,8 +204,13 @@ public static class FleetOpsService
                 Miles = line.Miles,
                 Wages = line.Wages,
                 Repairs = line.Repairs,
-                DamageAfter = line.DamagePctAfter,
-                RatePerMile = line.Miles > 0 ? Math.Round(booked / (decimal)line.Miles, 3) : 0
+                RatePerMile = line.Miles > 0 ? Math.Round(booked / (decimal)line.Miles, 3) : 0,
+                Level = line.Level,
+                Rating = line.Rating,
+                PerMile = line.PerMile,
+                PerDay = line.PerDay,
+                // Only a period where the game figures were actually given can be evidence.
+                GameFiguresReported = line.PerDay > 0 || line.PerMile > 0
             });
             if (driver.Periods.Count > 12) driver.Periods.RemoveRange(12, driver.Periods.Count - 12);
 
@@ -231,6 +253,8 @@ public static class FleetOpsService
         // on this period's figures rather than the last one's.
         ResolvePersonnel(s, report);
         AssessRetirements(s, report);
+        // The company may also want another box somewhere. Occasional, and always an ask.
+        TrailerFleet.Consider(s, report);
 
         report.NetContribution = Math.Round(report.TotalRevenue - report.TotalWages - report.TotalRepairs, 2);
         if (report.NetContribution < 0)
@@ -243,61 +267,113 @@ public static class FleetOpsService
     }
 
     /// <summary>
-    /// Who is leaving, and why.
+    /// Probation, termination and resignation, resolved on this period's figures.
     ///
-    /// Two ways out. A driver who has produced badly for several periods running gets a termination
-    /// RECOMMENDED with the figures attached — it is the player's company, so they confirm it. A
-    /// driver may also simply resign, occasionally and without notice, which is what actually happens
-    /// in a fleet; that one is applied on the spot.
+    /// Three ways this goes. A bad period puts a driver on <b>probation</b> — a carrier does not sack
+    /// someone over one weak fortnight, it says what has to change and looks again next report. Fail
+    /// probation, or land on it twice, and a <b>termination</b> is recommended with the documented
+    /// history attached; it is the player's company, so they confirm it. And a driver may simply
+    /// <b>resign</b>, which is applied on the spot because nobody asks permission to quit.
     ///
-    /// Both are seeded on the driver and the report so reloading cannot re-roll the outcome.
+    /// The judgement is made on what ATS actually shows: $/day and $/mile. Level and rating are context
+    /// for what to expect of them, not the verdict — a level 2 driver earning less than a level 9 is
+    /// new, not failing.
+    ///
+    /// All of it is seeded on the driver and the report so reloading cannot re-roll an outcome.
     /// </summary>
     private static void ResolvePersonnel(AppState s, FleetReport report)
     {
         var active = s.HiredDrivers.Where(d => d.Status == "Active").ToList();
         if (active.Count == 0) return;
 
-        // The bar is the fleet's own average, not an absolute figure — it moves with the economy mod,
-        // the map and the freight the player is running.
-        var fleetRpm = report.TotalMiles > 0 ? report.TotalRevenue / (decimal)report.TotalMiles : 0;
+        // The bar is the fleet's own, not an absolute figure — it moves with the economy mod, the map
+        // and the freight the player is running. Only periods where the player actually gave us the
+        // game figures count toward it; an unreported period is missing data, not a zero.
+        var reported = active
+            .SelectMany(d => d.Periods.Where(x => x.GameFiguresReported))
+            .ToList();
+        var fleetPerDay = reported.Count > 0 ? reported.Average(x => x.PerDay) : 0m;
+        var fleetPerMile = reported.Count > 0 ? reported.Average(x => x.PerMile) : 0m;
 
         foreach (var d in active)
         {
-            var recent = d.Periods.Take(3).ToList();
-            if (recent.Count == 0) continue;
+            var latest = d.Periods.FirstOrDefault();
+            if (latest == null) continue;
 
-            // ---- the case for termination
-            if (recent.Count >= 3 && fleetRpm > 0)
+            var judgeable = latest.GameFiguresReported && (fleetPerDay > 0 || fleetPerMile > 0);
+            var why = "";
+            var weak = judgeable && Underperforming(d, latest, fleetPerDay, fleetPerMile, out why);
+
+            // ---- probation, or the end of it
+            if (judgeable)
             {
-                var avgRpm = recent.Average(p => p.RatePerMile);
-                var repairs = recent.Sum(p => p.Repairs);
-                var damage = recent.Max(p => p.DamageAfter);
-                var evidence = new List<string>();
-
-                if (avgRpm < fleetRpm * 0.7m)
-                    evidence.Add($"Averaged ${avgRpm:0.00}/mi over {recent.Count} periods against a fleet average of ${fleetRpm:0.00}.");
-                if (repairs >= 3000m)
-                    evidence.Add($"Put ${repairs:N0} through the shop in that time.");
-                if (damage >= s.Settings.Maintenance.MandatoryReviewPct)
-                    evidence.Add($"Handed the truck back at {damage:0.#}% damage.");
-
-                if (evidence.Count >= 2)
+                if (d.OnProbation && !weak)
                 {
+                    // Turned it around. That is worth saying, and it matters for the next decision:
+                    // a driver who has recovered once is not the same case as one who never has.
+                    d.ProbationSince = "";
+                    d.ProbationReason = "";
+                    d.ProbationTarget = "";
+                    d.LastClearedProbationGameTime = report.PeriodEndGame;
+                    report.Personnel.Add(new PersonnelChange
+                    {
+                        DriverId = d.Id, DriverName = d.Name, Kind = "ProbationLifted", Pending = false,
+                        Headline = $"{d.Name} is off probation — the numbers came back.",
+                        Evidence = { ProductionLine(latest, fleetPerDay, fleetPerMile) },
+                        TruckUnit = d.AssignedTruckUnit, TrailerUnit = d.AssignedTrailerUnit
+                    });
+                    continue;
+                }
+
+                if (weak && !d.OnProbation)
+                {
+                    // First bad period: a warning with a stated target, not a sacking. Probation with
+                    // no number to beat is just a threat.
+                    d.ProbationSince = report.PeriodEndGame;
+                    d.ProbationCount++;
+                    d.ProbationReason = why;
+                    d.ProbationTarget = fleetPerDay > 0
+                        ? $"$/day back above the ${fleetPerDay:N0} fleet average by the next report."
+                        : $"$/mi back above the ${fleetPerMile:0.00} fleet average by the next report.";
+                    report.Personnel.Add(new PersonnelChange
+                    {
+                        DriverId = d.Id, DriverName = d.Name, Kind = "Probation", Pending = false,
+                        Headline = $"{d.Name} is on probation.",
+                        Evidence = { why, d.ProbationTarget },
+                        TruckUnit = d.AssignedTruckUnit, TrailerUnit = d.AssignedTrailerUnit
+                    });
+                    continue;   // a warning this period, not also a resignation roll
+                }
+
+                // ---- failed probation: now there is a case, and it has history behind it
+                if (weak && d.OnProbation)
+                {
+                    var evidence = new List<string> { why };
+                    var priorEnd = GameClock.Pretty(d.ProbationSince);
+                    evidence.Add($"Warned on {priorEnd} and told: {d.ProbationTarget}");
+                    evidence.Add("The next period came in no better.");
+                    if (d.ProbationCount > 1)
+                        evidence.Add($"This is probation number {d.ProbationCount} for this driver.");
+                    if (!string.IsNullOrWhiteSpace(d.LastClearedProbationGameTime))
+                        evidence.Add($"They did recover once before, on {GameClock.Pretty(d.LastClearedProbationGameTime)}.");
+                    var repairs = d.Periods.Take(3).Sum(x => x.Repairs);
+                    if (repairs >= 3000m)
+                        evidence.Add($"Also put ${repairs:N0} through the shop over the last three periods.");
+
                     report.Personnel.Add(new PersonnelChange
                     {
                         DriverId = d.Id, DriverName = d.Name, Kind = "Terminated", Pending = true,
-                        Headline = $"{d.Name} is not carrying their unit. Recommend termination.",
+                        Headline = $"{d.Name} failed probation. Recommend termination.",
                         Evidence = evidence,
                         TruckUnit = d.AssignedTruckUnit, TrailerUnit = d.AssignedTrailerUnit
                     });
-                    continue;   // do not also roll them for resignation
+                    continue;
                 }
             }
 
             // ---- or they just quit
-            // Deliberately uncommon: roughly one period in fourteen, and never in a driver's first.
             if (d.ReportsFiled < 2) continue;
-            if (Hash($"{d.Id}|quit|{report.Number}") % 100 >= 7) continue;
+            if (Hash($"{d.Id}|quit|{report.Number}") % 1000 >= ResignationChancePerMille(s, d)) continue;
 
             var change = new PersonnelChange
             {
@@ -305,25 +381,135 @@ public static class FleetOpsService
                 Headline = $"{d.Name} has handed their notice in.",
                 TruckUnit = d.AssignedTruckUnit, TrailerUnit = d.AssignedTrailerUnit
             };
-            change.Evidence.Add(ResignationReason(d, report));
-            change.Evidence.Add($"{d.ReportsFiled} period(s) with us, {d.LifetimeMiles:N0} mi, ${d.LifetimeRevenue:N0} brought in.");
+            change.Evidence.Add(ResignationReason(s, d, report));
+            change.Evidence.Add($"{d.ReportsFiled} period(s) with us, {d.LifetimeMiles:N0} mi, ${d.LifetimeRevenue:N0} brought in." +
+                                (d.Level > 0 ? $" Level {d.Level}." : ""));
             report.Personnel.Add(change);
             Separate(s, d, "Resigned", change.Evidence[0]);
         }
     }
 
-    /// <summary>Drivers leave for reasons the office rarely learns. Seeded so it does not re-roll.</summary>
-    private static string ResignationReason(HiredDriver d, FleetReport report)
+    /// <summary>
+    /// Is this driver failing, on the figures the game actually gives us?
+    ///
+    /// $/day is the productivity number and $/mile is the rate number. Failing one badly, or both
+    /// mildly, is the case. Level is context: a new driver is expected to produce less, so the bar
+    /// scales down for them rather than punishing them for being new.
+    /// </summary>
+    private static bool Underperforming(HiredDriver d, DriverPeriodResult p,
+        decimal fleetPerDay, decimal fleetPerMile, out string why)
     {
-        var reasons = new[]
+        why = "";
+
+        // A developing driver is held to a lower bar. Level 1-3 is someone still learning the job.
+        var allowance = d.Level > 0 && d.Level <= 3 ? 0.55m : 0.70m;
+        var levelNote = d.Level > 0 && d.Level <= 3
+            ? $" (allowing for a level {d.Level} driver still developing)"
+            : d.Level > 0 ? $" at level {d.Level}" : "";
+
+        var dayShort = fleetPerDay > 0 && p.PerDay > 0 && p.PerDay < fleetPerDay * allowance;
+        var mileShort = fleetPerMile > 0 && p.PerMile > 0 && p.PerMile < fleetPerMile * allowance;
+
+        if (dayShort && mileShort)
         {
-            "No reason given — took a job closer to home.",
-            "Leaving the industry.",
-            "Family reasons; did not want to discuss it.",
-            "Went to a competitor for better miles.",
-            "Retiring.",
-            "No reason given."
-        };
+            why = $"${p.PerDay:N0}/day and ${p.PerMile:0.00}/mi against fleet averages of " +
+                  $"${fleetPerDay:N0} and ${fleetPerMile:0.00}{levelNote}.";
+            return true;
+        }
+        if (dayShort)
+        {
+            why = $"${p.PerDay:N0}/day against a fleet average of ${fleetPerDay:N0}{levelNote}.";
+            return true;
+        }
+        if (mileShort)
+        {
+            why = $"${p.PerMile:0.00}/mi against a fleet average of ${fleetPerMile:0.00}{levelNote}.";
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>How the period's production reads, for saying why probation was lifted.</summary>
+    private static string ProductionLine(DriverPeriodResult p, decimal fleetPerDay, decimal fleetPerMile) =>
+        $"${p.PerDay:N0}/day and ${p.PerMile:0.00}/mi this period, against fleet averages of " +
+        $"${fleetPerDay:N0} and ${fleetPerMile:0.00}.";
+
+    /// <summary>
+    /// The chance in a thousand that a driver quits this period.
+    ///
+    /// Two things drive it. A <b>developed driver</b> has options — level is what makes someone worth
+    /// poaching, so losing one is a consequence of having built them up rather than bad luck. And a
+    /// <b>weak employer</b> loses people faster: a five-star outfit holds onto its drivers, a two-star
+    /// one trains them and watches them leave. That is what makes working up the carrier ladder worth
+    /// something on the fleet side and not just on the player's own payslip.
+    ///
+    /// Capped deliberately. A high-level driver at a poor carrier should be a real risk, not a
+    /// certainty — if the player cannot keep anybody the mechanic has stopped being interesting.
+    /// </summary>
+    public static int ResignationChancePerMille(AppState s, HiredDriver d)
+    {
+        var chance = 40.0;                                    // 4% baseline, as before
+
+        // Level is open-ended in ATS. Every level above 3 adds risk, flattening out at the top end.
+        var level = Math.Max(0, d.Level);
+        if (level > 3) chance += Math.Min(90, (level - 3) * 11.0);
+
+        // The employer's standing is the multiplier. Three stars is the neutral middle.
+        var stars = s.Company.EmployerStars;
+        if (stars > 0) chance *= Math.Clamp(1.0 + (3.0 - stars) * 0.35, 0.35, 2.1);
+
+        // Someone the company is already unhappy with is likelier to read the room and go.
+        if (d.OnProbation) chance *= 1.4;
+
+        return (int)Math.Clamp(Math.Round(chance), 5, 200);    // never certain, never impossible
+    }
+
+    /// <summary>
+    /// Whether a driver looks like a flight risk. Not a prediction of the roll — a fleet manager can
+    /// see plainly that a developed driver at a weak carrier is not going to stay forever.
+    /// </summary>
+    public static string? FlightRisk(AppState s, HiredDriver d)
+    {
+        if (d.Status != "Active" || d.Level <= 4) return null;
+        var chance = ResignationChancePerMille(s, d);
+        if (chance < 80) return null;
+        var stars = s.Company.EmployerStars;
+        var employer = string.IsNullOrWhiteSpace(s.Company.Name) ? "this carrier" : s.Company.Name;
+        return stars > 0 && stars < 3.5
+            ? $"{d.Name} is level {d.Level} and {employer} rates {stars:0.#} stars as an employer. " +
+              "Drivers that good do not stay at outfits that middling — expect to lose them."
+            : $"{d.Name} is level {d.Level}. Developed drivers get approached; do not be surprised if they go.";
+    }
+
+    /// <summary>
+    /// Drivers leave for reasons the office rarely learns. Seeded so it does not re-roll.
+    ///
+    /// Which reason fires should fit the driver and the employer. A developed driver walking out of a
+    /// middling carrier went somewhere better, and saying so is the honest version of the story — it
+    /// tells the player what the actual problem is.
+    /// </summary>
+    private static string ResignationReason(AppState s, HiredDriver d, FleetReport report)
+    {
+        var stars = s.Company.EmployerStars;
+        var poached = d.Level >= 5 && stars > 0 && stars < 3.5;
+
+        var reasons = poached
+            ? new[]
+            {
+                "Went to a competitor for better miles.",
+                "Took an offer from a carrier paying more per mile.",
+                "Left for better equipment somewhere else.",
+                "Poached — would not say by whom, but they did not haggle."
+            }
+            : new[]
+            {
+                "No reason given — took a job closer to home.",
+                "Leaving the industry.",
+                "Family reasons; did not want to discuss it.",
+                "Went to a competitor for better miles.",
+                "Retiring.",
+                "No reason given."
+            };
         return reasons[Hash($"{d.Id}|why|{report.Number}") % (uint)reasons.Length];
     }
 
@@ -383,20 +569,37 @@ public static class FleetOpsService
             // Never retire a unit that is out on a load.
             if (s.Trips.Any(x => x.Status is "Authorized" or "InTransit" && x.TruckUnit == t.Unit)) continue;
 
+            var driver = s.HiredDrivers.FirstOrDefault(d => d.AssignedTruckUnit == t.Unit && d.Status == "Active");
+            var isMine = t.Unit == s.Driver.AssignedTruckUnit;
+
             var evidence = new List<string>();
             var high = t.ServiceMiles >= 700_000;
             var costly = t.LifetimeRepairCost >= 12_000m;
-            var beaten = t.DamagePct >= s.Settings.Maintenance.MandatoryReviewPct;
+
+            // Condition reads differently depending on who is in the seat. The player's own tractor has
+            // a damage percentage because they can see the repair screen; a hired driver's unit has a
+            // star rating and nothing else, because that is all ATS shows for it.
+            var starLimit = s.Settings.Maintenance.TruckReplaceStars;
+            var wornOut = !isMine && t.Stars > 0 && t.Stars <= starLimit;
+            var beaten = isMine && t.DamagePct >= s.Settings.Maintenance.MandatoryReviewPct;
 
             if (high) evidence.Add($"{t.ServiceMiles:N0} company-service miles.");
             if (costly) evidence.Add($"${t.LifetimeRepairCost:N0} in repairs against it.");
             if (beaten) evidence.Add($"Sitting at {t.DamagePct:0.#}% damage.");
+            if (wornOut) evidence.Add($"Down to {t.Stars:0.#} stars — at or under our {starLimit:0.#}-star replacement line.");
 
-            // Two reasons, not one. Mileage on its own is just a well-used truck.
-            if (evidence.Count < 2) continue;
-
-            var driver = s.HiredDrivers.FirstOrDefault(d => d.AssignedTruckUnit == t.Unit && d.Status == "Active");
-            var isMine = t.Unit == s.Driver.AssignedTruckUnit;
+            // Stars at the limit are reason enough on their own for a hired driver's unit: that is the
+            // company's stated line, and the odometer and repair spend go alongside as the supporting
+            // case. Everything else needs two reasons, because mileage alone is a well-used truck.
+            if (!wornOut && evidence.Count < 2) continue;
+            if (wornOut)
+            {
+                if (t.AtsOdometer > 0) evidence.Add($"Odometer reads {t.AtsOdometer:N0}.");
+                if (!high && !costly)
+                    evidence.Add(t.LifetimeRepairCost > 0
+                        ? $"${t.LifetimeRepairCost:N0} spent on it so far — replace it before that climbs."
+                        : "Nothing serious spent on it yet, and that is the point of going now.");
+            }
             var spare = BestSpare(s, t);
 
             // Your own truck goes to trade like anyone else's — the company just puts you in another.
@@ -414,7 +617,9 @@ public static class FleetOpsService
                 UnitKind = "Truck",
                 Headline = isMine
                     ? $"Unit {t.Unit} ({t.Year} {t.Make} {t.Model}) — your own truck — is due for trade."
-                    : $"Unit {t.Unit} ({t.Year} {t.Make} {t.Model}) has done its time. Recommend trading it.",
+                    : wornOut
+                        ? $"Unit {t.Unit} ({t.Year} {t.Make} {t.Model}) is down to {t.Stars:0.#} stars. Recommend selling it and replacing it."
+                        : $"Unit {t.Unit} ({t.Year} {t.Make} {t.Model}) has done its time. Recommend trading it.",
                 Evidence = evidence,
                 ServiceMiles = t.ServiceMiles,
                 RepairSpend = t.LifetimeRepairCost,
@@ -422,6 +627,88 @@ public static class FleetOpsService
                 AssignedTo = t.Unit == s.Driver.AssignedTruckUnit ? s.Driver.Name : driver?.Name ?? "",
                 IsPlayerUnit = t.Unit == s.Driver.AssignedTruckUnit
             });
+        }
+
+        AssessTrailers(s, report);
+    }
+
+    /// <summary>
+    /// Trailers due for replacement.
+    ///
+    /// A trailer has a star rating and no odometer, so the signals are different from a tractor's:
+    /// stars where they have dropped, and <b>age</b> where they have not. Whether trailer stars ever
+    /// actually fall in ATS is not certain, which is exactly why age has to stand on its own — an old
+    /// box still earning is fine, an old box earning nothing is the one to get rid of.
+    ///
+    /// The player's own trailer is never touched here. Telling someone mid-lane that the box behind
+    /// them is being swapped is confusing and they cannot act on it anyway; their trailer changes at
+    /// home time, where they are parked at the yard and can actually do it. See HomeTime.
+    /// </summary>
+    private static void AssessTrailers(AppState s, FleetReport report)
+    {
+        var m = s.Settings.Maintenance;
+        var now = GameClock.TryParse(report.PeriodEndGame) ?? GameClock.TryParse(s.Status.GameTime);
+
+        foreach (var tr in s.Trailers.Where(x => !x.Retired && x.InGameGarage))
+        {
+            // Hands off the one the player is pulling.
+            if (tr.Unit == s.Driver.AssignedTrailerUnit) continue;
+            if (s.Trips.Any(x => x.Status is "Authorized" or "InTransit" && x.TrailerUnit == tr.Unit)) continue;
+
+            var holder = s.HiredDrivers.FirstOrDefault(d => d.AssignedTrailerUnit == tr.Unit && d.Status == "Active");
+
+            var starsGone = tr.Stars > 0 && tr.Stars <= m.TrailerReplaceStars;
+
+            double? ageYears = null;
+            if (now != null && GameClock.TryParse(tr.AcquiredGameTime) is { } got)
+                ageYears = (now.Value - got).TotalDays / 365.0;
+            var old = ageYears is { } a && a >= m.TrailerOldYears;
+
+            // Productivity of whoever is on it. An old trailer under a driver who is doing fine is not
+            // a problem to solve — it is a trailer doing its job.
+            var unproductive = false;
+            var latest = holder?.Periods.FirstOrDefault();
+            if (latest is { GameFiguresReported: true, PerDay: > 0 })
+            {
+                var fleetDay = s.HiredDrivers
+                    .SelectMany(d => d.Periods)
+                    .Where(x => x.GameFiguresReported && x.PerDay > 0)
+                    .Select(x => x.PerDay)
+                    .DefaultIfEmpty(0m)
+                    .Average();
+                unproductive = fleetDay > 0 && latest.PerDay < fleetDay * 0.7m;
+            }
+
+            if (!starsGone && !(old && unproductive)) continue;
+
+            var evidence = new List<string>();
+            var reason = starsGone ? "condition" : "age and production";
+
+            if (starsGone)
+                evidence.Add($"Down to {tr.Stars:0.#} stars — at or under our {m.TrailerReplaceStars:0.#}-star line.");
+            if (ageYears is { } yrs)
+                evidence.Add($"About {yrs:0.#} years in the fleet.");
+            if (old && unproductive)
+                evidence.Add("Old, and what it is pulling is not paying. Either reason alone would be fine; together they are not.");
+            if (holder != null) evidence.Add($"Currently under {holder.Name}.");
+            evidence.Add($"Replace with the same {tr.Type.ToLowerInvariant()}, or re-rig for whatever the lane is actually offering — " +
+                         "buy it in ATS and confirm it here.");
+
+            report.Retirements.Add(new RetirementRecommendation
+            {
+                Unit = tr.Unit,
+                UnitKind = "Trailer",
+                Headline = starsGone
+                    ? $"Trailer {tr.Unit} ({tr.Type}) is down to {tr.Stars:0.#} stars. Recommend replacing it."
+                    : $"Trailer {tr.Unit} ({tr.Type}) is old and not earning. Worth replacing.",
+                Evidence = evidence,
+                ServiceMiles = tr.ServiceMiles,
+                DamagePct = 0,
+                AssignedTo = holder?.Name ?? "",
+                IsPlayerUnit = false
+            });
+
+            report.Findings.Add($"Trailer {tr.Unit}: replacement recommended on {reason}.");
         }
     }
 
@@ -613,7 +900,21 @@ public static class FleetOpsService
             UnassignedUnits = s.Trucks
                 .Where(t => t.Unit != s.Driver.AssignedTruckUnit
                             && !s.HiredDrivers.Any(d => d.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase)))
-                .Select(t => t.Unit).ToList()
+                .Select(t => t.Unit).ToList(),
+            OnProbation = active.Where(d => d.OnProbation).Select(d => new ProbationView
+            {
+                DriverId = d.Id,
+                DriverName = d.Name,
+                Since = d.ProbationSince,
+                Reason = d.ProbationReason,
+                Target = d.ProbationTarget,
+                Attempt = d.ProbationCount
+            }).ToList(),
+            // A fleet manager can see plainly that a developed driver at a middling outfit will not
+            // stay. Not a prediction of the roll — just the observation.
+            FlightRisks = active.Select(d => FlightRisk(s, d)).Where(x => x != null).Select(x => x!).ToList(),
+            EmployerStars = s.Company.EmployerStars,
+            TrailerRequest = TrailerFleet.Open(s)
         };
     }
 }
@@ -630,6 +931,18 @@ public class FleetReportDue
     public string Message { get; set; } = "";
 }
 
+/// <summary>A driver on notice, and what they have to do about it.</summary>
+public class ProbationView
+{
+    public string DriverId { get; set; } = "";
+    public string DriverName { get; set; } = "";
+    public string Since { get; set; } = "";
+    public string Reason { get; set; } = "";
+    public string Target { get; set; } = "";
+    /// <summary>How many times they have been here. A repeat is a different case to a first.</summary>
+    public int Attempt { get; set; }
+}
+
 public class FleetOpsSummary
 {
     public FleetReportDue Due { get; set; } = new();
@@ -641,4 +954,12 @@ public class FleetOpsSummary
     public int ReportCount { get; set; }
     public string LastPeriodEnd { get; set; } = "";
     public List<string> UnassignedUnits { get; set; } = new();
+    /// <summary>Drivers currently on notice after a weak period.</summary>
+    public List<ProbationView> OnProbation { get; set; } = new();
+    /// <summary>Drivers good enough that a better carrier will come for them.</summary>
+    public List<string> FlightRisks { get; set; } = new();
+    /// <summary>How this carrier rates as an employer, 1-5. Retention hangs off it.</summary>
+    public double EmployerStars { get; set; }
+    /// <summary>An outstanding request to buy a trailer, if there is one.</summary>
+    public TrailerRequest? TrailerRequest { get; set; }
 }

@@ -745,6 +745,23 @@ app.MapPost("/api/fleetops/retire", (RetireRequest req) => Results.Ok(store.Muta
     return new { snapshot = Snapshot(s), message };
 })));
 
+// The company asking for a trailer. It cannot buy one, so the player does and reports the price.
+app.MapPost("/api/fleetops/trailer-request/confirm", (TrailerBoughtRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var trailer = TrailerFleet.Confirm(s, req.RequestId, req.Unit, req.PaidPrice, req.GameTime ?? "");
+    var message = $"Trailer {trailer.Unit} ({trailer.Type}) added to the fleet.";
+    store.Log(s, "maintenance", message);
+    return new { snapshot = Snapshot(s), message };
+})));
+
+app.MapPost("/api/fleetops/trailer-request/decline", (TrailerDeclineRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var declined = TrailerFleet.Decline(s, req.RequestId, req.GameTime ?? "");
+    var message = $"{declined.Number} declined — I will not ask about {declined.TrailerType} at {declined.TerminalLabel} again.";
+    store.Log(s, "maintenance", message);
+    return new { snapshot = Snapshot(s), message };
+})));
+
 app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mutate(s =>
 {
     var filed = FleetOpsService.FileReport(s, report);
@@ -1387,6 +1404,8 @@ record BalanceRequest(decimal? Balance, string? GameTime);
 record ForgiveRequest(string? Reason, bool Force);
 record TerminateRequest(string DriverId, string? Reason);
 record RetireRequest(string Unit, string? ReplacementUnit);
+record TrailerBoughtRequest(string RequestId, string Unit, decimal PaidPrice, string? GameTime);
+record TrailerDeclineRequest(string RequestId, string? GameTime);
 record DedicatedRequest(bool OnDedicated, string? Account);
 record FacilityTimeRequest(string TrailerType, double LoadingHours, double UnloadingHours, bool Manual);
 record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? TransmissionPreference, bool AddTrailers);

@@ -2031,11 +2031,37 @@ function fleetDecisionsHtml() {
   const pending = FLEETOPS?.pendingTerminations || [];
   const retire = FLEETOPS?.retirements || [];
   const open = FLEETOPS?.openUnits || [];
-  if (!pending.length && !retire.length && !open.length) return '';
+  const probation = S.views.fleetOps?.onProbation || [];
+  const risks = S.views.fleetOps?.flightRisks || [];
+  const ask = S.views.fleetOps?.trailerRequest || null;
+  const count = pending.length + retire.length + open.length + probation.length + (ask ? 1 : 0);
+  if (!count && !risks.length) return '';
 
   return `<div class="panel">
     <div class="panel-head"><h2>Decisions from the last report</h2>
-      ${badge('warn', (pending.length + retire.length + open.length) + ' outstanding')}</div>
+      ${count ? badge('warn', count + ' outstanding') : badge('mute', 'nothing outstanding')}</div>
+
+    ${probation.map((pr) => `<div class="callout warn">
+      <h4>${esc(pr.driverName)} is on probation${pr.attempt > 1 ? ` (time ${pr.attempt})` : ''}</h4>
+      <p>${esc(pr.reason)}</p>
+      <p><b>To clear it:</b> ${esc(pr.target)}</p>
+      <p class="hint">Warned ${gt(pr.since)}. Nothing for you to do — if the next report comes in no
+        better, operations will recommend letting them go. If it improves, they come off it.</p>
+    </div>`).join('')}
+
+    ${ask ? `<div class="callout ${ask.unaffordable ? 'warn' : 'info'}">
+      <h4>${esc(ask.number)} — ${ask.kind === 'Add' ? 'another trailer' : 'trailer replacement'} for ${esc(ask.terminalLabel)}</h4>
+      <p>${esc(ask.reason)}</p>
+      <p><b>${esc(ask.instruction)}</b></p>
+      ${ask.unaffordable ? '' : `<div class="grid3" style="margin-top:8px">
+        <label>Unit number<input id="tq-unit" placeholder="e.g. T512"></label>
+        <label>What you paid $<input id="tq-price" type="number" step="1" min="0" placeholder="from ATS"></label>
+        ${dayTimeInput('tq-time', S.status.gameTime, 'Bought (game)')}
+      </div>`}
+      <div class="row-actions">
+        ${ask.unaffordable ? '' : `<button class="btn go" data-act="trailer-bought" data-id="${esc(ask.id)}">I bought it</button>`}
+        <button class="btn ghost" data-act="trailer-declined" data-id="${esc(ask.id)}">Not interested</button>
+      </div></div>` : ''}
 
     ${pending.map((p) => `<div class="callout stop">
       <h4>${esc(p.headline)}</h4>
@@ -2069,6 +2095,12 @@ function fleetDecisionsHtml() {
           <button class="btn" data-act="add-hire">Hire a driver for it</button>
           ${u.betterThanYours ? `<button class="btn go" data-act="take-unit" data-unit="${esc(u.unit)}">Take it myself</button>` : ''}
         </div></div>`).join('')}` : ''}
+
+    ${risks.length ? `<h3 class="sect">Worth knowing</h3>
+      ${risks.map((r) => `<p class="hint" style="margin:4px 0">${esc(r)}</p>`).join('')}
+      ${(S.views.fleetOps?.employerStars || 0) > 0 ? `<p class="hint" style="margin:8px 0 0">
+        ${esc(S.company.name)} rates <b>${num(S.views.fleetOps.employerStars, 1)} stars</b> as an employer.
+        Moving to a better carrier is how you keep good drivers, not just how you raise your own pay.</p>` : ''}` : ''}
   </div>`;
 }
 
@@ -2090,8 +2122,9 @@ function fleetOpsHtml() {
     <div class="callout info">
       <p>Hire AI drivers in ATS, put them on company units, then file a report here with what each one
         actually earned and how beaten-up their truck is. Revenue lands in the company's books and funds
-        the payroll and maintenance reserves; their damage becomes the shop's problem. Nothing here is
-        invented — the app only records what you read off the game.</p>
+        the payroll and maintenance reserves. Nothing here is invented — the app only records what you
+        read off the game, which for a driver you are not sitting next to means their level, rating,
+        $/mile and $/day, and for their equipment a star rating rather than a damage percentage.</p>
       ${f.unassignedUnits?.length
         ? `<p><b>Units with nobody on them:</b> ${esc(f.unassignedUnits.join(', '))}. Buy a driver for them
            in ATS and add them here, or delete the units the company should not own.</p>` : ''}
@@ -2107,26 +2140,41 @@ function fleetOpsHtml() {
       </div>
 
       ${drivers.length ? `<div class="tablewrap" style="margin-top:14px"><table>
-        <thead><tr><th>Driver</th><th>Unit</th><th>Skill</th><th>Status</th><th class="num">Wage share</th>
-          <th class="num">Lifetime revenue</th><th class="num">Miles</th><th class="num">Reports</th><th></th></tr></thead>
-        <tbody>${drivers.map((d) => `<tr>
-          <td><b>${esc(d.name)}</b></td>
+        <thead><tr><th>Driver</th><th>Unit</th><th class="num">Level</th><th class="num">Rating</th>
+          <th class="num">$/day</th><th class="num">$/mi</th><th class="num">Truck &starf;</th>
+          <th>Status</th><th class="num">Wage share</th>
+          <th class="num">Lifetime revenue</th><th class="num">Reports</th><th></th></tr></thead>
+        <tbody>${drivers.map((d) => {
+          const last = (d.periods || [])[0];
+          const tk = S.trucks.find((x) => x.unit === d.assignedTruckUnit);
+          return `<tr>
+          <td><b>${esc(d.name)}</b>${d.onProbation ? ' ' + badge('warn', 'probation') : ''}</td>
           <td><span class="unit">${esc(d.assignedTruckUnit || '—')}</span></td>
-          <td>${esc(d.skill)}</td>
+          <td class="num">${d.level ? d.level : '<span class="sub">—</span>'}</td>
+          <td class="num">${d.rating ? num(d.rating, 1) : '<span class="sub">—</span>'}</td>
+          <td class="num">${last?.perDay ? money0(last.perDay) : '<span class="sub">—</span>'}</td>
+          <td class="num">${last?.perMile ? '$' + (+last.perMile).toFixed(2) : '<span class="sub">—</span>'}</td>
+          <td class="num">${tk?.stars
+              ? badge(tk.stars <= S.settings.maintenance.truckReplaceStars ? 'bad' : tk.stars <= 4 ? 'warn' : 'ok',
+                      num(tk.stars, 1) + '\u2605')
+              : '<span class="sub">—</span>'}</td>
           <td>${badge(d.status === 'Active' ? 'ok' : 'mute', d.status)}</td>
           <td class="num">${pct(d.wageShare * 100, 0)}</td>
           <td class="num">${money0(d.lifetimeRevenue)}</td>
-          <td class="num">${num(d.lifetimeMiles)}</td>
           <td class="num">${d.reportsFiled}</td>
           <td><button class="btn tiny ghost" data-act="edit-hire" data-id="${esc(d.id)}">Edit</button></td>
-        </tr>`).join('')}</tbody></table></div>
+        </tr>`; }).join('')}</tbody></table></div>
 
         <h3 class="sect">File a fleet report</h3>
-        <p class="hint">Every ${f.due?.intervalDays ?? 15} game days, open the ATS company screen and read
-          each driver's earnings for the period plus their truck and trailer damage. Leave wages blank to
-          use the driver's agreed share. Anything over your
-          ${pct(S.settings.maintenance.mandatoryReviewPct, 0)} threshold gets a work order raised
-          automatically.</p>
+        <p class="hint">Every ${f.due?.intervalDays ?? 15} game days, open the ATS company screen and copy
+          down what it shows you: each driver's <b>level</b>, <b>rating</b>, <b>$/mile</b> and <b>$/day</b>,
+          and for their equipment the <b>star rating</b> — plus the truck's odometer. Those are the numbers
+          the game gives for people and units you are not sitting in, so those are the numbers operations
+          judges on. Leave wages blank to use the driver's agreed share.</p>
+        <p class="hint">There is no damage percentage to read for a hired driver's truck or trailer, so
+          nothing here asks for one. Condition is stars: five is a fresh unit, and
+          <b>${num(S.settings.maintenance.truckReplaceStars, 0)} stars or under</b> is where the company
+          starts recommending you replace it.</p>
         ${f.due?.isDue ? `<div class="callout warn"><p>${esc(f.due.message)}</p></div>`
           : f.due?.nextDueGameTime ? `<p class="hint">Next report due ${gt(f.due.nextDueGameTime)}.</p>` : ''}
         <div class="grid2">
@@ -2134,19 +2182,40 @@ function fleetOpsHtml() {
           ${dayTimeInput('fr-end', S.status.gameTime, 'Period end (game)')}
         </div>
         <div class="tablewrap"><table>
-          <thead><tr><th>Driver</th><th>Unit</th><th class="num">Revenue $</th><th class="num">Miles</th>
-            <th class="num">Truck damage %</th><th class="num">Trailer damage %</th><th class="num">Wages $ (blank = share)</th><th class="num">Repairs $</th></tr></thead>
-          <tbody>${drivers.filter((d) => d.status === 'Active').map((d) => `<tr>
-            <td>${esc(d.name)}</td><td class="mono">${esc(d.assignedTruckUnit)}</td>
+          <thead><tr>
+            <th>Driver</th><th>Unit</th>
+            <th class="num" title="Driver level from the ATS company screen">Level</th>
+            <th class="num" title="Driver rating, 0.0 to 10.0">Rating</th>
+            <th class="num" title="Average income per mile, as ATS reports it">$/mi</th>
+            <th class="num" title="Average income per day, as ATS reports it">$/day</th>
+            <th class="num" title="Tractor condition in stars, 5 down to 1">Truck &starf;</th>
+            <th class="num" title="Tractor odometer as shown in game">Odometer</th>
+            <th class="num" title="Trailer condition in stars. Trailers have no odometer.">Trailer &starf;</th>
+            <th class="num">Revenue $</th><th class="num">Miles</th>
+            <th class="num">Wages $ (blank = share)</th><th class="num">Repairs $</th></tr></thead>
+          <tbody>${drivers.filter((d) => d.status === 'Active').map((d) => {
+            const tk = S.trucks.find((t) => t.unit === d.assignedTruckUnit);
+            const tl = S.trailers.find((t) => t.unit === d.assignedTrailerUnit);
+            return `<tr>
+            <td>${esc(d.name)}${d.onProbation ? ' ' + badge('warn', 'probation') : ''}</td>
+            <td class="mono">${esc(d.assignedTruckUnit)}</td>
+            <td><input id="fr-lvl-${esc(d.id)}" type="number" step="1" min="0" style="width:64px"
+                  value="${d.level || ''}" placeholder="—"></td>
+            <td><input id="fr-rate-${esc(d.id)}" type="number" step="0.1" min="0" max="10" style="width:70px"
+                  value="${d.rating || ''}" placeholder="0.0"></td>
+            <td><input id="fr-permi-${esc(d.id)}" type="number" step="0.01" min="0" style="width:78px" placeholder="—"></td>
+            <td><input id="fr-perday-${esc(d.id)}" type="number" step="1" min="0" style="width:82px" placeholder="—"></td>
+            <td><input id="fr-tstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
+                  value="${tk?.stars || ''}" placeholder="—"></td>
+            <td><input id="fr-odo-${esc(d.id)}" type="number" step="1" min="0" style="width:96px"
+                  value="${tk ? Math.round(tk.atsOdometer) : ''}" placeholder="—"></td>
+            <td><input id="fr-lstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
+                  value="${tl?.stars || ''}" placeholder="—"></td>
             <td><input id="fr-rev-${esc(d.id)}" type="number" step="1" min="0" value="0"></td>
             <td><input id="fr-mi-${esc(d.id)}" type="number" step="1" min="0" value="0"></td>
-            <td><input id="fr-dmg-${esc(d.id)}" type="number" step="0.1" min="0" max="100"
-                  value="${(S.trucks.find((t) => t.unit === d.assignedTruckUnit)?.damagePct ?? 0)}"></td>
-            <td><input id="fr-tdmg-${esc(d.id)}" type="number" step="0.1" min="0" max="100"
-                  value="${(S.trailers.find((t) => t.unit === d.assignedTrailerUnit)?.damagePct ?? 0)}"></td>
             <td><input id="fr-wage-${esc(d.id)}" type="number" step="0.01" min="0" placeholder="auto"></td>
             <td><input id="fr-rep-${esc(d.id)}" type="number" step="0.01" min="0" value="0"></td>
-          </tr>`).join('')}</tbody></table></div>
+          </tr>`; }).join('')}</tbody></table></div>
         <label>Report note<input id="fr-note" placeholder="optional"></label>
         <div class="row-actions"><button class="btn go" data-act="file-report">File report &amp; post to the books</button></div>`
         : '<div class="empty">No hired drivers yet. Hire one in ATS, then add them here.</div>'}
@@ -3921,16 +3990,37 @@ async function handleAction(act, d, ev) {
         closeModal();
       }, 'Driver removed.');
     }
+    case 'trailer-bought': {
+      const unit = sv('tq-unit').trim();
+      if (!unit) return toast('Give the trailer a unit number.', 'bad');
+      return run(async () => {
+        absorb(await api('/fleetops/trailer-request/confirm', 'POST', {
+          requestId: d.id, unit, paidPrice: fv('tq-price'), gameTime: readDayTime('tq-time'),
+        }));
+        FLEETOPS = await api('/fleetops');
+      }, `Trailer ${unit} added to the fleet.`);
+    }
+    case 'trailer-declined': {
+      return run(async () => {
+        absorb(await api('/fleetops/trailer-request/decline', 'POST', { requestId: d.id }));
+        FLEETOPS = await api('/fleetops');
+      }, 'Noted — I will not ask about that one again.');
+    }
     case 'file-report': {
       const active = (FLEETOPS?.drivers || []).filter((x) => x.status === 'Active');
       const lines = active.map((x) => ({
-        driverId: x.id, truckUnit: x.assignedTruckUnit,
+        driverId: x.id, truckUnit: x.assignedTruckUnit, trailerUnit: x.assignedTrailerUnit,
+        // What the game shows for a driver we are not sitting next to.
+        level: fv('fr-lvl-' + x.id), rating: fv('fr-rate-' + x.id),
+        perMile: fv('fr-permi-' + x.id), perDay: fv('fr-perday-' + x.id),
+        // And for the equipment: stars, plus an odometer on the tractor only.
+        truckStars: fv('fr-tstar-' + x.id), truckOdometer: fv('fr-odo-' + x.id),
+        trailerStars: fv('fr-lstar-' + x.id),
         revenue: fv('fr-rev-' + x.id), miles: fv('fr-mi-' + x.id),
-        damagePctAfter: fv('fr-dmg-' + x.id), trailerDamagePctAfter: fv('fr-tdmg-' + x.id),
-        trailerUnit: x.assignedTrailerUnit,
         wages: fv('fr-wage-' + x.id), repairs: fv('fr-rep-' + x.id),
-      })).filter((l) => l.revenue > 0 || l.miles > 0 || l.repairs > 0);
-      if (!lines.length) return toast('Nothing to report — enter revenue or miles for at least one driver.', 'bad');
+      })).filter((l) => l.revenue > 0 || l.miles > 0 || l.repairs > 0
+                        || l.perDay > 0 || l.perMile > 0 || l.truckStars > 0);
+      if (!lines.length) return toast('Nothing to report — enter at least the $/day or $/mile for one driver.', 'bad');
       return run(async () => {
         const r = absorb(await api('/fleetops/report', 'POST', {
           periodStartGame: readDayTime('fr-start'), periodEndGame: readDayTime('fr-end'),
