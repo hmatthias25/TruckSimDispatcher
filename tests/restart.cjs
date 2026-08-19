@@ -145,6 +145,49 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
     ok('an order was raised at all', false, 'none raised');
   }
 
+  head('10. It will NOT deadhead half a day home for home time that is a week away');
+  // The silly case: home time comfortably far off, the yard a long empty run away. Sitting it where
+  // they are and being routed home with freight later is the right answer.
+  await api('/career/home-time', 'POST', { preference: 'monthly' });
+  S = un(await api('/status', 'POST', {
+    locationCity: 'Los Angeles', locationState: 'CA', locationKind: 'TruckStop', gameTime: at(50),
+    fuelPct: 90, atsOdometer: 200000, truckDamagePct: 1, trailerDamagePct: 1,
+    dutyStatus: 'OnDuty', atsBankBalance: 80000,
+  }));
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 9 });
+  S = un(await api('/bootstrap'));
+  const farOrder = S.views.restart?.order;
+  ok('an order was raised', !!farOrder, farOrder?.number);
+  ok('but NOT routed home', farOrder?.atHomeTerminal === false,
+    `${farOrder?.targetCity}, ${farOrder?.targetState} home=${farOrder?.atHomeTerminal}`);
+  ok('and it explains why it is not sending them empty',
+    /too far to deadhead|not running you there empty|not due for/.test(farOrder?.reason || ''),
+    farOrder?.reason);
+  ok('promising freight home instead of an empty run',
+    /with freight|with a load/.test(farOrder?.reason || ''), farOrder?.reason);
+
+  head('11. The caps are settings, not magic numbers');
+  ok('the deadhead cap is editable', S.settings.hos.restartHomeMaxDeadheadHours > 0,
+    `${S.settings.hos.restartHomeMaxDeadheadHours} h`);
+  ok('and so is how close home time has to be', S.settings.hos.restartHomeMaxDaysUntilDue > 0,
+    `${S.settings.hos.restartHomeMaxDaysUntilDue} days`);
+  ok('the cap is well under a full day of driving', S.settings.hos.restartHomeMaxDeadheadHours <= 6,
+    `${S.settings.hos.restartHomeMaxDeadheadHours} h`);
+
+  head('12. Close to home AND home time due still combines them');
+  S = un(await api('/status', 'POST', {
+    locationCity: 'Colorado Springs', locationState: 'CO', locationKind: 'TruckStop', gameTime: at(80),
+    fuelPct: 90, atsOdometer: 240000, truckDamagePct: 1, trailerDamagePct: 1,
+    dutyStatus: 'OnDuty', atsBankBalance: 80000,
+  }));
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 9 });
+  S = un(await api('/bootstrap'));
+  const nearOrder = S.views.restart?.order;
+  ok('routed home when both hold', nearOrder?.atHomeTerminal === true,
+    `${nearOrder?.targetCity}, ${nearOrder?.targetState} home=${nearOrder?.atHomeTerminal}`);
+  ok('and it says the empty run is short enough to be worth it',
+    /empty\. Worth it|one stop/.test(nearOrder?.reason || ''), nearOrder?.reason);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR', e.message); process.exit(1); });

@@ -1542,6 +1542,22 @@ public class HosRules
     /// customer's gate, which is the thing this prevents.
     /// </summary>
     public double StopDispatchAtCycleHours { get; set; } = 11;
+
+    /// <summary>
+    /// The longest empty run home worth making to combine a restart with home time.
+    ///
+    /// Deliberately modest. Combining two stops that were both going to happen is sensible; deadheading
+    /// most of a day to sit a restart at the yard instead of the truck stop down the road is ten hours
+    /// of unpaid driving to save nothing. Without this cap the order would send a truck as far as the
+    /// whole remaining cycle allowed.
+    /// </summary>
+    public double RestartHomeMaxDeadheadHours { get; set; } = 5;
+
+    /// <summary>
+    /// How close home time has to be before it is worth combining with the restart. Overdue always
+    /// counts. "Due soon" on its own does not — on a thirty-day arrangement that is still a week away.
+    /// </summary>
+    public double RestartHomeMaxDaysUntilDue { get; set; } = 2;
     public bool SleeperSplitAllowed { get; set; } = true;
     /// <summary>Does the 30-minute break consume the 14-hour window? True under real FMCSA rules.</summary>
     public bool BreakConsumesShift { get; set; } = true;
