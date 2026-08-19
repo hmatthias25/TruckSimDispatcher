@@ -405,6 +405,30 @@ app.MapPost("/api/board/extract", async (ExtractRequest req, CancellationToken c
     return Results.Ok(result);
 });
 
+/// Reads the driver's clocks off a GDC Companion recap screenshot.
+///
+/// Deliberately does NOT save. The four clocks gate every dispatch decision the app makes, so the read
+/// is staged for the driver to look at and confirm — one glance at their own screen is all it takes to
+/// catch a misread, and there is no way to catch one after it has silently become the plan.
+app.MapPost("/api/hos/extract", async (ExtractRequest req, CancellationToken ct) =>
+{
+    var result = await AiService.ExtractHosAsync(store.State, req.Images ?? new(), ct);
+    if (result.Ok)
+        store.Mutate(s => store.Log(s, "dispatch",
+            "Clocks read from a GDC Companion screenshot: " +
+            $"D {Hhmm.Of(result.DriveRemaining)} · S {Hhmm.Of(result.ShiftRemaining)} · " +
+            $"B {Hhmm.Of(result.BreakRemaining)} · C {Hhmm.Of(result.CycleRemaining)}, " +
+            $"{result.Recap.Count} recap batch(es). Staged for confirmation, not applied."));
+    return Results.Ok(result);
+});
+
+/// The same interpretation the screenshot reader runs, over a payload you supply instead of an image.
+///
+/// Exposed for the same reason as /api/geo/distance: the arithmetic that matters here is the day
+/// subtraction and the never-guess handling, and neither should need an API key or a picture to check.
+app.MapPost("/api/hos/interpret", (HosPayload payload) =>
+    Results.Ok(AiService.Interpret(store.State, payload)));
+
 app.MapPost("/api/dispatch/authorize", (AuthorizeRequest req) => Results.Ok(store.Mutate(s =>
 {
     var trip = DispatchEngine.Authorize(s, req.LoadId, req.Rationale, req.OverrideTight);

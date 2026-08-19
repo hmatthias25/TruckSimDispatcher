@@ -70,6 +70,65 @@ public class ExtractionResult
 }
 
 /// <summary>
+/// The clocks read off a GDC Companion screenshot, before the driver has confirmed them.
+///
+/// Every clock is nullable and every one arrives as text the reader copied verbatim. Nothing here is
+/// a number the model worked out: it reads "05:34" off a screen and this app turns it into hours,
+/// because the app knows what a clock is and the model does not know what day the career is on.
+/// </summary>
+public class HosReading
+{
+    public bool Ok { get; set; }
+    public string Error { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string Notes { get; set; } = "";
+
+    /// <summary>Hours remaining, parsed. Null means it could not be read — never 0, which is a reading.</summary>
+    public double? DriveRemaining { get; set; }
+    public double? ShiftRemaining { get; set; }
+    public double? BreakRemaining { get; set; }
+    public double? CycleRemaining { get; set; }
+
+    /// <summary>Which part of the screen each clock came from, so the driver can check it.</summary>
+    public string ClocksFrom { get; set; } = "";
+
+    /// <summary>The day the screenshot calls today, in its own numbering.</summary>
+    public int? TodayDay { get; set; }
+
+    /// <summary>Recap batches, already converted to offsets from today.</summary>
+    public List<RecapDay> Recap { get; set; } = new();
+
+    /// <summary>What the rows said before conversion, so the driver can audit the arithmetic.</summary>
+    public List<string> RecapShown { get; set; } = new();
+
+    public List<string> Unreadable { get; set; } = new();
+    public string Confidence { get; set; } = "";
+    public long InputTokens { get; set; }
+    public long OutputTokens { get; set; }
+}
+
+/// <summary>Raw shape of the model's reply. Strings throughout, on purpose.</summary>
+public class HosPayload
+{
+    public string DriveText { get; set; } = "";
+    public string ShiftText { get; set; } = "";
+    public string BreakText { get; set; } = "";
+    public string CycleText { get; set; } = "";
+    public string ClocksFrom { get; set; } = "";
+    public string TodayDayText { get; set; } = "";
+    public List<HosRecapRow> Recap { get; set; } = new();
+    public List<string> Unreadable { get; set; } = new();
+    public string Notes { get; set; } = "";
+    public string Confidence { get; set; } = "";
+}
+
+public class HosRecapRow
+{
+    public string DayText { get; set; } = "";
+    public string HoursText { get; set; } = "";
+}
+
+/// <summary>
 /// Optional: lets the app write the dispatch message itself instead of you pasting the packet
 /// into a chat. Entirely opt-in — with no API key configured nothing here ever runs and the app
 /// makes no network calls at all.
@@ -276,6 +335,271 @@ public static class AiService
         }
         """;
         return JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)!;
+    }
+
+    private const string HosPrompt = """
+        You are reading a screenshot of the Recap page of the GDC Companion app — an hours-of-service
+        tracker a player runs alongside American Truck Simulator. Read the driver's clocks off it.
+
+        REPORT TEXT, NOT ARITHMETIC. Every field below is a string, and you must copy what is printed
+        on the screen character for character. Do not convert hours and minutes into decimals, do not
+        add anything up, do not work out how many days away something is. The app does all of that,
+        because the app knows the rules and the career's own calendar and you do not.
+
+        The four clocks — REMAINING, not used:
+        - driveText, shiftText, breakText, cycleText: the hours LEFT on each clock.
+        - This page shows both used and remaining, and they are easy to confuse. A summary panel gives
+          "Drive Used 02:55", "Shift Used 08:02", "Cycle Used 34:42" — those are USED and are the wrong
+          numbers. A status line or tooltip gives remaining, usually compressed like
+          "D 05:58 | S 05:58 | B 08:00 | C 35:18", and a header may give "left 35:18". Prefer whichever
+          shows REMAINING.
+        - Never subtract used from a limit to get remaining. If only used is legible, leave the clock
+          empty and name it in "unreadable" — say in notes which used figures you could see.
+        - Drive-left is often smaller than the drive limit minus drive-used, because the 14-hour shift
+          is the binding clock. That is correct. Copy what is shown and do not fix it.
+        - clocksFrom: say in a few words where you read them, e.g. "status tooltip D/S/B/C row" or
+          "header for cycle, tooltip for the rest". This is how the driver checks you read the right panel.
+
+        Today:
+        - todayDayText: the day the screen marks as today, exactly as printed — "Day 13", or the day
+          number on the row labelled Today in the rolling totals table. This is what lets the app work
+          out how far off each recap boundary is, so it matters.
+
+        Projected recap returns:
+        - One entry per row of the recap/projection table, in the order shown.
+        - dayText: the boundary day exactly as printed — "Day 17", "Day 17 00:00".
+        - hoursText: the hours coming back on that boundary, exactly as printed — "05:34", "00:25".
+        - Include rows showing zero hours back. Do not skip them and do not reorder them; the app
+          filters and converts.
+        - Ignore the resulting-cycle column. The app recomputes that from its own rules.
+
+        Rules that matter:
+        - Report only what is legible. NEVER guess a clock. A wrong cycle figure is worse than a blank
+          one, because dispatch will plan freight on it and refuse freight over it.
+        - Anything you cannot read: leave the field an empty string and add its name to "unreadable"
+          ("driveText", "cycleText", "todayDayText", and so on).
+        - If the screenshot is not a GDC Companion recap page at all, leave every field empty, add
+          "notScreen" to "unreadable", and say what you are actually looking at in notes.
+        - confidence: "high" when every figure was crisp, "medium" when you had to work at it, "low"
+          when you are unsure you read the right panel.
+        - Use notes for anything the driver should check: a panel you could not find, used-only
+          figures, a cut-off table, rows that looked inconsistent.
+        """;
+
+    private static readonly Dictionary<string, JsonElement> HosSchema = BuildHosSchema();
+
+    private static Dictionary<string, JsonElement> BuildHosSchema()
+    {
+        // Strings throughout. The model transcribes; this app parses. That division is the whole point:
+        // a model asked for "hours as a decimal" will happily turn 05:34 into 5.34.
+        const string json = """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["driveText","shiftText","breakText","cycleText","clocksFrom","todayDayText",
+                       "recap","unreadable","notes","confidence"],
+          "properties": {
+            "driveText":    { "type": "string" },
+            "shiftText":    { "type": "string" },
+            "breakText":    { "type": "string" },
+            "cycleText":    { "type": "string" },
+            "clocksFrom":   { "type": "string" },
+            "todayDayText": { "type": "string" },
+            "recap": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dayText","hoursText"],
+                "properties": {
+                  "dayText":   { "type": "string" },
+                  "hoursText": { "type": "string" }
+                }
+              }
+            },
+            "unreadable": { "type": "array", "items": { "type": "string" } },
+            "notes":      { "type": "string" },
+            "confidence": { "type": "string", "enum": ["high","medium","low"] }
+          }
+        }
+        """;
+        return JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)!;
+    }
+
+    /// <summary>
+    /// Reads a GDC Companion recap screenshot into the four clocks and the recap projection.
+    ///
+    /// One screenshot, one request: this is one page of one app, not a board that scrolls. Nothing is
+    /// applied — the caller stages it for the driver to confirm, because these four numbers gate every
+    /// dispatch decision the app makes.
+    /// </summary>
+    public static async Task<HosReading> ExtractHosAsync(
+        AppState state, List<ScreenshotImage> images, CancellationToken ct = default)
+    {
+        var cfg = state.Settings;
+        if (!Configured(cfg))
+            return new HosReading { Ok = false, Error = "Reading your clocks from a screenshot needs an Anthropic API key — add one in Settings → In-app dispatcher. You can always type them in by hand." };
+        if (images == null || images.Count == 0)
+            return new HosReading { Ok = false, Error = "No screenshot was supplied." };
+
+        var model = string.IsNullOrWhiteSpace(cfg.AnthropicModel) ? "claude-opus-5" : cfg.AnthropicModel.Trim();
+
+        // More than a couple of images means the driver has staged a board by mistake, or is pasting
+        // the same page twice. Read the first few and say so rather than burning tokens on all of them.
+        var batch = images.Take(3).ToList();
+
+        try
+        {
+            var client = new AnthropicClient { ApiKey = cfg.AnthropicApiKey.Trim() };
+            var content = new List<ContentBlockParam>();
+
+            for (var i = 0; i < batch.Count; i++)
+            {
+                content.Add(new TextBlockParam { Text = $"Screenshot {i + 1} of {batch.Count}:" });
+                content.Add(new ImageBlockParam
+                {
+                    Source = new Base64ImageSource
+                    {
+                        Data = batch[i].DataBase64,
+                        MediaType = batch[i].MediaType == "image/jpeg" ? MediaType.ImageJpeg : MediaType.ImagePng
+                    }
+                });
+            }
+            content.Add(new TextBlockParam
+            {
+                Text = "Read the clocks and the recap projection from the screenshot(s) above into the " +
+                       "required schema. Copy every figure verbatim as text."
+            });
+
+            var response = await client.Messages.Create(new MessageCreateParams
+            {
+                Model = model,
+                MaxTokens = 8000,
+                Thinking = new ThinkingConfigAdaptive(),
+                OutputConfig = new OutputConfig
+                {
+                    Effort = Effort.High,
+                    Format = new JsonOutputFormat { Schema = HosSchema }
+                },
+                System = new List<TextBlockParam>
+                {
+                    new() { Text = HosPrompt, CacheControl = new CacheControlEphemeral() }
+                },
+                Messages = [new() { Role = Role.User, Content = content }]
+            }, cancellationToken: ct);
+
+            if (response.StopReason == "refusal")
+                return new HosReading { Ok = false, Model = model, Error = "The model declined to read that image." };
+            if (response.StopReason == "max_tokens")
+                return new HosReading { Ok = false, Model = model, Error = "The reply ran out of room. Try a single, tighter capture of just the recap page." };
+
+            var text = string.Join("", response.Content.Select(b => b.Value).OfType<TextBlock>().Select(x => x.Text));
+            if (string.IsNullOrWhiteSpace(text))
+                return new HosReading { Ok = false, Model = model, Error = $"Empty response (stop reason: {response.StopReason})." };
+
+            var raw = JsonSerializer.Deserialize<HosPayload>(text,
+                          new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                      ?? new HosPayload();
+
+            var reading = Interpret(state, raw);
+            reading.Model = model;
+            reading.InputTokens = response.Usage?.InputTokens ?? 0;
+            reading.OutputTokens = response.Usage?.OutputTokens ?? 0;
+
+            if (images.Count > batch.Count)
+                reading.Notes = $"Read the first {batch.Count} of {images.Count} staged images — this page is one screen. " + reading.Notes;
+
+            return reading;
+        }
+        catch (Exception ex)
+        {
+            return new HosReading { Ok = false, Model = model, Error = Describe(ex) };
+        }
+    }
+
+    /// <summary>
+    /// Turns what the reader transcribed into clocks and recap batches.
+    ///
+    /// Separated from the API call so it can be exercised directly, the same way <c>/api/geo/distance</c>
+    /// exposes the distance arithmetic. All the judgement lives here — what parses, what stays blank,
+    /// which boundaries are still ahead — and none of it needs a model to test.
+    /// </summary>
+    public static HosReading Interpret(AppState state, HosPayload raw)
+    {
+        raw ??= new HosPayload();
+        var reading = new HosReading
+        {
+            Ok = true,
+            ClocksFrom = raw.ClocksFrom ?? "",
+            Notes = raw.Notes ?? "",
+            Confidence = raw.Confidence ?? "",
+            Unreadable = raw.Unreadable ?? new List<string>(),
+            DriveRemaining = Hhmm.Read(raw.DriveText),
+            ShiftRemaining = Hhmm.Read(raw.ShiftText),
+            BreakRemaining = Hhmm.Read(raw.BreakText),
+            CycleRemaining = Hhmm.Read(raw.CycleText),
+            TodayDay = Hhmm.ReadDay(raw.TodayDayText)
+        };
+
+        // A clock the reader transcribed but that will not parse is worse than a missing one, because
+        // the field would sit there looking answered. Name it instead.
+        void Check(double? parsed, string? shown, string field)
+        {
+            if (parsed == null && !string.IsNullOrWhiteSpace(shown)
+                && !reading.Unreadable.Contains(field, StringComparer.OrdinalIgnoreCase))
+                reading.Unreadable.Add(field);
+        }
+        Check(reading.DriveRemaining, raw.DriveText, "driveText");
+        Check(reading.ShiftRemaining, raw.ShiftText, "shiftText");
+        Check(reading.BreakRemaining, raw.BreakText, "breakText");
+        Check(reading.CycleRemaining, raw.CycleText, "cycleText");
+
+        ConvertRecap(state, raw, reading);
+        return reading;
+    }
+
+    /// <summary>
+    /// Turns "hours back on Day 17" into "hours back in 4 days".
+    ///
+    /// The subtraction happens inside the screenshot's own numbering — boundary day minus the day the
+    /// screen calls today. That way it does not matter whether GDC Companion and this app agree on what
+    /// day the career is on, which they need not: one counts from when the player started tracking, the
+    /// other from when the career was created. Only the gap between two of its own rows is portable.
+    /// </summary>
+    private static void ConvertRecap(AppState state, HosPayload raw, HosReading reading)
+    {
+        var rows = raw.Recap ?? new List<HosRecapRow>();
+        if (rows.Count == 0) return;
+
+        var today = reading.TodayDay;
+        if (today == null)
+        {
+            // Without a "today" there is no frame to subtract in. Say so rather than guessing one:
+            // assuming the app's own day number would silently shift every batch to the wrong midnight.
+            reading.RecapShown = rows
+                .Where(r => Hhmm.Read(r.HoursText) is > 0)
+                .Select(r => $"{r.DayText?.Trim()} — {r.HoursText?.Trim()}")
+                .ToList();
+            if (reading.RecapShown.Count > 0)
+                reading.Notes = ("I could not read which day the screen calls today, so I cannot work out how far " +
+                                 "off these boundaries are. Enter them by hand, or crop the capture to include the " +
+                                 "day header. " + reading.Notes).Trim();
+            return;
+        }
+
+        foreach (var r in rows)
+        {
+            var day = Hhmm.ReadDay(r.DayText);
+            var hours = Hhmm.Read(r.HoursText);
+            if (day == null || hours == null) continue;
+
+            reading.RecapShown.Add($"Day {day} — {Hhmm.Of(hours.Value)}");
+            var inDays = day.Value - today.Value;
+            if (inDays <= 0 || hours.Value <= 0) continue;      // past boundaries and empty rows carry nothing
+            reading.Recap.Add(new RecapDay { InDays = inDays, Hours = hours.Value });
+        }
+
+        reading.Recap = reading.Recap.OrderBy(x => x.InDays).ToList();
     }
 
     /// <summary>

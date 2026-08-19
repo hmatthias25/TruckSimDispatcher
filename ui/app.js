@@ -10,6 +10,7 @@ let TRIP_AUDIT = null;
 let RECON = null;
 let SHOTS = [];            // pending screenshots {mediaType, dataBase64, thumb, name}
 let EXTRACT = null;        // last extraction result, awaiting confirmation
+let HOSREAD = null;        // clocks read off a GDC Companion screenshot, awaiting confirmation
 let DISCOVERY = null;      // "new city reached" notice awaiting acknowledgement
 let REACHED_PAGE = 1;      // which page of the reached-cities list is showing
 /* Which board the driver is showing us: what is on offer at this dock, or the whole city. Starts
@@ -680,12 +681,12 @@ function viewDispatch() {
           <p>These clocks were last read at ${gt(h.asOfGameTime)} and a load has run since. Re-read your
             HOS display before I plan anything off them.</p></div>` : ''}
         <div class="${v.hos.breakEnforced ? 'grid4' : 'grid3'}">
-          <label>Drive left<input id="h-drive" inputmode="numeric" placeholder="8:45" value="${hhmm(h.driveRemaining)}"></label>
-          <label>Shift left<input id="h-shift" inputmode="numeric" placeholder="11:30" value="${hhmm(h.shiftRemaining)}"></label>
+          <label>Drive left<input id="h-drive" inputmode="numeric" placeholder="8:45" value="${clockField('driveRemaining', h)}"></label>
+          <label>Shift left<input id="h-shift" inputmode="numeric" placeholder="11:30" value="${clockField('shiftRemaining', h)}"></label>
           ${v.hos.breakEnforced
-            ? `<label>Break clock<input id="h-break" inputmode="numeric" placeholder="6:15" value="${hhmm(h.breakRemaining)}"></label>`
+            ? `<label>Break clock<input id="h-break" inputmode="numeric" placeholder="6:15" value="${clockField('breakRemaining', h)}"></label>`
             : ''}
-          <label>Cycle left<input id="h-cycle" inputmode="numeric" placeholder="52:00" value="${hhmm(h.cycleRemaining)}"></label>
+          <label>Cycle left<input id="h-cycle" inputmode="numeric" placeholder="52:00" value="${clockField('cycleRemaining', h)}"></label>
         </div>
         ${v.hos.breakEnforced
           ? `<p class="hint">Break clock = hours of <em>driving</em> left before the
@@ -695,9 +696,10 @@ function viewDispatch() {
              window is the binding stop.</p>`}
         <div class="grid2">
           <label>Hours coming back (recap)
-            <input id="h-recap" placeholder="8:00 in 1, 10:30 in 2" value="${esc((h.recap || []).map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', '))}"></label>
+            <input id="h-recap" placeholder="8:00 in 1, 10:30 in 2" value="${esc(recapField(h))}"></label>
           <label>Source<input id="h-source" value="${esc(h.source)}" placeholder="e.g. Realistic HOS mod ELD"></label>
         </div>
+        ${hosReadHtml()}
         ${recapExplainerHtml()}
         <label>Note to dispatch<input id="h-notes" value="${esc(h.notes)}" placeholder="optional"></label>
         <div class="row-actions"><button class="btn primary" data-act="save-hos">Report clocks</button></div>
@@ -892,6 +894,59 @@ function loadedReportHtml(t) {
 }
 
 /**
+ * A clock input's value: the staged screenshot reading where there is one, otherwise what is on file.
+ *
+ * A field the reader could not make out stays EMPTY rather than falling back to the stored value. Half
+ * a screenshot silently blended with yesterday's clocks is the one outcome worse than a blank box —
+ * it looks answered, so nobody checks it.
+ */
+function clockField(key, h) {
+  if (!HOSREAD) return hhmm(h[key]);
+  return HOSREAD[key] == null ? '' : hhmm(HOSREAD[key]);
+}
+
+/** Same, for the recap box. */
+function recapField(h) {
+  const rows = HOSREAD ? HOSREAD.recap : h.recap;
+  return (rows || []).map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', ');
+}
+
+/**
+ * What the screenshot reader made of the recap page, before the driver commits it.
+ *
+ * Everything it read is shown next to where it read it, because the whole risk with this page is that
+ * it prints used and remaining side by side and the used figures are the bigger, bolder ones.
+ */
+function hosReadHtml() {
+  if (!HOSREAD) return '';
+  const missing = HOSREAD.unreadable || [];
+  const label = { driveText: 'drive', shiftText: 'shift', breakText: 'break', cycleText: 'cycle',
+    todayDayText: "today's day number", notScreen: 'the page itself' };
+  const shown = (HOSREAD.recapShown || []);
+  return `<div class="note" style="margin:10px 0">
+    <h4>Read from your GDC Companion screenshot &mdash; check it, then save</h4>
+    <p>Nothing is recorded until you press <b>${esc(SAVE_HOS_LABEL)}</b>. These four clocks decide every
+      call dispatch makes, so give them one look against your own screen first.</p>
+    ${HOSREAD.clocksFrom ? `<p class="hint">Read from: ${esc(HOSREAD.clocksFrom)}</p>` : ''}
+    ${shown.length ? `<p class="hint">Recap rows as printed: ${esc(shown.join(' · '))}${
+      HOSREAD.recap && HOSREAD.recap.length
+        ? ` &rarr; ${esc(HOSREAD.recap.map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', '))}`
+        : ' &mdash; none of them are still ahead of you'}</p>` : ''}
+    ${missing.length ? `<p><b>Could not read:</b> ${esc(missing.map((m) => label[m] || m).join(', '))}.
+      Those boxes are left empty on purpose &mdash; fill them in yourself.</p>` : ''}
+    ${HOSREAD.notes ? `<p class="hint">${esc(HOSREAD.notes)}</p>` : ''}
+    ${HOSREAD.confidence && HOSREAD.confidence !== 'high'
+      ? `<p><b>The reader rated its own confidence ${esc(HOSREAD.confidence)}.</b> Worth a closer look.</p>` : ''}
+    <div class="row-actions" style="margin-top:8px">
+      <button class="btn tiny ghost" data-act="hosread-drop">Discard this read</button>
+    </div>
+  </div>`;
+}
+
+/** Named once so the banner and the button cannot drift apart. */
+const SAVE_HOS_LABEL = 'Report clocks';
+
+/**
  * What recap is, in the two sentences it actually takes. Collapsed, because a driver who knows does
  * not need it and a driver who does not will open it exactly once.
  */
@@ -1013,6 +1068,8 @@ function screenshotHtml() {
       <input type="file" id="shot-file" accept="image/png,image/jpeg" multiple class="offscreen">
       <span class="hint" style="margin:0">The board only shows ~10 jobs at a time — paste as many
         screenshots as you need. They are read in small batches and merged, and duplicates are dropped.</span>
+      <span class="hint" style="margin:0">Pasting your <b>GDC Companion</b> recap page instead? Stage it
+        here and press <b>Read as HOS clocks</b> — it fills the clocks below for you to check.</span>
     </div>
 
     ${SHOTS.length ? `<div class="shots">${SHOTS.map((s, i) => `
@@ -1022,7 +1079,9 @@ function screenshotHtml() {
       </figure>`).join('')}</div>
       <div class="row-actions">
         <button class="btn primary" data-act="extract" ${on && !BUSY ? '' : 'disabled'}>
-          ${BUSY === 'extract' ? 'Reading…' : `Read ${SHOTS.length} screenshot(s)`}</button>
+          ${BUSY === 'extract' ? 'Reading…' : `Read ${SHOTS.length} screenshot(s) as freight`}</button>
+        <button class="btn" data-act="extract-hos" ${on && !BUSY ? '' : 'disabled'}>
+          ${BUSY === 'hosread' ? 'Reading…' : 'Read as HOS clocks'}</button>
         <button class="btn ghost" data-act="shots-clear">Clear images</button>
       </div>` : ''}
 
@@ -3964,11 +4023,16 @@ async function handleAction(act, d, ev) {
         return dec ? { hours: parseFloat(dec[1]), inDays: parseInt(dec[2], 10) } : null;
       }).filter(Boolean);
       const breakLeft = S.views.hos.breakEnforced ? hv('h-break') : S.settings.hos.drivingBeforeBreak;
-      return run(async () => absorb(await api('/hos', 'POST', {
-        driveRemaining: hv('h-drive'), shiftRemaining: hv('h-shift'),
-        breakRemaining: breakLeft, cycleRemaining: hv('h-cycle'),
-        recap, source: sv('h-source'), notes: sv('h-notes'), asOfGameTime: readDayTime('st-time') || S.status.gameTime,
-      })), 'Clocks recorded.');
+      return run(async () => {
+        absorb(await api('/hos', 'POST', {
+          driveRemaining: hv('h-drive'), shiftRemaining: hv('h-shift'),
+          breakRemaining: breakLeft, cycleRemaining: hv('h-cycle'),
+          recap, source: sv('h-source'), notes: sv('h-notes'), asOfGameTime: readDayTime('st-time') || S.status.gameTime,
+        }));
+        // Committed, so the staged read has served its purpose. Leaving it up would suggest there is
+        // still something to confirm.
+        HOSREAD = null;
+      }, 'Clocks recorded.');
     }
 
     /* ---- board */
@@ -4008,6 +4072,31 @@ async function handleAction(act, d, ev) {
     /* ---- screenshot import */
     case 'shot-del': SHOTS.splice(+d.i, 1); return render();
     case 'shots-clear': SHOTS = []; EXTRACT = null; return render();
+    case 'hosread-drop': HOSREAD = null; return render();
+
+    case 'extract-hos': {
+      if (!SHOTS.length) return toast('Stage your GDC Companion recap screenshot first.', 'bad');
+      BUSY = 'hosread'; render();
+      toast('Reading your clocks — this takes a few seconds.');
+      try {
+        const r = await api('/hos/extract', 'POST', {
+          images: SHOTS.map((s) => ({ mediaType: s.mediaType, dataBase64: s.dataBase64 })),
+        });
+        if (!r.ok) { HOSREAD = null; toast(r.error, 'bad'); return; }
+        HOSREAD = r;
+        SHOTS = [];
+        const got = ['driveRemaining', 'shiftRemaining', 'breakRemaining', 'cycleRemaining']
+          .filter((k) => r[k] != null).length;
+        toast(`${got} of 4 clocks and ${r.recap.length} recap batch(es) read — check them and save.`,
+          got === 4 ? 'ok' : 'bad');
+      } catch (e) {
+        HOSREAD = null;
+        toast(e.message, 'bad');
+      } finally {
+        BUSY = ''; render();
+      }
+      return;
+    }
 
     case 'extract': {
       if (!SHOTS.length) return toast('Stage a screenshot first.', 'bad');
