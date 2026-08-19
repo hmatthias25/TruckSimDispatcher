@@ -26,8 +26,31 @@ public static class Migrations
         EnsureCarrierNetwork(s);
         EnsureEndorsements(s);
         EnsureAtHomeFlag(s);
+        FlagImplausibleWindows(s);
         EnsureCarrierStanding(s);
         EnsureFleetStars(s);
+    }
+
+    /// <summary>
+    /// Finds loads still running whose delivery window does not match the run.
+    ///
+    /// The screenshot reader used to be asked for hours-to-deliver while never being told the game
+    /// time, and could not return "I could not tell" — so it invented windows, and those windows are
+    /// the appointments live loads are still being judged against.
+    ///
+    /// Nothing is rewritten. The app cannot know what the board actually said, and quietly moving an
+    /// appointment is how a driver ends up late against a number nobody chose. It flags them so the
+    /// driver can read the real figure off the game and correct it in one field.
+    /// </summary>
+    private static void FlagImplausibleWindows(AppState s)
+    {
+        foreach (var t in s.Trips.Where(x => x.Status is "Authorized" or "InTransit"))
+        {
+            if (!string.IsNullOrWhiteSpace(t.WindowWarning)) continue;
+            var miles = (t.ActualMiles > 0 ? t.ActualMiles : t.DispatchedMiles) + t.DeadheadMiles;
+            if (DeliveryWindow.Implausible(s, t.DeadlineHoursAtDispatch, miles, t.TrailerType) is { } why)
+                t.WindowWarning = why;
+        }
     }
 
     /// <summary>

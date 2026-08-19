@@ -765,6 +765,39 @@ app.MapPost("/api/fleetops/trailer-request/decline", (TrailerDeclineRequest req)
     return new { snapshot = Snapshot(s), message };
 })));
 
+// Reading a delivery window the way ATS shows it. Exposed so the arithmetic can be checked directly
+// rather than only through a screenshot import.
+app.MapPost("/api/window/read", (WindowReadRequest req) =>
+{
+    var parsed = DeliveryWindow.Read(store.State, req.Text);
+    return Results.Ok(parsed == null
+        ? new { readable = false, hadRange = false, opensAt = (string?)null, dueAt = (string?)null, hoursUntilDue = 0.0 }
+        : new
+        {
+            readable = true,
+            hadRange = parsed.HadRange,
+            opensAt = parsed.OpensAt is { } o ? GameClock.Format(o) : null,
+            dueAt = GameClock.Format(parsed.DueAt),
+            hoursUntilDue = parsed.HoursUntilDue
+        });
+});
+
+app.MapGet("/api/window/check", (double deadlineHours, double miles, string? trailerType) =>
+    Results.Ok(new
+    {
+        needed = DeliveryWindow.HoursNeeded(store.State, miles, trailerType),
+        warning = DeliveryWindow.Implausible(store.State, deadlineHours, miles, trailerType)
+    }));
+
+// Correcting a window on a load already in flight. There was no way to do this at all.
+app.MapPost("/api/trips/{id}/window", (string id, WindowFixRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var trip = TripService.CorrectWindow(s, id, req.DeadlineHours, req.Note ?? "");
+    var message = $"{trip.Number} is now due {GameClock.Pretty(trip.DueGameTime)}.";
+    store.Log(s, "dispatch", message, trip.Number);
+    return new { snapshot = Snapshot(s), message };
+})));
+
 app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mutate(s =>
 {
     var filed = FleetOpsService.FileReport(s, report);
@@ -1464,6 +1497,8 @@ record TerminateRequest(string DriverId, string? Reason);
 record RetireRequest(string Unit, string? ReplacementUnit);
 record TrailerBoughtRequest(string RequestId, string Unit, decimal PaidPrice, string? GameTime, string? GameId);
 record TrailerDeclineRequest(string RequestId, string? GameTime);
+record WindowReadRequest(string? Text);
+record WindowFixRequest(double DeadlineHours, string? Note);
 record AskHomeRequest(string? Reason);
 record AskTrailerRequest(string TrailerType);
 record EndorsementRequest(string Kind, bool Has, string? GameTime);

@@ -213,6 +213,46 @@ public static class TripService
         return (trip, notes);
     }
 
+    /// <summary>
+    /// Corrects the delivery window on a load already in flight.
+    ///
+    /// There was no way to do this. A window read wrong off a screenshot was the appointment for the
+    /// rest of the trip, and the driver had no way to fix it short of cancelling the load. The window
+    /// is measured from when the load was dispatched, so correcting the hours moves the appointment
+    /// to where it should have been all along.
+    /// </summary>
+    public static Trip CorrectWindow(AppState s, string tripId, double deadlineHours, string note)
+    {
+        var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
+                   ?? throw new InvalidOperationException("Trip not found.");
+        if (trip.Status is "Delivered" or "Cancelled")
+            throw new InvalidOperationException($"{trip.Number} is closed — the window cannot be changed now.");
+        if (deadlineHours <= 0)
+            throw new InvalidOperationException("Give me the hours to deliver from the ATS job screen.");
+
+        var from = GameClock.TryParse(trip.DispatchedGameTime)
+                   ?? GameClock.TryParse(s.Status.GameTime)
+                   ?? throw new InvalidOperationException("No dispatch time on file to measure the window from.");
+
+        var was = trip.DueGameTime;
+        trip.DeadlineHoursAtDispatch = deadlineHours;
+        trip.DueGameTime = GameClock.Format(from.AddHours(deadlineHours));
+        trip.WindowWarning = "";
+
+        if (trip.FeasibilityAtDispatch is { } f) f.DueGameTime = trip.DueGameTime;
+
+        trip.Events.Add(new TripEvent
+        {
+            Kind = "Note",
+            GameTime = s.Status.GameTime,
+            Detail = $"Delivery window corrected to {Hhmm.Of(deadlineHours)} — due {GameClock.Pretty(trip.DueGameTime)}" +
+                     (string.IsNullOrWhiteSpace(was) ? "" : $", was {GameClock.Pretty(was)}") +
+                     (string.IsNullOrWhiteSpace(note) ? "." : $". {note}")
+        });
+
+        return trip;
+    }
+
     public static TripAudit Complete(AppState s, string tripId, CompleteTripRequest req)
     {
         var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)

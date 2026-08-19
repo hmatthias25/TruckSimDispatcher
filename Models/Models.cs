@@ -710,6 +710,15 @@ public class Trip
     public bool IsHazmat { get; set; }
     /// <summary>The ATS HazMat class this load needed. See <see cref="BoardLoad.HazmatClass"/>.</summary>
     public string HazmatClass { get; set; } = "";
+
+    /// <summary>
+    /// Set when the delivery window does not match the run and has not been confirmed.
+    ///
+    /// The window is the appointment this load is judged against, so one that came from a bad read is
+    /// worth questioning before it decides whether the driver was late. The app never rewrites it on
+    /// its own — it cannot know what the board said — it asks.
+    /// </summary>
+    public string WindowWarning { get; set; } = "";
     public bool IsOversize { get; set; }
 
     public PayBreakdown Pay { get; set; } = new();

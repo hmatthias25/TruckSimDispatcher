@@ -38,6 +38,14 @@ public class ExtractedLoad
     public double WeightLbs { get; set; }
     /// <summary>ATS HazMat class off the listing, as a bare digit. Empty when nothing is placarded.</summary>
     public string HazmatClass { get; set; } = "";
+    /// <summary>
+    /// The delivery time exactly as the listing showed it, when it showed an absolute time rather
+    /// than a remaining duration. The app converts this against the real game clock, because it has
+    /// one and the model does not.
+    /// </summary>
+    public string DeliverByText { get; set; } = "";
+    /// <summary>Set by the app, not the model: this window does not match the run. Shown for confirming.</summary>
+    public string WindowWarning { get; set; } = "";
     public string TrailerType { get; set; } = "";
     public string Shipper { get; set; } = "";
     public string Receiver { get; set; } = "";
@@ -182,8 +190,19 @@ public static class AiService
         - loadedMiles: the trip distance in miles, as a plain number.
         - gameRevenue: the payout in dollars, as a plain number with no currency symbol,
           commas or decimals.
-        - deadlineHours: hours available to deliver. ATS often shows this as a remaining time or
-          a delivery window rather than a number of hours — convert it to whole hours if you can.
+        - The delivery window. ATS usually shows this as a TIME RANGE, for example
+          "6:15 AM - 12:55 PM" — the receiver opens at the first time and the load is due by the
+          second. Report what you see verbatim and DO NOT convert it to a number of hours:
+          * Put the window text, exactly as shown, in deliverByText — the whole range, both times,
+            with any AM/PM and any day or date shown alongside it. Leave deadlineHours at 0.
+          * Only use deadlineHours when the row shows a REMAINING TIME instead of a range or a clock
+            time ("8h 30m" is 8.5, "2 days 4h" is 52).
+          * If you cannot read the window at all, leave BOTH empty and add "deadlineHours" to
+            "unreadable". An empty window is handled properly. A guessed one is not: it becomes the
+            appointment the driver is judged against.
+          The app knows the exact game clock and will do the subtraction. You do not, so any figure
+          you work out yourself is a guess — which is how a nineteen-mile run once acquired an
+          eight-hour appointment.
         - weightLbs: cargo weight in pounds. If shown in tons, convert (1 ton = 2000 lb).
         - hazmatClass: the ATS HazMat class the job needs, as a bare digit: "1" explosives,
           "2" gases, "3" flammable liquids, "4" flammable solids, "6" toxic, "8" corrosive. A
@@ -196,6 +215,8 @@ public static class AiService
 
         Rules that matter:
         - Report only what is actually legible. NEVER guess or infer a number you cannot read.
+        - The delivery window especially. It becomes the appointment the load is judged on, so a
+          plausible-looking invention is worse than an empty field.
         - If a numeric field is not readable, put 0 and add that field's name to "unreadable".
         - If a text field is not readable, use an empty string and add it to "unreadable".
         - Set "confidence" per row: "high" when every field was crisp, "medium" when you had to
@@ -226,7 +247,7 @@ public static class AiService
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["cargo","originCity","originState","destCity","destState","shipper",
-                             "receiver","loadedMiles","gameRevenue","deadlineHours","weightLbs","hazmatClass",
+                             "receiver","loadedMiles","gameRevenue","deadlineHours","weightLbs","hazmatClass","deliverByText",
                              "trailerType","isUrgent","isFragile","isHazmat","confidence","unreadable"],
                 "properties": {
                   "cargo":        { "type": "string" },
@@ -240,7 +261,8 @@ public static class AiService
                   "gameRevenue":  { "type": "number" },
                   "deadlineHours":{ "type": "number" },
                   "weightLbs":    { "type": "number" },
-                "hazmatClass":  { "type": "string" },
+                  "hazmatClass":  { "type": "string" },
+                  "deliverByText":{ "type": "string" },
                   "trailerType":  { "type": "string" },
                   "isUrgent":     { "type": "boolean" },
                   "isFragile":    { "type": "boolean" },
@@ -298,7 +320,7 @@ public static class AiService
 
         foreach (var batch in batches)
         {
-            var part = await ExtractBatchAsync(cfg, model, batch, offset, images.Count, ct);
+            var part = await ExtractBatchAsync(state, model, batch, offset, images.Count, ct);
             offset += batch.Count;
 
             if (!part.Ok)
@@ -337,14 +359,28 @@ public static class AiService
     }
 
     /// <summary>One request's worth of screenshots.</summary>
-    private static async Task<ExtractionResult> ExtractBatchAsync(AppSettings cfg, string model,
+    private static async Task<ExtractionResult> ExtractBatchAsync(AppState state, string model,
         List<ScreenshotImage> batch, int offset, int total, CancellationToken ct)
     {
         try
         {
+            var cfg = state.Settings;
             var client = new AnthropicClient { ApiKey = cfg.AnthropicApiKey.Trim() };
 
             var content = new List<ContentBlockParam>();
+
+            // The reader has to be told what time it is. Without a clock it cannot turn a delivery
+            // time shown on a listing into hours remaining — and being asked for a number it has no
+            // way to derive is what made it invent eight-hour windows for twenty-mile runs.
+            var now = GameClock.TryParse(state.Status.GameTime);
+            content.Add(new TextBlockParam
+            {
+                Text = now is { } clock
+                    ? $"Current in-game time: {GameClock.PrettyDay(clock)} (day {GameClock.DayOf(clock)}, {clock:HH\\:mm}). " +
+                      "Use it only to recognise an absolute delivery time as being in the future — report what you read, " +
+                      "do not do the subtraction yourself."
+                    : "The current in-game time is not on file. Report any delivery window exactly as shown and do not convert it."
+            });
             for (var i = 0; i < batch.Count; i++)
             {
                 content.Add(new TextBlockParam { Text = $"Screenshot {offset + i + 1} of {total}:" });
@@ -397,6 +433,20 @@ public static class AiService
             var loads = parsed?.Loads ?? new List<ExtractedLoad>();
             foreach (var l in loads)
             {
+                // The reader reports what it saw; the subtraction is ours, because we have the clock.
+                if (l.DeadlineHours <= 0 && !string.IsNullOrWhiteSpace(l.DeliverByText)
+                    && DeliveryWindow.HoursUntil(state, l.DeliverByText) is { } derived)
+                {
+                    l.DeadlineHours = derived;
+                    l.Unreadable.RemoveAll(u => u.Equals("deadlineHours", StringComparison.OrdinalIgnoreCase));
+                }
+
+                // A window out of proportion to the run is a question, not an error — ATS is generous
+                // on short jobs. Flagging it puts it in front of the driver before it becomes the
+                // appointment they are judged against.
+                if (DeliveryWindow.Implausible(state, l.DeadlineHours, l.LoadedMiles, l.TrailerType) is { } why)
+                    l.WindowWarning = why;
+
                 l.OriginState = (l.OriginState ?? "").Trim().ToUpperInvariant();
                 l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
                 l.Unreadable ??= new List<string>();

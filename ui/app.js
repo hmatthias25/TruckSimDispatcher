@@ -1018,13 +1018,22 @@ function extractHtml() {
       ${EXTRACT.notes ? `<p><b>Reader notes:</b> ${esc(EXTRACT.notes)}</p>` : ''}
     </div>
 
+    ${rows.some((l) => l.windowWarning) ? `<div class="callout warn">
+      <h4>Check these delivery windows</h4>
+      ${rows.filter((l) => l.windowWarning).map((l) =>
+        `<p style="margin:4px 0"><b>${esc(l.cargo || 'row')} → ${esc(l.destCity || '?')}</b>: ${esc(l.windowWarning)}</p>`).join('')}
+      <p class="hint" style="margin:4px 0 0">The window becomes the appointment you are judged against, so
+        it is worth a second look. Correct it in the row if it is wrong, or leave it and stage the load.</p>
+    </div>` : ''}
+
     <div class="tablewrap"><table>
       <thead><tr><th></th><th>Cargo</th><th>Origin</th><th>ST</th><th>Destination</th><th>ST</th>
         <th class="num">Loaded mi</th><th class="num">Revenue</th><th class="num">Deliver in</th>
         <th class="num">Weight lb</th><th>Trailer</th><th>Read</th></tr></thead>
       <tbody>${rows.map((l, i) => {
         const missing = (l.unreadable || []);
-        const bad = (f) => missing.includes(f) ? ' style="outline:1px solid var(--red)"' : '';
+        const bad = (f) => missing.includes(f) || (f === 'deadlineHours' && l.windowWarning)
+          ? ' style="outline:1px solid var(--red)"' : '';
         return `<tr>
           <td><input type="checkbox" id="x-use-${i}" ${l.confidence === 'low' ? '' : 'checked'} style="margin:0"></td>
           <td>${cell(i, 'cargo', l.cargo, '128px')}</td>
@@ -1284,6 +1293,23 @@ function viewActive() {
           e.gallons ? ` <b>${num(e.gallons, 1)} gal</b>${e.pricePerGal ? ` @ $${num(e.pricePerGal, 3)}` : ''}` : ''
         }</span></div>`).join('')}</div>` : ''}
     </div>
+
+    ${t.windowWarning ? `<div class="panel">
+      <div class="panel-head"><h2>Check this load's delivery window</h2>
+        ${badge('warn', 'not confirmed')}</div>
+      <p>${esc(t.windowWarning)}</p>
+      <p class="hint">Due ${gt(t.dueGameTime)} as it stands. ATS shows the window as a time range on the
+        job screen &mdash; the second time is the appointment. Read it off the game and correct it here;
+        the window is measured from when the load was dispatched, so this puts the appointment where it
+        should have been all along.</p>
+      <div class="grid3">
+        <label>Time to deliver<input id="wf-hours" inputmode="numeric" placeholder="h:mm from the job screen"></label>
+        <label>Note<input id="wf-note" placeholder="e.g. window reads 6:15 AM to 12:55 PM"></label>
+        <div class="row-actions" style="align-self:end">
+          <button class="btn go" data-act="fix-window" data-id="${esc(t.id)}">Correct the window</button>
+        </div>
+      </div>
+    </div>` : ''}
 
     <div class="panel">
       <div class="panel-head"><h2>Close the load out</h2><span class="sub">Operations audits the trip from these numbers.</span></div>
@@ -4181,6 +4207,13 @@ async function handleAction(act, d, ev) {
         FLEETOPS = await api('/fleetops');
         closeModal();
       }, 'Driver removed.');
+    }
+    case 'fix-window': {
+      const hrs = hv('wf-hours');
+      if (hrs <= 0) return toast('Give me the time to deliver from the ATS job screen.', 'bad');
+      return run(async () => absorb(await api(`/trips/${d.id}/window`, 'POST', {
+        deadlineHours: hrs, note: sv('wf-note'),
+      })), 'Window corrected.');
     }
     case 'trailer-bought': {
       const unit = sv('tq-unit').trim();
