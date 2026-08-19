@@ -486,6 +486,7 @@ public static class DispatchEngine
             NavEstimateHours = load.NavEstimateHours,
             ExtraStops = load.ExtraStops,
             DeadlineHours = load.DeadlineHours,
+            AppointmentOpensHours = load.AppointmentOpensHours,
             UsableFuelRangeMiles = fuelRange,
             StartGameTime = s.Status.GameTime,
             Label = load.Cargo
@@ -805,6 +806,10 @@ public static class DispatchEngine
             ExtraStops = load.ExtraStops,
             IsHazmat = load.IsHazmat,
             HazmatClass = load.HazmatClass,
+            AppointmentOpensGameTime = load.AppointmentOpensHours > 0
+                && GameClock.TryParse(s.Status.GameTime) is { } opensFrom
+                ? GameClock.Format(opensFrom.AddHours(load.AppointmentOpensHours))
+                : "",
             IsOversize = load.IsOversize,
             TarpsUsed = load.RequiresTarp ? 1 : 0,
             FeasibilityAtDispatch = eval.Feasibility,

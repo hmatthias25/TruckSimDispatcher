@@ -113,6 +113,60 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
   } catch (e) { refused = true; msg = e.message; }
   ok('a zero window is refused', refused, msg);
 
+  head('10. Arriving before the receiver opens means waiting');
+  // Close the load out first so the board is free.
+  await api(`/trips/${trip.id}/complete`, 'POST', {
+    deliveredGameTime: '2000-01-01T08:00', actualMiles: 19, endOdometer: 1019, actualRevenue: 300,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 0, trailerDamageAfter: 0, cargoDamagePct: 0,
+    loadingHours: 1, unloadingHours: 1, detentionHours: 0,
+    layoverDays: 0, breakdownDays: 0, extraStops: 0, tarpsUsed: 0,
+    delayReason: '', damageCause: '', notes: '',
+    locationCity: 'Denver', locationState: 'CO', fuelPct: 80, gameTime: '2000-01-01T08:00',
+  });
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+
+  await api('/board/clear', 'POST', {});
+  const near = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, originCity: 'Denver', originState: 'CO',
+    destCity: 'Aurora', destState: 'CO', loadedMiles: 19, deadheadMiles: 0,
+    gameRevenue: 300, deadlineHours: 12, weightLbs: 20000, appointmentOpensHours: 6,
+  });
+  let f = near.evaluations[0].feasibility;
+  ok('the wait is planned, not ignored', f.waitForAppointmentHours > 0,
+    `${hhmm(f.waitForAppointmentHours || 0)}`);
+  ok('and it is called out as coming off the window',
+    (f.warnings || []).some((w) => /before they open/.test(w)),
+    (f.warnings || []).join(' | ') || '(none)');
+
+  head('11. A load with NO opening time plans exactly as before');
+  await api('/board/clear', 'POST', {});
+  const plain = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, originCity: 'Denver', originState: 'CO',
+    destCity: 'Aurora', destState: 'CO', loadedMiles: 19, deadheadMiles: 0,
+    gameRevenue: 300, deadlineHours: 12, weightLbs: 20000,
+  });
+  f = plain.evaluations[0].feasibility;
+  ok('no wait is invented', !f.waitForAppointmentHours, `${f.waitForAppointmentHours}`);
+  ok('nothing warns about a dock that was never mentioned',
+    !(f.warnings || []).some((w) => /before they open/.test(w)),
+    (f.warnings || []).join(' | ') || '(quiet)');
+  ok('and the load is still feasible', f.verdict === 'Feasible', f.verdict);
+
+  head('12. A long wait is taken as the reset rather than burned at the gate');
+  await api('/board/clear', 'POST', {});
+  const overnight = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, originCity: 'Denver', originState: 'CO',
+    destCity: 'Aurora', destState: 'CO', loadedMiles: 19, deadheadMiles: 0,
+    gameRevenue: 300, deadlineHours: 30, weightLbs: 20000, appointmentOpensHours: 18,
+  });
+  f = overnight.evaluations[0].feasibility;
+  ok('the long wait is recognised', f.waitForAppointmentHours > 10, `${hhmm(f.waitForAppointmentHours || 0)}`);
+  ok('and sat as the reset, not spent on duty',
+    (f.warnings || []).some((w) => /reset on their property/.test(w)),
+    (f.warnings || []).join(' | ') || '(none)');
+  ok('so the driver is not stranded out of hours', f.verdict !== 'Infeasible', f.verdict);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR', e.message); process.exit(1); });

@@ -747,6 +747,7 @@ function viewDispatch() {
           ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead miles<input id="b-dh" type="number" step="1" min="0" value="0"></label>`}
           <label>Job revenue $<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
           <label>Time to deliver<input id="b-deadline" inputmode="numeric" placeholder="h:mm from the listing"></label>
+          <label>Receiver opens in<input id="b-opens" inputmode="numeric" placeholder="h:mm, optional"></label>
           <label>Weight lb<input id="b-weight" type="number" step="1" min="0" placeholder="optional"></label>
           <label>ATS nav estimate<input id="b-nav" inputmode="numeric" placeholder="h:mm, optional"></label>
           <label>Shipper<input id="b-shipper" placeholder="optional"></label>
@@ -1144,6 +1145,8 @@ function loadCardHtml(e, d) {
       <span>all-in <b>$${e.allInRpm.toFixed(2)}</b>/mi</span>
       <span>loaded <b>$${e.loadedRpm.toFixed(2)}</b>/mi</span>
       <span>${num(e.load.loadedMiles)} mi + <b>${num(e.load.deadheadMiles)}</b> DH</span>
+      ${e.feasibility.waitForAppointmentHours > 0
+        ? `<span>wait for dock <b>${hhmm(e.feasibility.waitForAppointmentHours)}</b></span>` : ''}
       <span>slack <b>${hhmm(e.feasibility.slackHours)}</b></span>
       <span>drive <b>${hhmm(e.feasibility.driveHours)}</b></span>
       <span>rests <b>${e.feasibility.restsRequired}</b></span>
@@ -3912,6 +3915,7 @@ async function handleAction(act, d, ev) {
         destCity: sv('b-dcity'), destState: sv('b-dstate'),
         loadedMiles: fv('b-miles'), deadheadMiles: fv('b-dh'),
         gameRevenue: fv('b-rev'), deadlineHours: hv('b-deadline'),
+        appointmentOpensHours: hv('b-opens'),
         weightLbs: fv('b-weight'), navEstimateHours: hvn('b-nav'),
         hazmatClass: sv('b-hazclass'),
         shipper: sv('b-shipper'), receiver: sv('b-receiver'),

@@ -596,6 +596,11 @@ public class BoardLoad
     public double? NavEstimateHours { get; set; }
     /// <summary>Hours until the load is late, from the ATS job listing.</summary>
     public double DeadlineHours { get; set; }
+    /// <summary>
+    /// Hours until the receiver will actually take the load — the first time in the ATS window range.
+    /// Zero means unknown, and unknown plans exactly as it always did.
+    /// </summary>
+    public double AppointmentOpensHours { get; set; }
     public bool IsUrgent { get; set; }
     public bool IsFragile { get; set; }
     public bool IsHazmat { get; set; }
@@ -710,6 +715,9 @@ public class Trip
     public bool IsHazmat { get; set; }
     /// <summary>The ATS HazMat class this load needed. See <see cref="BoardLoad.HazmatClass"/>.</summary>
     public string HazmatClass { get; set; } = "";
+
+    /// <summary>When the receiver opens, as a game time. Empty when the window did not say.</summary>
+    public string AppointmentOpensGameTime { get; set; } = "";
 
     /// <summary>
     /// Set when the delivery window does not match the run and has not been confirmed.
@@ -1698,6 +1706,11 @@ public class FeasibilityResult
     /// </summary>
     public double ShiftRemainingOnArrival { get; set; }
     public double DriveRemainingOnArrival { get; set; }
+    /// <summary>
+    /// Hours spent sitting at the receiver waiting for the window to open. Zero when the opening time
+    /// is unknown, which is every load dispatched before the app started reading windows as ranges.
+    /// </summary>
+    public double WaitForAppointmentHours { get; set; }
     public double EffectiveMph { get; set; }
     public List<TimelineStep> Timeline { get; set; } = new();
 }

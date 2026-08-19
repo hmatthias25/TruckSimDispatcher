@@ -9,6 +9,8 @@ public class HosTask
     public string Kind { get; set; } = "Drive";
     public double Hours { get; set; }
     public double Miles { get; set; }
+    /// <summary>The drop itself, which cannot start before the receiver opens.</summary>
+    public bool IsUnload { get; set; }
 }
 
 public class PlanRequest
@@ -22,6 +24,15 @@ public class PlanRequest
     public int ExtraStops { get; set; }
     /// <summary>Hours until the load is late, as shown on the ATS job.</summary>
     public double DeadlineHours { get; set; }
+    /// <summary>
+    /// Hours until the receiver will actually take the load. ATS shows the window as a range and the
+    /// first time is when the doors open — arriving before it means sitting there.
+    ///
+    /// <b>Zero means unknown</b>, and unknown plans exactly as it did before this existed. Loads
+    /// already running have no opening time on file and must not have their plans change underneath
+    /// them.
+    /// </summary>
+    public double AppointmentOpensHours { get; set; }
     public bool IncludePreTrip { get; set; } = true;
     /// <summary>Miles the truck can run on the fuel currently aboard.</summary>
     public double UsableFuelRangeMiles { get; set; } = 9999;
@@ -126,7 +137,7 @@ public static class HosEngine
             tasks.Add(new HosTask { Label = $"Intermediate stop {i + 1}", Kind = "OnDuty", Hours = 0.5 });
 
         if (req.UnloadingHours > 0)
-            tasks.Add(new HosTask { Label = "Unload / drop", Kind = "OnDuty", Hours = req.UnloadingHours });
+            tasks.Add(new HosTask { Label = "Unload / drop", Kind = "OnDuty", Hours = req.UnloadingHours, IsUnload = true });
 
         return tasks;
     }
@@ -247,6 +258,44 @@ public static class HosEngine
 
         foreach (var task in tasks)
         {
+            // Turning up before the doors open means sitting there. ATS shows the window as a range;
+            // the first time is when the receiver will actually take it, so arriving early is dead
+            // time rather than slack. Skipped entirely when no opening time is known, which is how
+            // every load dispatched before this existed keeps the plan it was given.
+            if (task.IsUnload && req.AppointmentOpensHours > 0)
+            {
+                var opensAt = start.Value.AddHours(req.AppointmentOpensHours);
+                var waiting = (opensAt - clock).TotalHours;
+                if (waiting > Eps)
+                {
+                    result.WaitForAppointmentHours = Math.Round(waiting, 2);
+                    if (waiting >= rules.OffDutyReset)
+                    {
+                        // Long enough to be worth sleeping. A driver sitting ten hours at a receiver
+                        // takes their reset there rather than burning the window watching the gate.
+                        drive = rules.DriveLimit;
+                        shift = rules.ShiftLimit;
+                        brk = rules.DrivingBeforeBreak;
+                        result.RestsRequired++;
+                        Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}, taken as the reset", "Rest", waiting, 0);
+                        result.Warnings.Add(
+                            $"You arrive {Hhmm.Of(waiting)} before they open. Long enough to sit your " +
+                            $"{rules.OffDutyReset:0.#}-hour reset on their property, so the wait is not wasted.");
+                    }
+                    else
+                    {
+                        // Short wait: on duty at the gate, burning the window.
+                        shift = Math.Max(0, shift - waiting);
+                        cycle = Math.Max(0, cycle - waiting);
+                        Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}", "OnDuty", waiting, 0);
+                        if (waiting >= 1)
+                            result.Warnings.Add(
+                                $"You get there {Hhmm.Of(waiting)} before they open, and that wait comes off " +
+                                "your 14-hour window — it is on-duty time, not slack.");
+                    }
+                }
+            }
+
             var remaining = task.Hours;
             var milesRemaining = task.Miles;
 
