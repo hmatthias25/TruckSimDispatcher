@@ -1342,7 +1342,7 @@ object Snapshot(AppState? given = null)
             recap = Recap.Assess(s),
             // The restart on order, if any, plus where the app would send them.
             restart = Restart.Open(s) is { } ro
-                ? new { order = ro, instructions = Restart.Instructions(s, ro), needed = true }
+                ? new { order = (RestartOrder?)ro, instructions = Restart.Instructions(s, ro), needed = true }
                 : Restart.Needed(s)
                     ? new { order = (RestartOrder?)null, instructions = new List<string>(), needed = true }
                     : null,
