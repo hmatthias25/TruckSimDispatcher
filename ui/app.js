@@ -11,6 +11,7 @@ let RECON = null;
 let SHOTS = [];            // pending screenshots {mediaType, dataBase64, thumb, name}
 let EXTRACT = null;        // last extraction result, awaiting confirmation
 let DISCOVERY = null;      // "new city reached" notice awaiting acknowledgement
+let REACHED_PAGE = 1;      // which page of the reached-cities list is showing
 /* Which board the driver is showing us: what is on offer at this dock, or the whole city. Starts
    local because that is the first thing you see when the trailer comes off. */
 let BOARD_STAGE = 'local';
@@ -774,6 +775,7 @@ function viewDispatch() {
         </div>
       </div>
 
+      ${restartHtml()}
       ${screenshotHtml()}
       ${boardTableHtml()}
       ${decisionHtml()}
@@ -934,6 +936,50 @@ function recapAdviceHtml() {
       ${fkpi('Cycle after', hhmm(r.cycleAfter))}
       ${fkpi('vs restart', hhmm(S.settings.hos.cycleRestartHours), 'warn')}
     </div>` : ''}
+  </div>`;
+}
+
+/**
+ * Reporting a 34-hour restart. Two stages on purpose: arriving starts the clock, and the app checks the
+ * elapsed game time and the cycle before it puts freight back on. A restart taken on trust is not a
+ * restart — it is a way of ignoring the one rule the app exists to enforce.
+ */
+function restartHtml() {
+  const r = S.views.restart;
+  if (!r || !r.needed) return '';
+  const o = r.order;
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>34-hour restart</h2>
+      ${badge(o && o.status === 'Arrived' ? 'warn' : 'bad', o ? o.status.toLowerCase() : 'required')}
+      <div class="spacer"></div>
+      <span class="sub">no freight until this is sat</span></div>
+
+    ${(r.instructions || []).map((x) => `<p>${esc(x)}</p>`).join('')}
+
+    ${!o || o.status === 'Ordered' ? `
+      <p class="hint">Report in when you are parked up and I will start the clock. Give me the game time
+        you got there, and where, if it is not where I sent you.</p>
+      <div class="grid3">
+        ${dayTimeInput('rs-arr', S.status.gameTime, 'Arrived at (game)')}
+        <label>City<input id="rs-city" value="${esc(S.status.locationCity)}"></label>
+        <label>State<input id="rs-state" value="${esc(S.status.locationState)}" maxlength="2"></label>
+      </div>
+      <div class="row-actions"><button class="btn primary" data-act="restart-arrived">I am parked up</button></div>`
+    : `
+      <div class="callout info">
+        <p style="margin:0">Clock started ${gt(o.arrivedGameTime)}. Eligible
+          <b>${gt(o.eligibleGameTime)}</b> — that is the earliest you can legally roll.</p>
+      </div>
+      <p class="hint">When you have sat the full ${num(o.requiredHours, 0)} hours, re-read your HOS display,
+        report your clocks above, then confirm here. I check the elapsed time and the cycle before I put
+        freight on the truck.</p>
+      <div class="grid2">
+        ${dayTimeInput('rs-done', S.status.gameTime, 'Rolling again at (game)')}
+        <div class="row-actions" style="align-self:end">
+          <button class="btn go" data-act="restart-complete">The 34 is done</button>
+        </div>
+      </div>`}
   </div>`;
 }
 
@@ -1155,7 +1201,9 @@ function loadCardHtml(e, d) {
       <span>margin <b>${money(e.estimatedMargin)}</b></span>
     </div>
     <div class="kv"><span>ETA <b>${gt(e.feasibility.projectedArrivalGameTime)}</b></span>
-      <span>due <b>${gt(e.feasibility.dueGameTime)}</b></span>
+      ${e.feasibility.appointmentOpensGameTime
+        ? `<span>window <b>${gt(e.feasibility.appointmentOpensGameTime)} → ${gt(e.feasibility.dueGameTime)}</b></span>`
+        : `<span>due <b>${gt(e.feasibility.dueGameTime)}</b></span>`}
       <span>cycle after <b>${hhmm(e.feasibility.cycleRemainingAfter)}</b></span></div>
     ${e.hardFails.length ? `<ul class="reasons bad">${e.hardFails.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${e.requiresSwap && e.swapPlan ? swapPlanHtml(e.swapPlan) : ''}
@@ -1246,7 +1294,10 @@ function viewActive() {
       <dt>Dispatched</dt><dd>${num(t.dispatchedMiles)} loaded + ${num(t.deadheadMiles)} deadhead mi</dd>
       <dt>Revenue</dt><dd>${money(t.gameRevenue)} from ATS → ${money(t.companyRevenue)} booked</dd>
       <dt>Dispatched at</dt><dd>${gt(t.dispatchedGameTime)}</dd>
-      <dt>Due</dt><dd>${gt(t.dueGameTime)}</dd>
+      ${t.appointmentOpensGameTime
+        ? `<dt>Window</dt><dd>${gt(t.appointmentOpensGameTime)} → <b>${gt(t.dueGameTime)}</b>
+             <div class="sub">They will not take it before the window opens.</div></dd>`
+        : `<dt>Due</dt><dd>${gt(t.dueGameTime)}</dd>`}
       ${t.weightLbs ? `<dt>Weight</dt><dd>${num(t.weightLbs)} lb</dd>` : ''}
       <dt>Rationale</dt><dd style="font-family:inherit">${esc(t.authorizationRationale)}</dd>
     </dl>
@@ -1447,18 +1498,33 @@ function citiesReachedHtml() {
     <p class="hint">Every city you have reported being in. Reaching one is what makes its freight board
       readable to dispatch, whether or not there is ever a yard there.
       ${S.views.networkSummary ? esc(S.views.networkSummary) + ' A city off that network is still on the map — it is just not somewhere the company opens terminals.' : ''}</p>
-    <details class="score" ${all.length <= 12 ? 'open' : ''}>
-      <summary>${all.length} ${all.length === 1 ? 'city' : 'cities'}, most recent first</summary>
-      <div class="tablewrap"><table>
+    ${(() => {
+      // Paged rather than capped. An earlier version showed six of twelve with no indication and made
+      // it look like cities had been lost — the count and the range stay visible here, and every city
+      // is one page away.
+      const per = 10;
+      const pages = Math.max(1, Math.ceil(all.length / per));
+      const page = Math.min(Math.max(1, REACHED_PAGE), pages);
+      const from = (page - 1) * per;
+      const shown = all.slice(from, from + per);
+      return `<div class="tablewrap"><table>
         <thead><tr><th>City</th><th>Reached</th><th>On</th><th>Market</th><th>Yard</th></tr></thead><tbody>
-        ${all.map((c) => `<tr>
+        ${shown.map((c) => `<tr>
           <td><b>${esc(c.city)}</b>${c.state ? ', ' + esc(c.state) : ''}</td>
           <td>${c.discoveredGameTime ? gt(c.discoveredGameTime) : '<span class="sub">before tracking</span>'}</td>
           <td class="sub">${esc(c.tripNumber || '—')}</td>
           <td>${c.tier ? `Tier ${c.tier}${c.resetFriendly ? ' · reset' : ''}` : '<span class="sub">unknown</span>'}</td>
           <td>${badge(cls(c.status), c.status)}</td></tr>`).join('')}
       </tbody></table></div>
-    </details>
+      ${pages > 1 ? `<div class="row-actions" style="margin-top:8px">
+        <button class="btn tiny ghost" data-act="reached-page" data-page="${page - 1}"
+          ${page <= 1 ? 'disabled' : ''}>← Newer</button>
+        <span class="sub">${from + 1}–${Math.min(from + per, all.length)} of ${all.length}
+          · page ${page} of ${pages}</span>
+        <button class="btn tiny ghost" data-act="reached-page" data-page="${page + 1}"
+          ${page >= pages ? 'disabled' : ''}>Older →</button>
+      </div>` : ''}`;
+    })()}
   </div>`;
 }
 
@@ -1667,6 +1733,13 @@ function auditModal(a) {
       ${a.warnings.map((w) => `<p>${esc(w)}</p>`).join('')}
       <p class="hint" style="margin:0">Posted as reported — correct it on the trip if it was a typo.</p></div>` : ''}
 
+    ${(a.whatsNext || []).length ? `<div class="callout ${a.restartOrdered ? 'stop' : 'warn'}">
+      <h4>${a.restartOrdered ? 'Before your next load — restart required' : 'Before your next load'}</h4>
+      ${a.whatsNext.map((x) => `<p>${esc(x)}</p>`).join('')}
+      ${a.restartOrdered ? `<div class="row-actions">
+        <button class="btn" data-act="tab" data-tab="dispatch">Report the restart on Dispatch</button>
+      </div>` : ''}</div>` : ''}
+
     ${a.homeTimeNote ? `<div class="callout ${a.gotYouHome ? 'go' : 'info'}">
       <h4>${a.gotYouHome ? 'That load got you home' : 'Home time'}</h4>
       <p style="margin:0">${esc(a.homeTimeNote)}</p></div>` : ''}
@@ -1775,11 +1848,15 @@ function tripDetailModal(id) {
       ${row('Kind / division', esc(t.kind) + ' · ' + esc(t.division))}
       ${row('Origin', esc(t.originCity) + ', ' + esc(t.originState) + (t.shipper ? ' — ' + esc(t.shipper) : ''))}
       ${row('Destination', esc(t.destCity) + ', ' + esc(t.destState) + (t.receiver ? ' — ' + esc(t.receiver) : ''))}
-      ${row('Dispatched miles', num(t.dispatchedMiles) + ' loaded / ' + num(t.deadheadMiles) + ' deadhead')}
+      ${row('Dispatched miles', num(t.dispatchedMiles) + ' loaded / ' + num(t.deadheadMiles) + ' deadhead'
+        + (t.repositionMiles > 0 ? ' / ' + num(t.repositionMiles) + ' repositioning' : ''))}
+      ${t.repositionNote ? row('Empty leg before this load', t.repositionNote) : ''}
       ${row('Actual miles', num(t.actualMiles))}
       ${row('Odometer', num(t.startOdometer) + ' → ' + num(t.endOdometer))}
       ${row('ATS revenue / booked', money(t.gameRevenue) + ' / ' + money(t.companyRevenue))}
       ${row('Dispatched / due / delivered', gt(t.dispatchedGameTime) + ' · ' + gt(t.dueGameTime) + ' · ' + gt(t.deliveredGameTime))}
+      ${t.appointmentOpensGameTime
+        ? row('Delivery window', gt(t.appointmentOpensGameTime) + ' → ' + gt(t.dueGameTime)) : ''}
       ${row('Fuel', num(t.fuelGallons, 1) + ' gal · ' + money(t.fuelCost))}
       ${row('Tolls / repairs / fines', money(t.tolls) + ' · ' + money(t.repairCost) + ' · ' + money(t.fines))}
       ${row('Unit / trailer', esc(t.truckUnit) + ' / ' + esc(t.trailerUnit))}
@@ -4211,6 +4288,22 @@ async function handleAction(act, d, ev) {
         FLEETOPS = await api('/fleetops');
         closeModal();
       }, 'Driver removed.');
+    }
+    case 'restart-arrived': {
+      return run(async () => absorb(await api('/restart/arrived', 'POST', {
+        gameTime: readDayTime('rs-arr'), city: sv('rs-city'), state: sv('rs-state'),
+      })), 'Clock started on the restart.');
+    }
+    case 'restart-complete': {
+      return run(async () => {
+        const r = await api('/restart/complete', 'POST', { gameTime: readDayTime('rs-done') });
+        absorb(r);
+        toast(r.message, r.accepted ? 'ok' : 'bad');
+      });
+    }
+    case 'reached-page': {
+      REACHED_PAGE = Math.max(1, +d.page || 1);
+      return render();
     }
     case 'fix-window': {
       const hrs = hv('wf-hours');

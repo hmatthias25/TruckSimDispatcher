@@ -45,7 +45,11 @@ public static class PayEngine
             ? trip.ActualMiles
             : trip.DispatchedMiles;
         if (trip.Kind != "Freight") loadedMiles = 0;
+        // The job's quoted deadhead covers getting to the shipper after dispatch. Repositioning is the
+        // empty leg BEFORE it — from the last receiver or the truck stop — so the two are consecutive
+        // legs and both are paid, rather than two guesses at the same miles.
         var dhMiles = trip.Kind == "Freight" ? trip.DeadheadMiles : Math.Max(trip.DeadheadMiles, trip.ActualMiles);
+        dhMiles += Math.Max(0, trip.RepositionMiles);
 
         b.LoadedMiles = loadedMiles;
         b.DeadheadMiles = dhMiles;
@@ -55,6 +59,9 @@ public static class PayEngine
 
         b.LinehaulPay = Math.Round(payLoaded * p.LoadedCpm, 2);
         b.DeadheadPay = Math.Round(payDh * p.DeadheadCpm, 2);
+        if (trip.RepositionMiles > 0)
+            b.Lines.Add($"Repositioning: {trip.RepositionMiles:N0} empty mi before this load, " +
+                        $"paid at the empty rate. {trip.RepositionNote}");
 
         var premium = PremiumCpm(p, trip.Division, trip.IsHazmat, trip.IsOversize);
         b.DivisionPremium = Math.Round(payLoaded * premium, 2);

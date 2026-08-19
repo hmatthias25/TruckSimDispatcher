@@ -104,6 +104,14 @@ public class TripAudit
     public List<string> RequestAnswers { get; set; } = new();
     /// <summary>Set when a home-time request was approved on this close-out.</summary>
     public bool HomeRequestGranted { get; set; }
+    /// <summary>
+    /// Anything outstanding the driver has to do before the next load — the restart order, a fleet
+    /// report waiting. Read at close-out because that is the one moment they are certainly looking at
+    /// the app, and it is when they are deciding where to point the truck.
+    /// </summary>
+    public List<string> WhatsNext { get; set; } = new();
+    /// <summary>Set when a 34-hour restart was ordered off the back of this delivery.</summary>
+    public bool RestartOrdered { get; set; }
 }
 
 /// <summary>Closes a load out: service audit, pay accrual, ledger postings, equipment and career updates.</summary>
@@ -589,6 +597,40 @@ public static class TripService
         if (restored != null)
             audit.Directives.Add($"{restored.Number}: {restored.Instruction}");
 
+        // ---- what happens before the next load
+        //
+        // Everything below is already discoverable somewhere else in the app. It is repeated here
+        // because closing a load out is the one moment the driver is certainly reading, and it is when
+        // they are deciding where to point the truck — a banner they meet after driving somewhere else
+        // is too late to be useful.
+
+        // The cycle. Ordered now rather than when the board stops working, so they can reach a decent
+        // truck stop instead of parking wherever they ran out.
+        if (Restart.Open(s) is { } openRestart)
+        {
+            audit.WhatsNext.AddRange(Restart.Instructions(s, openRestart));
+            audit.RestartOrdered = true;
+        }
+        else if (Restart.Needed(s))
+        {
+            audit.WhatsNext.AddRange(Restart.Instructions(s, Restart.Order(s)));
+            audit.RestartOrdered = true;
+        }
+
+        // The fortnightly fleet report. It had a banner and a tab callout but was never mentioned at
+        // the moment the driver might act on it.
+        var fleetDue = FleetOpsService.DueCheck(s);
+        if (fleetDue.IsDue)
+            audit.WhatsNext.Add($"Fleet report is due — {fleetDue.Message} File it on the Fleet tab; " +
+                                "your hired drivers' revenue does not post until you do.");
+        else if (fleetDue.IsSoon)
+            audit.WhatsNext.Add($"Fleet report coming due: {fleetDue.Message}");
+
+        // Home time already has its own callout on the summary, so only mention it here when it is
+        // actually actionable rather than repeating the note twice.
+        if (!audit.GotYouHome && audit.HomeTimeInstructions.Count > 0)
+            audit.WhatsNext.Add(audit.HomeTimeInstructions[0]);
+
         return audit;
     }
 
@@ -851,6 +893,16 @@ public static class TripService
 
         var due = GameClock.TryParse(trip.DueGameTime);
         var del = GameClock.TryParse(trip.DeliveredGameTime);
+
+        // A delivery before the window opened did not happen the way it was reported — the receiver
+        // was not taking it yet, so either the time is wrong or the window was. Said, not blocked:
+        // this app reconciles what the driver saw, the same as it does for an odometer that reads
+        // backwards.
+        if (del != null && GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opens && del < opens)
+            trip.WindowWarning =
+                $"Delivered {GameClock.Pretty(del.Value)}, but the window did not open until " +
+                $"{GameClock.Pretty(opens)}. They would not have taken it yet — check the delivery time, " +
+                "or correct the window if that is what is wrong.";
 
         if (due != null && del != null)
         {

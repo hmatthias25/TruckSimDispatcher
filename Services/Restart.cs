@@ -1,0 +1,244 @@
+using TruckSimDispatcher.Models;
+
+namespace TruckSimDispatcher.Services;
+
+/// <summary>
+/// The 34-hour restart, as a thing the company plans and the driver actually does.
+///
+/// It used to be a warning that got louder. The app set a reset watch, favoured freight that ended
+/// somewhere a restart could be sat, and then kept dispatching until nothing on the board could be run
+/// legally — at which point the driver took their thirty-four hours wherever they happened to have
+/// stopped. That is the wrong order. Thirty-four hours of not earning is a real decision, so it gets
+/// made in advance, and the company picks the place.
+///
+/// There was also no way to <i>take</i> one. The driver reported clocks and the app believed them.
+/// Now it is a sequence: report arriving, sit it, report back with the clocks reset. The app checks the
+/// elapsed game time really was thirty-four hours and that the cycle actually came back, and only then
+/// puts freight on the truck. A restart nobody sat is not a restart.
+/// </summary>
+public static class Restart
+{
+    /// <summary>
+    /// Cycle hours at or below which dispatch stops. One more full day of driving is enough to reach a
+    /// decent truck stop; a second is not, and running the cycle to zero is how you end up sitting a
+    /// restart at a customer's gate. Editable, like every other threshold.
+    /// </summary>
+    public static double StopDispatchAtCycleHours(AppState s) => s.Settings.Hos.StopDispatchAtCycleHours;
+
+    public static RestartOrder? Open(AppState s)
+    {
+        var open = s.RestartOrders.FirstOrDefault(r => r.Status is "Ordered" or "Arrived");
+        if (open == null) return null;
+
+        // Ordered but never parked up, and a restart is no longer called for. Either the cycle came
+        // back — the driver re-read their display and it was better than we thought, and their display
+        // is authoritative — or recap now covers it, which is the whole point of the recap adviser.
+        // Holding them against a problem that no longer exists would be the app being stubborn.
+        if (open.Status == "Ordered" && !Needed(s))
+        {
+            open.Status = "Cancelled";
+            open.CompletedGameTime = s.Status.GameTime;
+            open.Reason = $"Stood down — {Hhmm.Of(s.Hos.CycleRemaining)} of cycle and no restart needed after all. " +
+                          open.Reason;
+            return null;
+        }
+        return open;
+    }
+
+    /// <summary>
+    /// Is the cycle low enough that the driver should be going for a restart rather than a load?
+    ///
+    /// Recap is checked first, and beats a restart whenever it will do. Sitting thirty-four hours when
+    /// the cycle refills itself at midnight is precisely the expensive mistake the recap adviser exists
+    /// to prevent, so ordering one over the top of that advice would be the app contradicting itself.
+    /// </summary>
+    public static bool Needed(AppState s)
+    {
+        if (s.Hos.CycleRemaining <= 0) return true;
+        if (s.Hos.CycleRemaining > StopDispatchAtCycleHours(s)) return false;
+        // Enough coming back soon enough to carry on? Then no restart.
+        return Recap.Assess(s).Verdict != "Wait";
+    }
+
+    /// <summary>
+    /// Where to sit it.
+    ///
+    /// Home wins when home is reachable and home time is anywhere near due, because a restart at the
+    /// yard and home time in the same stop beats a restart on the road followed by running home two
+    /// days later. Otherwise the nearest reset-capable market — the ones with the parking and services
+    /// to actually sit thirty-four hours.
+    /// </summary>
+    public static (string City, string State, bool IsHome, string Why) Where(AppState s)
+    {
+        var here = (s.Status.LocationCity, s.Status.LocationState);
+        var home = HomeTime.HomeTerminal(s);
+        var homeStatus = HomeTime.Status(s);
+
+        if (home != null)
+        {
+            var toHome = Geo.MilesBetween(here.LocationCity, here.LocationState, home.City, home.State);
+            var mph = HosEngine.EffectiveMph(s.Settings, DispatchEngine.AssignedTruck(s));
+            var hoursHome = toHome is { } m && mph > 0 ? m / mph : double.MaxValue;
+
+            // Reachable on what is left of the cycle, and home time close enough to be worth combining.
+            var reachable = hoursHome <= Math.Max(1, s.Hos.CycleRemaining);
+            var homeSoon = homeStatus.Tracked && (homeStatus.DueSoon || homeStatus.Overdue
+                                                  || homeStatus.DaysUntilDue <= 3);
+
+            if (reachable && homeSoon)
+                return (home.City, home.State, true,
+                    $"Home time is {(homeStatus.Overdue ? "overdue" : $"due in {homeStatus.DaysUntilDue:0.#} days")} and " +
+                    $"{DispatchEngine.Place(home.City, home.State)} is {toHome:N0} mi out — inside what is left of your cycle. " +
+                    "Sit the restart at the yard and take your home time in the same stop. Doing it the other way round " +
+                    "means thirty-four hours on the road and then running home two days later for nothing.");
+        }
+
+        var options = Markets.ResetOptions(s, here.LocationState, 40);
+        var best = options
+            .Select(c => new
+            {
+                c,
+                miles = Geo.MilesBetween(here.LocationCity, here.LocationState, c.City, c.State) ?? double.MaxValue
+            })
+            .Where(x => x.miles < double.MaxValue)
+            .OrderBy(x => x.miles)
+            .ThenBy(x => x.c.Tier)
+            .FirstOrDefault();
+
+        if (best != null)
+            return (best.c.City, best.c.State, false,
+                $"{DispatchEngine.Place(best.c.City, best.c.State)} is {best.miles:N0} mi out and has the parking and " +
+                $"services to sit thirty-four hours. Tier-{best.c.Tier} freight market too, so you will not be " +
+                "starting from nowhere when you come back on the clock.");
+
+        // Nothing in the table we can measure against. Say so rather than invent a city.
+        var fallback = options.FirstOrDefault();
+        return fallback != null
+            ? (fallback.City, fallback.State, false,
+                $"{DispatchEngine.Place(fallback.City, fallback.State)} is reset-capable. I cannot measure the distance " +
+                "from where you are, so check it is a sensible run before you commit.")
+            : ("", "", false,
+                "I have nowhere reset-capable on file near you. Find a truck stop with real parking and services, " +
+                "report in when you are there, and I will start the clock.");
+    }
+
+    /// <summary>Raises the order that stops dispatch until the restart is sat.</summary>
+    public static RestartOrder Order(AppState s)
+    {
+        if (Open(s) is { } already) return already;
+
+        var (city, state, isHome, why) = Where(s);
+        var order = new RestartOrder
+        {
+            Number = $"{(string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code)}-RS-{s.RestartOrders.Count + 1:0000}",
+            OrderedGameTime = s.Status.GameTime,
+            CycleAtOrder = s.Hos.CycleRemaining,
+            TargetCity = city,
+            TargetState = state,
+            AtHomeTerminal = isHome,
+            Reason = why,
+            RequiredHours = s.Settings.Hos.CycleRestartHours,
+            Status = "Ordered"
+        };
+        s.RestartOrders.Insert(0, order);
+        return order;
+    }
+
+    /// <summary>What the driver is told, wherever they are reading it.</summary>
+    public static List<string> Instructions(AppState s, RestartOrder order)
+    {
+        var lines = new List<string>();
+        var where = string.IsNullOrWhiteSpace(order.TargetCity)
+            ? "a truck stop with real parking"
+            : DispatchEngine.Place(order.TargetCity, order.TargetState);
+
+        if (order.Status == "Ordered")
+        {
+            lines.Add($"{order.Number}: you are down to {Hhmm.Of(order.CycleAtOrder)} of cycle. " +
+                      $"No more freight until you have sat the {order.RequiredHours:0.#}-hour restart.");
+            lines.Add($"A {s.Settings.Hos.OffDutyReset:0.#}-hour rest will not fix this — a normal overnight " +
+                      $"restores your drive and shift clocks but does not touch the {s.Settings.Hos.CycleLimit:0}-hour " +
+                      $"cycle. Only the {order.RequiredHours:0.#} puts it back.");
+            lines.Add($"Go to {where}. {order.Reason}");
+            lines.Add("Report in when you get there and I will start the clock on it.");
+        }
+        else
+        {
+            lines.Add($"{order.Number}: you are at {where} and the restart started " +
+                      $"{GameClock.Pretty(order.ArrivedGameTime)}.");
+            lines.Add($"Sit the full {order.RequiredHours:0.#} hours, then report your clocks. " +
+                      $"Earliest you can be back on the road is {GameClock.Pretty(order.EligibleGameTime)}.");
+            if (order.AtHomeTerminal)
+                lines.Add("You are at the yard, so this is your home time as well — the clock on the next one resets here.");
+        }
+        return lines;
+    }
+
+    /// <summary>The driver has arrived and is parking up. Starts the clock.</summary>
+    public static RestartOrder ReportArrived(AppState s, string gameTime, string city, string state)
+    {
+        var order = Open(s) ?? throw new InvalidOperationException("There is no restart on order.");
+        if (order.Status == "Arrived")
+            throw new InvalidOperationException($"{order.Number} already started at {GameClock.Pretty(order.ArrivedGameTime)}.");
+
+        var when = string.IsNullOrWhiteSpace(gameTime) ? s.Status.GameTime : gameTime;
+        var at = GameClock.TryParse(when) ?? throw new InvalidOperationException("I need the game time you arrived.");
+
+        order.Status = "Arrived";
+        order.ArrivedGameTime = GameClock.Format(at);
+        order.EligibleGameTime = GameClock.Format(at.AddHours(order.RequiredHours));
+        if (!string.IsNullOrWhiteSpace(city)) { order.ArrivedCity = city; order.ArrivedState = state; }
+        return order;
+    }
+
+    /// <summary>
+    /// The driver says the restart is done.
+    ///
+    /// Two things have to be true: enough game time really passed, and the cycle really came back. Both
+    /// are checked, because a restart the app takes on trust is not a restart — it is a way of ignoring
+    /// the rule the whole app exists to enforce.
+    /// </summary>
+    public static (RestartOrder Order, bool Accepted, string Message) ReportComplete(AppState s, string gameTime)
+    {
+        var order = Open(s) ?? throw new InvalidOperationException("There is no restart on order.");
+        if (order.Status != "Arrived")
+            throw new InvalidOperationException($"{order.Number}: report in at the truck stop first so I can start the clock.");
+
+        var when = string.IsNullOrWhiteSpace(gameTime) ? s.Status.GameTime : gameTime;
+        var now = GameClock.TryParse(when) ?? throw new InvalidOperationException("I need the game time.");
+        var arrived = GameClock.TryParse(order.ArrivedGameTime)!.Value;
+
+        var elapsed = (now - arrived).TotalHours;
+        var cycle = s.Hos.CycleRemaining;
+        var full = s.Settings.Hos.CycleLimit;
+
+        // The cycle should be back at, or very near, the limit. A driver who reports 12 hours has not
+        // restarted anything — they have taken a long break.
+        var cycleBack = cycle >= full - 0.5;
+
+        if (elapsed + 0.01 < order.RequiredHours)
+        {
+            var shortBy = order.RequiredHours - elapsed;
+            return (order, false,
+                $"That is {Hhmm.Of(elapsed)} since you parked at {GameClock.Pretty(arrived)}. The restart is " +
+                $"{order.RequiredHours:0.#} hours and you are {Hhmm.Of(shortBy)} short — you are eligible at " +
+                $"{GameClock.Pretty(order.EligibleGameTime)}. Sit the rest of it and report again.");
+        }
+
+        if (!cycleBack)
+            return (order, false,
+                $"{Hhmm.Of(elapsed)} is long enough, but your cycle is showing {Hhmm.Of(cycle)} against a " +
+                $"{full:0.#}-hour limit. A completed restart puts the whole {full:0.#} back. Re-read your HOS " +
+                "display — if it really has not reset, the break was broken somewhere.");
+
+        order.Status = "Completed";
+        order.CompletedGameTime = GameClock.Format(now);
+        order.ElapsedHours = Math.Round(elapsed, 2);
+        order.CycleAfter = cycle;
+
+        var msg = $"{order.Number} complete — {Hhmm.Of(elapsed)} parked, cycle back to {Hhmm.Of(cycle)}. " +
+                  "You are clear for freight.";
+        if (order.AtHomeTerminal) msg += " That counted as your home time as well.";
+        return (order, true, msg);
+    }
+}

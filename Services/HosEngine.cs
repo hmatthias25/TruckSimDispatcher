@@ -392,6 +392,9 @@ public static class HosEngine
         result.ShiftRemainingOnArrival = Math.Round(shift, 2);
         result.DriveRemainingOnArrival = Math.Round(drive, 2);
 
+        if (req.AppointmentOpensHours > 0)
+            result.AppointmentOpensGameTime = GameClock.Format(start.Value.AddHours(req.AppointmentOpensHours));
+
         var due = start.Value.AddHours(req.DeadlineHours);
         result.DueGameTime = GameClock.Format(due);
         var parking = Math.Max(0, s.ParkingBufferHours);

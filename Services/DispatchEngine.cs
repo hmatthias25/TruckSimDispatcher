@@ -102,6 +102,25 @@ public static class DispatchEngine
         if (stops.Count > 0)
         {
             decision.RejectAll = true;
+
+            // A restart order is a clock problem, not a bad board. It has to read the same way the
+            // out-of-hours path always did — flagged as out of hours, restart required, and the board
+            // cleared, because by the time the driver is legal these jobs have turned over anyway.
+            var restartOrder = Restart.Open(s);
+            if (restartOrder != null)
+            {
+                decision.OutOfHours = true;
+                decision.NeedsRestart = true;
+                decision.Headline = $"You are out of cycle — {Hhmm.Of(s.Hos.CycleRemaining)} left on the " +
+                                    $"{s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}.";
+                decision.Rationale = string.Join(" ", stops);
+                decision.DispatchNotes.AddRange(stops);
+                decision.DispatchNotes.Add("I am clearing the board. By the time you are legal these jobs will have " +
+                                           "turned over anyway — pull a fresh one when you are back on duty.");
+                foreach (var e in decision.Evaluations) { e.Recommendation = "Reject"; e.HardFails.AddRange(stops); }
+                return decision;
+            }
+
             decision.Headline = "No dispatch — driver or equipment is not clear to run.";
             decision.Rationale = string.Join(" ", stops);
             decision.DispatchNotes.AddRange(stops);
@@ -405,6 +424,13 @@ public static class DispatchEngine
                 ? $"{wait.Number}: waiting on trailer {wait.ToTrailerUnit} — available {GameClock.Pretty(wait.AvailableFromGameTime)}."
                 : $"{wait.Number}: {wait.HeldByDriverName} still has trailer {wait.ToTrailerUnit}, due back around " +
                   $"{GameClock.Pretty(wait.AvailableFromGameTime)}. Stay home until it is in — the wait is home time, not hours.");
+
+        // A restart on order stops everything until it has actually been sat. Raised before the cycle
+        // runs out, so the driver reaches a decent truck stop rather than parking wherever they stopped.
+        if (Restart.Open(s) is { } rs)
+            stops.AddRange(Restart.Instructions(s, rs));
+        else if (Restart.Needed(s))
+            stops.AddRange(Restart.Instructions(s, Restart.Order(s)));
 
         if (s.Hos.CycleRemaining <= 0)
             stops.Add($"70-hour cycle is exhausted. {s.Settings.Hos.CycleRestartHours:0.#}-hour restart required before any driving.");
@@ -829,6 +855,19 @@ public static class DispatchEngine
                   $"tier-{eval.DestTier} destination{(eval.DestResetFriendly ? " with restart capability" : "")}."
                 : rationaleOverride
         };
+
+        // Empty miles the driver ran to get here — last receiver or truck stop to this shipper. Taken
+        // from the two odometer readings they reported, so nothing is estimated, and paid as deadhead
+        // because that is what it is.
+        if (Repositioning.Measure(s, trip, s.Status.AtsOdometer) is { } leg)
+        {
+            trip.RepositionMiles = leg.Miles;
+            trip.RepositionNote = string.IsNullOrWhiteSpace(leg.Warning) ? leg.Explanation : leg.Warning;
+            trip.Events.Add(new TripEvent
+            {
+                GameTime = s.Status.GameTime, Kind = "Note", Detail = trip.RepositionNote
+            });
+        }
 
         if (eval.Feasibility.Verdict == "Tight")
             trip.Notes = "Authorized as an exception with sub-buffer slack. Dispatcher owns any service failure on this load.";

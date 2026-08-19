@@ -782,6 +782,24 @@ app.MapPost("/api/window/read", (WindowReadRequest req) =>
         });
 });
 
+// The 34-hour restart, as a sequence. Report arriving, sit it, report back — and the app checks the
+// elapsed game time and the cycle before freight goes back on the truck.
+app.MapPost("/api/restart/arrived", (RestartArrivedRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var order = Restart.ReportArrived(s, req.GameTime ?? "", req.City ?? "", req.State ?? "");
+    var message = $"{order.Number}: clock started {GameClock.Pretty(order.ArrivedGameTime)}. " +
+                  $"Eligible {GameClock.Pretty(order.EligibleGameTime)}.";
+    store.Log(s, "hos", message, order.Number);
+    return new { snapshot = Snapshot(s), message, order };
+})));
+
+app.MapPost("/api/restart/complete", (RestartCompleteRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var (order, accepted, message) = Restart.ReportComplete(s, req.GameTime ?? "");
+    store.Log(s, "hos", (accepted ? "" : "REFUSED — ") + message, order.Number);
+    return new { snapshot = Snapshot(s), message, accepted, order };
+})));
+
 // Whether a receiver will let a truck sit overnight. Seeded on the facility, so the same customer in
 // the same city always answers the same way and refreshing cannot re-roll it.
 app.MapGet("/api/facility/parking", (string? city, string? state, string? receiver) =>
@@ -1267,6 +1285,9 @@ object Snapshot(AppState? given = null)
         incidents = s.Incidents,
         discipline = s.Discipline,
         workOrders = s.WorkOrders,
+        // Restart history, so a driver can see what they sat and when — including the ones that were
+        // stood down because the cycle came back without needing them.
+        restartOrders = s.RestartOrders,
         counters = s.Counters,
         discovered = s.Discovered,
         events = s.Events.Take(80).ToList(),
@@ -1319,6 +1340,12 @@ object Snapshot(AppState? given = null)
             hos = HosEngine.Describe(s, truck),
             // Recap versus the 34, weighed for them. The decision drivers get wrong most often.
             recap = Recap.Assess(s),
+            // The restart on order, if any, plus where the app would send them.
+            restart = Restart.Open(s) is { } ro
+                ? new { order = ro, instructions = Restart.Instructions(s, ro), needed = true }
+                : Restart.Needed(s)
+                    ? new { order = (RestartOrder?)null, instructions = new List<string>(), needed = true }
+                    : null,
             // Out of window on a customer's property: legal, not their fault, and they cannot move.
             stranded = Stranded.Assess(s),
             finance = LedgerService.Summary(s),
@@ -1506,6 +1533,8 @@ record TerminateRequest(string DriverId, string? Reason);
 record RetireRequest(string Unit, string? ReplacementUnit);
 record TrailerBoughtRequest(string RequestId, string Unit, decimal PaidPrice, string? GameTime, string? GameId);
 record TrailerDeclineRequest(string RequestId, string? GameTime);
+record RestartArrivedRequest(string? GameTime, string? City, string? State);
+record RestartCompleteRequest(string? GameTime);
 record WindowReadRequest(string? Text);
 record WindowFixRequest(double DeadlineHours, string? Note);
 record AskHomeRequest(string? Reason);

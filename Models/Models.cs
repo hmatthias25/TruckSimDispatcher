@@ -36,6 +36,8 @@ public class AppState
     public List<EquipmentOrder> EquipmentOrders { get; set; } = new();
     /// <summary>Trailers the company has asked for. The player buys them in ATS and reports the price.</summary>
     public List<TrailerRequest> TrailerRequests { get; set; } = new();
+    /// <summary>34-hour restarts ordered, in progress and completed.</summary>
+    public List<RestartOrder> RestartOrders { get; set; } = new();
     /// <summary>Home time the driver has asked for, and what operations said.</summary>
     public List<HomeTimeRequest> HomeTimeRequests { get; set; } = new();
     /// <summary>Fortnightly reviews while on probation. Kept on the file afterwards.</summary>
@@ -720,6 +722,15 @@ public class Trip
     public string AppointmentOpensGameTime { get; set; } = "";
 
     /// <summary>
+    /// Empty miles run between the last load closing and this one being dispatched — getting from the
+    /// receiver or the truck stop to where this job starts. Derived from the two odometer readings the
+    /// driver reported, never estimated. Separate from <see cref="DeadheadMiles"/>, which is the
+    /// deadhead the job listing itself quotes.
+    /// </summary>
+    public double RepositionMiles { get; set; }
+    public string RepositionNote { get; set; } = "";
+
+    /// <summary>
     /// Set when the delivery window does not match the run and has not been confirmed.
     ///
     /// The window is the appointment this load is judged against, so one that came from a bad read is
@@ -1249,6 +1260,45 @@ public class TrailerRequest
     public bool Unaffordable { get; set; }
 }
 
+/// <summary>
+/// A 34-hour restart the company has ordered and the driver has to actually sit.
+///
+/// Two-stage on purpose. The driver reports arriving, which starts the clock, and reports again when it
+/// is done — and the app checks the elapsed game time and the cycle before it puts freight back on the
+/// truck. An interrupted one is recoverable because the order persists between the two reports.
+/// </summary>
+public class RestartOrder
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Number { get; set; } = "";
+    /// <summary>Ordered | Arrived | Completed | Cancelled</summary>
+    public string Status { get; set; } = "Ordered";
+
+    public string OrderedGameTime { get; set; } = "";
+    /// <summary>Cycle hours left when the order went out — the reason it went out.</summary>
+    public double CycleAtOrder { get; set; }
+
+    public string TargetCity { get; set; } = "";
+    public string TargetState { get; set; } = "";
+    /// <summary>Set when the restart doubles as home time, which is the better play when it is available.</summary>
+    public bool AtHomeTerminal { get; set; }
+    public string Reason { get; set; } = "";
+
+    /// <summary>Hours the restart has to run. From the rule set, so a mod's figure is honoured.</summary>
+    public double RequiredHours { get; set; } = 34;
+
+    public string ArrivedGameTime { get; set; } = "";
+    public string ArrivedCity { get; set; } = "";
+    public string ArrivedState { get; set; } = "";
+    /// <summary>The earliest the driver can legally be back on the road.</summary>
+    public string EligibleGameTime { get; set; } = "";
+
+    public string CompletedGameTime { get; set; } = "";
+    /// <summary>What actually elapsed, as reported. Kept so a short one can be argued about later.</summary>
+    public double ElapsedHours { get; set; }
+    public double CycleAfter { get; set; }
+}
+
 /// <summary>A unit the fleet report sent for repair.</summary>
 public class RepairFlag
 {
@@ -1483,6 +1533,15 @@ public class HosRules
     public double OffDutyReset { get; set; } = 10;
     /// <summary>Off-duty hours that restart the cycle. Report your mod's value if it differs.</summary>
     public double CycleRestartHours { get; set; } = 34;
+
+    /// <summary>
+    /// Cycle hours at or below which dispatch stops and orders the restart.
+    ///
+    /// One more full day of driving is enough to reach a decent truck stop; a second is not. Running the
+    /// cycle to zero and stopping then is how a driver ends up sitting thirty-four hours at a
+    /// customer's gate, which is the thing this prevents.
+    /// </summary>
+    public double StopDispatchAtCycleHours { get; set; } = 11;
     public bool SleeperSplitAllowed { get; set; } = true;
     /// <summary>Does the 30-minute break consume the 14-hour window? True under real FMCSA rules.</summary>
     public bool BreakConsumesShift { get; set; } = true;
@@ -1711,6 +1770,11 @@ public class FeasibilityResult
     /// is unknown, which is every load dispatched before the app started reading windows as ranges.
     /// </summary>
     public double WaitForAppointmentHours { get; set; }
+    /// <summary>
+    /// When the receiver opens, as a game time. Empty when the listing showed no window — and the app
+    /// then behaves exactly as it did before windows were read, which keeps older loads intact.
+    /// </summary>
+    public string AppointmentOpensGameTime { get; set; } = "";
     public double EffectiveMph { get; set; }
     public List<TimelineStep> Timeline { get; set; } = new();
 }
