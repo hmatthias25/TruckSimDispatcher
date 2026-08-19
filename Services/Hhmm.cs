@@ -57,14 +57,23 @@ public static class Hhmm
     }
 
     /// <summary>
-    /// A day number out of text like "Day 17", "Day 17 00:00" or "17". Null when there is no number,
-    /// so a missing day is never mistaken for day zero.
+    /// A day number out of text like "Day 17", "Day 17 00:00", "Today • Day 13", "-1d • Day 12" or "17".
+    /// Null when there is no number, so a missing day is never mistaken for day zero.
+    ///
+    /// The number after the word "Day" wins. Taking the first number in the string instead reads
+    /// "-1d • Day 12" as day <b>1</b> — which quietly threw seven of the eight rolling-total rows out of
+    /// the window and left recap looking like a single batch.
     /// </summary>
     public static int? ReadDay(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
-        var m = System.Text.RegularExpressions.Regex.Match(text, @"\d+");
-        return m.Success && int.TryParse(m.Value, out var d) ? d : null;
+
+        var named = System.Text.RegularExpressions.Regex.Match(
+            text, @"day\s*#?\s*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (named.Success && int.TryParse(named.Groups[1].Value, out var named1)) return named1;
+
+        var any = System.Text.RegularExpressions.Regex.Match(text, @"\d+");
+        return any.Success && int.TryParse(any.Value, out var d) ? d : null;
     }
 
     /// <summary>Same, but signed — for drift and variance, where the direction is the point.</summary>

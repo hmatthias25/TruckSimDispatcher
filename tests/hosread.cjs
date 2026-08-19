@@ -21,6 +21,7 @@ const head = (t) => console.log(`\n=== ${t} ===`);
 const un = (r) => r.snapshot || r;
 const at = (d, hm = '08:00') => `2000-${String(Math.floor((d - 1) / 28) + 1).padStart(2, '0')}-${String(((d - 1) % 28) + 1).padStart(2, '0')}T${hm}`;
 const near = (a, b, tol = 0.005) => a != null && Math.abs(a - b) < tol;
+const hhmm = (h) => (h == null ? '--' : `${Math.floor(h)}:${String(Math.round((h - Math.floor(h)) * 60)).padStart(2, '0')}`);
 
 /** The reader's output for the screenshot in the issue. */
 const REAL = {
@@ -36,6 +37,17 @@ const REAL = {
     { dayText: 'Day 19 00:00', hoursText: '09:54' },
     { dayText: 'Day 20 00:00', hoursText: '06:41' },
     { dayText: 'Day 21 00:00', hoursText: '02:30' },
+  ],
+  // The rolling 8-day on-duty totals, which is what recap is actually derived from.
+  dailyTotals: [
+    { dayText: 'Today • Day 13', onDutyText: '02:30' },
+    { dayText: '-1d • Day 12', onDutyText: '06:41' },
+    { dayText: '-2d • Day 11', onDutyText: '09:54' },
+    { dayText: '-3d • Day 10', onDutyText: '05:34' },
+    { dayText: '-4d • Day 9', onDutyText: '00:25' },
+    { dayText: '-5d • Day 8', onDutyText: '00:00' },
+    { dayText: '-6d • Day 7', onDutyText: '00:00' },
+    { dayText: '-7d • Day 6', onDutyText: '00:00' },
   ],
   unreadable: [], notes: '', confidence: 'high',
 };
@@ -112,8 +124,10 @@ const read = (payload) => api('/hos/interpret', 'POST', payload);
   ok('and the driver is told why', /could not read which day|by hand/i.test(r.notes || ''), r.notes);
 
   head('8. Boundaries already past carry nothing');
+  // dailyTotals cleared: this section is about converting the tracker's projection, and a derivation
+  // from day rows would otherwise take precedence (section 15).
   r = await read({
-    ...REAL, todayDayText: 'Day 19',
+    ...REAL, dailyTotals: [], todayDayText: 'Day 19',
     recap: [
       { dayText: 'Day 17', hoursText: '00:25' },   // behind us
       { dayText: 'Day 19', hoursText: '05:34' },   // today, already had it
@@ -146,7 +160,7 @@ const read = (payload) => api('/hos/interpret', 'POST', payload);
   ok('nothing is invented for the recap', r.recap.length === 0, `${r.recap.length}`);
   ok('and the reason survives to the driver', /freight board/i.test(r.notes || ''), r.notes);
 
-  head('12. Reading does not save anything by itself');
+  head('12. Interpreting alone saves nothing -- applying is the extract endpoint\'s job');
   const before = un(await api('/bootstrap')).hos;
   await read(REAL);
   const after = un(await api('/bootstrap')).hos;
@@ -175,6 +189,100 @@ const read = (payload) => api('/hos/interpret', 'POST', payload);
     `${advice.nextHours} h in ${advice.nextInDays} d`);
   ok('and with 35:18 of cycle in hand it does not order a restart',
     saved.views.restart?.needed !== true, JSON.stringify(saved.views.restart?.needed));
+
+  head('14b. The day label is read off the word "Day", not the first digit in the string');
+  // "-1d • Day 12" reads as day 12. Taking the first number gave day 1, which put seven of the eight
+  // rolling rows behind the window and collapsed recap to a single batch.
+  r = await read({
+    ...REAL,
+    dailyTotals: [
+      { dayText: 'Today • Day 13', onDutyText: '02:30' },
+      { dayText: '-1d • Day 12', onDutyText: '06:41' },
+      { dayText: '-7d • Day 6', onDutyText: '01:00' },
+    ],
+  });
+  const days = r.derived.map((x) => x.inDays).sort((a, b) => a - b);
+  ok('all three rows survive', r.derived.length === 3, JSON.stringify(days));
+  ok('day 12 lands 7 days out, not behind us', days.includes(7), JSON.stringify(days));
+  ok('day 6 lands 1 day out', days.includes(1), JSON.stringify(days));
+  ok('and day 13 lands 8 days out', days.includes(8), JSON.stringify(days));
+
+  head('15. Recap is worked out here, not taken on trust');
+  r = await read(REAL);
+  ok('it derived batches from the day rows', r.derived.length === 5, `${r.derived.length}`);
+  ok('day 13 comes back in 8 days -- the window length',
+    r.derived.some((x) => x.inDays === 8 && near(x.hours, 2.5)),
+    r.derived.map((x) => `${hhmm(x.hours)}/${x.inDays}d`).join(' '));
+  ok('and day 9 in 4 days', r.derived.some((x) => x.inDays === 4 && near(x.hours, 25 / 60)), '');
+  ok('the derivation is what gets used', r.recapSource && /worked out here/.test(r.recapSource),
+    r.recapSource);
+  ok('and it matches the tracker row for row',
+    JSON.stringify(r.recap) === JSON.stringify(r.derived), 'identical');
+  ok('the tracker projection is kept alongside for comparison', r.projected.length === 5,
+    `${r.projected.length}`);
+
+  head('16. The 9:38 your screenshot does not account for');
+  // Cycle left 35:18 against a 70 means 34:42 used. The day rows only add up to 25:04. The difference
+  // is on-duty time being charged with no day to come back on -- which is exactly the arithmetic a
+  // recap-versus-restart call turns on, so it has to be surfaced rather than quietly absorbed.
+  ok('the gap is found', r.unaccountedHours != null, `${r.unaccountedHours}`);
+  ok('and it is 9:38', near(r.unaccountedHours, 9 + 38 / 60, 0.02), hhmm(r.unaccountedHours));
+  const gapWarn = (r.disagreements || []).join(' | ');
+  ok('it says the cycle is charging more than the rows explain',
+    /charging .*but the day rows only account/i.test(gapWarn), gapWarn.slice(0, 150));
+  ok('it warns the projection is short by that much', /Expect up to/i.test(gapWarn), '');
+  ok('and it says not to trust a "take the 34" call on it',
+    /take the 34.*suspicion|suspicion/i.test(gapWarn), '');
+
+  head('17. Rows that add up leave no warning');
+  // 70 minus the 25:04 the rows account for is 44:56 of cycle left. Nothing unaccounted for.
+  r = await read({ ...REAL, cycleText: '44:56' });
+  ok('no gap when the numbers reconcile', r.unaccountedHours == null, `${r.unaccountedHours}`);
+  ok('and nothing is flagged', (r.disagreements || []).length === 0,
+    (r.disagreements || []).join(' | '));
+
+  head('18. A projection that disagrees with the day rows is called out');
+  r = await read({
+    ...REAL,
+    recap: [
+      { dayText: 'Day 17', hoursText: '00:25' },
+      { dayText: 'Day 18', hoursText: '02:00' },   // rows say 05:34
+      { dayText: 'Day 25', hoursText: '04:00' },   // no row accounts for this at all
+    ],
+  });
+  const dis = (r.disagreements || []).join(' | ');
+  ok('the mismatched boundary is named, with both figures',
+    (r.disagreements || []).some((d) => /in 5 day\(s\)/i.test(d) && /5:34/.test(d) && /2:00/.test(d)),
+    (r.disagreements || []).find((d) => /in 5 day/i.test(d)) || dis.slice(0, 200));
+  ok('a projection row with no day behind it is dropped', /no\s+day row accounts for it/i.test(dis), '');
+  ok('and the day rows win', r.recap.some((x) => x.inDays === 5 && near(x.hours, 5 + 34 / 60)),
+    r.recap.map((x) => `${hhmm(x.hours)}/${x.inDays}d`).join(' '));
+  ok('the bogus day-25 batch is not in what we use', !r.recap.some((x) => x.inDays === 12), '');
+
+  head('19. No day rows at all falls back to the tracker projection');
+  r = await read({ ...REAL, dailyTotals: [] });
+  ok('it still produces recap', r.recap.length === 5, `${r.recap.length}`);
+  ok('and says it came from the tracker', /projection table/i.test(r.recapSource || ''), r.recapSource);
+  ok('with nothing derived', r.derived.length === 0, `${r.derived.length}`);
+
+  head('20. The window length is the rule set, not a hard-coded 8');
+  await api('/settings', 'POST', { ...(await api('/bootstrap')).settings,
+    hos: { ...(await api('/bootstrap')).settings.hos, cycleDays: 7, cycleLimit: 60 } });
+  r = await read(REAL);
+  ok('day 13 now returns in 7 days', r.derived.some((x) => x.inDays === 7 && near(x.hours, 2.5)),
+    r.derived.map((x) => `${hhmm(x.hours)}/${x.inDays}d`).join(' '));
+  // Against a 60-hour limit, 35:18 left means only 24:42 used -- LESS than the 25:04 the rows account
+  // for. That is the opposite complaint, and it gets the opposite message: the two disagree and the
+  // clocks are the safer bet. Nothing is reported as "unaccounted", because nothing is missing.
+  ok('no unaccounted hours when the rows exceed what was used', r.unaccountedHours == null,
+    `${r.unaccountedHours}`);
+  ok('but the contradiction is still raised',
+    (r.disagreements || []).some((d) => /more than the .* your cycle says you have used/i.test(d)),
+    (r.disagreements || []).join(' | ').slice(0, 160));
+  ok('and it says which of the two to trust',
+    (r.disagreements || []).some((d) => /clocks are the safer bet/i.test(d)), '');
+  await api('/settings', 'POST', { ...(await api('/bootstrap')).settings,
+    hos: { ...(await api('/bootstrap')).settings.hos, cycleDays: 8, cycleLimit: 70 } });
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

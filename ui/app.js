@@ -10,7 +10,8 @@ let TRIP_AUDIT = null;
 let RECON = null;
 let SHOTS = [];            // pending screenshots {mediaType, dataBase64, thumb, name}
 let EXTRACT = null;        // last extraction result, awaiting confirmation
-let HOSREAD = null;        // clocks read off a GDC Companion screenshot, awaiting confirmation
+let HOSREAD = null;        // last GDC Companion read: what it saved, and how to undo it
+let HOSWAS = null;         // the clocks that were on file before that read
 let DISCOVERY = null;      // "new city reached" notice awaiting acknowledgement
 let REACHED_PAGE = 1;      // which page of the reached-cities list is showing
 /* Which board the driver is showing us: what is on offer at this dock, or the whole city. Starts
@@ -681,12 +682,12 @@ function viewDispatch() {
           <p>These clocks were last read at ${gt(h.asOfGameTime)} and a load has run since. Re-read your
             HOS display before I plan anything off them.</p></div>` : ''}
         <div class="${v.hos.breakEnforced ? 'grid4' : 'grid3'}">
-          <label>Drive left<input id="h-drive" inputmode="numeric" placeholder="8:45" value="${clockField('driveRemaining', h)}"></label>
-          <label>Shift left<input id="h-shift" inputmode="numeric" placeholder="11:30" value="${clockField('shiftRemaining', h)}"></label>
+          <label>Drive left<input id="h-drive" inputmode="numeric" placeholder="8:45" value="${hhmm(h.driveRemaining)}"></label>
+          <label>Shift left<input id="h-shift" inputmode="numeric" placeholder="11:30" value="${hhmm(h.shiftRemaining)}"></label>
           ${v.hos.breakEnforced
-            ? `<label>Break clock<input id="h-break" inputmode="numeric" placeholder="6:15" value="${clockField('breakRemaining', h)}"></label>`
+            ? `<label>Break clock<input id="h-break" inputmode="numeric" placeholder="6:15" value="${hhmm(h.breakRemaining)}"></label>`
             : ''}
-          <label>Cycle left<input id="h-cycle" inputmode="numeric" placeholder="52:00" value="${clockField('cycleRemaining', h)}"></label>
+          <label>Cycle left<input id="h-cycle" inputmode="numeric" placeholder="52:00" value="${hhmm(h.cycleRemaining)}"></label>
         </div>
         ${v.hos.breakEnforced
           ? `<p class="hint">Break clock = hours of <em>driving</em> left before the
@@ -696,7 +697,7 @@ function viewDispatch() {
              window is the binding stop.</p>`}
         <div class="grid2">
           <label>Hours coming back (recap)
-            <input id="h-recap" placeholder="8:00 in 1, 10:30 in 2" value="${esc(recapField(h))}"></label>
+            <input id="h-recap" placeholder="8:00 in 1, 10:30 in 2" value="${esc((h.recap || []).map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', '))}"></label>
           <label>Source<input id="h-source" value="${esc(h.source)}" placeholder="e.g. Realistic HOS mod ELD"></label>
         </div>
         ${hosReadHtml()}
@@ -894,56 +895,43 @@ function loadedReportHtml(t) {
 }
 
 /**
- * A clock input's value: the staged screenshot reading where there is one, otherwise what is on file.
+ * The receipt for a screenshot read: what went in, where it was read from, and how to undo it.
  *
- * A field the reader could not make out stays EMPTY rather than falling back to the stored value. Half
- * a screenshot silently blended with yesterday's clocks is the one outcome worse than a blank box —
- * it looks answered, so nobody checks it.
- */
-function clockField(key, h) {
-  if (!HOSREAD) return hhmm(h[key]);
-  return HOSREAD[key] == null ? '' : hhmm(HOSREAD[key]);
-}
-
-/** Same, for the recap box. */
-function recapField(h) {
-  const rows = HOSREAD ? HOSREAD.recap : h.recap;
-  return (rows || []).map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', ');
-}
-
-/**
- * What the screenshot reader made of the recap page, before the driver commits it.
- *
- * Everything it read is shown next to where it read it, because the whole risk with this page is that
- * it prints used and remaining side by side and the used figures are the bigger, bolder ones.
+ * It is a receipt rather than a form because the read has already been saved. A driver pasting this
+ * daily should not have to decide which of two panels a number came off — that decision is the mistake
+ * the recap page invites, since it prints used and remaining side by side and the used figures are the
+ * bigger, bolder ones. So the app makes the call, shows its working, and leaves one button to reverse it.
  */
 function hosReadHtml() {
   if (!HOSREAD) return '';
-  const missing = HOSREAD.unreadable || [];
+  const r = HOSREAD;
   const label = { driveText: 'drive', shiftText: 'shift', breakText: 'break', cycleText: 'cycle',
     todayDayText: "today's day number", notScreen: 'the page itself' };
-  const shown = (HOSREAD.recapShown || []);
-  return `<div class="note" style="margin:10px 0">
-    <h4>Read from your GDC Companion screenshot &mdash; check it, then save</h4>
-    <p>Nothing is recorded until you press <b>${esc(SAVE_HOS_LABEL)}</b>. These four clocks decide every
-      call dispatch makes, so give them one look against your own screen first.</p>
-    ${HOSREAD.clocksFrom ? `<p class="hint">Read from: ${esc(HOSREAD.clocksFrom)}</p>` : ''}
-    ${shown.length ? `<p class="hint">Recap rows as printed: ${esc(shown.join(' · '))}${
-      HOSREAD.recap && HOSREAD.recap.length
-        ? ` &rarr; ${esc(HOSREAD.recap.map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', '))}`
-        : ' &mdash; none of them are still ahead of you'}</p>` : ''}
-    ${missing.length ? `<p><b>Could not read:</b> ${esc(missing.map((m) => label[m] || m).join(', '))}.
-      Those boxes are left empty on purpose &mdash; fill them in yourself.</p>` : ''}
-    ${HOSREAD.notes ? `<p class="hint">${esc(HOSREAD.notes)}</p>` : ''}
-    ${HOSREAD.confidence && HOSREAD.confidence !== 'high'
-      ? `<p><b>The reader rated its own confidence ${esc(HOSREAD.confidence)}.</b> Worth a closer look.</p>` : ''}
+  const missing = (r.unreadable || []).map((m) => label[m] || m);
+  const bad = (r.disagreements || []).length > 0 || missing.length > 0;
+  return `<div class="${bad ? 'rule' : 'note'}" style="margin:10px 0">
+    <h4>Entered from your GDC Companion recap page</h4>
+    <p><b>${esc((r.saved || []).join(' &middot; ').replace(/&middot;/g, '·'))}</b> &mdash; already saved,
+      nothing else to press.</p>
+    ${r.clocksFrom ? `<p class="hint">Clocks read from: ${esc(r.clocksFrom)}</p>` : ''}
+    ${r.recapSource ? `<p class="hint">Recap ${esc(r.recapSource)}.</p>` : ''}
+    ${(r.recap || []).length ? `<p class="hint">Coming back:
+      ${esc(r.recap.map((x) => `${hhmm(x.hours)} in ${x.inDays} day${x.inDays === 1 ? '' : 's'}`).join(', '))}</p>` : ''}
+    ${(r.kept || []).length ? `<p><b>Could not read ${esc(missing.join(', ') || 'everything')}.</b>
+      ${esc(r.kept.join(', '))} &mdash; check those four boxes and press
+      ${esc(SAVE_HOS_LABEL)} if they are wrong.</p>` : ''}
+    ${(r.disagreements || []).map((d) => `<p><b>Worth knowing:</b> ${esc(d)}</p>`).join('')}
+    ${r.notes ? `<p class="hint">${esc(r.notes)}</p>` : ''}
+    ${r.confidence && r.confidence !== 'high'
+      ? `<p>The reader rated its own confidence <b>${esc(r.confidence)}</b>.</p>` : ''}
     <div class="row-actions" style="margin-top:8px">
-      <button class="btn tiny ghost" data-act="hosread-drop">Discard this read</button>
+      ${HOSWAS ? '<button class="btn tiny" data-act="hosread-undo">Undo — put the old clocks back</button>' : ''}
+      <button class="btn tiny ghost" data-act="hosread-drop">Dismiss</button>
     </div>
   </div>`;
 }
 
-/** Named once so the banner and the button cannot drift apart. */
+/** Named once so the receipt and the button cannot drift apart. */
 const SAVE_HOS_LABEL = 'Report clocks';
 
 /**
@@ -1068,8 +1056,9 @@ function screenshotHtml() {
       <input type="file" id="shot-file" accept="image/png,image/jpeg" multiple class="offscreen">
       <span class="hint" style="margin:0">The board only shows ~10 jobs at a time — paste as many
         screenshots as you need. They are read in small batches and merged, and duplicates are dropped.</span>
-      <span class="hint" style="margin:0">Pasting your <b>GDC Companion</b> recap page instead? Stage it
-        here and press <b>Read as HOS clocks</b> — it fills the clocks below for you to check.</span>
+      <span class="hint" style="margin:0">Pasting your <b>GDC Companion</b> recap page instead? Paste it
+        here and press <b>Enter my clocks from this</b> — the four clocks and the whole recap
+        projection go in for you. Nothing to type, and there is an undo if it reads it wrong.</span>
     </div>
 
     ${SHOTS.length ? `<div class="shots">${SHOTS.map((s, i) => `
@@ -1081,7 +1070,7 @@ function screenshotHtml() {
         <button class="btn primary" data-act="extract" ${on && !BUSY ? '' : 'disabled'}>
           ${BUSY === 'extract' ? 'Reading…' : `Read ${SHOTS.length} screenshot(s) as freight`}</button>
         <button class="btn" data-act="extract-hos" ${on && !BUSY ? '' : 'disabled'}>
-          ${BUSY === 'hosread' ? 'Reading…' : 'Read as HOS clocks'}</button>
+          ${BUSY === 'hosread' ? 'Reading…' : 'Enter my clocks from this'}</button>
         <button class="btn ghost" data-act="shots-clear">Clear images</button>
       </div>` : ''}
 
@@ -4029,9 +4018,8 @@ async function handleAction(act, d, ev) {
           breakRemaining: breakLeft, cycleRemaining: hv('h-cycle'),
           recap, source: sv('h-source'), notes: sv('h-notes'), asOfGameTime: readDayTime('st-time') || S.status.gameTime,
         }));
-        // Committed, so the staged read has served its purpose. Leaving it up would suggest there is
-        // still something to confirm.
-        HOSREAD = null;
+        // A hand correction supersedes the screenshot receipt, and its undo no longer applies.
+        HOSREAD = null; HOSWAS = null;
       }, 'Clocks recorded.');
     }
 
@@ -4072,25 +4060,34 @@ async function handleAction(act, d, ev) {
     /* ---- screenshot import */
     case 'shot-del': SHOTS.splice(+d.i, 1); return render();
     case 'shots-clear': SHOTS = []; EXTRACT = null; return render();
-    case 'hosread-drop': HOSREAD = null; return render();
+    case 'hosread-drop': HOSREAD = null; HOSWAS = null; return render();
+
+    case 'hosread-undo':
+      if (!HOSWAS) return;
+      return run(async () => {
+        absorb(await api('/hos/undo', 'POST', HOSWAS));
+        HOSREAD = null; HOSWAS = null;
+      }, 'Previous clocks are back on file.');
 
     case 'extract-hos': {
-      if (!SHOTS.length) return toast('Stage your GDC Companion recap screenshot first.', 'bad');
+      if (!SHOTS.length) return toast('Paste your GDC Companion recap page first.', 'bad');
       BUSY = 'hosread'; render();
-      toast('Reading your clocks — this takes a few seconds.');
+      toast('Reading your recap page — this takes a few seconds.');
       try {
-        const r = await api('/hos/extract', 'POST', {
+        const res = await api('/hos/extract', 'POST', {
           images: SHOTS.map((s) => ({ mediaType: s.mediaType, dataBase64: s.dataBase64 })),
         });
-        if (!r.ok) { HOSREAD = null; toast(r.error, 'bad'); return; }
-        HOSREAD = r;
+        if (!res.reading?.ok) { HOSREAD = null; HOSWAS = null; toast(res.reading?.error || 'Could not read that.', 'bad'); return; }
+        HOSREAD = res.reading;
+        HOSWAS = res.previous;
         SHOTS = [];
-        const got = ['driveRemaining', 'shiftRemaining', 'breakRemaining', 'cycleRemaining']
-          .filter((k) => r[k] != null).length;
-        toast(`${got} of 4 clocks and ${r.recap.length} recap batch(es) read — check them and save.`,
-          got === 4 ? 'ok' : 'bad');
+        absorb(res);
+        const kept = (res.reading.kept || []).length;
+        toast(kept
+          ? `Clocks entered, but ${kept} could not be read — check the boxes below.`
+          : 'Clocks and recap entered from your recap page.', kept ? 'bad' : 'ok');
       } catch (e) {
-        HOSREAD = null;
+        HOSREAD = null; HOSWAS = null;
         toast(e.message, 'bad');
       } finally {
         BUSY = ''; render();

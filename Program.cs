@@ -413,14 +413,71 @@ app.MapPost("/api/board/extract", async (ExtractRequest req, CancellationToken c
 app.MapPost("/api/hos/extract", async (ExtractRequest req, CancellationToken ct) =>
 {
     var result = await AiService.ExtractHosAsync(store.State, req.Images ?? new(), ct);
-    if (result.Ok)
-        store.Mutate(s => store.Log(s, "dispatch",
-            "Clocks read from a GDC Companion screenshot: " +
-            $"D {Hhmm.Of(result.DriveRemaining)} · S {Hhmm.Of(result.ShiftRemaining)} · " +
-            $"B {Hhmm.Of(result.BreakRemaining)} · C {Hhmm.Of(result.CycleRemaining)}, " +
-            $"{result.Recap.Count} recap batch(es). Staged for confirmation, not applied."));
-    return Results.Ok(result);
+    if (!result.Ok) return Results.Ok(new { reading = result, snapshot = Snapshot(store.State) });
+
+    // Paste it and it is entered. That is the whole point of pasting it: a driver doing this daily
+    // should not be deciding which of two panels a number came off, which is the mistake the screen
+    // invites. What it could not read keeps its old value rather than being written as zero, and the
+    // previous clocks come back on the reply so a bad read is one button away from undone.
+    var applied = store.Mutate(s =>
+    {
+        var was = new HosSnapshot
+        {
+            DriveRemaining = s.Hos.DriveRemaining, ShiftRemaining = s.Hos.ShiftRemaining,
+            BreakRemaining = s.Hos.BreakRemaining, CycleRemaining = s.Hos.CycleRemaining,
+            Recap = s.Hos.Recap.Select(r => new RecapDay { InDays = r.InDays, Hours = r.Hours }).ToList(),
+            Source = s.Hos.Source, Notes = s.Hos.Notes, AsOfGameTime = s.Hos.AsOfGameTime,
+        };
+
+        void Put(double? read, string label, Action<double> set, double current)
+        {
+            if (read is { } v) { set(v); result.Saved.Add($"{label} {Hhmm.Of(v)}"); }
+            else { result.Kept.Add($"{label} left at {Hhmm.Of(current)}"); }
+        }
+        Put(result.DriveRemaining, "drive", v => s.Hos.DriveRemaining = v, s.Hos.DriveRemaining);
+        Put(result.ShiftRemaining, "shift", v => s.Hos.ShiftRemaining = v, s.Hos.ShiftRemaining);
+        Put(result.BreakRemaining, "break", v => s.Hos.BreakRemaining = v, s.Hos.BreakRemaining);
+        Put(result.CycleRemaining, "cycle", v => s.Hos.CycleRemaining = v, s.Hos.CycleRemaining);
+
+        if (result.Recap.Count > 0 || result.TodayDay != null)
+        {
+            s.Hos.Recap = result.Recap.Select(r => new RecapDay { InDays = r.InDays, Hours = r.Hours }).ToList();
+            result.Saved.Add($"{s.Hos.Recap.Count} recap batch(es)");
+        }
+
+        s.Hos.Source = "GDC Companion";
+        s.Hos.AsOfGameTime = s.Status.GameTime;
+        s.Hos.Confirmed = true;
+        s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
+        result.Applied = true;
+
+        store.Log(s, "dispatch",
+            "Clocks read from a GDC Companion recap screenshot and entered: " +
+            string.Join(", ", result.Saved) +
+            (result.Kept.Count > 0 ? $" ({string.Join(", ", result.Kept)})" : "") +
+            (result.UnaccountedHours is { } gap ? $" — {Hhmm.Of(gap)} of cycle unaccounted for" : ""));
+
+        return was;
+    });
+
+    return Results.Ok(new { reading = result, previous = applied, snapshot = Snapshot(store.State) });
 });
+
+/// Puts back the clocks that were on file before a screenshot read. One button, because a misread that
+/// has already been saved needs an obvious way back rather than a re-typing exercise.
+app.MapPost("/api/hos/undo", (HosSnapshot was) => Results.Ok(store.Mutate(s =>
+{
+    s.Hos.DriveRemaining = Math.Max(0, was.DriveRemaining);
+    s.Hos.ShiftRemaining = Math.Max(0, was.ShiftRemaining);
+    s.Hos.BreakRemaining = Math.Max(0, was.BreakRemaining);
+    s.Hos.CycleRemaining = Math.Max(0, was.CycleRemaining);
+    s.Hos.Recap = was.Recap ?? new();
+    s.Hos.Source = was.Source ?? "";
+    s.Hos.AsOfGameTime = string.IsNullOrWhiteSpace(was.AsOfGameTime) ? s.Status.GameTime : was.AsOfGameTime;
+    s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
+    store.Log(s, "dispatch", "Screenshot read undone — the previous clocks are back on file.");
+    return new { message = "Put back the clocks that were on file before the read.", snapshot = Snapshot(s) };
+})));
 
 /// The same interpretation the screenshot reader runs, over a payload you supply instead of an image.
 ///

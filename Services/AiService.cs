@@ -95,8 +95,32 @@ public class HosReading
     /// <summary>The day the screenshot calls today, in its own numbering.</summary>
     public int? TodayDay { get; set; }
 
-    /// <summary>Recap batches, already converted to offsets from today.</summary>
+    /// <summary>
+    /// The recap batches to use — worked out from the rolling 8-day on-duty totals where those are
+    /// legible, because then the app has computed them rather than trusted somebody else's table.
+    /// </summary>
     public List<RecapDay> Recap { get; set; } = new();
+
+    /// <summary>Where <see cref="Recap"/> came from, in words, for the driver.</summary>
+    public string RecapSource { get; set; } = "";
+
+    /// <summary>Worked out here from the day-by-day on-duty totals.</summary>
+    public List<RecapDay> Derived { get; set; } = new();
+
+    /// <summary>Copied from the tracker's own projection table, for comparison.</summary>
+    public List<RecapDay> Projected { get; set; } = new();
+
+    /// <summary>
+    /// On-duty hours the cycle is charging the driver for that no day row accounts for.
+    ///
+    /// Cycle used is <c>limit - remaining</c>, and it should equal the sum of the rolling window. When it
+    /// does not, hours are being counted against the driver with <b>no boundary to come back at</b> — and
+    /// that is precisely the arithmetic a recap-versus-restart decision turns on.
+    /// </summary>
+    public double? UnaccountedHours { get; set; }
+
+    /// <summary>Where the derivation and the tracker's own projection disagree.</summary>
+    public List<string> Disagreements { get; set; } = new();
 
     /// <summary>What the rows said before conversion, so the driver can audit the arithmetic.</summary>
     public List<string> RecapShown { get; set; } = new();
@@ -105,6 +129,15 @@ public class HosReading
     public string Confidence { get; set; } = "";
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
+
+    /// <summary>True once the clocks have been written to the career file.</summary>
+    public bool Applied { get; set; }
+
+    /// <summary>What was written, in words, for the driver to read after the fact.</summary>
+    public List<string> Saved { get; set; } = new();
+
+    /// <summary>Clocks left as they were because the read could not make them out.</summary>
+    public List<string> Kept { get; set; } = new();
 }
 
 /// <summary>Raw shape of the model's reply. Strings throughout, on purpose.</summary>
@@ -117,6 +150,7 @@ public class HosPayload
     public string ClocksFrom { get; set; } = "";
     public string TodayDayText { get; set; } = "";
     public List<HosRecapRow> Recap { get; set; } = new();
+    public List<HosDayRow> DailyTotals { get; set; } = new();
     public List<string> Unreadable { get; set; } = new();
     public string Notes { get; set; } = "";
     public string Confidence { get; set; } = "";
@@ -126,6 +160,13 @@ public class HosRecapRow
 {
     public string DayText { get; set; } = "";
     public string HoursText { get; set; } = "";
+}
+
+/// <summary>One row of the rolling on-duty table: a day, and what was worked on it.</summary>
+public class HosDayRow
+{
+    public string DayText { get; set; } = "";
+    public string OnDutyText { get; set; } = "";
 }
 
 /// <summary>
@@ -365,6 +406,16 @@ public static class AiService
           number on the row labelled Today in the rolling totals table. This is what lets the app work
           out how far off each recap boundary is, so it matters.
 
+        The rolling on-duty table — READ THIS, it is the important one:
+        - dailyTotals: one entry per row of the rolling 8-day on-duty totals table.
+        - dayText: the day as printed — "Today • Day 13", "-4d • Day 9". Copy it whole; the app pulls
+          the number out.
+        - onDutyText: that row's ON DUTY total, exactly as printed — "02:30", "09:54", "00:00".
+        - Use the ON DUTY column, not the Driving column, when both are shown. On duty is what the
+          cycle counts.
+        - Include every row, including ones reading 00:00 and ones whose status column says something
+          like "STATUS REQUIRED". A row the tracker has no data for is itself worth knowing about.
+
         Projected recap returns:
         - One entry per row of the recap/projection table, in the order shown.
         - dayText: the boundary day exactly as printed — "Day 17", "Day 17 00:00".
@@ -372,6 +423,8 @@ public static class AiService
         - Include rows showing zero hours back. Do not skip them and do not reorder them; the app
           filters and converts.
         - Ignore the resulting-cycle column. The app recomputes that from its own rules.
+        - This table may be missing rows or be out of step with the daily totals. Copy it as it is
+          anyway; the app compares the two and tells the driver when they disagree.
 
         Rules that matter:
         - Report only what is legible. NEVER guess a clock. A wrong cycle figure is worse than a blank
@@ -397,7 +450,7 @@ public static class AiService
           "type": "object",
           "additionalProperties": false,
           "required": ["driveText","shiftText","breakText","cycleText","clocksFrom","todayDayText",
-                       "recap","unreadable","notes","confidence"],
+                       "recap","dailyTotals","unreadable","notes","confidence"],
           "properties": {
             "driveText":    { "type": "string" },
             "shiftText":    { "type": "string" },
@@ -414,6 +467,18 @@ public static class AiService
                 "properties": {
                   "dayText":   { "type": "string" },
                   "hoursText": { "type": "string" }
+                }
+              }
+            },
+            "dailyTotals": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["dayText","onDutyText"],
+                "properties": {
+                  "dayText":    { "type": "string" },
+                  "onDutyText": { "type": "string" }
                 }
               }
             },
@@ -555,7 +620,95 @@ public static class AiService
         Check(reading.CycleRemaining, raw.CycleText, "cycleText");
 
         ConvertRecap(state, raw, reading);
+        DeriveRecap(state, raw, reading);
         return reading;
+    }
+
+    /// <summary>
+    /// Works the recap projection out from the day-by-day on-duty totals, rather than believing a
+    /// projection table.
+    ///
+    /// Recap is mechanical: the hours worked on a day drop out of the rolling window when that day does,
+    /// which is <c>CycleDays</c> later. Given the daily totals and today's day number, every boundary and
+    /// every batch follows — no tracker needed. Doing it here means the app can also check the tracker's
+    /// own table, and check the totals against the cycle, and say so when they do not add up.
+    /// </summary>
+    private static void DeriveRecap(AppState state, HosPayload raw, HosReading reading)
+    {
+        reading.Projected = reading.Recap.Select(r => new RecapDay { InDays = r.InDays, Hours = r.Hours }).ToList();
+        reading.RecapSource = reading.Projected.Count > 0 ? "the tracker's own projection table" : "";
+
+        var rows = raw.DailyTotals ?? new List<HosDayRow>();
+        var today = reading.TodayDay;
+        if (rows.Count == 0 || today == null) return;
+
+        var window = Math.Max(1, state.Settings.Hos.CycleDays);
+        double known = 0;
+        var seen = new HashSet<int>();
+
+        foreach (var row in rows)
+        {
+            var day = Hhmm.ReadDay(row.DayText);
+            var onDuty = Hhmm.Read(row.OnDutyText);
+            if (day == null || onDuty == null || !seen.Add(day.Value)) continue;
+
+            known += onDuty.Value;
+            var inDays = day.Value + window - today.Value;
+            if (inDays <= 0 || onDuty.Value <= 0) continue;   // already back, or nothing to come back
+            reading.Derived.Add(new RecapDay { InDays = inDays, Hours = onDuty.Value });
+        }
+
+        reading.Derived = reading.Derived.OrderBy(x => x.InDays).ToList();
+        if (reading.Derived.Count == 0 && seen.Count == 0) return;
+
+        // The cycle is charging for hours; the rows say which days they were worked. If those two do not
+        // agree, the difference is hours with no boundary to return at — and the driver is about to make
+        // a recap-versus-restart call on a projection that is short by exactly that much.
+        if (reading.CycleRemaining is { } left)
+        {
+            var used = state.Settings.Hos.CycleLimit - left;
+            var gap = used - known;
+            if (gap > 0.05)
+            {
+                reading.UnaccountedHours = gap;
+                reading.Disagreements.Add(
+                    $"Your cycle is charging {Hhmm.Of(used)} but the day rows only account for " +
+                    $"{Hhmm.Of(known)} of it. {Hhmm.Of(gap)} is counted against you with no day to come " +
+                    "back on — most likely worked on a day the tracker has no status for. Expect up to " +
+                    $"{Hhmm.Of(gap)} more than this projection shows, and treat a 'take the 34' call " +
+                    "on these numbers with suspicion.");
+            }
+            else if (gap < -0.05)
+            {
+                reading.Disagreements.Add(
+                    $"The day rows add up to {Hhmm.Of(known)}, which is more than the {Hhmm.Of(used)} your " +
+                    "cycle says you have used. One of the two is wrong; the clocks are the safer bet.");
+            }
+        }
+
+        // Now the tracker's own table, against ours.
+        foreach (var mine in reading.Derived)
+        {
+            var theirs = reading.Projected.FirstOrDefault(p => p.InDays == mine.InDays);
+            if (theirs == null)
+                reading.Disagreements.Add(
+                    $"The day rows say {Hhmm.Of(mine.Hours)} comes back in {mine.InDays} day(s), but the " +
+                    "projection table has no boundary there.");
+            else if (Math.Abs(theirs.Hours - mine.Hours) > 0.02)
+                reading.Disagreements.Add(
+                    $"In {mine.InDays} day(s) the day rows say {Hhmm.Of(mine.Hours)} and the projection " +
+                    $"says {Hhmm.Of(theirs.Hours)}. Going with the day rows.");
+        }
+        foreach (var theirs in reading.Projected)
+            if (reading.Derived.All(m => m.InDays != theirs.InDays))
+                reading.Disagreements.Add(
+                    $"The projection expects {Hhmm.Of(theirs.Hours)} back in {theirs.InDays} day(s), but no " +
+                    "day row accounts for it. Left out.");
+
+        // Ours wins: we can show the working.
+        reading.Recap = reading.Derived.Select(r => new RecapDay { InDays = r.InDays, Hours = r.Hours }).ToList();
+        reading.RecapSource = $"worked out here from the {seen.Count} day row(s), " +
+                              $"each day's hours returning {window} days later";
     }
 
     /// <summary>
