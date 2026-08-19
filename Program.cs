@@ -777,7 +777,7 @@ app.MapPost("/api/window/read", (WindowReadRequest req) =>
             readable = true,
             hadRange = parsed.HadRange,
             opensAt = parsed.OpensAt is { } o ? GameClock.Format(o) : null,
-            dueAt = GameClock.Format(parsed.DueAt),
+            dueAt = (string?)GameClock.Format(parsed.DueAt),
             hoursUntilDue = parsed.HoursUntilDue
         });
 });
