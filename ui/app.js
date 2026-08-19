@@ -2433,6 +2433,8 @@ function fleetOpsHtml() {
             <th class="num" title="Tractor condition in stars, 5 down to 1">Truck &starf;</th>
             <th class="num" title="Tractor odometer as shown in game">Odometer</th>
             <th class="num" title="Trailer condition in stars. Trailers have no odometer.">Trailer &starf;</th>
+            <th title="Optional. If your company screen shows when they are back with the trailer, put it here — the app has no way to see it and will not guess.">Due back</th>
+            <th title="Optional. If your company screen says when they are back with the trailer, put it here — the app cannot see it.">Due back</th>
             <th class="num">Revenue $</th><th class="num">Miles</th>
             <th class="num">Wages $ (blank = share)</th><th class="num">Repairs $</th></tr></thead>
           <tbody>${drivers.filter((d) => d.status === 'Active').map((d) => {
@@ -2453,6 +2455,7 @@ function fleetOpsHtml() {
                   value="${tk ? Math.round(tk.atsOdometer) : ''}" placeholder="—"></td>
             <td><input id="fr-lstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
                   value="${tl?.stars || ''}" placeholder="—"></td>
+            <td>${dayTimeInput('fr-due-' + d.id, d.trailerDueBackGameTime || '', '')}</td>
             <td><input id="fr-rev-${esc(d.id)}" type="number" step="1" min="0" value="0"></td>
             <td><input id="fr-mi-${esc(d.id)}" type="number" step="1" min="0" value="0"></td>
             <td><input id="fr-wage-${esc(d.id)}" type="number" step="0.01" min="0" placeholder="auto"></td>
@@ -4333,6 +4336,7 @@ async function handleAction(act, d, ev) {
         // And for the equipment: stars, plus an odometer on the tractor only.
         truckStars: fv('fr-tstar-' + x.id), truckOdometer: fv('fr-odo-' + x.id),
         trailerStars: fv('fr-lstar-' + x.id),
+        trailerDueBackGameTime: readDayTime('fr-due-' + x.id),
         revenue: fv('fr-rev-' + x.id), miles: fv('fr-mi-' + x.id),
         wages: fv('fr-wage-' + x.id), repairs: fv('fr-rep-' + x.id),
       })).filter((l) => l.revenue > 0 || l.miles > 0 || l.repairs > 0

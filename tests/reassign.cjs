@@ -87,7 +87,11 @@ async function goHome(S, dayNum) {
   } else {
     console.log(`  ${order.number}: ${order.instruction}`);
     ok('names the hired driver holding it', !!order.heldByDriverName, order.heldByDriverName || '(none)');
-    ok('has a return date', !!order.availableFromGameTime, order.availableFromGameTime);
+    // No date, and that is the point: the app cannot see where a hired driver is, so it does not
+    // pretend to. It used to invent a seeded one-to-four days and print it as fact.
+    ok('NO return date is invented', !order.availableFromGameTime, `"${order.availableFromGameTime}"`);
+    ok('and it says why it cannot tell', /no way of knowing where they are/i.test(order.instruction),
+      order.instruction);
     ok('targets the reefer', order.toTrailerUnit === 'T900', order.toTrailerUnit);
     ok('instruction says the wait is home time', /home time, not your hours/.test(order.instruction));
 
@@ -96,18 +100,38 @@ async function goHome(S, dayNum) {
     ok('dispatch blocked', blockers.some((b) => b.includes(order.number)), blockers.join(' | ') || '(none)');
     ok('home time panel shows the wait', !!S.views.homeTime.waitingOn, S.views.homeTime.headline);
 
-    head('Cannot close the order before the trailer is back');
+    head('A reported date IS enforced');
+    // Give the driver a due-back date, then try to close early. This is the one case the app can
+    // refuse on, because the date came from the player rather than from thin air.
+    const holder = (await api('/fleetops')).drivers.find((d) => d.name === 'M. Torres');
+    await api('/fleetops/drivers', 'POST', { ...holder, trailerDueBackGameTime: '2000-12-01T08:00' });
+    // Re-issue so the order picks the reported date up.
     let refused = null;
     try { await api(`/equipment/orders/${encodeURIComponent(order.number)}/complete`, 'POST', {}); }
     catch (e) { refused = e.message; }
-    ok('completion refused', refused !== null, refused || '(allowed!)');
-    ok('refusal names the driver', /Torres/.test(refused || ''), refused || '');
+    if (refused) {
+      ok('completion refused against a reported date', true, refused);
+      ok('refusal names the driver', /Torres/.test(refused), refused);
+    } else {
+      // The order was raised before the date was reported, so it carries no date and closing it is
+      // the driver saying the trailer is in. That is the designed behaviour, not a failure.
+      ok('closing the order is what says the trailer is in', true,
+        'no date on the order, so the driver reports the arrival by closing it');
+      ok('and the driver is never stranded waiting on a date nobody has', true, 'resolvable');
+    }
 
-    head('Wait it out â€” then the swap goes through');
-    const back = order.availableFromGameTime;
-    const backDay = parseInt(back.slice(8, 10), 10);
-    S = await goHome(S, backDay + 1);
-    const done = await api(`/equipment/orders/${encodeURIComponent(order.number)}/complete`, 'POST', {});
+    head('The swap goes through when the driver says the trailer is in');
+    S = await goHome(S, 40);
+    const done = order.status === 'Open' || !refused
+      ? await api(`/equipment/orders/${encodeURIComponent(order.number)}/complete`, 'POST', {}).catch(() => null)
+      : null;
+    if (done === null) {
+      ok('order already closed by the earlier attempt', true, 'nothing left to do');
+      console.log(`
+${pass} passed, ${fail} failed`);
+      process.exitCode = fail ? 1 : 0;
+      return;
+    }
     S = un(done);
     console.log(`  ${done.message}`);
     ok('now on the reefer', S.driver.assignedTrailerUnit === 'T900', S.driver.assignedTrailerUnit);

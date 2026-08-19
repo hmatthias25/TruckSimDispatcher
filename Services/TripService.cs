@@ -616,6 +616,13 @@ public static class TripService
             audit.WhatsNext.AddRange(Restart.Instructions(s, Restart.Order(s)));
             audit.RestartOrdered = true;
         }
+        else if (Restart.OperationalReason(s, trip.Number) is { } opsWhy)
+        {
+            // The company parking the driver for its own reasons. Rare, and never their fault — the
+            // clocks are fine and nothing about it touches their record.
+            audit.WhatsNext.AddRange(Restart.Instructions(s, Restart.OrderOperational(s, opsWhy)));
+            audit.RestartOrdered = true;
+        }
 
         // The fortnightly fleet report. It had a banner and a tab callout but was never mentioned at
         // the moment the driver might act on it.

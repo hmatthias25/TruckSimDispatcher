@@ -421,9 +421,17 @@ public static class DispatchEngine
         // driver out on the wrong equipment would defeat the reassignment, so they wait — at home.
         if (EquipmentService.PendingTrailerWait(s) is { } wait)
             stops.Add(string.IsNullOrWhiteSpace(wait.HeldByDriverName)
-                ? $"{wait.Number}: waiting on trailer {wait.ToTrailerUnit} — available {GameClock.Pretty(wait.AvailableFromGameTime)}."
-                : $"{wait.Number}: {wait.HeldByDriverName} still has trailer {wait.ToTrailerUnit}, due back around " +
-                  $"{GameClock.Pretty(wait.AvailableFromGameTime)}. Stay home until it is in — the wait is home time, not hours.");
+                ? $"{wait.Number}: waiting on trailer {wait.ToTrailerUnit}" +
+                  (string.IsNullOrWhiteSpace(wait.AvailableFromGameTime)
+                      ? " — report in when it is on the property."
+                      : $" — available {GameClock.Pretty(wait.AvailableFromGameTime)}.")
+                : $"{wait.Number}: {wait.HeldByDriverName} still has trailer {wait.ToTrailerUnit}" +
+                  (string.IsNullOrWhiteSpace(wait.AvailableFromGameTime)
+                      // No date because nobody reported one, and the app is not about to invent it.
+                      ? ". I cannot see where they are — report in when the trailer is back. The wait is home " +
+                        "time, not hours."
+                      : $", due back around {GameClock.Pretty(wait.AvailableFromGameTime)}. Stay home until it is " +
+                        "in — the wait is home time, not hours."));
 
         // A restart on order stops everything until it has actually been sat. Raised before the cycle
         // runs out, so the driver reaches a decent truck stop rather than parking wherever they stopped.

@@ -163,8 +163,11 @@ public static class HomeTime
                 ? $"trailer {wait.ToTrailerUnit}"
                 : $"{wait.HeldByDriverName} to bring trailer {wait.ToTrailerUnit} in";
             st.WaitingUntil = wait.AvailableFromGameTime;
-            st.Headline = $"Home, and held here until {st.WaitingOn} — around {GameClock.Pretty(wait.AvailableFromGameTime)}. " +
-                          "The wait is home time, not hours.";
+            st.Headline = string.IsNullOrWhiteSpace(wait.AvailableFromGameTime)
+                ? $"Home, and held here until {st.WaitingOn}. I have no way of seeing where they are — report in " +
+                  "when the trailer is on the property. The wait is home time, not hours."
+                : $"Home, and held here until {st.WaitingOn} — you have them down as around " +
+                  $"{GameClock.Pretty(wait.AvailableFromGameTime)}. The wait is home time, not hours.";
             return st;
         }
 
@@ -349,8 +352,15 @@ public static class HomeTime
             && s.Trailers.Any(t => t.Unit == d.AssignedTrailerUnit
                                    && EquipmentService.TypeCovers(t.Type, next)));
         if (holder != null)
+        {
             msg += $" The {next.ToLowerInvariant()} we have is out under {holder.Name}, so there may be a wait at the " +
                    "yard — plan your home time around it rather than sitting on top of it.";
+            // No length on it. The app knows who has the trailer, not where they are.
+            msg += string.IsNullOrWhiteSpace(holder.TrailerDueBackGameTime)
+                ? " I cannot tell you how long: nothing you report tells me where a hired driver is. If your company " +
+                  "screen gives you a date, put it on their record and I will work to it."
+                : $" You have them down as due back around {GameClock.Pretty(holder.TrailerDueBackGameTime)}.";
+        }
         else
             msg += " Should be one on the property, so it ought to be a straight swap.";
 

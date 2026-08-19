@@ -226,10 +226,19 @@ public static class EquipmentService
             .Where(t => t.Status == "InService" && TypeCovers(t.Type, requiredType))
             .ToList();
 
+        // A trailer one of our own drivers is pulling is NOT free, however empty its AssignedTruckUnit
+        // looks. Assigning a hired driver to a trailer only ever set it on the driver's record, never on
+        // the trailer, so this used to hand the player a trailer that was out on the road under somebody
+        // else — and quietly, as a straight swap.
+        bool HeldByHire(Trailer t) => s.HiredDrivers.Any(h => h.Status == "Active"
+            && h.AssignedTrailerUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
+
         // 1. Something free — nobody on it, and it is sitting at our home yard.
         var free = matching.FirstOrDefault(t => string.IsNullOrWhiteSpace(t.AssignedTruckUnit)
+                                                && !HeldByHire(t)
                                                 && homeYard != null && t.HomeTerminalId == homeYard.Id)
-                   ?? matching.FirstOrDefault(t => string.IsNullOrWhiteSpace(t.AssignedTruckUnit));
+                   ?? matching.FirstOrDefault(t => string.IsNullOrWhiteSpace(t.AssignedTruckUnit)
+                                                   && !HeldByHire(t));
 
         if (free != null)
         {
@@ -258,10 +267,13 @@ public static class EquipmentService
 
         if (taken != null)
         {
-            var days = ReturnDays(s, taken.Driver!);
-            var back = GameClock.TryParse(s.Status.GameTime) is { } now
-                ? GameClock.Format(now.AddDays(days))
-                : s.Status.GameTime;
+            // A date only if the player gave us one. Nothing here guesses.
+            var back = ReportedReturn(taken.Driver!);
+            var when = back != null
+                ? $"You have them down as due back around {GameClock.Pretty(back)}. "
+                : "I have no way of knowing where they are — nothing you report on the fleet tab tells me that. " +
+                  "Check your company screen in game; if it gives you a date, put it on their record and I will " +
+                  "plan around it. ";
 
             return Issue(s, new EquipmentOrder
             {
@@ -271,13 +283,14 @@ public static class EquipmentService
                 ToTrailerUnit = taken.Trailer.Unit,
                 TerminalId = homeYard?.Id ?? "",
                 TerminalLabel = homeLabel,
-                AvailableFromGameTime = back,
+                AvailableFromGameTime = back ?? "",
                 HeldByDriverName = taken.Driver!.Name,
                 Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, taken.Trailer.Subtype)} freight, and our " +
                               $"{TrailerSpec.Describe(taken.Trailer.Type, taken.Trailer.Subtype)} " +
-                              $"({taken.Trailer.Ref}) is out with {taken.Driver!.Name}. They are due back at {homeLabel} around " +
-                              $"{GameClock.Pretty(back)} — about {days:0.#} day(s). Stay home until then; it comes out of your home time, not your hours. " +
-                              $"When the trailer is in, hook {taken.Trailer.Ref} and mark this order complete.",
+                              $"({taken.Trailer.Ref}) is out with {taken.Driver!.Name}. " + when +
+                              "Stay home until it is in; the wait comes out of your home time, not your hours. " +
+                              $"When the trailer turns up, hook {taken.Trailer.Ref} and mark this order complete — " +
+                              "or ask me for a different trailer if you would rather not sit on it.",
                 Notes = $"Waiting on {taken.Driver!.Name} to return {taken.Trailer.Ref}."
             });
         }
@@ -305,12 +318,22 @@ public static class EquipmentService
     /// Roughly how long until a hired driver brings a trailer back. Seeded on the driver and the day
     /// so the answer does not change when the page is refreshed.
     /// </summary>
-    private static double ReturnDays(AppState s, HiredDriver d)
-    {
-        var seed = StableHash(d.Id + s.Driver.HomeTimesTaken);
-        // One to four days: long enough to matter, short enough not to strand the player.
-        return 1 + seed % 7 * 0.5;
-    }
+    /// <summary>
+    /// When a hired driver will be back with the trailer — <b>only if the player has told us</b>.
+    ///
+    /// This used to be <c>1 + seed % 7 * 0.5</c>: a made-up number between one and four days, printed
+    /// with a game time on it as though it were known. The app cannot know. It knows who holds the
+    /// trailer, because the driver-to-trailer assignment is something the player entered, but nothing in
+    /// the fortnightly report carries a location or an ETA — it collects level, rating, $/mile, $/day,
+    /// stars, the odometer, wages and repairs, and none of that says where anybody is.
+    ///
+    /// Telling a driver to sit at home for four days on the strength of that is the one thing this app
+    /// is built not to do, so it does not any more. Where the player has looked at their own company
+    /// screen and given a date, that date is real and gets used. Otherwise the wait is on the event: they
+    /// report in when the trailer turns up.
+    /// </summary>
+    private static string? ReportedReturn(HiredDriver d) =>
+        string.IsNullOrWhiteSpace(d.TrailerDueBackGameTime) ? null : d.TrailerDueBackGameTime;
 
     private static uint StableHash(string text)
     {
@@ -326,13 +349,30 @@ public static class EquipmentService
     /// A trailer swap we are still waiting on. Dispatch uses this to hold the driver at home rather
     /// than sending them out on the wrong equipment.
     /// </summary>
+    /// <summary>
+    /// An open trailer swap the driver is still waiting on.
+    ///
+    /// Where a due-back date has been reported, the wait ends when that date passes — the trailer should
+    /// be in. Where there is <b>no date</b>, the wait ends when the driver says it is in by closing the
+    /// order. It used to require a date and return null without one, which meant removing the invented
+    /// date silently stopped the wait being recognised at all: dispatch unblocked and the driver could
+    /// roll away from a trailer they had been told to collect.
+    ///
+    /// Only a swap held by one of our own drivers waits on anything. A straight swap off the property is
+    /// something the driver can do the moment they read it.
+    /// </summary>
     public static EquipmentOrder? PendingTrailerWait(AppState s)
     {
         var o = s.EquipmentOrders.FirstOrDefault(x => x.Status == "Open" && x.Kind == "TrailerSwap");
         if (o == null) return null;
+        if (string.IsNullOrWhiteSpace(o.HeldByDriverName)) return null;   // nothing to wait for
+
+        // No date on file: waiting on the event, so it stays pending until the order is closed.
+        if (string.IsNullOrWhiteSpace(o.AvailableFromGameTime)) return o;
+
         var ready = GameClock.TryParse(o.AvailableFromGameTime);
         var now = GameClock.TryParse(s.Status.GameTime);
-        if (ready == null || now == null) return null;
+        if (ready == null || now == null) return o;
         return now.Value < ready.Value ? o : null;
     }
 

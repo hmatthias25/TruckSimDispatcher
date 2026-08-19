@@ -1056,6 +1056,15 @@ public class HiredDriver
     public double Rating { get; set; }
 
     /// <summary>
+    /// When this driver is due back at the yard with their trailer, <b>if the player has told us</b>.
+    ///
+    /// Optional and always empty unless reported. The app has no way to work it out: nothing on the
+    /// fortnightly report carries a location or an ETA. It used to invent one — a seeded one-to-four
+    /// days printed as a fact — which is exactly the fabrication this app refuses everywhere else.
+    /// </summary>
+    public string TrailerDueBackGameTime { get; set; } = "";
+
+    /// <summary>
     /// On notice after a bad period. A carrier does not sack someone over one weak fortnight — it says
     /// what has to change and looks again next report. Empty means not on probation.
     /// </summary>
@@ -1299,6 +1308,20 @@ public class RestartOrder
     /// <summary>Cycle hours left when the order went out — the reason it went out.</summary>
     public double CycleAtOrder { get; set; }
 
+    /// <summary>
+    /// Cycle | Operational. A cycle restart is the driver's hours running down. An operational one is
+    /// the company parking them for its own reasons — freight not ready, weather, a pushed appointment —
+    /// and is emphatically not a performance or safety matter.
+    /// </summary>
+    public string Trigger { get; set; } = "Cycle";
+
+    /// <summary>
+    /// Why the company parked the driver, on an operational order. Kept separate from
+    /// <see cref="Reason"/> — which explains the choice of city and is rewritten as the truck moves —
+    /// so re-targeting can never lose the only explanation the driver was given.
+    /// </summary>
+    public string WhyParked { get; set; } = "";
+
     public string TargetCity { get; set; } = "";
     public string TargetState { get; set; } = "";
     /// <summary>Set when the restart doubles as home time, which is the better play when it is available.</summary>
@@ -1358,6 +1381,11 @@ public class FleetReportLine
     public double TruckOdometer { get; set; }
     /// <summary>Trailer condition in stars. Trailers have no odometer, so there is nothing else to read.</summary>
     public double TrailerStars { get; set; }
+    /// <summary>
+    /// When this driver is due back at the yard, if the game tells the player. Optional — the app has no
+    /// way to work it out and will not guess, so blank simply means the wait is on the event instead.
+    /// </summary>
+    public string TrailerDueBackGameTime { get; set; } = "";
 
     [Obsolete("ATS shows no damage percentage for an AI-driven tractor. Kept so older careers still load.")]
     public double DamagePctAfter { get; set; }

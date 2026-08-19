@@ -25,6 +25,60 @@ public static class Restart
     /// </summary>
     public static double StopDispatchAtCycleHours(AppState s) => s.Settings.Hos.StopDispatchAtCycleHours;
 
+    /// <summary>
+    /// Reasons a carrier parks a driver that have nothing to do with their hours.
+    ///
+    /// Being told to sit thirty-four hours with clean clocks is a different experience from running
+    /// yourself out of cycle, and it is one of the few times a company driver has a decision made for
+    /// them through no fault of their own. So the reason is always given.
+    /// </summary>
+    private static readonly string[] OperationalReasons =
+    {
+        "the freight we want you on is not ready — the shipper has pushed loading back and there is nothing else worth putting you on",
+        "weather has shut the lane we were going to run you down, and I am not sending you round it for the money on offer",
+        "a customer moved an appointment and it has knocked the whole week's planning sideways",
+        "we are waiting on equipment at the yard before the next tour can be covered",
+        "the account we run out of here has gone quiet for a couple of days and there is nothing on the board worth the truck",
+        "a reload fell through at the other end and there is nothing to bring you back with",
+    };
+
+    /// <summary>
+    /// Should the company park this driver for its own reasons?
+    ///
+    /// Deliberately rare — roughly one close-out in twenty-five. A carrier that parked you every other
+    /// week would be a carrier with no freight. Seeded on the trip so it cannot be re-rolled.
+    /// </summary>
+    public static string? OperationalReason(AppState s, string tripNumber)
+    {
+        if (Open(s) != null) return null;                       // already sitting one
+        if (Needed(s)) return null;                             // the cycle already says so; not this
+        if (s.Trips.Count(t => t.Status == "Delivered") < 3) return null;   // not in the first week
+
+        if (Hash($"{s.Driver.EmployeeId}|opsrestart|{tripNumber}") % 100 >= 4) return null;
+        return OperationalReasons[(int)(Hash($"{s.Driver.EmployeeId}|opswhy|{tripNumber}")
+                                       % (uint)OperationalReasons.Length)];
+    }
+
+    /// <summary>Raises a restart the company wants rather than one the clock demands.</summary>
+    public static RestartOrder OrderOperational(AppState s, string why)
+    {
+        var order = Order(s);
+        order.Trigger = "Operational";
+        order.WhyParked = why;
+        return order;
+    }
+
+    /// <summary>FNV-1a, so an outcome is stable and cannot be re-rolled by reloading.</summary>
+    private static uint Hash(string text)
+    {
+        unchecked
+        {
+            var h = 2166136261u;
+            foreach (var ch in text) { h ^= ch; h *= 16777619u; }
+            return h;
+        }
+    }
+
     public static RestartOrder? Open(AppState s)
     {
         var open = s.RestartOrders.FirstOrDefault(r => r.Status is "Ordered" or "Arrived");
@@ -34,7 +88,7 @@ public static class Restart
         // back — the driver re-read their display and it was better than we thought, and their display
         // is authoritative — or recap now covers it, which is the whole point of the recap adviser.
         // Holding them against a problem that no longer exists would be the app being stubborn.
-        if (open.Status == "Ordered" && !Needed(s))
+        if (open.Status == "Ordered" && open.Trigger != "Operational" && !Needed(s))
         {
             open.Status = "Cancelled";
             open.CompletedGameTime = s.Status.GameTime;
@@ -56,6 +110,8 @@ public static class Restart
                 open.TargetCity = city;
                 open.TargetState = state;
                 open.AtHomeTerminal = isHome;
+                // Only the choice of city is rewritten. Why the driver is parked lives on WhyParked and
+                // is never touched, so re-targeting cannot lose their explanation.
                 open.Reason = why;
             }
         }
@@ -198,11 +254,22 @@ public static class Restart
 
         if (order.Status == "Ordered")
         {
-            lines.Add($"{order.Number}: you are down to {Hhmm.Of(order.CycleAtOrder)} of cycle. " +
-                      $"No more freight until you have sat the {order.RequiredHours:0.#}-hour restart.");
-            lines.Add($"A {s.Settings.Hos.OffDutyReset:0.#}-hour rest will not fix this — a normal overnight " +
-                      $"restores your drive and shift clocks but does not touch the {s.Settings.Hos.CycleLimit:0}-hour " +
-                      $"cycle. Only the {order.RequiredHours:0.#} puts it back.");
+            if (order.Trigger == "Operational")
+            {
+                lines.Add($"{order.Number}: operations is parking you for {order.RequiredHours:0.#} hours — " +
+                          $"{order.WhyParked}.");
+                lines.Add("Your clocks are fine. This is the company's call, not a mark against you, and " +
+                          "nothing about it touches your record.");
+                lines.Add("No freight until it is sat, so you may as well be somewhere useful when it is over.");
+            }
+            else
+            {
+                lines.Add($"{order.Number}: you are down to {Hhmm.Of(order.CycleAtOrder)} of cycle. " +
+                          $"No more freight until you have sat the {order.RequiredHours:0.#}-hour restart.");
+                lines.Add($"A {s.Settings.Hos.OffDutyReset:0.#}-hour rest will not fix this — a normal overnight " +
+                          $"restores your drive and shift clocks but does not touch the {s.Settings.Hos.CycleLimit:0}-hour " +
+                          $"cycle. Only the {order.RequiredHours:0.#} puts it back.");
+            }
             lines.Add($"Go to {where}. {order.Reason}");
             lines.Add("Report in when you get there and I will start the clock on it.");
         }

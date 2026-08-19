@@ -206,6 +206,9 @@ public static class FleetOpsService
             // the period: a trend needs the history, a decision needs the latest.
             if (line.Level > 0) driver.Level = line.Level;
             if (line.Rating > 0) driver.Rating = line.Rating;
+            // A due-back date only if the player gave one. Never derived, never guessed.
+            if (!string.IsNullOrWhiteSpace(line.TrailerDueBackGameTime))
+                driver.TrailerDueBackGameTime = line.TrailerDueBackGameTime;
 
             driver.Periods.Insert(0, new DriverPeriodResult
             {

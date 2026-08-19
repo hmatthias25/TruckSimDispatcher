@@ -56,7 +56,24 @@ try {
         if (-not $suites) { throw "no suite matched: $($Only -join ', ')" }
     }
 
-    if (Test-Path $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
+    # A career file left behind by an earlier run is the worst failure this script has, because it does
+    # not look like one: the suites still run, but against somebody else's state, and report failures
+    # that have nothing to do with the code. A crashed run leaves a server holding its file, the delete
+    # is refused, and -ErrorAction SilentlyContinue used to swallow that. So: kill first, then insist.
+    if (Test-Path $work) {
+        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path $work) {
+            Get-Process TruckSimDispatcher, dotnet -ErrorAction SilentlyContinue |
+                Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 400
+            Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $work) {
+            $left = @(Get-ChildItem -LiteralPath $work -Recurse -File -ErrorAction SilentlyContinue)
+            throw ("cannot clear $work - $($left.Count) file(s) still locked. A server from a previous " +
+                   'run is holding them; close it and try again. Refusing to run against stale careers.')
+        }
+    }
     New-Item -ItemType Directory -Path $work -Force | Out-Null
 
     $results = @()
@@ -96,7 +113,20 @@ try {
             continue
         }
 
-        $output = & node $suite.FullName 2>&1
+        # 2>&1 on a native exe is a trap in PowerShell 5.1: each stderr line comes back as an
+        # ErrorRecord, and under $ErrorActionPreference = 'Stop' the first one kills this script. A
+        # suite that dies would take the whole run down with it and never say which suite it was.
+        # Redirect to a file instead, so a suite's own error output is just text we can print.
+        $sout = Join-Path $work "$($suite.BaseName).node.log"
+        $output = @()
+        try {
+            & node $suite.FullName > $sout 2> "$sout.err"
+        } catch {
+            $output += "RUNNER: node exited badly - $($_.Exception.Message)"
+        }
+        foreach ($f in @($sout, "$sout.err")) {
+            if (Test-Path $f) { $output += @(Get-Content -LiteralPath $f -ErrorAction SilentlyContinue) }
+        }
         try { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue } catch { }
 
         $text = $output -join "`n"
@@ -115,6 +145,13 @@ try {
                 ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
         }
 
+        # A suite that printed no assertions at all did not pass - it died. Count it, or a crashed
+        # suite reads as a clean zero and the total still says everything is green.
+        if ($p -eq 0 -and $f -eq 0) {
+            $f = 1
+            Write-Host "      no assertions - suite died" -ForegroundColor Red
+            $output | Select-Object -Last 6 | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkRed }
+        }
         $results += [pscustomobject]@{ Suite = $suite.BaseName; Pass = $p; Fail = $f; Note = '' }
     }
 
