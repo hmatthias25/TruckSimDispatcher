@@ -490,21 +490,22 @@ public static class DispatchEngine
                 e.HardFails.Add(Dedicated.RejectionReason(s, load));
         }
 
-        // ---- trailer: solvable by swapping, so it blocks this load without killing it
+        // ---- trailer
+        //
+        // NOT a gate. ATS filters the freight board by the trailer already behind the truck, so every
+        // job the driver can see is one their trailer pulls — the game checked before it drew the list.
+        //
+        // This used to hard-fail on a mismatch, judged against a table that knew two equivalences: a
+        // step deck covers a flatbed, and a reefer covers a dry van. Everything else was called
+        // incompatible, which refused perfectly legitimate freight — a flatbed load of fertilizer, when
+        // in game fertilizer rides a flatbed, a dry van or a reefer. No cargo table will ever be right;
+        // there are hundreds of cargoes and the rules belong to ATS, not to us. So we trust the board.
         if (trailer != null && !string.IsNullOrWhiteSpace(load.TrailerType) &&
             !EquipmentService.TypeCovers(trailer.Type, load.TrailerType))
         {
-            var plan = EquipmentService.PlanSwap(s, load.TrailerType);
-            e.SwapPlan = plan;
-            if (plan.Possible)
-            {
-                e.RequiresSwap = true;
-                e.Cons.Add($"Needs a {load.TrailerType}; you are on {trailer.Ref} ({trailer.Type}). {plan.Reason}");
-            }
-            else
-            {
-                e.HardFails.Add($"Needs a {load.TrailerType}; you are on {trailer.Ref} ({trailer.Type}). {plan.Reason}");
-            }
+            e.Cons.Add($"Listed as a {load.TrailerType} and you are on {trailer.Ref} ({trailer.Type}). " +
+                       "Taking it anyway — ATS only shows you freight your trailer can pull, so if it was on " +
+                       "your board it fits. Worth a second look at the trailer type if you typed it by hand.");
         }
 
         // ---- HOS feasibility
@@ -706,10 +707,23 @@ public static class DispatchEngine
         return false;
     }
 
+    /// <summary>
+    /// Which division this load runs under.
+    ///
+    /// Taken from the trailer <b>actually hooked</b>, because that is the work the driver is doing. The
+    /// listed trailer type is only a fallback for when nothing is hooked.
+    ///
+    /// It used to prefer the listing, which produced a second version of the trailer bug: a load of
+    /// fertilizer listed as flatbed — perfectly haulable on the dry van behind the truck — came out as
+    /// Flatbed division and was refused by a carrier that does not run flatbed. The driver was pulling a
+    /// dry van the whole time. ATS filters the board by the hooked trailer, so what is hooked is what
+    /// the division should follow.
+    /// </summary>
     public static string DivisionFor(BoardLoad load, Trailer? trailer)
     {
+        if (trailer != null && !string.IsNullOrWhiteSpace(trailer.Type)) return DivisionForTrailer(trailer.Type);
         if (!string.IsNullOrWhiteSpace(load.TrailerType)) return DivisionForTrailer(load.TrailerType);
-        return trailer != null ? DivisionForTrailer(trailer.Type) : "Dry Van";
+        return "Dry Van";
     }
 
     public static string DivisionForTrailer(string trailerType) => (trailerType ?? "").Trim() switch

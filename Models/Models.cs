@@ -1831,8 +1831,7 @@ public class LoadEvaluation
     public decimal EstimatedMargin { get; set; }
     public List<string> ScoreDetail { get; set; } = new();
     /// <summary>True when the load is runnable but needs a different trailer first.</summary>
-    public bool RequiresSwap { get; set; }
-    public object? SwapPlan { get; set; }
+
     /// <summary>The cost breakdown the floor and target were derived from.</summary>
     public object? BreakEven { get; set; }
     public decimal FloorRpmUsed { get; set; }

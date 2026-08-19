@@ -1206,7 +1206,6 @@ function loadCardHtml(e, d) {
         : `<span>due <b>${gt(e.feasibility.dueGameTime)}</b></span>`}
       <span>cycle after <b>${hhmm(e.feasibility.cycleRemainingAfter)}</b></span></div>
     ${e.hardFails.length ? `<ul class="reasons bad">${e.hardFails.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    ${e.requiresSwap && e.swapPlan ? swapPlanHtml(e.swapPlan) : ''}
     ${e.pros.length ? `<ul class="reasons good">${e.pros.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${e.cons.length ? `<ul class="reasons bad">${e.cons.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     <details class="score"><summary>Scoring detail (${e.score.toFixed(2)}) and HOS timeline</summary>
@@ -1226,26 +1225,6 @@ function loadCardHtml(e, d) {
 }
 
 /** A load needing a different trailer is solvable — show how, rather than just refusing. */
-function swapPlanHtml(plan) {
-  if (!plan?.options?.length) return '';
-  return `<div class="callout info" style="margin-top:8px">
-    <h4>Trailer swap needed — ${esc(plan.requiredType)}</h4>
-    <p>${esc(plan.reason)}</p>
-    <div class="tablewrap"><table>
-      <thead><tr><th>Trailer</th><th>Type</th><th>Where</th><th class="num">Damage</th><th></th></tr></thead>
-      <tbody>${plan.options.slice(0, 5).map((o) => `<tr>
-        <td><span class="unit">${esc(uref(o.trailerUnit))}</span></td>
-        <td>${esc(o.length)} ${esc(o.trailerType)}</td>
-        <td>${esc(o.locationLabel)} ${o.hereNow ? badge('ok', 'here now') : o.atCompanyYard ? badge('info', 'our yard') : ''}</td>
-        <td class="num">${pct(o.damagePct)}</td>
-        <td>${o.hereNow
-          ? `<button class="btn tiny go" data-act="swap-trailer" data-unit="${esc(o.trailerUnit)}">Hook it</button>`
-          : `<button class="btn tiny" data-act="equip-move" data-unit="${esc(o.trailerUnit)}" data-where="${esc(o.locationLabel)}">Go get it</button>`}</td>
-      </tr>`).join('')}</tbody></table></div>
-    ${plan.options.some((o) => o.note) ? `<ul class="reasons">${plan.options.filter((o) => o.note)
-      .map((o) => `<li>${esc(o.trailerUnit)}: ${esc(o.note)}</li>`).join('')}</ul>` : ''}
-  </div>`;
-}
 
 function timelineHtml(f) {
   if (!f.timeline?.length) return '';

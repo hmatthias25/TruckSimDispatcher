@@ -93,6 +93,14 @@ public static class EquipmentService
     }
 
     /// <summary>A step deck covers flatbed freight and a reefer runs dry; nothing else substitutes.</summary>
+    /// <summary>
+    /// Whether one trailer type can stand in for another when <b>choosing equipment</b> — planning a
+    /// swap, stocking a yard, re-rigging at home time.
+    ///
+    /// Deliberately NOT used to gate freight. ATS filters the board by the trailer already hooked, so a
+    /// job the driver can see is one their trailer pulls, and second-guessing that from a short table of
+    /// equivalences refused legitimate loads. See DispatchEngine.Evaluate.
+    /// </summary>
     public static bool TypeCovers(string have, string need)
     {
         if (string.IsNullOrWhiteSpace(have) || string.IsNullOrWhiteSpace(need)) return false;
