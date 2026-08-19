@@ -189,9 +189,16 @@ const order = () => S.views.shopOrder || { kind: 'None' };
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: '2000-01-01T08:00' }));
   const u3 = S.driver.assignedTruckUnit;
 
-  /** Report a mileage off the game and read back the line the unit is held to. */
+  /**
+   * Put mileage on the COMPANY's odometer and read back the line the unit is held to.
+   *
+   * Deliberately not the game reading: the odometer cannot be set in ATS, so a unit the books call
+   * worn out may read almost nothing in game. The write-off has to judge on our own figure.
+   */
   async function lineAt(miles, dmg = 0) {
-    await stand({ city: 'Denver', state: 'CO', truckDmg: dmg, odo: miles });
+    const tk = S.trucks.find((t) => t.unit === u3);
+    S = un(await api('/fleet/truck', 'POST', { ...tk, serviceMiles: miles }));
+    await stand({ city: 'Denver', state: 'CO', truckDmg: dmg });
     return (S.views.writeOffLines || []).find((l) => l.unit === u3);
   }
 

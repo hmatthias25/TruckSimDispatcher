@@ -631,6 +631,14 @@ public static class TripService
         if (!audit.GotYouHome && audit.HomeTimeInstructions.Count > 0)
             audit.WhatsNext.Add(audit.HomeTimeInstructions[0]);
 
+        // A trailer change coming at the next home time, said on the way in rather than sprung on
+        // arrival. Being told after you have parked is how a wait for the trailer gets tacked onto the
+        // end of your home time instead of overlapping with it.
+        var homeStatus = HomeTime.Status(s);
+        if (homeStatus.Tracked && (homeStatus.DueSoon || homeStatus.Overdue || audit.GotYouHome)
+            && HomeTime.ReassignmentNotice(s) is { } reNotice)
+            audit.WhatsNext.Add(reNotice);
+
         return audit;
     }
 
@@ -1009,12 +1017,37 @@ public static class TripService
 
         if (truck != null)
         {
-            truck.ServiceMiles = Math.Round(truck.ServiceMiles + tripMiles, 0);
-            truck.AtsOdometer = trip.EndOdometer > 0 ? trip.EndOdometer : truck.AtsOdometer + tripMiles;
+            // The company's odometer advances by what the game says the truck moved, never by being
+            // overwritten with the game's absolute figure. The two cannot be reconciled: the odometer
+            // cannot be set in ATS, so a unit the books call 200,000 miles may read almost nothing.
+            if (trip.EndOdometer > 0 && truck.AtsOdometer > 0)
+            {
+                var moved = trip.EndOdometer - truck.AtsOdometer;
+                if (moved >= 0) truck.ServiceMiles = Math.Round(truck.ServiceMiles + moved, 0);
+                else
+                {
+                    // Lower than last time: a replacement unit in game. New baseline, no miles added.
+                    truck.ServiceMiles = Math.Round(truck.ServiceMiles + tripMiles, 0);
+                    audit.EquipmentFindings.Add(
+                        $"Unit {truck.Ref}: the game reads {trip.EndOdometer:N0} against {truck.AtsOdometer:N0} last " +
+                        "time. Taking that as a replacement unit and starting the reading again — our own odometer " +
+                        $"carries on at {truck.ServiceMiles:N0} mi.");
+                }
+                truck.AtsOdometer = trip.EndOdometer;
+            }
+            else
+            {
+                truck.ServiceMiles = Math.Round(truck.ServiceMiles + tripMiles, 0);
+                if (trip.EndOdometer > 0) truck.AtsOdometer = trip.EndOdometer;
+            }
+
             truck.DamagePct = trip.TruckDamageAfter;
             s.Status.TruckDamagePct = trip.TruckDamageAfter;
             s.Status.AtsOdometer = truck.AtsOdometer;
-            audit.EquipmentFindings.Add($"Unit {truck.Ref}: {truck.DamagePct:0.#}% damage, {truck.ServiceMiles:N0} company-service mi, ATS odometer {truck.AtsOdometer:N0}.");
+            audit.EquipmentFindings.Add($"Unit {truck.Ref}: {truck.DamagePct:0.#}% damage, {truck.ServiceMiles:N0} mi on our books" +
+                                        (Math.Abs(truck.ServiceMiles - truck.AtsOdometer) > 1
+                                            ? $" (your game reads {truck.AtsOdometer:N0} — the books are what we judge on)."
+                                            : "."));
 
             var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
             if (sinceService >= truck.ServiceIntervalMiles)

@@ -800,6 +800,15 @@ app.MapPost("/api/restart/complete", (RestartCompleteRequest req) => Results.Ok(
     return new { snapshot = Snapshot(s), message, accepted, order };
 })));
 
+// Asking to be moved into a better unit sitting at the yard. Answered on the spot, because the driver
+// is standing there looking at it.
+app.MapPost("/api/equipment/ask-better-unit", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var (granted, message, order) = Requests.AskForBetterUnit(s);
+    store.Log(s, "career", (granted ? "" : "Refused — ") + message, order?.Number ?? "");
+    return new { snapshot = Snapshot(s), granted, message, order };
+})));
+
 // Distance between two places, and whether it was measured from real coordinates or guessed from a
 // state centroid. Exposed so the arithmetic can be checked directly.
 app.MapGet("/api/geo/distance", (string? cityA, string? stateA, string? cityB, string? stateB) =>

@@ -1399,6 +1399,9 @@ function homeTimeHtml() {
     <div class="panel-head"><h2>Home time</h2>
       ${h.overdue ? badge('bad', 'overdue') : h.dueSoon ? badge('warn', 'due soon') : badge('ok', 'on schedule')}
       <div class="spacer"></div><span class="sub">${esc(h.arrangement)}</span></div>
+    ${h.reassignmentNotice ? `<div class="callout warn">
+      <h4>Trailer change coming</h4>
+      <p style="margin:0">${esc(h.reassignmentNotice)}</p></div>` : ''}
     <div class="meter ${h.overdue ? 'bad' : h.dueSoon ? 'warn' : 'ok'}">
       <div class="lbl">Days out of ${h.intervalDays}</div>
       <div class="big">${num(h.daysOut, 1)}</div>
@@ -1678,6 +1681,10 @@ function homeBriefModal(b) {
     ${sec('Parking and your reset', b.parking, 'info')}
     ${sec('The shop', b.shop, 'warn')}
     ${sec('Equipment', b.equipment, 'info')}
+    ${b.betterUnitAvailable ? `<div class="row-actions" style="margin:-6px 0 12px">
+      <button class="btn" data-act="ask-better-unit">Put in for unit ${esc(b.betterUnit)}</button>
+      <span class="sub">answered while you are standing here</span>
+    </div>` : ''}
     ${sec('Paperwork while you are standing still', b.paperwork, 'mute')}
 
     <div class="row-actions">
@@ -4267,6 +4274,14 @@ async function handleAction(act, d, ev) {
         FLEETOPS = await api('/fleetops');
         closeModal();
       }, 'Driver removed.');
+    }
+    case 'ask-better-unit': {
+      return run(async () => {
+        const r = await api('/equipment/ask-better-unit', 'POST', {});
+        absorb(r);
+        toast(r.message, r.granted ? 'ok' : 'bad');
+        closeModal();
+      });
     }
     case 'restart-arrived': {
       return run(async () => absorb(await api('/restart/arrived', 'POST', {

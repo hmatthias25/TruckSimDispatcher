@@ -418,7 +418,7 @@ public static class EquipmentService
     /// they are — sending a driver across three states to collect a truck that is marginally newer is
     /// not how a fleet is run, and the yard nearest them almost always wins.
     /// </summary>
-    private static Truck? BestAvailableTruck(AppState s)
+    public static Truck? BestAvailableTruck(AppState s)
     {
         var candidates = s.Trucks
             .Where(t => t.Status == "InService" && t.CabConfig == "Sleeper"

@@ -220,6 +220,12 @@ public class Driver
     /// day was recorded as taking home time again every day.
     /// </summary>
     public bool AtHomeYard { get; set; }
+
+    /// <summary>
+    /// When operations last turned down a request for a better unit. Stops the ask becoming a button to
+    /// mash, and stops the arrival brief offering the same truck every single time they come home.
+    /// </summary>
+    public string LastUnitRequestRefusedGameTime { get; set; } = "";
     public string RankTitle { get; set; } = "Probationary Company Driver";
     public PayPlan Pay { get; set; } = new();
     /// <summary>
@@ -397,9 +403,24 @@ public class Truck
     /// for it or raise shop directives against it.
     /// </summary>
     public bool InGameGarage { get; set; }
-    /// <summary>Roleplay company-service odometer (may differ from the ATS odometer).</summary>
+    /// <summary>
+    /// <b>The odometer.</b> What the company's books say this unit has done, and the only figure any
+    /// decision reads — write-off, trade cycle, preventive maintenance, replacement.
+    ///
+    /// It has to be this one, because the odometer cannot be set in ATS. Issue a driver a unit the books
+    /// call 200,000 miles and they will buy whatever the dealer has, most likely reading zero. The two
+    /// numbers then diverge for good, and only this one reflects the company's actual history.
+    /// </summary>
     public double ServiceMiles { get; set; }
-    /// <summary>Odometer as shown in ATS.</summary>
+
+    /// <summary>
+    /// The last odometer reading the driver reported off the game.
+    ///
+    /// A <b>tape measure, not a value</b>. It exists so the next reading can be differenced against it
+    /// and the gap added to <see cref="ServiceMiles"/>. The two figures never have to agree; only the
+    /// deltas matter. A reading lower than this one means the unit was replaced in game, so it becomes a
+    /// new baseline rather than negative mileage.
+    /// </summary>
     public double AtsOdometer { get; set; }
     public double DamagePct { get; set; }
 

@@ -17,6 +17,71 @@ public static class Requests
     /// <summary>Days after a refusal before the same thing can be asked again.</summary>
     public const double CoolOffDays = 5;
 
+    // ================================================================= a better truck
+
+    /// <summary>
+    /// Asking to be moved into a better unit sitting at the yard.
+    ///
+    /// Answered <b>on the spot</b>, unlike the other two. The driver is standing at the yard with the
+    /// truck twenty feet away and a fortnight before they will be back — making them wait for the next
+    /// close-out would waste the trip. The arrival brief used to tell them to "ask operations to move you
+    /// into it" with nothing behind it, which is worse than not offering.
+    ///
+    /// It can be turned down. Noticing the newest tractor on the property does not entitle anybody to
+    /// it: rank decides, and a driver-fault record counts against.
+    /// </summary>
+    public static (bool Granted, string Message, EquipmentOrder? Order) AskForBetterUnit(AppState s)
+    {
+        var current = DispatchEngine.AssignedTruck(s);
+        var better = EquipmentService.BestAvailableTruck(s);
+
+        if (better == null || (current != null && better.Unit == current.Unit))
+            return (false, "There is nothing on the property better than what you are in.", null);
+
+        if (EquipmentService.OpenOrder(s) is { } open)
+            return (false, $"You already have {open.Number} outstanding. Close that out first.", null);
+
+        // Turned down recently? Do not let the ask become a button to mash.
+        var refused = s.Driver.LastUnitRequestRefusedGameTime;
+        if (!string.IsNullOrWhiteSpace(refused)
+            && GameClock.HoursBetween(refused, s.Status.GameTime) is { } since
+            && since < CoolOffDays * 24)
+            return (false,
+                $"Operations turned this down on {GameClock.Pretty(refused)}. Give it " +
+                $"{CoolOffDays - since / 24:0.#} days before asking again — nothing has changed since.", null);
+
+        // Rank is the gate. A probationary driver takes what they are given; the ladder is what earns
+        // the pick of the fleet, and that is the whole point of the ladder.
+        var rank = s.Driver.Rank;
+        var faults = SafetyService.CountingFaults(s).Count;
+
+        if (rank == "probationary")
+            return Refuse(s,
+                "Not while you are on probation. Take what you are given until that is behind you — " +
+                "the good units go to drivers who have earned them, and you are three good reviews away.");
+
+        if (faults > 0)
+            return Refuse(s,
+                $"You have {faults} preventable incident(s) still counting against you. Operations is not " +
+                "moving you into a better unit while that is on the record. Run it clean and ask again.");
+
+        var order = EquipmentService.IssueUpgrade(s,
+            $"Requested by {s.Driver.Name} at the yard; approved on rank ({rank}) and a clean record.");
+
+        if (order == null)
+            return (false, "Nothing on the property is enough of an improvement to be worth the swap.", null);
+
+        s.Driver.LastUnitRequestRefusedGameTime = "";
+        return (true,
+            $"Approved. {order.Number}: {order.Instruction}", order);
+    }
+
+    private static (bool, string, EquipmentOrder?) Refuse(AppState s, string why)
+    {
+        s.Driver.LastUnitRequestRefusedGameTime = s.Status.GameTime;
+        return (false, why, null);
+    }
+
     // ================================================================= home time
 
     public static HomeTimeRequest? OpenHomeRequest(AppState s) =>

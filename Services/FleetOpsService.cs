@@ -157,20 +157,31 @@ public static class FleetOpsService
                 var starsBefore = truck.Stars;
                 truck.InGameGarage = true;
 
-                // The odometer the player read off the game beats anything we accumulated from
-                // estimated trip miles. Where the two disagree, the game is right.
+                // The game reading only ever tells us how far it moved since we last looked. The
+                // company's own odometer is advanced by that gap and never overwritten — the two cannot
+                // be reconciled, because the odometer cannot be set in ATS. A driver issued a unit the
+                // books call 200,000 miles will have bought one reading zero.
                 if (line.TruckOdometer > 0)
                 {
                     var moved = line.TruckOdometer - truck.AtsOdometer;
                     if (moved < 0)
-                        report.Findings.Add($"Unit {truck.Ref}: odometer reads {line.TruckOdometer:N0}, lower than the {truck.AtsOdometer:N0} on file. Check the reading.");
-                    truck.ServiceMiles = Math.Round(truck.ServiceMiles + (moved > 0 ? moved : Math.Max(0, line.Miles)), 0);
+                    {
+                        // Lower than last time means a different truck, not negative miles. New baseline.
+                        report.Findings.Add(
+                            $"Unit {truck.Ref}: the game reads {line.TruckOdometer:N0} against {truck.AtsOdometer:N0} " +
+                            "last time. Taking that as a replacement unit and starting the reading again — " +
+                            $"our own odometer stays at {truck.ServiceMiles:N0} mi.");
+                    }
+                    else
+                    {
+                        truck.ServiceMiles = Math.Round(truck.ServiceMiles + moved, 0);
+                    }
                     truck.AtsOdometer = line.TruckOdometer;
                 }
                 else
                 {
+                    // No reading given: fall back to the miles reported for the period.
                     truck.ServiceMiles = Math.Round(truck.ServiceMiles + line.Miles, 0);
-                    truck.AtsOdometer = Math.Round(truck.AtsOdometer + line.Miles, 0);
                 }
 
                 if (line.TruckStars > 0)

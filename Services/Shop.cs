@@ -103,14 +103,21 @@ public static class Shop
     /// 600,000 — at that point the repair is worth more than the truck. So the line falls with the
     /// odometer: a fresh unit is held to the full threshold, a worn-out one to a fraction of it.
     ///
-    /// The odometer is the one the driver reports out of ATS, because that is the number they can see.
+    /// The odometer used is the <b>company's</b>, not the game's. They cannot be reconciled — the
+    /// odometer cannot be set in ATS, so a driver issued a unit the books call 200,000 miles will have
+    /// bought one reading zero — and judging a knackered truck by a fresh reading would hold it to the
+    /// same threshold as a new one.
     /// </summary>
     public static double TotalLossPctFor(AppState s, Truck? truck)
     {
         var m = s.Settings.Maintenance;
         if (truck == null) return m.TotalLossPct;
 
-        var miles = truck.AtsOdometer > 0 ? truck.AtsOdometer : truck.ServiceMiles;
+        // The company's odometer, always. The game reading cannot be trusted for this: a unit the books
+        // call worn out may read almost nothing in game, because the player bought a fresh one when the
+        // app issued them a high-mileage tractor. Judging the write-off on that would hold a knackered
+        // truck to the same threshold as a new one.
+        var miles = truck.ServiceMiles;
         var life = Math.Max(1, m.WriteOffLifeMiles);
         var worn = Math.Clamp(miles / life, 0, 1);
         var line = m.TotalLossPct * (1 - Math.Clamp(m.WriteOffWearFactor, 0, 1) * worn);
@@ -121,7 +128,7 @@ public static class Shop
     public static string ExplainTotalLossLine(AppState s, Truck truck)
     {
         var m = s.Settings.Maintenance;
-        var miles = truck.AtsOdometer > 0 ? truck.AtsOdometer : truck.ServiceMiles;
+        var miles = truck.ServiceMiles;
         var line = TotalLossPctFor(s, truck);
         if (line >= m.TotalLossPct - 0.05)
             return $"Unit {truck.Ref} has {miles:N0} mi on it, so it is worth fixing right up to {line:0.#}%.";

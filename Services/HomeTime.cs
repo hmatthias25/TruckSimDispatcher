@@ -64,6 +64,12 @@ public static class HomeTime
         /// very long time. It changes nothing on its own.
         /// </summary>
         public string Suggestion { get; set; } = "";
+        /// <summary>
+        /// Notice of a trailer change due at the next home time. Given in advance so the wait for the
+        /// trailer overlaps with the home time rather than extending it.
+        /// </summary>
+        public string ReassignmentNotice { get; set; } = "";
+
         /// <summary>Set when a trailer reassignment is holding the driver at the yard.</summary>
         public string WaitingOn { get; set; } = "";
         public string WaitingUntil { get; set; } = "";
@@ -170,6 +176,12 @@ public static class HomeTime
             return st;
         }
 
+        // Coming trailer change, from as soon as it is known. NOT gated on home time being due: the
+        // reassignment fires whenever the driver next reports in at the yard, so gating the warning on
+        // the schedule would leave anyone who came home early with no warning at all — which is the
+        // whole complaint. Better a fortnight's notice than none.
+        st.ReassignmentNotice = ReassignmentNotice(s) ?? "";
+
         st.Headline = st.Overdue
             ? $"Home time is OVERDUE — {st.DaysOut:0.#} days out against a {st.IntervalDays}-day arrangement. " +
               (st.AtHome ? "You are close enough to take it now." : "Dispatch is routing you toward {0}.".Replace("{0}", st.TerminalLabel))
@@ -271,12 +283,40 @@ public static class HomeTime
         // rather than as a company with a plan.
         if (s.Driver.HomeTimesTaken < 2) return null;
 
-        // Roughly one home time in three thereafter. Seeded, so refreshing does not re-roll it.
-        var roll = Hash($"{s.Driver.Name}|reassign|{s.Driver.HomeTimesTaken}") % 100;
-        if (roll >= 34) return null;
+        var pick = ReassignmentTypeFor(s, s.Driver.HomeTimesTaken);
+        if (pick == null) return null;
 
-        // Move them onto a division the carrier runs that is not what they are pulling now, and that
-        // they are actually qualified for — no tanker without the endorsement.
+        return EquipmentService.IssueTrailerReassignment(s, pick,
+            $"Freight mix — operations wants you on {pick.ToLowerInvariant()} for the next tour.");
+    }
+
+    /// <summary>
+    /// What the driver would be re-rigged onto at a given home time, or null for no change.
+    ///
+    /// Pulled out of the issuing so the same answer can be given <b>before</b> the driver gets to the
+    /// yard. It used to be decided only at the moment they reported in, which meant the first they heard
+    /// of a trailer change was after they had already arrived — and if the trailer was out under a hired
+    /// driver, the wait for it was tacked onto the end of their home time instead of overlapping with it.
+    ///
+    /// Seeded on the visit number, so the warning given on the way in is necessarily the same answer
+    /// issued on arrival. Two different answers would be worse than no warning at all.
+    /// </summary>
+    public static string? ReassignmentTypeFor(AppState s, int homeTimeNumber)
+    {
+        if (homeTimeNumber < 2) return null;
+        if (Dedicated.Active(s)) return null;
+
+        var divisions = s.Company.Divisions?.Where(d => !string.IsNullOrWhiteSpace(d)).ToList() ?? new List<string>();
+        if (divisions.Count < 2) return null;
+
+        var current = DispatchEngine.AssignedTrailer(s);
+        if (current == null) return null;
+
+        // Roughly one home time in three. Seeded, so refreshing does not re-roll it.
+        if (Hash($"{s.Driver.Name}|reassign|{homeTimeNumber}") % 100 >= 34) return null;
+
+        // A division the carrier runs that is not what they are pulling now, and that they are actually
+        // qualified for — no tanker without the endorsement.
         var options = divisions
             .Select(TrailerTypeFor)
             .Where(t => !string.IsNullOrWhiteSpace(t) && !EquipmentService.TypeCovers(current.Type, t))
@@ -285,10 +325,36 @@ public static class HomeTime
             .ToList();
         if (options.Count == 0) return null;
 
-        var pick = options[(int)(Hash($"{s.Driver.Name}|type|{s.Driver.HomeTimesTaken}") % (uint)options.Count)];
+        return options[(int)(Hash($"{s.Driver.Name}|type|{homeTimeNumber}") % (uint)options.Count)];
+    }
 
-        return EquipmentService.IssueTrailerReassignment(s, pick,
-            $"Freight mix — operations wants you on {pick.ToLowerInvariant()} for the next tour.");
+    /// <summary>
+    /// Notice of a trailer change coming at the next home time, for saying on the way in rather than on
+    /// arrival. Null when nothing is changing.
+    /// </summary>
+    public static string? ReassignmentNotice(AppState s)
+    {
+        var next = ReassignmentTypeFor(s, s.Driver.HomeTimesTaken + 1);
+        if (next == null) return null;
+
+        var current = DispatchEngine.AssignedTrailer(s);
+        var msg = $"Heads up: operations wants you on {next.ToLowerInvariant()} for the next tour, so you are " +
+                  $"changing trailers when you get in" +
+                  (current != null ? $" — off {current.Ref} ({current.Type})." : ".");
+
+        // Where the one they want is out under one of ours, say so now. That wait is what turned a home
+        // time into a home time plus a day, and knowing about it in advance is the whole point.
+        var holder = s.HiredDrivers.FirstOrDefault(d => d.Status == "Active"
+            && !string.IsNullOrWhiteSpace(d.AssignedTrailerUnit)
+            && s.Trailers.Any(t => t.Unit == d.AssignedTrailerUnit
+                                   && EquipmentService.TypeCovers(t.Type, next)));
+        if (holder != null)
+            msg += $" The {next.ToLowerInvariant()} we have is out under {holder.Name}, so there may be a wait at the " +
+                   "yard — plan your home time around it rather than sitting on top of it.";
+        else
+            msg += " Should be one on the property, so it ought to be a straight swap.";
+
+        return msg;
     }
 
     private static bool Qualified(AppState s, string trailerType)
@@ -467,6 +533,13 @@ public static class HomeTime
         public List<string> Equipment { get; set; } = new();
         public List<string> Paperwork { get; set; } = new();
         public bool NothingToDo { get; set; }
+
+        /// <summary>
+        /// A better tractor is sitting here and can be asked for. The brief used to say "ask operations"
+        /// with nothing behind it; these let the UI put the ask in front of the driver.
+        /// </summary>
+        public bool BetterUnitAvailable { get; set; }
+        public string BetterUnit { get; set; } = "";
     }
 
     /// <summary>
@@ -565,8 +638,13 @@ public static class HomeTime
                                                  && string.IsNullOrWhiteSpace(t.AssignedDriver)
                                                  && truck != null && t.Year > truck.Year);
         if (spare != null)
+        {
+            b.BetterUnitAvailable = true;
+            b.BetterUnit = spare.Ref;
             b.Equipment.Add($"There is a better unit sitting here: {spare.Ref} ({spare.Year} {spare.Make} {spare.Model}, " +
-                            $"{spare.ServiceMiles:N0} mi) against your {truck!.Year} {truck.Make}. Ask operations to move you into it.");
+                            $"{spare.ServiceMiles:N0} mi) against your {truck!.Year} {truck.Make}. " +
+                            "Put in for it below and operations will answer while you are standing here.");
+        }
 
         // ---- paperwork that can be closed while standing still
         var open = s.WorkOrders.Count(w => w.Status == "Open");
