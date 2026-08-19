@@ -8,6 +8,13 @@ Single portable `.exe`. No install, no runtime, no internet.
 
 > Original idea by **SimRacerSteve** on Discord — the company-driver roleplay this app automates is his.
 
+### Bundled data
+
+US city coordinates come from [kelvins/US-Cities-Database](https://github.com/kelvins/US-Cities-Database)
+(MIT, Copyright © 2017 Kelvin S. do Prado), derived from US Census place data. About 29,700 cities ship
+with the app so distances can be measured rather than guessed — which matters with a map mod like Coast
+to Coast, where the board will name cities the app's own market table has never heard of.
+
 ---
 
 ## Running it

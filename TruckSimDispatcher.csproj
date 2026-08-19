@@ -33,6 +33,9 @@
     <EmbeddedResource Include="ui\index.html" LogicalName="ui/index.html" />
     <EmbeddedResource Include="ui\styles.css" LogicalName="ui/styles.css" />
     <EmbeddedResource Include="ui\app.js" LogicalName="ui/app.js" />
+    <!-- Real US city coordinates, so distances are measured rather than guessed. MIT, attributed
+         in the file header and in the credits. ~800 KB, nothing against a 52 MB exe. -->
+    <EmbeddedResource Include="data-embedded\us-cities.txt" LogicalName="data/us-cities.txt" />
   </ItemGroup>
 
   <ItemGroup>

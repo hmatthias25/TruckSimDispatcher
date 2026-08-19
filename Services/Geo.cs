@@ -1,18 +1,37 @@
+using System.Reflection;
+
 namespace TruckSimDispatcher.Services;
 
 /// <summary>
-/// Crude US geography, used only to answer "is this load taking me toward home or away from it?".
+/// How far apart two places are.
 ///
-/// Deliberately rough. ATS runs a scaled map with mod-dependent distances, so there is no true mileage
-/// table to work from — and the question being asked does not need one. Home time only has to land the
-/// driver somewhere near their home terminal, not on the dot, so state-centroid distance plus a
-/// same-state fallback is accurate enough to rank loads and honest about what it is.
+/// This used to be state centroids with a flat 130-mile fallback for anywhere in the same state, which
+/// produced some badly wrong answers: Amarillo to Houston measured the same as Colorado Springs to
+/// Denver, and since the home radius is 200 miles, <i>anywhere in your home state</i> counted as being
+/// home. It also quietly defeated the cap on deadheading home for a restart, because a same-state yard
+/// always came back as a two-hour run however far away it really was.
 ///
-/// Never use this for pay, fuel or feasibility. Those run off the miles ATS actually reports.
+/// So it measures now. Around thirty thousand real US city coordinates ship with the app, which covers
+/// vanilla ATS, Coast to Coast and any other map mod that uses real place names — the player can report
+/// a city the app's own market table has never heard of and still get a real distance. State centroids
+/// remain, but only as the fallback for a city genuinely not in the table.
+///
+/// Still not survey-grade, and deliberately so: it is a great-circle distance with a road factor, not a
+/// routed mileage, and ATS runs a scaled map anyway. Good enough to answer "is this taking me toward
+/// home" and "is the yard worth deadheading to". <b>Never use it for pay, fuel or feasibility</b> —
+/// those run off the miles ATS actually reports.
 /// </summary>
 public static class Geo
 {
-    /// <summary>Rough state centroids. Degrees, not survey-grade.</summary>
+    /// <summary>
+    /// Roads are not straight. A great-circle distance understates the drive by a fair margin, and
+    /// under-stating it is the dangerous direction — it makes a deadhead look cheaper than it is.
+    /// </summary>
+    private const double RoadFactor = 1.2;
+
+    private const double EarthRadiusMiles = 3958.8;
+
+    /// <summary>Rough state centroids, for a city the coordinate table does not know.</summary>
     private static readonly Dictionary<string, (double Lat, double Lon)> Centers = new(StringComparer.OrdinalIgnoreCase)
     {
         ["AL"] = (32.8, -86.8), ["AZ"] = (34.2, -111.7), ["AR"] = (34.9, -92.4), ["CA"] = (37.2, -119.5),
@@ -27,22 +46,93 @@ public static class Geo
         ["RI"] = (41.7, -71.6), ["SC"] = (33.9, -80.9), ["SD"] = (44.4, -100.2), ["TN"] = (35.8, -86.4),
         ["TX"] = (31.5, -99.3), ["UT"] = (39.3, -111.7), ["VT"] = (44.1, -72.7), ["VA"] = (37.5, -78.9),
         ["WA"] = (47.4, -120.5), ["WV"] = (38.6, -80.6), ["WI"] = (44.6, -89.7), ["WY"] = (43.0, -107.5),
+        ["AK"] = (64.0, -152.0), ["HI"] = (20.8, -156.3), ["DC"] = (38.9, -77.0),
     };
 
-    private const double MilesPerDegree = 69.0;
-
     /// <summary>
-    /// Typical distance between two different cities in the same state. A state centroid cannot
-    /// separate them, and calling them zero miles apart would read as "you are home" when you are
-    /// three hours away.
+    /// When only state centroids are available, two different cities in the same state cannot be told
+    /// apart — so this is the least dishonest thing to say about them. Only reached for a city the
+    /// coordinate table has never heard of.
     /// </summary>
-    private const double SameStateMiles = 130.0;
+    private const double SameStateFallbackMiles = 130.0;
 
-    public static bool Knows(string? state) => !string.IsNullOrWhiteSpace(state) && Centers.ContainsKey(state.Trim());
+    private static Dictionary<string, (double Lat, double Lon)>? _cities;
+    private static readonly object Gate = new();
+
+    /// <summary>The shipped coordinate table, loaded once on first use.</summary>
+    private static Dictionary<string, (double Lat, double Lon)> Cities()
+    {
+        if (_cities != null) return _cities;
+        lock (Gate)
+        {
+            if (_cities != null) return _cities;
+            var map = new Dictionary<string, (double, double)>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                using var stream = Assembly.GetExecutingAssembly()
+                    .GetManifestResourceStream("data/us-cities.txt");
+                if (stream != null)
+                {
+                    using var reader = new StreamReader(stream);
+                    while (reader.ReadLine() is { } line)
+                    {
+                        if (line.Length == 0 || line[0] == '#') continue;
+                        var p = line.Split('|');
+                        if (p.Length < 4) continue;
+                        if (!double.TryParse(p[2], System.Globalization.CultureInfo.InvariantCulture, out var lat)) continue;
+                        if (!double.TryParse(p[3], System.Globalization.CultureInfo.InvariantCulture, out var lon)) continue;
+                        map[Key(p[0], p[1])] = (lat, lon);
+                    }
+                }
+            }
+            catch
+            {
+                // A missing or unreadable table is not fatal — centroids still answer, just roughly.
+            }
+            _cities = map;
+            return _cities;
+        }
+    }
+
+    /// <summary>How many cities the table holds. Surfaced so the app can say what it is working from.</summary>
+    public static int KnownCityCount => Cities().Count;
+
+    private static string Key(string city, string state) =>
+        $"{Normalise(city)}|{state.Trim().ToUpperInvariant()}";
 
     /// <summary>
-    /// Rough miles between two places. Returns null when the states are unknown to the table (map mods
-    /// add cities we have no coordinates for) so callers can say "I do not know" instead of guessing.
+    /// City names vary in punctuation between the game, the mods and the dataset. "St. Louis",
+    /// "Saint Louis" and "St Louis" are one place, and so are "Coeur d'Alene" and "Coeur dAlene".
+    /// </summary>
+    private static string Normalise(string city)
+    {
+        var c = city.Trim().ToLowerInvariant()
+            .Replace("’", "")
+            .Replace("'", "")
+            .Replace(".", "")
+            .Replace("-", " ");
+        if (c.StartsWith("saint ")) c = "st " + c[6..];
+        c = string.Join(" ", c.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return c;
+    }
+
+    /// <summary>The coordinates of a city, or null when it is not one we know.</summary>
+    public static (double Lat, double Lon)? Locate(string? city, string? state)
+    {
+        var c = (city ?? "").Trim();
+        var st = (state ?? "").Trim();
+        if (c.Length == 0 || st.Length != 2) return null;
+        return Cities().TryGetValue(Key(c, st), out var hit) ? hit : null;
+    }
+
+    public static bool Knows(string? city, string? state) => Locate(city, state) != null;
+
+    public static bool KnowsState(string? state) =>
+        !string.IsNullOrWhiteSpace(state) && Centers.ContainsKey(state.Trim());
+
+    /// <summary>
+    /// Road miles between two places, near enough. Null when neither the city table nor the state
+    /// centroids can answer, so callers can say "I do not know" rather than guess.
     /// </summary>
     public static double? MilesBetween(string? cityA, string? stateA, string? cityB, string? stateB)
     {
@@ -51,20 +141,40 @@ public static class Geo
         var sa = (stateA ?? "").Trim();
         var sb = (stateB ?? "").Trim();
 
-        // Same city is the only case we can be certain about.
-        if (ca.Length > 0 && ca.Equals(cb, StringComparison.OrdinalIgnoreCase) &&
+        // Same place is the only case anything can be certain about.
+        if (ca.Length > 0 && Normalise(ca) == Normalise(cb) &&
             (sa.Length == 0 || sb.Length == 0 || sa.Equals(sb, StringComparison.OrdinalIgnoreCase)))
             return 0;
 
-        if (!Centers.TryGetValue(sa, out var a) || !Centers.TryGetValue(sb, out var b)) return null;
+        // Measured, where we know both cities. This is the path almost everything takes.
+        var pa = Locate(ca, sa);
+        var pb = Locate(cb, sb);
+        if (pa is { } a && pb is { } b)
+            return Math.Round(Haversine(a.Lat, a.Lon, b.Lat, b.Lon) * RoadFactor, 0);
 
-        if (sa.Equals(sb, StringComparison.OrdinalIgnoreCase)) return SameStateMiles;
+        // One or both are unknown — a mod city, or a typo. Fall back to centroids and be rough.
+        if (!Centers.TryGetValue(sa, out var ga) || !Centers.TryGetValue(sb, out var gb)) return null;
 
-        var dLat = a.Lat - b.Lat;
-        var dLon = (a.Lon - b.Lon) * Math.Cos(a.Lat * Math.PI / 180);
-        var miles = Math.Sqrt(dLat * dLat + dLon * dLon) * MilesPerDegree;
+        if (sa.Equals(sb, StringComparison.OrdinalIgnoreCase)) return SameStateFallbackMiles;
 
-        // Neighbouring states can produce a small centroid gap for what is still a real drive.
-        return Math.Max(miles, SameStateMiles);
+        var rough = Haversine(ga.Lat, ga.Lon, gb.Lat, gb.Lon) * RoadFactor;
+        return Math.Round(Math.Max(rough, SameStateFallbackMiles), 0);
+    }
+
+    /// <summary>
+    /// True when the figure came from real coordinates rather than a state centroid. Lets a caller
+    /// hedge its wording — and refuse to make an expensive decision on a rough number.
+    /// </summary>
+    public static bool IsMeasured(string? cityA, string? stateA, string? cityB, string? stateB) =>
+        Knows(cityA, stateA) && Knows(cityB, stateB);
+
+    private static double Haversine(double lat1, double lon1, double lat2, double lon2)
+    {
+        static double Rad(double d) => d * Math.PI / 180.0;
+        var dLat = Rad(lat2 - lat1);
+        var dLon = Rad(lon2 - lon1);
+        var h = Math.Sin(dLat / 2) * Math.Sin(dLat / 2)
+                + Math.Cos(Rad(lat1)) * Math.Cos(Rad(lat2)) * Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        return 2 * EarthRadiusMiles * Math.Asin(Math.Min(1, Math.Sqrt(h)));
     }
 }

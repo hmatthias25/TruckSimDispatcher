@@ -800,6 +800,17 @@ app.MapPost("/api/restart/complete", (RestartCompleteRequest req) => Results.Ok(
     return new { snapshot = Snapshot(s), message, accepted, order };
 })));
 
+// Distance between two places, and whether it was measured from real coordinates or guessed from a
+// state centroid. Exposed so the arithmetic can be checked directly.
+app.MapGet("/api/geo/distance", (string? cityA, string? stateA, string? cityB, string? stateB) =>
+    Results.Ok(new
+    {
+        miles = Geo.MilesBetween(cityA, stateA, cityB, stateB),
+        measured = Geo.IsMeasured(cityA, stateA, cityB, stateB)
+    }));
+
+app.MapGet("/api/geo/meta", () => Results.Ok(new { knownCityCount = Geo.KnownCityCount }));
+
 // Whether a receiver will let a truck sit overnight. Seeded on the facility, so the same customer in
 // the same city always answers the same way and refreshing cannot re-roll it.
 app.MapGet("/api/facility/parking", (string? city, string? state, string? receiver) =>
