@@ -33,6 +33,13 @@ public class PlanRequest
     /// them.
     /// </summary>
     public double AppointmentOpensHours { get; set; }
+    /// <summary>
+    /// Whether the receiver will let a truck sit on their property. Only consulted when the wait is
+    /// long enough to be worth sleeping; a short wait is sat at the gate either way.
+    ///
+    /// Defaults to true so a plan that never sets it behaves as it always did.
+    /// </summary>
+    public bool ReceiverAllowsOvernight { get; set; } = true;
     public bool IncludePreTrip { get; set; } = true;
     /// <summary>Miles the truck can run on the fuel currently aboard.</summary>
     public double UsableFuelRangeMiles { get; set; } = 9999;
@@ -271,16 +278,42 @@ public static class HosEngine
                     result.WaitForAppointmentHours = Math.Round(waiting, 2);
                     if (waiting >= rules.OffDutyReset)
                     {
-                        // Long enough to be worth sleeping. A driver sitting ten hours at a receiver
-                        // takes their reset there rather than burning the window watching the gate.
-                        drive = rules.DriveLimit;
-                        shift = rules.ShiftLimit;
-                        brk = rules.DrivingBeforeBreak;
-                        result.RestsRequired++;
-                        Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}, taken as the reset", "Rest", waiting, 0);
-                        result.Warnings.Add(
-                            $"You arrive {Hhmm.Of(waiting)} before they open. Long enough to sit your " +
-                            $"{rules.OffDutyReset:0.#}-hour reset on their property, so the wait is not wasted.");
+                        // Long enough to be worth sleeping — but only if they will have you. Plenty of
+                        // receivers will not, and then the reset is sat at a truck stop with a run
+                        // either side, which is real time off clocks that are already the constraint.
+                        if (!req.ReceiverAllowsOvernight)
+                        {
+                            var hop = Facilities.RepositionHoursEachWay;
+                            var rest = Math.Max(rules.OffDutyReset, waiting - hop * 2);
+
+                            drive = Math.Max(0, drive - hop); shift = Math.Max(0, shift - hop);
+                            cycle = Math.Max(0, cycle - hop);
+                            Step("Reposition to a truck stop — the receiver will not have you overnight", "Drive", hop, 0);
+
+                            drive = rules.DriveLimit; shift = rules.ShiftLimit; brk = rules.DrivingBeforeBreak;
+                            result.RestsRequired++;
+                            Step($"{Hhmm.Of(rest)} reset at the truck stop", "Rest", rest, 0);
+
+                            drive -= hop; shift -= hop; cycle = Math.Max(0, cycle - hop);
+                            if (requireBreak) brk -= hop;
+                            Step("Back to the receiver for the appointment", "Drive", hop, 0);
+
+                            result.Warnings.Add(
+                                $"You arrive {Hhmm.Of(waiting)} before they open and they do not allow overnight " +
+                                $"parking. Sit the reset at a truck stop and come back — about {Hhmm.Of(hop * 2)} " +
+                                "of running either side, and it comes off your clocks.");
+                        }
+                        else
+                        {
+                            drive = rules.DriveLimit;
+                            shift = rules.ShiftLimit;
+                            brk = rules.DrivingBeforeBreak;
+                            result.RestsRequired++;
+                            Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}, taken as the reset", "Rest", waiting, 0);
+                            result.Warnings.Add(
+                                $"You arrive {Hhmm.Of(waiting)} before they open, and they will let you sit on their " +
+                                $"property. Take your {rules.OffDutyReset:0.#}-hour reset there — the wait is not wasted.");
+                        }
                     }
                     else
                     {
@@ -288,10 +321,11 @@ public static class HosEngine
                         shift = Math.Max(0, shift - waiting);
                         cycle = Math.Max(0, cycle - waiting);
                         Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}", "OnDuty", waiting, 0);
-                        if (waiting >= 1)
+                        if (waiting >= 0.25)
                             result.Warnings.Add(
-                                $"You get there {Hhmm.Of(waiting)} before they open, and that wait comes off " +
-                                "your 14-hour window — it is on-duty time, not slack.");
+                                $"You get there {Hhmm.Of(waiting)} before they open. Short enough to wait at the " +
+                                "receiver — no need to go anywhere — but it is on-duty time and comes off your " +
+                                $"{rules.ShiftLimit:0.#}-hour window, not slack.");
                     }
                 }
             }

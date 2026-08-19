@@ -163,9 +163,83 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
   f = overnight.evaluations[0].feasibility;
   ok('the long wait is recognised', f.waitForAppointmentHours > 10, `${hhmm(f.waitForAppointmentHours || 0)}`);
   ok('and sat as the reset, not spent on duty',
-    (f.warnings || []).some((w) => /reset on their property/.test(w)),
+    (f.warnings || []).some((w) => /reset/.test(w) && /not wasted/.test(w)),
     (f.warnings || []).join(' | ') || '(none)');
   ok('so the driver is not stranded out of hours', f.verdict !== 'Infeasible', f.verdict);
+
+  head('13. Whether the receiver will have you overnight is per-facility and stable');
+  // Find one of each by asking about a spread of receivers.
+  const names = ['Walmart DC', 'Kroger', 'Target DC', 'Costco', 'Sysco', 'US Foods', 'Home Depot', 'Lowes'];
+  const verdicts = [];
+  for (const who of names) {
+    const q = await api(`/facility/parking?city=Aurora&state=CO&receiver=${encodeURIComponent(who)}`);
+    verdicts.push({ who, allows: q.allowsOvernight, note: q.note });
+  }
+  console.log('     ' + verdicts.map((v) => `${v.who}:${v.allows ? 'yes' : 'no'}`).join('  '));
+  ok('some receivers allow it', verdicts.some((v) => v.allows), verdicts.filter((v) => v.allows).map((v) => v.who).join(', ') || 'none');
+  ok('and some do not', verdicts.some((v) => !v.allows), verdicts.filter((v) => !v.allows).map((v) => v.who).join(', ') || 'none');
+
+  const first = verdicts[0];
+  const again = await api(`/facility/parking?city=Aurora&state=CO&receiver=${encodeURIComponent(first.who)}`);
+  ok('the same receiver gives the same answer every time', again.allowsOvernight === first.allows,
+    `${first.who}: ${first.allows} then ${again.allowsOvernight}`);
+
+  const otherCity = await api(`/facility/parking?city=Pueblo&state=CO&receiver=${encodeURIComponent(first.who)}`);
+  ok('but it is judged per site, not per company', typeof otherCity.allowsOvernight === 'boolean',
+    `${first.who} Aurora=${first.allows} Pueblo=${otherCity.allowsOvernight}`);
+
+  head('14. No overnight parking means the reset is sat at a truck stop');
+  const noPark = verdicts.find((v) => !v.allows);
+  const yesPark = verdicts.find((v) => v.allows);
+
+  await api('/board/clear', 'POST', {});
+  const away = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, originCity: 'Denver', originState: 'CO',
+    destCity: 'Aurora', destState: 'CO', receiver: noPark.who, loadedMiles: 19, deadheadMiles: 0,
+    gameRevenue: 300, deadlineHours: 30, weightLbs: 20000, appointmentOpensHours: 18,
+  });
+  f = away.evaluations[0].feasibility;
+  ok('the driver is sent to a truck stop',
+    (f.warnings || []).some((w) => /do not allow overnight parking/.test(w)),
+    (f.warnings || []).join(' | ') || '(none)');
+  ok('and the run either side is on the timeline',
+    (f.timeline || []).some((x) => /Reposition to a truck stop/.test(x.label)),
+    (f.timeline || []).map((x) => x.label).join(' | '));
+  ok('with the trip back for the appointment',
+    (f.timeline || []).some((x) => /Back to the receiver/.test(x.label)),
+    (f.timeline || []).map((x) => x.label).join(' | '));
+  ok('it is still runnable', f.verdict !== 'Infeasible', f.verdict);
+
+  await api('/board/clear', 'POST', {});
+  const stay = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, originCity: 'Denver', originState: 'CO',
+    destCity: 'Aurora', destState: 'CO', receiver: yesPark.who, loadedMiles: 19, deadheadMiles: 0,
+    gameRevenue: 300, deadlineHours: 30, weightLbs: 20000, appointmentOpensHours: 18,
+  });
+  f = stay.evaluations[0].feasibility;
+  ok('a friendly receiver keeps you on their property',
+    (f.warnings || []).some((w) => /let you sit on their/.test(w)),
+    (f.warnings || []).join(' | ') || '(none)');
+  ok('and there is no repositioning',
+    !(f.timeline || []).some((x) => /truck stop/i.test(x.label)),
+    (f.timeline || []).map((x) => x.label).join(' | '));
+
+  head('15. A short wait is sat at the receiver either way');
+  for (const who of [noPark.who, yesPark.who]) {
+    await api('/board/clear', 'POST', {});
+    const brief = await api('/board/add', 'POST', {
+      cargo: 'Machinery', trailerType: S.trailers[0].type, originCity: 'Denver', originState: 'CO',
+      destCity: 'Aurora', destState: 'CO', receiver: who, loadedMiles: 19, deadheadMiles: 0,
+      gameRevenue: 300, deadlineHours: 12, weightLbs: 20000, appointmentOpensHours: 6,
+    });
+    const bf = brief.evaluations[0].feasibility;
+    ok(`${who}: a short wait stays at the receiver`,
+      (bf.warnings || []).some((w) => /wait at the receiver/.test(w)),
+      (bf.warnings || []).find((w) => /before they open/.test(w)) || '(none)');
+    ok(`${who}: and nobody is sent to a truck stop`,
+      !(bf.timeline || []).some((x) => /truck stop/i.test(x.label)),
+      (bf.timeline || []).map((x) => x.label).join(' | '));
+  }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

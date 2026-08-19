@@ -138,6 +138,14 @@ public static class DispatchEngine
                 decision.DispatchNotes.Add($"Plan on {pick.Feasibility.RestsRequired} × {s.Settings.Hos.OffDutyReset:0.#}-hour reset and {pick.Feasibility.BreaksRequired} required break(s) en route.");
             if (pick.Feasibility.FuelStopsRequired > 0)
                 decision.DispatchNotes.Add($"{pick.Feasibility.FuelStopsRequired} fuel stop(s) planned — do not run below a quarter tank.");
+            // Where they sit if they get there early. Said before they commit, because whether the
+            // receiver will have them overnight changes what the last few hours of the run look like.
+            if (pick.Feasibility.WaitForAppointmentHours > 0.25)
+                decision.DispatchNotes.Add(pick.Feasibility.WaitForAppointmentHours >= s.Settings.Hos.OffDutyReset
+                    ? Facilities.OvernightNote(s, pick.Load.DestCity, pick.Load.DestState, pick.Load.Receiver,
+                        pick.Feasibility.WaitForAppointmentHours)
+                    : $"You get there {Hhmm.Of(pick.Feasibility.WaitForAppointmentHours)} before they open. " +
+                      "Wait at the receiver — that is fine for a stint that short, and it is on-duty time.");
             // If this pick is the ride home, say so plainly — the driver should know why they are
             // taking it over a better-paying load, and what to do once the trailer comes off.
             foreach (var line in HomeTime.HomeRunInstructions(s, pick.Load.DestCity, pick.Load.DestState))
@@ -487,6 +495,8 @@ public static class DispatchEngine
             ExtraStops = load.ExtraStops,
             DeadlineHours = load.DeadlineHours,
             AppointmentOpensHours = load.AppointmentOpensHours,
+            ReceiverAllowsOvernight = Facilities.AllowsOvernightParking(
+                s, load.DestCity, load.DestState, load.Receiver),
             UsableFuelRangeMiles = fuelRange,
             StartGameTime = s.Status.GameTime,
             Label = load.Cargo

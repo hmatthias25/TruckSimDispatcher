@@ -782,6 +782,15 @@ app.MapPost("/api/window/read", (WindowReadRequest req) =>
         });
 });
 
+// Whether a receiver will let a truck sit overnight. Seeded on the facility, so the same customer in
+// the same city always answers the same way and refreshing cannot re-roll it.
+app.MapGet("/api/facility/parking", (string? city, string? state, string? receiver) =>
+    Results.Ok(new
+    {
+        allowsOvernight = Facilities.AllowsOvernightParking(store.State, city, state, receiver),
+        note = Facilities.OvernightNote(store.State, city, state, receiver, 12)
+    }));
+
 app.MapGet("/api/window/check", (double deadlineHours, double miles, string? trailerType) =>
     Results.Ok(new
     {
