@@ -2,6 +2,7 @@
 bin/
 obj/
 publish/
+publish-ship/
 
 # Career files are runtime state, not source — and they hold your API key if you set one.
 # Back them up with Settings -> Data instead.
