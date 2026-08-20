@@ -248,29 +248,70 @@ async function addLoad(extra = {}) {
     (done.audit.carriedForward || []).find((x) => /carried across/i.test(x)) || '(none)');
 
   head('8b. With no reading to anchor to, it says so instead of guessing');
-  // The figures on file are from before the drive, so taking only the dock time off them would report a
-  // shift clock that never paid for the driving. Better to say so than to publish a wrong number.
-  await place(13, '06:00');
+  // Two loads back to back, neither reporting clocks. The first leaves the figures on file stale; the
+  // second then has nothing to anchor to, so taking only the dock time off them would report a shift
+  // clock that never paid for either drive. It has to say so rather than publish that.
+  const runQuiet = async (day, arrive, board, odo) => {
+    await place(day, '06:00');
+    const ev = (await addLoad()).evaluations[0];
+    const a2 = await api('/dispatch/authorize', 'POST', { loadId: ev.load.id });
+    return api(`/trips/${a2.trip.id}/complete`, 'POST', {
+      deliveredGameTime: iso(day, arrive), actualMiles: 300, endOdometer: odo, actualRevenue: 1500,
+      fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+      truckDamageAfter: 2, trailerDamageAfter: 1, cargoDamagePct: 0,
+      loadingHours: 1, unloadingHours: 0, detentionHours: 0,
+      layoverDays: 0, breakdownDays: 0, extraStops: 0, tarpsUsed: 0,
+      delayReason: '', damageCause: '', notes: '',
+      locationCity: 'Amarillo', locationState: 'TX', fuelPct: 60, gameTime: iso(day, arrive),
+      releasedGameTime: iso(day, board),
+    });
+  };
+  // Fresh clocks, then a close-out that reports none -- which is what makes them stale.
   await clocks(11, 14, 8, 70);
-  const p7 = (await addLoad()).evaluations[0];
-  auth = await api('/dispatch/authorize', 'POST', { loadId: p7.load.id });
-  await api(`/trips/${auth.trip.id}/event`, 'POST', { kind: 'BeginUnload', gameTime: iso(13, '11:00') });
-  await api(`/trips/${auth.trip.id}/event`, 'POST', { kind: 'EndUnload', gameTime: iso(13, '13:00') });
-  // Deliberately no clocks reported, and the ones on file are stale by a whole trip.
-  await api('/hos/stale', 'POST', {}).catch(() => null);
+  await runQuiet(13, '11:00', '13:00', 34000);
+  ok('the baseline is stale after a close-out with no clocks reported',
+    (await api('/bootstrap')).hos.confirmed === false, `${(await api('/bootstrap')).hos.confirmed}`);
+
+  // Now the case that matters: stale baseline, and a dock time it could wrongly subtract.
+  done = await runQuiet(14, '10:00', '12:00', 34200);
+  const noted = (done.audit.carriedForward || []).join(' | ');
+  ok('it refuses to do the arithmetic', /no reading from when you arrived/i.test(noted),
+    noted.slice(0, 190) || '(nothing)');
+  ok('and says what it is holding instead', /from before the drive/i.test(noted), '');
+  ok('nothing is passed off as projected', !(await api('/bootstrap')).hos.projected,
+    `${(await api('/bootstrap')).hos.projected}`);
+
+  head('8c. The whole thing in one close-out: arrival clocks plus the board time');
+  // The cadence a driver actually uses. Back in at 09:00 and read the clocks. Press the button. The
+  // board comes up at 11:30. One close-out carries all three facts, and nothing else is needed -- no
+  // begin/end events, no tick.
+  await place(15, '06:00');
+  await clocks(11, 14, 8, 70);
+  const p8 = (await addLoad()).evaluations[0];
+  auth = await api('/dispatch/authorize', 'POST', { loadId: p8.load.id });
   done = await api(`/trips/${auth.trip.id}/complete`, 'POST', {
-    deliveredGameTime: iso(13, '11:00'), actualMiles: 300, endOdometer: 34000, actualRevenue: 1500,
+    deliveredGameTime: iso(15, '09:00'), actualMiles: 300, endOdometer: 34500, actualRevenue: 1500,
     fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
     truckDamageAfter: 2, trailerDamageAfter: 1, cargoDamagePct: 0,
     loadingHours: 1, unloadingHours: 0, detentionHours: 0,
     layoverDays: 0, breakdownDays: 0, extraStops: 0, tarpsUsed: 0,
     delayReason: '', damageCause: '', notes: '',
-    locationCity: 'Amarillo', locationState: 'TX', fuelPct: 60, gameTime: iso(13, '11:00'),
+    locationCity: 'Amarillo', locationState: 'TX', fuelPct: 60, gameTime: iso(15, '09:00'),
+    // Read as they backed in.
+    hosDriveRemaining: 6, hosShiftRemaining: 9, hosBreakRemaining: 5, hosCycleRemaining: 52,
+    // And the clock on the load-selection screen.
+    releasedGameTime: iso(15, '11:30'),
   });
-  const noted = (done.audit.carriedForward || []).join(' | ');
-  ok('it either carried them or explained that it could not',
-    /carried across the unload/i.test(noted) || /no reading from when you/i.test(noted),
-    noted.slice(0, 200) || '(nothing)');
+  S = done.snapshot;
+  h = (await api('/bootstrap')).hos;
+  ok('the dock measured two and a half hours', /2:30/.test((done.audit.carriedForward || []).join(' ')),
+    (done.audit.carriedForward || []).find((x) => /at the dock/.test(x)) || '(none)');
+  ok('shift went 9:00 -> 6:30', near(h.shiftRemaining, 6.5), `${h.shiftRemaining} h`);
+  ok('cycle went 52:00 -> 49:30', near(h.cycleRemaining, 49.5), `${h.cycleRemaining} h`);
+  ok('drive is still the 6:00 that was read', near(h.driveRemaining, 6), `${h.driveRemaining} h`);
+  ok('and now is when the board came up', /T11:30/.test(S.status.gameTime), S.status.gameTime);
+  ok('the next load is judged on that', (await api('/bootstrap')).views.hos.drivableNowHours <= 6.5,
+    `${(await api('/bootstrap')).views.hos.drivableNowHours} h drivable`);
 
   head('9. A reading typed in replaces a projection');
   await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 10, breakRemaining: 7, cycleRemaining: 45 });

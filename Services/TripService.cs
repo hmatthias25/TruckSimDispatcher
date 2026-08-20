@@ -770,6 +770,9 @@ public static class TripService
         // would report a shift clock that never paid for the driving.
         if (!baselineWasFresh && !audit.ClocksReported)
         {
+            // Whatever is on file is stale, not projected. Leaving the flag set from an earlier trip
+            // would have the panel claim it carried these across an unload it refused to touch.
+            s.Hos.Projected = false;
             audit.CarriedForward.Add(
                 $"The dock cost {Hhmm.Of(spentAtDock)} of on-duty time, but I have no reading from when you " +
                 "arrived to take it off \u2014 what I hold is from before the drive. Report your clocks and I " +
