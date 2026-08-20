@@ -190,8 +190,21 @@ public static class Restart
             }
         }
 
+        // What the driver can actually legally drive before they have to stop. The binding clock, not
+        // the cycle: with 0:43 of cycle left and a full shift there is still only 0:43 of driving in it,
+        // and naming a city an hour and a half away is telling somebody to run illegal.
+        var mphNow = HosEngine.EffectiveMph(s.Settings, DispatchEngine.AssignedTruck(s));
+        var drivable = Math.Max(0, Math.Min(Math.Min(s.Hos.DriveRemaining, s.Hos.ShiftRemaining),
+                                            s.Hos.CycleRemaining));
+
+        // Keep a little back. Arriving with the clock on zero means no margin for a wrong turn, traffic,
+        // or the last mile through town to the parking.
+        var reserve = Math.Min(0.25, drivable * 0.15);
+        var reachHours = Math.Max(0, drivable - reserve);
+        var reachMiles = mphNow > 0 ? reachHours * mphNow : 0;
+
         var options = Markets.ResetOptions(s, here.LocationState, 40);
-        var best = options
+        var measured = options
             .Select(c => new
             {
                 c,
@@ -200,7 +213,9 @@ public static class Restart
             .Where(x => x.miles < double.MaxValue)
             .OrderBy(x => x.miles)
             .ThenBy(x => x.c.Tier)
-            .FirstOrDefault();
+            .ToList();
+
+        var best = measured.FirstOrDefault(x => x.miles <= reachMiles);
 
         if (best != null)
             return (best.c.City, best.c.State, false,
@@ -208,6 +223,22 @@ public static class Restart
                 $"services to sit thirty-four hours. Tier-{best.c.Tier} freight market too, so you will not be " +
                 "starting from nowhere when you come back on the clock." +
                 (homeDeclined.Length > 0 ? " " + homeDeclined : ""));
+
+        // Somewhere reset-capable exists, but not within the hours left. Say that, name it as the thing
+        // they cannot reach, and tell them to park. Sending a driver over their clock to reach better
+        // parking is the one outcome worse than parking somewhere ordinary.
+        if (measured.Count > 0)
+        {
+            var nearest = measured[0];
+            var needHours = mphNow > 0 ? nearest.miles / mphNow : 0;
+            return ("", "", false,
+                $"You have {Hhmm.Of(drivable)} of driving left and the nearest place I would choose — " +
+                $"{DispatchEngine.Place(nearest.c.City, nearest.c.State)}, {nearest.miles:N0} mi out — is about " +
+                $"{Hhmm.Of(needHours)} away. That does not fit, so do not chase it. Park at the first safe place " +
+                "you can reach inside your hours, report in from there, and I will start the clock on it. A truck " +
+                "stop you can get to beats a better one you cannot." +
+                (homeDeclined.Length > 0 ? " " + homeDeclined : ""));
+        }
 
         // Nothing in the table we can measure against. Say so rather than invent a city.
         var fallback = options.FirstOrDefault();

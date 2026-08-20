@@ -401,6 +401,16 @@ public static class HosEngine
         result.RequiredBufferHours = Math.Max(0, s.SafetyBufferHours);
         result.SlackHours = Math.Round((due - clock).TotalHours - parking, 2);
 
+        // No opening time on file, and a plan that lands most of a day early. ATS windows are hours wide,
+        // not days, so arriving this far ahead almost certainly means arriving before the receiver will
+        // take it — while the slack figure above says the opposite. The difference between slack and
+        // sitting at a gate is the whole point of that number, so it cannot go unsaid.
+        if (req.AppointmentOpensHours <= 0 && req.DeadlineHours > 0 && result.SlackHours >= 8)
+            result.Warnings.Add(
+                $"That plan arrives {Hhmm.Of(result.SlackHours)} before it is due, which is wider than a delivery " +
+                "window usually is. If this one opens tomorrow you will be sitting at the gate for most of that, " +
+                "and none of it is really slack. Put the opening time on the load and I will plan the wait in.");
+
         if (req.DeadlineHours <= 0)
         {
             result.Blockers.Add("No delivery window given — I need the hours-to-deliver from the ATS job listing before I commit this freight.");
@@ -431,7 +441,8 @@ public static class HosEngine
                 $"able to move the truck afterwards — plan on a {rules.OffDutyReset:0.#} on their property.");
         else if (req.UnloadingHours > 0 && shift < strandMargin)
             result.Warnings.Add(
-                $"This delivers with only {Hhmm.Of(shift)} of window left once you are empty. If they hold you " +
+                $"This delivers with only {Hhmm.Of(shift)} left on your 14-hour SHIFT once you are empty — " +
+                $"nothing to do with the delivery window. If they hold you " +
                 $"{Hhmm.Of(shift)} longer than planned, the window shuts while you are on the property and you are parked " +
                 $"there for a {rules.OffDutyReset:0.#}. Worth asking about overnight parking before you back in.");
 

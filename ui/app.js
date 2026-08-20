@@ -779,8 +779,12 @@ function viewDispatch() {
             Trailer already loaded (drop &amp; hook)${BOARD_STAGE === 'local' ? ' — usual for this board' : ''}</label>
           ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead miles<input id="b-dh" type="number" step="1" min="0" value="0"></label>`}
           <label>Job revenue $<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
-          <label>Time to deliver<input id="b-deadline" inputmode="numeric" placeholder="h:mm from the listing"></label>
-          <label>Receiver opens in<input id="b-opens" inputmode="numeric" placeholder="h:mm, optional"></label>
+          <label>Delivery window, as ATS shows it
+            <input id="b-window" placeholder="6:15 AM to 12:55 PM"
+              title="Type the window straight off the listing — both times, AM/PM and all. The app knows the game clock and does the arithmetic. This is the better way to give it.">
+          </label>
+          <label>Time to deliver<input id="b-deadline" inputmode="numeric" placeholder="h:mm — only if no window shown"></label>
+          <label>Receiver opens in<input id="b-opens" inputmode="numeric" placeholder="h:mm from now"></label>
           <label>Weight lb<input id="b-weight" type="number" step="1" min="0" placeholder="optional"></label>
           <label>ATS nav estimate<input id="b-nav" inputmode="numeric" placeholder="h:mm, optional"></label>
           <label>Shipper<input id="b-shipper" placeholder="optional"></label>
@@ -2605,17 +2609,25 @@ function trailerPickHtml(d, current) {
     .map((x) => x.assignedTrailerUnit)
     .filter(Boolean);
   const mine = S.driver.assignedTrailerUnit;
-  const options = S.trailers.filter((t) => !t.retired
-    && t.homeTerminalId === d.homeTerminalId
+  // Anything not retired, not the one the player is pulling, and not already picked for someone else.
+  const free = S.trailers.filter((t) => !t.retired
     && t.unit !== mine
     && (!taken.includes(t.unit) || t.unit === d.assignedTrailerUnit));
+  // Prefer their own terminal, but never show an empty list because of it. Requiring the ids to match
+  // exactly emptied the control whenever the trailers were parked under a different terminal id than
+  // the driver — which left no way to set a trailer at all, the one thing this dropdown exists for.
+  const here = free.filter((t) => t.homeTerminalId === d.homeTerminalId);
+  const options = here.length ? here : free;
+  const elsewhere = here.length === 0 && free.length > 0;
   // Whatever they are on stays selectable even if it is parked somewhere else, or the dropdown would
   // silently move them off it just by filing a report.
   if (current && !options.some((t) => t.unit === current.unit)) options.unshift(current);
-  return `<select id="fr-tl-${esc(d.id)}" style="max-width:132px">
+  return `<select id="fr-tl-${esc(d.id)}" style="max-width:132px"${
+      elsewhere ? ' title="Nothing is parked at their own terminal, so the whole fleet is listed."' : ''}>
     <option value="">— none —</option>
     ${options.map((t) => `<option value="${esc(t.unit)}"${t.unit === d.assignedTrailerUnit ? ' selected' : ''}>
-      ${esc(t.ref || t.unit)} · ${esc(t.type)}</option>`).join('')}
+      ${esc(t.ref || t.unit)} · ${esc(t.type)}${
+        t.homeTerminalId !== d.homeTerminalId ? ' (off-yard)' : ''}</option>`).join('')}
   </select>`;
 }
 
@@ -4146,6 +4158,10 @@ async function handleAction(act, d, ev) {
         loadedMiles: fv('b-miles'), preLoaded: $('b-preloaded')?.checked === true, deadheadMiles: fv('b-dh'),
         gameRevenue: fv('b-rev'), deadlineHours: hv('b-deadline'),
         appointmentOpensHours: hv('b-opens'),
+        // Typed straight off the listing. The server parses the range against its own game clock, which
+        // is the only place that arithmetic belongs — asking the driver for "hours from now" is how a
+        // next-day window ends up planned as same-day.
+        windowText: sv('b-window'),
         weightLbs: fv('b-weight'), navEstimateHours: hvn('b-nav'),
         hazmatClass: sv('b-hazclass'),
         shipper: sv('b-shipper'), receiver: sv('b-receiver'),

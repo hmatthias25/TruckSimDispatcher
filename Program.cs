@@ -380,6 +380,16 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
     l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
     if (string.IsNullOrWhiteSpace(l.TrailerType)) l.TrailerType = DispatchEngine.AssignedTrailer(s)?.Type ?? "";
 
+    // A window typed straight off the listing beats two figures the driver had to work out. Parsed here,
+    // against the app's own game clock, which is the only place that knows what "tomorrow" means.
+    if (!string.IsNullOrWhiteSpace(l.WindowText)
+        && DeliveryWindow.Read(s, l.WindowText) is { } win)
+    {
+        l.DeadlineHours = Math.Round(win.HoursUntilDue, 2);
+        if (win.OpensAt != null && GameClock.TryParse(s.Status.GameTime) is { } nowAt)
+            l.AppointmentOpensHours = Math.Max(0, Math.Round((win.OpensAt.Value - nowAt).TotalHours, 2));
+    }
+
     // The same job entered twice is a real hazard rather than a theoretical one: the dock board is not
     // cleared when the driver moves to the city board, so anything ATS lists in both places can go on
     // twice. Flagged rather than refused — two genuinely similar loads out of one shipper is ordinary,

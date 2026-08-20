@@ -656,6 +656,16 @@ public class BoardLoad
     /// Zero means unknown, and unknown plans exactly as it always did.
     /// </summary>
     public double AppointmentOpensHours { get; set; }
+
+    /// <summary>
+    /// The delivery window as ATS printed it — "6:15 AM to 12:55 PM", both times and all.
+    ///
+    /// The preferred way to give a window, because it is a transcription rather than a calculation. The
+    /// two hour fields ask "how long from now", which makes the driver subtract the game clock from a
+    /// listing — and a next-day window subtracted wrongly is how a load gets planned to deliver most of
+    /// a day before the receiver will take it.
+    /// </summary>
+    public string WindowText { get; set; } = "";
     public bool IsUrgent { get; set; }
     public bool IsFragile { get; set; }
     public bool IsHazmat { get; set; }
