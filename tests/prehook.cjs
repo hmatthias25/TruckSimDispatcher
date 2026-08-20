@@ -313,6 +313,32 @@ async function addLoad(extra = {}) {
   ok('the next load is judged on that', (await api('/bootstrap')).views.hos.drivableNowHours <= 6.5,
     `${(await api('/bootstrap')).views.hos.drivableNowHours} h drivable`);
 
+  head('8d. The same job entered twice is flagged, not silently doubled');
+  // The dock board is not cleared when you move to the city board, so anything ATS lists in both places
+  // can go on twice. Dispatch would then weigh one load as two.
+  await place(17, '06:00');
+  await clocks(11, 14, 8, 70);
+  await api('/board/clear', 'POST', {});
+  const one = { cargo: 'Steel Coils', trailerType: S.trailers[0].type,
+    originCity: 'Denver', originState: 'CO', destCity: 'Amarillo', destState: 'TX',
+    loadedMiles: 420, deadheadMiles: 0, gameRevenue: 1800, deadlineHours: 48, weightLbs: 42000 };
+  let bd = await api('/board/add', 'POST', { ...one, atLocation: true });
+  ok('the first one is not flagged',
+    bd.evaluations.every((e) => !e.load.looksDuplicated), 'clean');
+  // Same job, now off the city list.
+  bd = await api('/board/add', 'POST', { ...one, atLocation: false });
+  const dup = bd.evaluations.filter((e) => e.load.looksDuplicated);
+  ok('the second is flagged as a possible duplicate', dup.length === 1, `${dup.length} flagged`);
+  ok('and both rows are still there to choose between', bd.evaluations.length === 2,
+    `${bd.evaluations.length} on the board`);
+  ok('the dock origin is still recorded on the first',
+    bd.evaluations.some((e) => e.load.atLocation === true), 'atLocation kept');
+
+  // A genuinely different load out of the same shipper is not a duplicate.
+  bd = await api('/board/add', 'POST', { ...one, destCity: 'Wichita', destState: 'KS', gameRevenue: 1400 });
+  const stillOne = bd.evaluations.filter((e) => e.load.looksDuplicated).length;
+  ok('a different lane is left alone', stillOne === 1, `${stillOne} flagged`);
+
   head('9. A reading typed in replaces a projection');
   await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 10, breakRemaining: 7, cycleRemaining: 45 });
   h = (await api('/bootstrap')).hos;

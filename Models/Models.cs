@@ -676,6 +676,16 @@ public class BoardLoad
     /// at a dock, and only that deserves a dock estimate.
     /// </summary>
     public bool PreLoaded { get; set; }
+
+    /// <summary>
+    /// Set when this row looks like one already on the board.
+    ///
+    /// Switching from the dock board to the city board does not clear what was entered, which is
+    /// deliberate — dock loads carry no deadhead and stay worth comparing. But if the city list
+    /// repeats a job already on offer where the driver is parked, entering it twice would have
+    /// dispatch weigh one load as two.
+    /// </summary>
+    public bool LooksDuplicated { get; set; }
     public bool IsOversize { get; set; }
     public bool RequiresTarp { get; set; }
     public int ExtraStops { get; set; }

@@ -1230,6 +1230,13 @@ function decisionHtml() {
       <div class="row-actions">
         <button class="btn" data-act="tab" data-tab="dispatch">Report my clocks</button>
       </div></div>` : ''}
+    ${d.evaluations.some((e) => e.load.looksDuplicated) ? `<div class="callout warn">
+      <h4>Something looks entered twice</h4>
+      <p>One or more rows match a load already on the board — same cargo, same lane, same miles and
+        money. Moving from the dock board to the city board does not clear what you entered, so anything
+        ATS lists in both places can go on twice, and dispatch would weigh one load as two. Delete the
+        copy if it is one; ignore this if the shipper really has two of them.</p>
+    </div>` : ''}
     ${d.evaluations.map((e) => loadCardHtml(e, d)).join('')}
     ${d.localOnly ? `<div class="callout info">
       <h4>Next step: the wider board</h4>
@@ -1257,6 +1264,9 @@ function loadCardHtml(e, d) {
       <span class="lane">${esc(e.load.originCity)}, ${esc(e.load.originState)}
         &nbsp;→&nbsp; ${esc(e.load.destCity)}, ${esc(e.load.destState)}</span>
       ${badge('mute', e.load.trailerType || 'van')}
+      ${e.load.atLocation ? badge('info', 'at this dock') : ''}
+      ${e.load.preLoaded ? badge('info', 'pre-loaded') : ''}
+      ${e.load.looksDuplicated ? badge('warn', 'possible duplicate') : ''}
       <div class="spacer"></div>
       ${badge(fb, e.feasibility.verdict)}
       ${badge(e.destTier === 1 ? 'ok' : e.destTier === 2 ? 'mute' : 'warn', 'tier ' + e.destTier)}

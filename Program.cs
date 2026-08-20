@@ -379,6 +379,19 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
     l.OriginState = (l.OriginState ?? "").Trim().ToUpperInvariant();
     l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
     if (string.IsNullOrWhiteSpace(l.TrailerType)) l.TrailerType = DispatchEngine.AssignedTrailer(s)?.Type ?? "";
+
+    // The same job entered twice is a real hazard rather than a theoretical one: the dock board is not
+    // cleared when the driver moves to the city board, so anything ATS lists in both places can go on
+    // twice. Flagged rather than refused — two genuinely similar loads out of one shipper is ordinary,
+    // and the driver is the one looking at the screen.
+    l.LooksDuplicated = s.Board.Any(b =>
+        b.Cargo.Equals(l.Cargo ?? "", StringComparison.OrdinalIgnoreCase)
+        && b.DestCity.Equals(l.DestCity ?? "", StringComparison.OrdinalIgnoreCase)
+        && b.DestState.Equals(l.DestState ?? "", StringComparison.OrdinalIgnoreCase)
+        && b.OriginCity.Equals(l.OriginCity ?? "", StringComparison.OrdinalIgnoreCase)
+        && Math.Abs(b.LoadedMiles - l.LoadedMiles) < 1
+        && Math.Abs(b.GameRevenue - l.GameRevenue) < 1);
+
     s.Board.Add(l);
     return EvaluateBoard(s);
 })));
