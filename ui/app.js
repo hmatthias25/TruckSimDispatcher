@@ -135,6 +135,25 @@ function toIso(day, hhmm) {
   return t.toISOString().slice(0, 16);
 }
 
+/**
+ * The clock reading taken when the facility's load board came up, as a full timestamp.
+ *
+ * Entered as a time of day, because that is what the game shows. It belongs to the delivery day, unless
+ * it reads earlier than the arrival time — in which case the unload ran past midnight and it is the next
+ * day. Blank means not noted, and the app falls back to the typed unload duration.
+ */
+function releasedIso() {
+  const hm = sv('c-released').trim();
+  if (!hm) return '';
+  const arrived = readDayTime('c-time') || (S ? S.status.gameTime : '');
+  if (!arrived) return '';
+  const day = dayOf(arrived);
+  const [h, m] = hm.split(':').map((x) => parseInt(x, 10) || 0);
+  const sameDay = toIso(day, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+  return sameDay > arrived ? sameDay
+    : toIso(day + 1, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+}
+
 /** Pretty game time — what the player sees everywhere. */
 function gt(v) {
   if (!v) return '—';
@@ -681,6 +700,10 @@ function viewDispatch() {
         ${h.carriedForwardFrom ? `<div class="callout go">
           <p>Clocks came off your HOS display when you closed <b>${esc(h.carriedForwardFrom)}</b> out at
             ${gt(h.asOfGameTime)}. Still good if you have not driven since.</p></div>`
+        : h.projected ? `<div class="callout warn">
+          <p><b>These clocks were worked out, not read.</b> I carried them across the unload at
+            ${gt(h.asOfGameTime)} — on-duty time off your shift and cycle, drive clock untouched. Check
+            them against your display; anything you type replaces them.</p></div>`
         : h.confirmed === false ? `<div class="callout warn">
           <p>These clocks were last read at ${gt(h.asOfGameTime)} and a load has run since. Re-read your
             HOS display before I plan anything off them.</p></div>` : ''}
@@ -751,6 +774,8 @@ function viewDispatch() {
           <label>Destination city<input id="b-dcity" placeholder="e.g. Boise"></label>
           <label>Destination state<input id="b-dstate" class="up" maxlength="2" placeholder="ID"></label>
           <label>Loaded miles<input id="b-miles" type="number" step="1" min="0" placeholder="ATS distance"></label>
+          <label class="chk" title="Loads taken off a facility's own board come hooked to a loaded trailer — no loading time passes in game, because it is a drop-and-hook.">
+            <input id="b-preloaded" type="checkbox"> Trailer already loaded (drop &amp; hook)</label>
           ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead miles<input id="b-dh" type="number" step="1" min="0" value="0"></label>`}
           <label>Job revenue $<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
           <label>Time to deliver<input id="b-deadline" inputmode="numeric" placeholder="h:mm from the listing"></label>
@@ -1656,6 +1681,10 @@ function facilityHtml(t) {
     ${load === null || unload === null ? `<div class="grid3" style="margin-top:8px">
       <label>Loading<input id="c-load" inputmode="numeric" placeholder="h:mm" value="${hhmm(t.loadingHours)}"></label>
       <label>Unloading<input id="c-unload" inputmode="numeric" placeholder="h:mm" value="${hhmm(t.unloadingHours)}"></label>
+      <label class="chk" title="ATS finishes the unload the moment you press 'loads from this location' and only then shows the board, so the clock has already moved.">
+        <input id="c-unloadran" type="checkbox"> Unload already ran (took the next load off this facility's board)</label>
+      <label>Clock when the board came up
+        <input id="c-released" inputmode="numeric" placeholder="HH:MM — optional, beats a duration"></label>
       <label>Detention<input id="c-det" inputmode="numeric" placeholder="h:mm" value="0:00"></label>
     </div>
     <p class="hint">Fallback for what you did not log. Log the pairs next time and this works itself out.</p>`
@@ -4084,6 +4113,7 @@ async function handleAction(act, d, ev) {
           driveRemaining: hv('h-drive'), shiftRemaining: hv('h-shift'),
           breakRemaining: breakLeft, cycleRemaining: hv('h-cycle'),
           recap, source: sv('h-source'), notes: sv('h-notes'), asOfGameTime: readDayTime('st-time') || S.status.gameTime,
+        projected: false,
         }));
         // A hand correction supersedes the screenshot receipt, and its undo no longer applies.
         HOSREAD = null; HOSWAS = null;
@@ -4098,7 +4128,7 @@ async function handleAction(act, d, ev) {
         atLocation: BOARD_STAGE === 'local',
         originCity: sv('b-ocity'), originState: sv('b-ostate'),
         destCity: sv('b-dcity'), destState: sv('b-dstate'),
-        loadedMiles: fv('b-miles'), deadheadMiles: fv('b-dh'),
+        loadedMiles: fv('b-miles'), preLoaded: $('b-preloaded')?.checked === true, deadheadMiles: fv('b-dh'),
         gameRevenue: fv('b-rev'), deadlineHours: hv('b-deadline'),
         appointmentOpensHours: hv('b-opens'),
         weightLbs: fv('b-weight'), navEstimateHours: hvn('b-nav'),
@@ -4299,6 +4329,9 @@ async function handleAction(act, d, ev) {
         repairCost: fv('c-repair'), fines: fv('c-fines'), otherExpense: fv('c-other'),
         truckDamageAfter: fv('c-tdmg'), trailerDamageAfter: fv('c-trdmg'), cargoDamagePct: fv('c-cargo'),
         loadingHours: hv('c-load'), unloadingHours: hv('c-unload'), detentionHours: hv('c-det'),
+        // The unload runs before the board appears, so the clock has to be carried across it.
+        unloadAlreadyRan: $('c-unloadran')?.checked === true,
+        releasedGameTime: releasedIso(),
         layoverDays: fv('c-lay'), breakdownDays: fv('c-bd'), extraStops: fv('c-stops'), tarpsUsed: fv('c-tarps'),
         delayReason: sv('c-delay'), damageCause: sv('c-dmgcause'), notes: sv('c-notes'),
         locationKind: 'Receiver', fuelPct: fv('c-fuelpct'), gameTime: readDayTime('c-time'),

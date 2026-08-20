@@ -829,7 +829,8 @@ public static class FleetOpsService
 
             // A hired driver's truck. Who gets the new one is the company's decision.
             var driverName = string.IsNullOrWhiteSpace(trade.AssignedTo) ? "the driver" : trade.AssignedTo;
-            var earned = s.Driver.Rank != "probationary" && SafetyService.CountingFaults(s).Count == 0;
+            var earned = s.Driver.Rank != "probationary" && SafetyService.CountingFaults(s).Count == 0
+                         && !JustGotATruck(s, report);
             var odds = (uint)Math.Clamp(s.Settings.Maintenance.PlayerGetsTradedTruckPct, 0, 100);
             var lucky = odds > 0
                         && Hash($"{s.Driver.EmployeeId}|newtruck|{report.Number}|{trade.Unit}") % 100 < odds;
@@ -866,6 +867,29 @@ public static class FleetOpsService
 
             report.Findings.Add($"Unit {trade.Unit} traded out — the new tractor goes to you, not {driverName}.");
         }
+    }
+
+    /// <summary>
+    /// Has the player only just been put in a tractor?
+    ///
+    /// Somebody who was handed a new truck last month does not need the next one as well — it goes to the
+    /// hired driver whose old unit is being replaced, which is where it was going anyway. Without this, a
+    /// run of end-of-life trucks hands the player a new tractor every fortnight, which no carrier does.
+    ///
+    /// Judged on the acquisition date where there is one. Older career files have no date on their trucks,
+    /// so mileage stands in: a tractor that has barely turned a wheel on the company's books is a new one
+    /// however it got here.
+    /// </summary>
+    private static bool JustGotATruck(AppState s, FleetReport report)
+    {
+        var mine = DispatchEngine.AssignedTruck(s);
+        if (mine == null) return false;
+
+        var now = GameClock.TryParse(report.PeriodEndGame) ?? GameClock.TryParse(s.Status.GameTime);
+        if (GameClock.TryParse(mine.AcquiredGameTime) is { } got && now != null)
+            return (now.Value - got).TotalDays < Math.Max(0, s.Settings.Maintenance.PlayerNewTruckCoolOffDays);
+
+        return mine.ServiceMiles < 25_000;
     }
 
     private static void AssessTrailers(AppState s, FleetReport report)

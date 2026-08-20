@@ -144,6 +144,8 @@ app.MapPost("/api/hos", (HosSnapshot h) => Results.Ok(store.Mutate(s =>
     s.Hos.BreakRemaining = Math.Max(0, h.BreakRemaining);
     s.Hos.CycleRemaining = Math.Max(0, h.CycleRemaining);
     s.Hos.Recap = h.Recap ?? new();
+    // A reading typed in by the driver is a reading, so it stops being a projection.
+    s.Hos.Projected = false;
     s.Hos.Source = h.Source ?? "";
     s.Hos.Notes = h.Notes ?? "";
     s.Hos.AsOfGameTime = string.IsNullOrWhiteSpace(h.AsOfGameTime) ? s.Status.GameTime : h.AsOfGameTime;
@@ -594,7 +596,13 @@ app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
                 $"all {Migrations.TrucksBasedAt(s, yard.Id)} slots are taken. Upgrade the yard, or base this unit elsewhere.");
     }
 
-    if (existing == null) s.Trucks.Add(t);
+    if (existing == null)
+    {
+        // Dated on arrival, so "did I only just get this one" is answerable later without guessing from
+        // mileage. A truck the company buys new and one bought to replace a write-off both start here.
+        if (string.IsNullOrWhiteSpace(t.AcquiredGameTime)) t.AcquiredGameTime = s.Status.GameTime;
+        s.Trucks.Add(t);
+    }
     else s.Trucks[s.Trucks.IndexOf(existing)] = t;
     CareerService.Recalculate(s);
     return Snapshot(s);

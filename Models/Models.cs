@@ -429,6 +429,9 @@ public class Truck
     /// </summary>
     public double ServiceMiles { get; set; }
 
+    /// <summary>When this tractor was put on the property, so "how new is it" is answerable.</summary>
+    public string AcquiredGameTime { get; set; } = "";
+
     /// <summary>
     /// The last odometer reading the driver reported off the game.
     ///
@@ -587,6 +590,19 @@ public class HosSnapshot
 {
     /// <summary>Game time the clocks were read.</summary>
     public string AsOfGameTime { get; set; } = "";
+    /// <summary>
+    /// True when these clocks were <b>worked out</b> rather than read off the game.
+    ///
+    /// The app projects them across an unload when the driver had no chance to read them — ATS's
+    /// "loads from this location" button finishes the unload and drops you straight onto the load board,
+    /// so the hours are already spent by the time anything is visible. Planning the next load on the
+    /// pre-unload reading would plan with hours the driver does not have.
+    ///
+    /// Flagged because a worked-out figure is not a read one, and the app says which it is holding. Any
+    /// real reading replaces it.
+    /// </summary>
+    public bool Projected { get; set; }
+
     /// <summary>Hours of driving left today (11-hour rule by default).</summary>
     public double DriveRemaining { get; set; } = 11;
     /// <summary>Hours left in the on-duty window (14-hour rule by default).</summary>
@@ -650,6 +666,16 @@ public class BoardLoad
     /// least one class rather than guessing which.
     /// </summary>
     public string HazmatClass { get; set; } = "";
+
+    /// <summary>
+    /// The trailer is already loaded — back in, pin it, leave.
+    ///
+    /// True for anything taken off a facility's own board in ATS, which hands over a loaded trailer
+    /// and charges no loading time at all. That is not the game being wrong: it is drop-and-hook, and
+    /// drop-and-hook takes twenty minutes rather than two hours. A live load is a shipper loading you
+    /// at a dock, and only that deserves a dock estimate.
+    /// </summary>
+    public bool PreLoaded { get; set; }
     public bool IsOversize { get; set; }
     public bool RequiresTarp { get; set; }
     public int ExtraStops { get; set; }
@@ -754,6 +780,16 @@ public class Trip
     public bool IsHazmat { get; set; }
     /// <summary>The ATS HazMat class this load needed. See <see cref="BoardLoad.HazmatClass"/>.</summary>
     public string HazmatClass { get; set; } = "";
+
+    /// <summary>
+    /// The trailer is already loaded — back in, pin it, leave.
+    ///
+    /// True for anything taken off a facility's own board in ATS, which hands over a loaded trailer
+    /// and charges no loading time at all. That is not the game being wrong: it is drop-and-hook, and
+    /// drop-and-hook takes twenty minutes rather than two hours. A live load is a shipper loading you
+    /// at a dock, and only that deserves a dock estimate.
+    /// </summary>
+    public bool PreLoaded { get; set; }
 
     /// <summary>When the receiver opens, as a game time. Empty when the window did not say.</summary>
     public string AppointmentOpensGameTime { get; set; } = "";
@@ -1529,6 +1565,15 @@ public class AppSettings
     public double ParkingBufferHours { get; set; } = 0.75;
 
     /// <summary>
+    /// On-duty time for hooking a trailer that is already loaded.
+    ///
+    /// Back in, pin it, cable up, walk round it. Twenty-five minutes is a fair drop-and-hook; a live load
+    /// at a dock is measured in hours and is a different thing entirely. Used in place of the learned dock
+    /// time whenever a load is flagged pre-loaded, which is what ATS hands over off a facility's own board.
+    /// </summary>
+    public double HookHours { get; set; } = 0.4;
+
+    /// <summary>
     /// How much 14-hour window a load should still have in hand once the driver is empty at the
     /// receiver. Below this the load is flagged before it is accepted: if the dock holds them even a
     /// little, the window closes while they are on the property and they cannot legally move the truck.
@@ -1739,6 +1784,14 @@ public class MaintenanceThresholds
     /// it cannot be re-rolled by filing again.
     /// </summary>
     public double PlayerGetsTradedTruckPct { get; set; } = 22;
+
+    /// <summary>
+    /// Game days after being put in a tractor during which the player is not handed another one.
+    ///
+    /// Somebody who has just been given a new truck does not need the next one as well — it goes to the
+    /// hired driver whose old unit is being replaced, which is where it was going anyway.
+    /// </summary>
+    public double PlayerNewTruckCoolOffDays { get; set; } = 60;
 
     /// <summary>The mileage at which a tractor is treated as fully worn for write-off purposes.</summary>
     public double WriteOffLifeMiles { get; set; } = 800_000;

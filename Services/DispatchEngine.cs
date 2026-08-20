@@ -520,11 +520,17 @@ public static class DispatchEngine
         var fuelRange = HosEngine.UsableRange(s.Settings, truck, s.Status.FuelPct);
         // Dock time for whatever is actually hooked, not one figure for every trailer on the map.
         var dock = FacilityLearning.For(s, string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
+
+        // A pre-loaded trailer is a hook, not a load. Planning a two-hour live load against something ATS
+        // hands over already loaded costs the driver hours they were never going to spend, and can refuse
+        // a load that is comfortably legal.
+        var pickupHours = load.PreLoaded ? Math.Max(0, s.Settings.HookHours) : dock.Loading;
+
         e.Feasibility = HosEngine.Plan(s, new PlanRequest
         {
             DeadheadMiles = load.DeadheadMiles,
             LoadedMiles = load.LoadedMiles,
-            LoadingHours = dock.Loading,
+            LoadingHours = pickupHours,
             UnloadingHours = dock.Unloading,
             NavEstimateHours = load.NavEstimateHours,
             ExtraStops = load.ExtraStops,
@@ -859,7 +865,8 @@ public static class DispatchEngine
             TrailerUnit = trailer?.Unit ?? "",
             TruckDamageBefore = Math.Max(truck?.DamagePct ?? 0, s.Status.TruckDamagePct),
             TrailerDamageBefore = Math.Max(trailer?.DamagePct ?? 0, s.Status.TrailerDamagePct),
-            LoadingHours = s.Settings.DefaultLoadingHours,
+            LoadingHours = load.PreLoaded ? Math.Max(0, s.Settings.HookHours) : s.Settings.DefaultLoadingHours,
+            PreLoaded = load.PreLoaded,
             UnloadingHours = s.Settings.DefaultUnloadingHours,
             ExtraStops = load.ExtraStops,
             IsHazmat = load.IsHazmat,

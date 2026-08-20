@@ -108,29 +108,39 @@ const trailerOf = async (name) =>
   ok('total miles came from the readings', Math.abs(r.totalMiles - 7000) < 1, `${r.totalMiles}`);
 
   head('3. A trailer somebody else is on is refused');
+  // Hired drivers resign of their own accord, and the seed differs per career, so which of the two is
+  // still here varies between runs. Pick from whoever is actually active rather than assuming.
+  const act = (await api('/fleetops')).drivers.filter((d) => d.status === 'Active');
+  ok('two drivers still on the roster to test with', act.length >= 2,
+    `${act.length}: ${act.map((d) => d.name).join(', ')}`);
+  const [aOne, aTwo] = act;
+  const heldByTwo = aTwo.assignedTrailerUnit;
   await place(30);
   r = (await api('/fleetops/report', 'POST', {
     periodStartGame: iso(15), periodEndGame: iso(30),
     lines: [
       // Kroll is on T802. Vance cannot have it.
-      { driverId: vance.id, trailerUnit: 'T802', truckOdometer: 308000, truckStars: 4,
+      { driverId: aOne.id, trailerUnit: heldByTwo, truckOdometer: 308000, truckStars: 4,
         trailerStars: 4, revenue: 9000, repairs: 0, perDay: 400, perMile: 1.9 },
     ],
   })).report;
-  ok('Vance was left where he was', await trailerOf('R. Vance') === 'T801', await trailerOf('R. Vance'));
-  ok('and told why', r.findings.some((f) => /under D\. Kroll/.test(f) && /cannot pull the same/.test(f)),
-    r.findings.filter((f) => /Kroll/.test(f)).join(' | '));
-  ok('Kroll still has it', await trailerOf('D. Kroll') === 'T802', await trailerOf('D. Kroll'));
+  ok('the first driver was left where they were',
+    await trailerOf(aOne.name) === aOne.assignedTrailerUnit,
+    `${await trailerOf(aOne.name)} (was ${aOne.assignedTrailerUnit})`);
+  ok('and told why', r.findings.some((f) => f.includes(aTwo.name) && /cannot pull the same/.test(f)),
+    r.findings.filter((f) => f.includes(aTwo.name)).join(' | '));
+  ok('the other still has it', await trailerOf(aTwo.name) === heldByTwo, await trailerOf(aTwo.name));
 
   head("4. The player's own trailer is not the fleet's to hand out");
   const mine = (await api('/bootstrap')).driver.assignedTrailerUnit;
   await place(45);
   r = (await api('/fleetops/report', 'POST', {
     periodStartGame: iso(30), periodEndGame: iso(45),
-    lines: [{ driverId: vance.id, trailerUnit: mine, truckOdometer: 312000, truckStars: 4,
+    lines: [{ driverId: aOne.id, trailerUnit: mine, truckOdometer: 312000, truckStars: 4,
               trailerStars: 4, revenue: 9000, repairs: 0, perDay: 400, perMile: 1.9 }],
   })).report;
-  ok('it was refused', await trailerOf('R. Vance') === 'T801', await trailerOf('R. Vance'));
+  ok('it was refused', await trailerOf(aOne.name) === aOne.assignedTrailerUnit,
+    `${await trailerOf(aOne.name)} (was ${aOne.assignedTrailerUnit})`);
   ok('because it is the one being pulled', r.findings.some((f) => /the one you are pulling/.test(f)),
     r.findings.filter((f) => /pulling/.test(f)).join(' | '));
 

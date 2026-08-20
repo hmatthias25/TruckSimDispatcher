@@ -560,6 +560,9 @@ public static class EquipmentService
             }
 
             s.Driver.AssignedTruckUnit = newTruck.Unit;
+            // Moving into it counts as getting it, whatever the unit's own history. This is what stops a
+            // run of end-of-life trucks handing the player a new tractor every fortnight.
+            newTruck.AcquiredGameTime = s.Status.GameTime;
             s.Settings.GovernedMph = newTruck.GovernedMph;
             s.Status.TruckDamagePct = newTruck.DamagePct;
             s.Status.AtsOdometer = newTruck.AtsOdometer;

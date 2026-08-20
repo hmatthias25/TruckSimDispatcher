@@ -32,6 +32,26 @@ public class CompleteTripRequest
     public double LoadingHours { get; set; }
     public double UnloadingHours { get; set; }
     public double DetentionHours { get; set; }
+
+    /// <summary>
+    /// The unload has already run in game, and the clock with it.
+    ///
+    /// Tick this when the next load came off the receiver's own board. ATS finishes the unload the moment
+    /// that button is pressed — advancing the clock and spending the shift and cycle — and only then shows
+    /// the loads. The time typed in above is arrival at the dock, so everything after it has to be added
+    /// on rather than waited for.
+    /// </summary>
+    public bool UnloadAlreadyRan { get; set; }
+
+    /// <summary>
+    /// What the game clock read once the load board appeared, if you noted it.
+    ///
+    /// The better of the two inputs, and the easier one: there is no "end unload" event to log in this
+    /// flow, because ATS never stops to let you record one. Reading a clock is something you can just do.
+    /// Given this, the app measures the dock time as the gap from arrival rather than taking a duration
+    /// on trust.
+    /// </summary>
+    public string ReleasedGameTime { get; set; } = "";
     public double LayoverDays { get; set; }
     public double BreakdownDays { get; set; }
     public int ExtraStops { get; set; }
@@ -303,10 +323,18 @@ public static class TripService
 
         // Only measured times train the planner. A typed fallback is the driver's recollection, and
         // baking a guess into every future projection is how the old flat 1.0 went wrong.
+        // A pre-loaded pickup teaches nothing about how long that shipper takes to load a trailer, because
+        // nobody loaded one. Feeding twenty-five minutes into the live-load average would drag it toward
+        // zero and have the app planning real dock work as though it were instant. The UNLOAD still counts:
+        // the receiver unloaded normally whatever the pickup looked like.
         var dockBefore = FacilityLearning.For(s, trip.TrailerType);
         FacilityLearning.Record(s, trip.TrailerType,
-            facility.LoadDerived ? facility.LoadingHours : null,
+            facility.LoadDerived && !trip.PreLoaded ? facility.LoadingHours : null,
             facility.UnloadDerived ? facility.UnloadingHours : null);
+        if (trip.PreLoaded && facility.LoadDerived)
+            audit.ServiceFindings.Add(
+                "Pre-loaded pickup, so the hook time is not counted toward what this dock takes to load a " +
+                "trailer — only real loads move that figure.");
         var dockAfter = FacilityLearning.For(s, trip.TrailerType);
 
         // Say so when this load moved the planning assumption — it changes every future projection.
@@ -412,6 +440,43 @@ public static class TripService
         s.Status.LocationKind = string.IsNullOrWhiteSpace(req.LocationKind) ? "Receiver" : req.LocationKind;
         if (req.FuelPct >= 0) s.Status.FuelPct = req.FuelPct;
         if (!string.IsNullOrWhiteSpace(trip.DeliveredGameTime)) s.Status.GameTime = trip.DeliveredGameTime;
+
+        // The unload ran in game before the driver saw anything, so the game is already this far past the
+        // time they reported arriving. Everything downstream — the next load's window, its recap, whether
+        // it is even legal — is planned off this moment, so it has to be the right one.
+        var spentAtDock = trip.UnloadingHours + trip.DetentionHours;
+        var arrivedAt = GameClock.TryParse(trip.DeliveredGameTime);
+
+        // Three ways to know when the driver was released, best first. An EndUnload event is the same
+        // reading as the optional field below, logged at the dock instead of typed at close-out — so a
+        // driver who logs Begin/End needs no extra box and no extra tick.
+        var releasedAt = GameClock.TryParse(req.ReleasedGameTime)
+                         ?? trip.Events.Where(e => e.Kind == "EndUnload")
+                              .Select(e => GameClock.TryParse(e.GameTime))
+                              .Where(d => d != null).Max();
+
+        // A clock reading beats a duration. There is no end-of-unload event to measure in this flow, so if
+        // the driver noted what the clock said when the board came up, that gap IS the dock time.
+        if (releasedAt != null && arrivedAt != null && releasedAt.Value > arrivedAt.Value)
+        {
+            var measured = (releasedAt.Value - arrivedAt.Value).TotalHours;
+            if (spentAtDock > 0 && Math.Abs(measured - spentAtDock) > 0.25)
+                audit.ServiceFindings.Add(
+                    $"You reported {Hhmm.Of(spentAtDock)} at the dock but the clock moved {Hhmm.Of(measured)}. " +
+                    "Going with the clock \u2014 it is what the game actually charged.");
+            spentAtDock = measured;
+            s.Status.GameTime = GameClock.Format(releasedAt.Value);
+            audit.CarriedForward.Add(
+                $"Off the clock: arrived {GameClock.Pretty(trip.DeliveredGameTime)}, board came up " +
+                $"{GameClock.Pretty(s.Status.GameTime)} \u2014 {Hhmm.Of(spentAtDock)} at the dock.");
+        }
+        else if (req.UnloadAlreadyRan && spentAtDock > 0 && arrivedAt != null)
+        {
+            s.Status.GameTime = GameClock.Format(arrivedAt.Value.AddHours(spentAtDock));
+            audit.CarriedForward.Add(
+                $"Unload ran when you opened the board: {Hhmm.Of(spentAtDock)} on top of {GameClock.Pretty(trip.DeliveredGameTime)}, " +
+                $"so it is {GameClock.Pretty(s.Status.GameTime)} now.");
+        }
         s.Status.ActiveTripId = "";
         s.Status.DutyStatus = "OnDuty";
         s.Status.UpdatedUtc = DateTime.UtcNow.ToString("o");
@@ -439,15 +504,26 @@ public static class TripService
             s.Hos.AsOfGameTime = trip.DeliveredGameTime;
             s.Hos.CarriedForwardFrom = trip.Number;
             s.Hos.Confirmed = true;   // read off the game just now — this is a fresh reading, not a stale one
+            s.Hos.Projected = false;
             s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
             audit.ClocksReported = true;
             audit.CarriedForward.Add(
                 $"Clocks: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
+
+            // A figure the driver read off the game beats anything worked out here, so it is taken as
+            // given and never adjusted — subtracting the dock time from a post-unload reading would
+            // charge the same hours twice. Where the dock cost something, say so, and they can check
+            // whether their reading was taken before or after it.
+            if (spentAtDock > 0)
+                audit.CarriedForward.Add(
+                    $"Taken as read. The dock cost {Hhmm.Of(spentAtDock)} of on-duty time \u2014 if you read " +
+                    "these before the unload rather than after, take that off your shift and cycle.");
         }
         else
         {
             // Clocks not reported at delivery, so whatever we hold is now stale by a whole trip.
             s.Hos.Confirmed = false;
+            CarryClocksAcrossTheDock(s, trip, req, audit, spentAtDock);
         }
 
         // ---- did this load put a new city on our map?
@@ -658,6 +734,44 @@ public static class TripService
         public bool LoadDerived { get; set; }
         public bool UnloadDerived { get; set; }
         public List<string> Explain { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Carries the clocks across an unload the driver never had a chance to read past.
+    ///
+    /// Unloading is on-duty-not-driving, so it eats the <b>shift</b> and the <b>cycle</b> and leaves the
+    /// <b>drive</b> clock alone. The thirty-minute break counter is driving time, so that is untouched too
+    /// — sitting at a dock is not a break and does not reset it.
+    ///
+    /// This is arithmetic on figures the driver reported, not a simulation, which is the only reason it is
+    /// allowed to write clocks at all. It is still marked projected, because a worked-out figure is not a
+    /// read one and the app says which it is holding.
+    /// </summary>
+    private static void CarryClocksAcrossTheDock(AppState s, Trip trip, CompleteTripRequest req,
+                                                 TripAudit audit, double spentAtDock)
+    {
+        // Any of: the tick, a typed release reading, or an EndUnload logged at the dock. All three say
+        // the same thing — the unload has run and the clocks on file are from before it.
+        var known = req.UnloadAlreadyRan
+                    || !string.IsNullOrWhiteSpace(req.ReleasedGameTime)
+                    || trip.Events.Any(e => e.Kind == "EndUnload");
+        if (!known || spentAtDock <= 0) return;
+
+        // Only reached when no clocks were reported at all — a reported reading is taken as given and
+        // never adjusted, which is what stops the same hours coming off twice.
+
+        var shiftWas = s.Hos.ShiftRemaining;
+        var cycleWas = s.Hos.CycleRemaining;
+        s.Hos.ShiftRemaining = Math.Max(0, s.Hos.ShiftRemaining - spentAtDock);
+        s.Hos.CycleRemaining = Math.Max(0, s.Hos.CycleRemaining - spentAtDock);
+        s.Hos.Projected = true;
+        s.Hos.AsOfGameTime = s.Status.GameTime;
+        s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
+
+        audit.CarriedForward.Add(
+            $"Clocks carried across the unload: shift {Hhmm.Of(shiftWas)} \u2192 {Hhmm.Of(s.Hos.ShiftRemaining)}, " +
+            $"cycle {Hhmm.Of(cycleWas)} \u2192 {Hhmm.Of(s.Hos.CycleRemaining)}. On-duty time, so your drive clock " +
+            "and break counter are untouched. Worked out, not read \u2014 check it against your display.");
     }
 
     /// <summary>
