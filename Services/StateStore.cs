@@ -348,17 +348,23 @@ public class StateStore
 /// </summary>
 public static class GameClock
 {
-    /// <summary>Day 1, 00:00. Arbitrary but fixed — only differences between times ever matter.</summary>
+    /// <summary>Day 0, 00:00. Arbitrary but fixed — only differences between times ever matter.</summary>
     public static readonly DateTime Epoch = new(2000, 1, 1, 0, 0, 0);
 
-    /// <summary>The game day a moment falls on. Day 1 is the first day of the career.</summary>
-    public static int DayOf(DateTime dt) => (int)Math.Floor((dt - Epoch).TotalDays) + 1;
+    /// <summary>
+    /// The game day a moment falls on, counted <b>the way ATS counts it</b>.
+    ///
+    /// This used to add one, so the app called the game's day 14 "day 15" and every date a driver read
+    /// was a day ahead of the one in front of them. Whole days since the epoch, and nothing added: the
+    /// app's day number and the game's are now the same number.
+    /// </summary>
+    public static int DayOf(DateTime dt) => (int)Math.Floor((dt - Epoch).TotalDays);
 
     public static int? DayOf(string? value) => TryParse(value) is { } dt ? DayOf(dt) : null;
 
-    /// <summary>Builds a moment from a day number and a time of day.</summary>
+    /// <summary>Builds a moment from a day number and a time of day. The exact inverse of <see cref="DayOf"/>.</summary>
     public static DateTime FromDay(int day, int hour, int minute) =>
-        Epoch.AddDays(Math.Max(1, day) - 1).AddHours(Math.Clamp(hour, 0, 23)).AddMinutes(Math.Clamp(minute, 0, 59));
+        Epoch.AddDays(Math.Max(0, day)).AddHours(Math.Clamp(hour, 0, 23)).AddMinutes(Math.Clamp(minute, 0, 59));
 
     /// <summary>Parses "12 14:30" or "12" or an ISO datetime into a moment.</summary>
     public static DateTime? FromDayTime(int day, string? timeOfDay)
@@ -374,22 +380,28 @@ public static class GameClock
     }
 
     /// <summary>
-    /// The weekday a game day falls on. ATS has no calendar, so the app defines one: <b>Day 1 is a
+    /// The weekday a game day falls on. ATS has no calendar, so the app defines one: <b>day 0 is a
     /// Monday</b>. That is the whole rule, and it is what makes payday mean something — Fridays are
-    /// days 5, 12, 19, 26 and so on.
+    /// days 4, 11, 18, 25 and so on.
+    ///
+    /// The anchor moved with the numbering, and it had to. Payday is Friday, and Friday is worked out
+    /// from the day number — so renumbering the days without moving the anchor would have slid every
+    /// payday onto a different actual day. Anchoring day 0 instead of day 1 keeps every weekday on the
+    /// moment it was always on: what the app called day 15 · Monday it now calls day 14 · Monday, which
+    /// is what the game called it all along.
     /// </summary>
     public static DayOfWeek WeekdayOf(int day) =>
-        (DayOfWeek)(((Math.Max(1, day) - 1) % 7 + 1) % 7);   // day 1 -> Monday
+        (DayOfWeek)((Math.Max(0, day) % 7 + 1) % 7);   // day 0 -> Monday
 
     public static DayOfWeek? WeekdayOf(string? value) =>
         DayOf(value) is { } d ? WeekdayOf(d) : null;
 
     public static bool IsPayday(int day) => WeekdayOf(day) == DayOfWeek.Friday;
 
-    /// <summary>The next payday on or after this day. Day 5 is the first one of a career.</summary>
+    /// <summary>The next payday on or after this day. Day 4 is the first one of a career.</summary>
     public static int NextPayday(int day)
     {
-        for (var d = Math.Max(1, day); d < day + 8; d++)
+        for (var d = Math.Max(0, day); d < day + 8; d++)
             if (IsPayday(d)) return d;
         return day;
     }

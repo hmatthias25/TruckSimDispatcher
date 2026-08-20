@@ -3,7 +3,23 @@ namespace TruckSimDispatcher.Models;
 /// <summary>Root persisted document. One file = one driver career.</summary>
 public class AppState
 {
-    public int SchemaVersion { get; set; } = 1;
+    /// <summary>
+    /// The shape this file was written in. A new career starts at the current version; anything lower
+    /// came off an older build and gets brought forward once.
+    ///
+    /// <list type="bullet">
+    ///   <item><b>1</b> — day numbers were one ahead of the game's.</item>
+    ///   <item><b>2</b> — day numbers match the game.</item>
+    /// </list>
+    ///
+    /// This has to be the default on a fresh <see cref="AppState"/> rather than a flag set during
+    /// migration, or a career created after the fix would look unmigrated the next time it loaded and
+    /// have a correct payday quietly decremented.
+    /// </summary>
+    public int SchemaVersion { get; set; } = Current;
+
+    /// <summary>The version this build writes.</summary>
+    public const int Current = 2;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }

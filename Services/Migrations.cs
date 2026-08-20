@@ -10,9 +10,16 @@ public static class Migrations
 {
     public static void Apply(AppState s)
     {
-        if (!s.Onboarded) return;
+        // Nothing to bring forward in a file with no career in it, and nothing that could be damaged
+        // by leaving it alone: the version only matters once there is history behind it.
+        if (!s.Onboarded)
+        {
+            s.SchemaVersion = AppState.Current;
+            return;
+        }
 
         RebaseGameCalendar(s);
+        MatchGameDayNumbering(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -29,6 +36,34 @@ public static class Migrations
         FlagImplausibleWindows(s);
         EnsureCarrierStanding(s);
         EnsureFleetStars(s);
+    }
+
+    /// <summary>
+    /// Moves a career onto the game's own day numbering.
+    ///
+    /// The app used to count the epoch as day 1 where ATS counts it as day 0, so every day number a
+    /// driver read was one ahead of the one in front of them: the game's day 14 was shown as day 15.
+    ///
+    /// Almost nothing has to be rewritten, because almost nothing stores a day <i>number</i>. Times are
+    /// stored as timestamps and the day is worked out from them, so every trip, delivery window, home
+    /// time and log entry renumbers itself the moment <see cref="GameClock.DayOf"/> stops adding one —
+    /// and every duration between two of them is untouched, because differences do not care what the
+    /// days are called. The weekday anchor moved with the numbering (see <see cref="GameClock.WeekdayOf"/>),
+    /// so paydays stay on the same actual Fridays; they are simply now called 4, 11, 18 rather than
+    /// 5, 12, 19.
+    ///
+    /// That leaves exactly one stored number: the day the driver was last paid. It is bookkeeping
+    /// against the same real day, so it moves down with everything else. Leaving it alone would make
+    /// the app think a payday was still owed, or already settled, depending on which side of it the
+    /// career sat.
+    /// </summary>
+    private static void MatchGameDayNumbering(AppState s)
+    {
+        if (s.SchemaVersion >= 2) return;
+        s.SchemaVersion = 2;
+
+        // Day 0 is a legitimate day now, so only a real recorded payday moves.
+        if (s.Driver.LastPaydayDay > 0) s.Driver.LastPaydayDay -= 1;
     }
 
     /// <summary>

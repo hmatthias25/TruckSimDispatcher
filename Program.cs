@@ -1372,6 +1372,8 @@ object Snapshot(AppState? given = null)
         version = Build.Version,
         versionDisplay = Build.Display,
         onboarded = s.Onboarded,
+        // Diagnostic: the shape this career file is in. 2 means day numbers match the game.
+        schemaVersion = s.SchemaVersion,
         company = s.Company,
         driver = s.Driver,
         application = s.Application,

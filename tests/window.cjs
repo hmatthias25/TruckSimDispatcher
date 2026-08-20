@@ -46,8 +46,10 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
   r = await api('/window/read', 'POST', { text: '14:00' });
   ok('a bare 24-hour time', /T14:00$/.test(r.dueAt || ''), r.dueAt);
   r = await api('/window/read', 'POST', { text: 'Day 3 09:30' });
-  ok('a day-qualified time lands on that day', /03T09:30$/.test(r.dueAt || ''), r.dueAt);
-  ok('and the hours span the days', r.hoursUntilDue > 40 && r.hoursUntilDue < 60, `${r.hoursUntilDue}`);
+  // "Day 3" is the game's day 3, three days after the epoch: 2000-01-04. The clock here reads
+  // 2000-01-01T06:01, which is day 0, so the window is three days and change out.
+  ok('a day-qualified time lands on that day', /04T09:30$/.test(r.dueAt || ''), r.dueAt);
+  ok('and the hours span the days', r.hoursUntilDue > 60 && r.hoursUntilDue < 84, `${r.hoursUntilDue}`);
 
   head('5. A window already past today is tomorrow');
   r = await api('/window/read', 'POST', { text: '5:00 AM' });

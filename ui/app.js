@@ -109,9 +109,11 @@ const pct = (n, d = 1) => (+n || 0).toFixed(d) + '%';
 const EPOCH = Date.UTC(2000, 0, 1);
 const DAY_MS = 86400000;
 
+// Whole days since the epoch, nothing added — the game's numbering. This mirrors GameClock.DayOf on
+// the server, and the two have to agree exactly or a day typed in comes back as a different one.
 const dayOf = (iso) => {
   const t = Date.parse(isoUtc(iso));
-  return isNaN(t) ? 1 : Math.floor((t - EPOCH) / DAY_MS) + 1;
+  return isNaN(t) ? 0 : Math.floor((t - EPOCH) / DAY_MS);
 };
 const timeOf = (iso) => {
   const t = Date.parse(isoUtc(iso));
@@ -126,9 +128,10 @@ function isoUtc(iso) {
 }
 /** Day number + HH:MM back into the wire format. */
 function toIso(day, hhmm) {
-  const d = Math.max(1, parseInt(day, 10) || 1);
+  const raw = parseInt(day, 10);
+  const d = Math.max(0, isNaN(raw) ? 0 : raw);
   const [h, m] = String(hhmm || '00:00').split(':').map((x) => parseInt(x, 10) || 0);
-  const t = new Date(EPOCH + (d - 1) * DAY_MS + h * 3600000 + m * 60000);
+  const t = new Date(EPOCH + d * DAY_MS + h * 3600000 + m * 60000);
   return t.toISOString().slice(0, 16);
 }
 
@@ -144,7 +147,7 @@ function gt(v) {
 function dayTimeInput(idPrefix, iso, label) {
   return `<label>${esc(label)}
     <span style="display:flex;gap:6px">
-      <input id="${idPrefix}-day" type="number" min="1" step="1" style="flex:0 0 92px"
+      <input id="${idPrefix}-day" type="number" min="0" step="1" style="flex:0 0 92px"
         value="${iso ? dayOf(iso) : (S ? dayOf(S.status.gameTime) : 1)}" title="Game day">
       <input id="${idPrefix}-tod" type="time" step="60" style="flex:1"
         value="${iso ? timeOf(iso) : (S ? timeOf(S.status.gameTime) : '06:00')}" title="Time of day">

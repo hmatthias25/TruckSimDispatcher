@@ -57,8 +57,10 @@ async function reeferLoad(d) {
   await api('/onboarding/market', 'POST', app);
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: day(1), code: 'PRI' }));
 
-  head('#13 Day 1 is Monday, so Fridays are 5, 12, 19');
-  ok('next payday from day 1 is day 5', S.views.payroll.nextPaydayDay === 5, `${S.views.payroll.nextPaydayDay}`);
+  head('#13 Day 0 is Monday, so Fridays are 4, 11, 18');
+  // The career is hired at 2000-01-01, which the game -- and now the app -- calls day 0. These are the
+  // same actual Fridays the app used to call 5, 12 and 19; only the numbering came down by one.
+  ok('next payday from day 0 is day 4', S.views.payroll.nextPaydayDay === 4, `${S.views.payroll.nextPaydayDay}`);
 
   head('#10 Dock time starts at a reefer-shaped estimate, not 1 hour');
   let ft = S.views.facilityTimes.find((f) => f.trailerType === 'Reefer');
@@ -85,11 +87,11 @@ async function reeferLoad(d) {
     S.views.facilityTimes.find((f) => f.trailerType === 'Flatbed').samples === 0);
 
   head('#13 Crossing into Friday paid, without anyone asking');
-  // Day 5 was crossed while running the loads above — which is the point: nobody pressed anything.
+  // Day 4 was crossed while running the loads above — which is the point: nobody pressed anything.
   ok('a settlement exists already', S.settlements.length >= 1, `${S.settlements.length}`);
   const st = S.settlements[S.settlements.length - 1];
   ok('marked as a payday', st.trigger === 'Payday', st.trigger);
-  ok('notes name the day', /Friday, Day 5/.test(st.notes), st.notes);
+  ok('notes name the day', /Friday, Day 4/.test(st.notes), st.notes);
 
   head('#14 The stub takes tax out');
   const stub = st.stub;
@@ -119,11 +121,11 @@ async function reeferLoad(d) {
   await reeferLoad(6);
   await reeferLoad(8);
   const jump = await status(20);
-  // Two Fridays (12 and 19) are crossed, but there is only one period of unsettled pay — a quiet
+  // Two Fridays (11 and 18) are crossed, but there is only one period of unsettled pay — a quiet
   // week produces no stub rather than an empty one.
   ok('paid once, for the first Friday owed', (jump.paid || []).length === 1,
     `${(jump.paid || []).length}: ${(jump.paid || []).map((p) => p.notes).join(' | ')}`);
-  ok('and it was Day 12, not Day 19', /Day 12/.test((jump.paid || [])[0]?.notes || ''),
+  ok('and it was Day 11, not Day 18', /Day 11/.test((jump.paid || [])[0]?.notes || ''),
     (jump.paid || [])[0]?.notes);
   const after = await status(21);
   ok('no phantom settlement for the quiet week', (after.paid || []).length === 0);
