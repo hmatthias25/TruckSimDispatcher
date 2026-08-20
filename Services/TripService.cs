@@ -493,6 +493,10 @@ public static class TripService
         audit.CarriedForward.Add($"Damage: tractor {s.Status.TruckDamagePct:0.#}%, trailer {s.Status.TrailerDamagePct:0.#}%");
         if (s.Status.AtsOdometer > 0) audit.CarriedForward.Add($"Odometer: {s.Status.AtsOdometer:N0}");
 
+        // Whether the clocks on file were trustworthy BEFORE this close-out touched the flag. The block
+        // below clears Confirmed when nothing was reported, so asking afterwards always says "stale".
+        var baselineWasFresh = s.Hos.Confirmed;
+
         // Clocks at delivery, if the driver read them off while they were closing the load out.
         if (req.HosDriveRemaining.HasValue || req.HosShiftRemaining.HasValue
             || req.HosBreakRemaining.HasValue || req.HosCycleRemaining.HasValue)
@@ -510,20 +514,20 @@ public static class TripService
             audit.CarriedForward.Add(
                 $"Clocks: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
 
-            // A figure the driver read off the game beats anything worked out here, so it is taken as
-            // given and never adjusted — subtracting the dock time from a post-unload reading would
-            // charge the same hours twice. Where the dock cost something, say so, and they can check
-            // whether their reading was taken before or after it.
-            if (spentAtDock > 0)
-                audit.CarriedForward.Add(
-                    $"Taken as read. The dock cost {Hhmm.Of(spentAtDock)} of on-duty time \u2014 if you read " +
-                    "these before the unload rather than after, take that off your shift and cycle.");
+            // These are the clocks AS THE DRIVER ARRIVED — they stopped driving, backed in, and read
+            // the display. That is the natural moment to read them and the only one the app can anchor
+            // to, because it is the last point at which the driver and the game agree.
+            //
+            // So the dock time comes off them, exactly as it would off a figure we had carried ourselves.
+            // Not doing this was worse than a double count: with no reading at all the app was taking the
+            // dock time off clocks from BEFORE the drive, leaving a whole trip's driving unaccounted for.
+            CarryClocksAcrossTheDock(s, trip, req, audit, spentAtDock, baselineWasFresh);
         }
         else
         {
             // Clocks not reported at delivery, so whatever we hold is now stale by a whole trip.
             s.Hos.Confirmed = false;
-            CarryClocksAcrossTheDock(s, trip, req, audit, spentAtDock);
+            CarryClocksAcrossTheDock(s, trip, req, audit, spentAtDock, baselineWasFresh);
         }
 
         // ---- did this load put a new city on our map?
@@ -748,7 +752,8 @@ public static class TripService
     /// read one and the app says which it is holding.
     /// </summary>
     private static void CarryClocksAcrossTheDock(AppState s, Trip trip, CompleteTripRequest req,
-                                                 TripAudit audit, double spentAtDock)
+                                                 TripAudit audit, double spentAtDock,
+                                                 bool baselineWasFresh)
     {
         // Any of: the tick, a typed release reading, or an EndUnload logged at the dock. All three say
         // the same thing — the unload has run and the clocks on file are from before it.
@@ -759,6 +764,18 @@ public static class TripService
 
         // Only reached when no clocks were reported at all — a reported reading is taken as given and
         // never adjusted, which is what stops the same hours coming off twice.
+
+        // Nothing to carry from unless we know where the driver stood when they arrived. Without a
+        // reading the figures on file are from before the drive, and taking only the dock time off them
+        // would report a shift clock that never paid for the driving.
+        if (!baselineWasFresh && !audit.ClocksReported)
+        {
+            audit.CarriedForward.Add(
+                $"The dock cost {Hhmm.Of(spentAtDock)} of on-duty time, but I have no reading from when you " +
+                "arrived to take it off \u2014 what I hold is from before the drive. Report your clocks and I " +
+                "will do the arithmetic; until then I am planning on stale figures.");
+            return;
+        }
 
         var shiftWas = s.Hos.ShiftRemaining;
         var cycleWas = s.Hos.CycleRemaining;

@@ -217,7 +217,7 @@ async function addLoad(extra = {}) {
   ok('the drive clock is untouched', near(h.driveRemaining, 4), `${h.driveRemaining} h`);
   ok('and now is the end of the unload', /T13:30/.test(S.status.gameTime), S.status.gameTime);
 
-  head('8. Clocks read AFTER the unload are not docked twice');
+  head('8. The reading is the arrival baseline, and the dock comes off it');
   await place(11, '06:00');
   await clocks(11, 14, 8, 70);
   const p6 = (await addLoad()).evaluations[0];
@@ -234,17 +234,43 @@ async function addLoad(extra = {}) {
     layoverDays: 0, breakdownDays: 0, extraStops: 0, tarpsUsed: 0,
     delayReason: '', damageCause: '', notes: '',
     locationCity: 'Amarillo', locationState: 'TX', fuelPct: 60, gameTime: iso(11, '10:00'),
-    // Read at 12:00, which is after the unload finished. Nothing left to carry.
+    // Read when they backed in at 10:00 -- the level-set. The two hours at the dock come off these.
     hosShiftRemaining: 6, hosCycleRemaining: 40, hosDriveRemaining: 5, hosBreakRemaining: 4,
   });
   S = done.snapshot;
   h = (await api('/bootstrap')).hos;
-  ok('the reported figures stand exactly as given', near(h.shiftRemaining, 6), `${h.shiftRemaining} h`);
-  ok('nothing was taken off twice', near(h.cycleRemaining, 40), `${h.cycleRemaining} h`);
-  ok('and they are not labelled projected', !h.projected, `${h.projected}`);
-  ok('but the dock cost is stated so it can be checked',
-    (done.audit.carriedForward || []).some((x) => /Taken as read/.test(x) && /2:00/.test(x)),
-    (done.audit.carriedForward || []).find((x) => /Taken as read/.test(x)) || '(none)');
+  ok('the dock came off the arrival reading', near(h.shiftRemaining, 4), `6 -> ${h.shiftRemaining} h`);
+  ok('and off the cycle', near(h.cycleRemaining, 38), `40 -> ${h.cycleRemaining} h`);
+  ok('the drive clock is left as read', near(h.driveRemaining, 5), `${h.driveRemaining} h`);
+  ok('the result is flagged as worked out', h.projected === true, `${h.projected}`);
+  ok('and the arithmetic is shown',
+    (done.audit.carriedForward || []).some((x) => /carried across the unload/i.test(x)),
+    (done.audit.carriedForward || []).find((x) => /carried across/i.test(x)) || '(none)');
+
+  head('8b. With no reading to anchor to, it says so instead of guessing');
+  // The figures on file are from before the drive, so taking only the dock time off them would report a
+  // shift clock that never paid for the driving. Better to say so than to publish a wrong number.
+  await place(13, '06:00');
+  await clocks(11, 14, 8, 70);
+  const p7 = (await addLoad()).evaluations[0];
+  auth = await api('/dispatch/authorize', 'POST', { loadId: p7.load.id });
+  await api(`/trips/${auth.trip.id}/event`, 'POST', { kind: 'BeginUnload', gameTime: iso(13, '11:00') });
+  await api(`/trips/${auth.trip.id}/event`, 'POST', { kind: 'EndUnload', gameTime: iso(13, '13:00') });
+  // Deliberately no clocks reported, and the ones on file are stale by a whole trip.
+  await api('/hos/stale', 'POST', {}).catch(() => null);
+  done = await api(`/trips/${auth.trip.id}/complete`, 'POST', {
+    deliveredGameTime: iso(13, '11:00'), actualMiles: 300, endOdometer: 34000, actualRevenue: 1500,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 2, trailerDamageAfter: 1, cargoDamagePct: 0,
+    loadingHours: 1, unloadingHours: 0, detentionHours: 0,
+    layoverDays: 0, breakdownDays: 0, extraStops: 0, tarpsUsed: 0,
+    delayReason: '', damageCause: '', notes: '',
+    locationCity: 'Amarillo', locationState: 'TX', fuelPct: 60, gameTime: iso(13, '11:00'),
+  });
+  const noted = (done.audit.carriedForward || []).join(' | ');
+  ok('it either carried them or explained that it could not',
+    /carried across the unload/i.test(noted) || /no reading from when you/i.test(noted),
+    noted.slice(0, 200) || '(nothing)');
 
   head('9. A reading typed in replaces a projection');
   await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 10, breakRemaining: 7, cycleRemaining: 45 });

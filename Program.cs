@@ -144,8 +144,11 @@ app.MapPost("/api/hos", (HosSnapshot h) => Results.Ok(store.Mutate(s =>
     s.Hos.BreakRemaining = Math.Max(0, h.BreakRemaining);
     s.Hos.CycleRemaining = Math.Max(0, h.CycleRemaining);
     s.Hos.Recap = h.Recap ?? new();
-    // A reading typed in by the driver is a reading, so it stops being a projection.
+    // A reading typed in by the driver is a reading: not a projection, and not stale. Nothing here used
+    // to set Confirmed, so once it went false it stayed false and the driver was told their clocks were
+    // out of date however many times they reported them.
     s.Hos.Projected = false;
+    s.Hos.Confirmed = true;
     s.Hos.Source = h.Source ?? "";
     s.Hos.Notes = h.Notes ?? "";
     s.Hos.AsOfGameTime = string.IsNullOrWhiteSpace(h.AsOfGameTime) ? s.Status.GameTime : h.AsOfGameTime;

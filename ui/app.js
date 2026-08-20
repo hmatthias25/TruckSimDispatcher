@@ -774,8 +774,9 @@ function viewDispatch() {
           <label>Destination city<input id="b-dcity" placeholder="e.g. Boise"></label>
           <label>Destination state<input id="b-dstate" class="up" maxlength="2" placeholder="ID"></label>
           <label>Loaded miles<input id="b-miles" type="number" step="1" min="0" placeholder="ATS distance"></label>
-          <label class="chk" title="Loads taken off a facility's own board come hooked to a loaded trailer — no loading time passes in game, because it is a drop-and-hook.">
-            <input id="b-preloaded" type="checkbox"> Trailer already loaded (drop &amp; hook)</label>
+          <label class="chk" title="Loads off a facility's own board come hooked to a loaded trailer — no loading time passes in game, because it is a drop-and-hook. Ticked for you on the local board; clear it if this one is a live load.">
+            <input id="b-preloaded" type="checkbox"${BOARD_STAGE === 'local' ? ' checked' : ''}>
+            Trailer already loaded (drop &amp; hook)${BOARD_STAGE === 'local' ? ' — usual for this board' : ''}</label>
           ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead miles<input id="b-dh" type="number" step="1" min="0" value="0"></label>`}
           <label>Job revenue $<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
           <label>Time to deliver<input id="b-deadline" inputmode="numeric" placeholder="h:mm from the listing"></label>
@@ -1696,7 +1697,11 @@ function facilityHtml(t) {
    Reporting them here is what stops the Dispatch tab asking for the same four numbers again. */
 function clocksAtDeliveryHtml() {
   const brk = S.views.hos.breakEnforced;
-  return `<fieldset><legend>Clocks at delivery — optional, saves reporting them again</legend>
+  return `<fieldset><legend>Clocks as you arrived — read them when you back in, before the unload</legend>
+    <p class="hint">This is the level-set: the last moment you and the game agree. Whatever the dock then
+      costs comes off these, so if the unload has already run when you open the load board the app can
+      still tell you where you stand. Leave them blank and I am planning on figures from before the
+      drive.</p>
     <div class="${brk ? 'grid4' : 'grid3'}">
       <label>Drive left<input id="c-hdrive" inputmode="numeric" placeholder="h:mm"></label>
       <label>Shift left<input id="c-hshift" inputmode="numeric" placeholder="h:mm"></label>
