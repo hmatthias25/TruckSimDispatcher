@@ -9,8 +9,12 @@ namespace TruckSimDispatcher.Services;
 /// </summary>
 public static class Build
 {
-    /// <summary>Rising in 0.1 steps through alpha. Beta will have its own numbering.</summary>
-    public const string Version = "0.9";
+    /// <summary>
+    /// Rising in 0.1 steps through alpha, and it keeps going past 0.9 rather than rolling to 1.0:
+    /// <b>0.9 is followed by 0.10</b>, then 0.11. A 1.0 means released, and this is not that. Beta will
+    /// have its own numbering.
+    /// </summary>
+    public const string Version = "0.10";
 
     /// <summary>Alpha | Beta | Release — shown alongside the number.</summary>
     public const string Stage = "alpha";

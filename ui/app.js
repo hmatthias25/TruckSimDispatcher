@@ -2483,10 +2483,10 @@ function fleetOpsHtml() {
             <th class="num" title="Average income per day, as ATS reports it">$/day</th>
             <th class="num" title="Tractor condition in stars, 5 down to 1">Truck &starf;</th>
             <th class="num" title="Tractor odometer as shown in game">Odometer</th>
-            <th class="num" title="Trailer condition in stars. Trailers have no odometer.">Trailer &starf;</th>
-            <th title="Optional. If your company screen shows when they are back with the trailer, put it here — the app has no way to see it and will not guess.">Due back</th>
-            <th title="Optional. If your company screen says when they are back with the trailer, put it here — the app cannot see it.">Due back</th>
-            <th class="num">Revenue $</th><th class="num">Miles</th>
+            <th title="Which trailer this driver is on. Pick from the ones in their garage — setting it here re-rigs them onto it.">Trailer</th>
+            <th class="num" title="Trailer condition in stars. Stars are all ATS shows for a trailer somebody else is pulling.">Trailer &starf;</th>
+            <th title="Optional. If your company screen says when they are back with the trailer, put it here — the app cannot see it and will not guess.">Due back</th>
+            <th class="num">Revenue $</th>
             <th class="num">Wages $ (blank = share)</th><th class="num">Repairs $</th></tr></thead>
           <tbody>${drivers.filter((d) => d.status === 'Active').map((d) => {
             const tk = S.trucks.find((t) => t.unit === d.assignedTruckUnit);
@@ -2504,14 +2504,15 @@ function fleetOpsHtml() {
                   value="${tk?.stars || ''}" placeholder="—"></td>
             <td><input id="fr-odo-${esc(d.id)}" type="number" step="1" min="0" style="width:96px"
                   value="${tk ? Math.round(tk.atsOdometer) : ''}" placeholder="—"></td>
+            <td>${trailerPickHtml(d, tl)}</td>
             <td><input id="fr-lstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
                   value="${tl?.stars || ''}" placeholder="—"></td>
             <td>${dayTimeInput('fr-due-' + d.id, d.trailerDueBackGameTime || '', '')}</td>
             <td><input id="fr-rev-${esc(d.id)}" type="number" step="1" min="0" value="0"></td>
-            <td><input id="fr-mi-${esc(d.id)}" type="number" step="1" min="0" value="0"></td>
             <td><input id="fr-wage-${esc(d.id)}" type="number" step="0.01" min="0" placeholder="auto"></td>
             <td><input id="fr-rep-${esc(d.id)}" type="number" step="0.01" min="0" value="0"></td>
           </tr>`; }).join('')}</tbody></table></div>
+        ${playerLineHtml()}
         <label>Report note<input id="fr-note" placeholder="optional"></label>
         <div class="row-actions"><button class="btn go" data-act="file-report">File report &amp; post to the books</button></div>`
         : '<div class="empty">No hired drivers yet. Hire one in ATS, then add them here.</div>'}
@@ -2529,6 +2530,10 @@ function fleetOpsHtml() {
             <span>miles <b>${num(r.totalMiles)}</b></span>
             <span>drivers <b>${r.lines.length}</b></span>
           </div>
+          ${r.instructions?.length ? `<div class="callout ${r.playerGetsNewTruck ? 'go' : 'warn'}" style="margin:8px 0">
+            <h4>${r.playerGetsNewTruck ? 'Go and buy it — that one is yours' : 'What to do in ATS now'}</h4>
+            <ul>${r.instructions.map((x) => `<li>${esc(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</li>`).join('')}</ul>
+          </div>` : ''}
           ${r.findings?.length ? `<ul class="reasons">${r.findings.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
           ${r.repairsNeeded?.length ? `<div class="callout stop" style="margin:8px 0 0">
             <h4>Sent for repair (${r.repairsNeeded.length})</h4>
@@ -2538,6 +2543,65 @@ function fleetOpsHtml() {
         </div>`).join('')}` : ''}
     ` : ''}
   </div>`;
+}
+
+/**
+ * The trailer this driver is on, as a dropdown of what is in their garage.
+ *
+ * The report used to ask for a trailer's condition without ever saying which trailer it meant — it read
+ * whatever was on the driver's record, which the player had no way to set from here. Choosing one here
+ * re-rigs them onto it.
+ *
+ * Their garage is their home terminal, so that is what is offered: anything on the property that is not
+ * already under somebody else and is not the one the player is pulling.
+ */
+function trailerPickHtml(d, current) {
+  const taken = (FLEETOPS?.drivers || [])
+    .filter((x) => x.id !== d.id && x.status === 'Active')
+    .map((x) => x.assignedTrailerUnit)
+    .filter(Boolean);
+  const mine = S.driver.assignedTrailerUnit;
+  const options = S.trailers.filter((t) => !t.retired
+    && t.homeTerminalId === d.homeTerminalId
+    && t.unit !== mine
+    && (!taken.includes(t.unit) || t.unit === d.assignedTrailerUnit));
+  // Whatever they are on stays selectable even if it is parked somewhere else, or the dropdown would
+  // silently move them off it just by filing a report.
+  if (current && !options.some((t) => t.unit === current.unit)) options.unshift(current);
+  return `<select id="fr-tl-${esc(d.id)}" style="max-width:132px">
+    <option value="">— none —</option>
+    ${options.map((t) => `<option value="${esc(t.unit)}"${t.unit === d.assignedTrailerUnit ? ' selected' : ''}>
+      ${esc(t.ref || t.unit)} · ${esc(t.type)}</option>`).join('')}
+  </select>`;
+}
+
+/**
+ * The player's own row: equipment only.
+ *
+ * A review is how every truck in the fleet leaves with current condition, and the player is sitting in
+ * one of them. It is deliberately not a row in the table above, because the numbers mean different
+ * things: their own units show a damage PERCENTAGE — they can open the repair screen on what they are
+ * hooked to — where a unit somebody else is driving only ever shows stars. Sharing a column headed
+ * "Truck ★" between the two would be inviting a five to be typed into a percentage.
+ *
+ * Nothing here is performance. The player is not an AI driver being appraised, so there is no level,
+ * rating, dollars a mile, revenue or wage on it.
+ */
+function playerLineHtml() {
+  const tk = S.trucks.find((t) => t.unit === S.driver.assignedTruckUnit);
+  const tl = S.trailers.find((t) => t.unit === S.driver.assignedTrailerUnit);
+  if (!tk && !tl) return '';
+  return `<h4 class="sect" style="margin-top:14px">Your own units</h4>
+    <p class="hint">So the whole fleet comes out of the review current, yours included. Condition only —
+      your production is already on the books load by load.</p>
+    <div class="grid3">
+      ${tk ? `<label>Unit ${esc(tk.ref || tk.unit)} odometer (ATS)
+        <input id="fr-me-odo" type="number" step="1" min="0" placeholder="${Math.round(tk.atsOdometer) || '—'}"></label>
+      <label>Unit ${esc(tk.ref || tk.unit)} damage %
+        <input id="fr-me-tdmg" type="number" step="0.1" min="0" max="100" placeholder="${num(tk.damagePct, 1)}"></label>` : ''}
+      ${tl ? `<label>Trailer ${esc(tl.ref || tl.unit)} damage %
+        <input id="fr-me-trdmg" type="number" step="0.1" min="0" max="100" placeholder="${num(tl.damagePct, 1)}"></label>` : ''}
+    </div>`;
 }
 
 function editHireModal(id) {
@@ -4418,18 +4482,35 @@ async function handleAction(act, d, ev) {
     case 'file-report': {
       const active = (FLEETOPS?.drivers || []).filter((x) => x.status === 'Active');
       const lines = active.map((x) => ({
-        driverId: x.id, truckUnit: x.assignedTruckUnit, trailerUnit: x.assignedTrailerUnit,
+        driverId: x.id, truckUnit: x.assignedTruckUnit,
+        // Which trailer they are on — a choice, not an inference.
+        trailerUnit: sv('fr-tl-' + x.id),
         // What the game shows for a driver we are not sitting next to.
         level: fv('fr-lvl-' + x.id), rating: fv('fr-rate-' + x.id),
         perMile: fv('fr-permi-' + x.id), perDay: fv('fr-perday-' + x.id),
-        // And for the equipment: stars, plus an odometer on the tractor only.
+        // And for the equipment: stars, plus an odometer on the tractor only. No miles — the odometer
+        // reading IS the mileage, and the app does the subtraction.
         truckStars: fv('fr-tstar-' + x.id), truckOdometer: fv('fr-odo-' + x.id),
         trailerStars: fv('fr-lstar-' + x.id),
         trailerDueBackGameTime: readDayTime('fr-due-' + x.id),
-        revenue: fv('fr-rev-' + x.id), miles: fv('fr-mi-' + x.id),
+        revenue: fv('fr-rev-' + x.id),
         wages: fv('fr-wage-' + x.id), repairs: fv('fr-rep-' + x.id),
-      })).filter((l) => l.revenue > 0 || l.miles > 0 || l.repairs > 0
-                        || l.perDay > 0 || l.perMile > 0 || l.truckStars > 0);
+      })).filter((l) => l.revenue > 0 || l.repairs > 0 || l.perDay > 0 || l.perMile > 0
+                        || l.truckStars > 0 || l.truckOdometer > 0);
+
+      // The player's own equipment goes on as its own line. Blank boxes mean "not reported" rather than
+      // zero, so an untouched row cannot wipe a damage figure or a reading.
+      const meOdo = fvn('fr-me-odo'), meTruck = fvn('fr-me-tdmg'), meTrailer = fvn('fr-me-trdmg');
+      if (meOdo != null || meTruck != null || meTrailer != null) {
+        lines.push({
+          isPlayerLine: true,
+          truckUnit: S.driver.assignedTruckUnit, trailerUnit: S.driver.assignedTrailerUnit,
+          truckOdometer: meOdo ?? 0,
+          truckDamagePct: meTruck ?? -1,
+          trailerDamagePct: meTrailer ?? -1,
+        });
+      }
+
       if (!lines.length) return toast('Nothing to report — enter at least the $/day or $/mile for one driver.', 'bad');
       return run(async () => {
         const r = absorb(await api('/fleetops/report', 'POST', {

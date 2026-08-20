@@ -380,6 +380,39 @@ public static class EquipmentService
     /// Earned an upgrade. The best unassigned sleeper on the property is reserved and the driver is
     /// told which yard to collect it from — they do the swap in ATS and confirm it here.
     /// </summary>
+    /// <summary>
+    /// An upgrade onto a tractor that does not exist yet, because the player has to go and buy it.
+    ///
+    /// <see cref="IssueUpgrade"/> moves a driver onto a better unit already standing on the property.
+    /// This is the other case: the review traded a truck out, the replacement is going under the player
+    /// rather than the hired driver, and nothing is on the yard to move into until they have been to a
+    /// dealer. So the order is raised with <see cref="EquipmentOrder.MustPurchase"/> set and no target
+    /// unit — it holds the swap open, points them at the yard, and is closed once the truck is on the
+    /// books and they are standing next to it.
+    /// </summary>
+    public static EquipmentOrder? IssuePurchasedUpgrade(AppState s, string reason, string yardLabel,
+                                                        string yardId, string driverName,
+                                                        string fromTruckUnit, string spec)
+    {
+        if (OpenOrder(s) != null) return null;   // one equipment order at a time
+
+        return Issue(s, new EquipmentOrder
+        {
+            Kind = "Upgrade",
+            Reason = reason,
+            FromTruckUnit = fromTruckUnit,
+            ToTruckUnit = "",
+            TerminalId = yardId,
+            TerminalLabel = yardLabel,
+            MustPurchase = true,
+            Instruction =
+                $"Buy the tractor in ATS: {spec} Add it on the Fleet tab, and leave it unassigned — " +
+                $"it is going under you, not {driverName}. Then report to {yardLabel} and mark this order " +
+                $"complete; {driverName} takes your old unit at the same time. I will work you back that " +
+                "way with freight rather than running you there empty."
+        });
+    }
+
     public static EquipmentOrder? IssueUpgrade(AppState s, string reason)
     {
         var current = DispatchEngine.AssignedTruck(s);

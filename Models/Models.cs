@@ -1192,6 +1192,15 @@ public class FleetReport
     public List<string> Findings { get; set; } = new();
     /// <summary>Units the report put into the shop queue, with the work order raised for each.</summary>
     public List<RepairFlag> RepairsNeeded { get; set; } = new();
+
+    /// <summary>
+    /// What the player has to go and do in ATS now the report is filed — sell a truck, buy a
+    /// replacement, and which. A recommendation nobody is told about is not a recommendation.
+    /// </summary>
+    public List<string> Instructions { get; set; } = new();
+
+    /// <summary>Set when the replacement truck is going to the player rather than the hired driver.</summary>
+    public bool PlayerGetsNewTruck { get; set; }
     /// <summary>Drivers who left, or are recommended for termination, on this period's numbers.</summary>
     public List<PersonnelChange> Personnel { get; set; } = new();
     /// <summary>Units the trade cycle says it is time to replace.</summary>
@@ -1376,9 +1385,43 @@ public class FleetReportLine
     public string DriverId { get; set; } = "";
     public string DriverName { get; set; } = "";
     public string TruckUnit { get; set; } = "";
+
+    /// <summary>
+    /// Which trailer this line is about, chosen by the player from the ones in that driver's garage.
+    ///
+    /// It used to be inferred from whatever was already on the driver's record, which meant the report
+    /// asked for a trailer's condition while giving the player no way to say — or correct — which trailer
+    /// it meant. Setting it here re-rigs the driver onto it.
+    /// </summary>
     public string TrailerUnit { get; set; } = "";
     public decimal Revenue { get; set; }
+
+    /// <summary>
+    /// Miles run in the period. <b>Derived</b>, not asked for: the odometer reading in
+    /// <see cref="TruckOdometer"/> is differenced against the last one on file. Only set directly as an
+    /// override when there is no usable odometer reading.
+    /// </summary>
     public double Miles { get; set; }
+
+    /// <summary>
+    /// True for the player's own row.
+    ///
+    /// A review is how every truck in the fleet gets its condition brought up to date, and the player is
+    /// sitting in one of them. Their row records <b>equipment only</b> — they are not an AI driver being
+    /// appraised, so there is no level, rating, dollars a mile, revenue or wage on it.
+    /// </summary>
+    public bool IsPlayerLine { get; set; }
+
+    /// <summary>
+    /// Player's own tractor damage, as a percentage.
+    ///
+    /// Their units read a percentage rather than stars, because they can open the repair screen on the
+    /// truck they are sitting in. Stars are what ATS shows for a unit somebody else is driving.
+    /// </summary>
+    public double TruckDamagePct { get; set; } = -1;
+
+    /// <summary>Player's own trailer damage, as a percentage. Negative means not reported.</summary>
+    public double TrailerDamagePct { get; set; } = -1;
 
     // ---- the driver, as ATS shows them
     /// <summary>Driver level. Open-ended.</summary>
@@ -1685,6 +1728,17 @@ public class MaintenanceThresholds
     /// still earning is fine — but old and unproductive together is.
     /// </summary>
     public double TrailerOldYears { get; set; } = 8;
+
+    /// <summary>
+    /// Percent chance that a tractor replacing a hired driver's worn-out one goes to the <b>player</b>
+    /// instead of that driver.
+    ///
+    /// Deliberately not a certainty. A carrier that always handed its best driver the new truck would be
+    /// a reward table rather than a company — the point is that this is somebody else's decision and it
+    /// does not always fall your way, however well you are running. Seeded on the report and the unit, so
+    /// it cannot be re-rolled by filing again.
+    /// </summary>
+    public double PlayerGetsTradedTruckPct { get; set; } = 22;
 
     /// <summary>The mileage at which a tractor is treated as fully worn for write-off purposes.</summary>
     public double WriteOffLifeMiles { get; set; } = 800_000;

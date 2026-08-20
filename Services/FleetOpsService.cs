@@ -101,10 +101,43 @@ public static class FleetOpsService
 
         foreach (var line in report.Lines)
         {
+            // The player's row is equipment only: it exists so every truck in the fleet leaves a review
+            // with current condition, including the one they are sitting in. Nothing on it is production,
+            // so nothing on it touches the books, the wage bill or a driver's record.
+            if (line.IsPlayerLine)
+            {
+                ApplyPlayerLine(s, report, line);
+                continue;
+            }
+
             var driver = s.HiredDrivers.FirstOrDefault(x => x.Id == line.DriverId);
             if (driver == null) continue;
             line.DriverName = driver.Name;
             if (string.IsNullOrWhiteSpace(line.TruckUnit)) line.TruckUnit = driver.AssignedTruckUnit;
+
+            // A driver who has left has no truck against their name, so a line filed for them lands on
+            // nothing: stars, odometer and repairs all quietly go nowhere. Say so, rather than letting a
+            // period of production vanish and a worn-out tractor go unnoticed because the person who was
+            // driving it resigned.
+            if (string.IsNullOrWhiteSpace(line.TruckUnit))
+                report.Findings.Add(
+                    $"{driver.Name} has no truck against their name" +
+                    (driver.Status != "Active" ? $" — they are {driver.Status.ToLowerInvariant()}" : "") +
+                    ". Nothing on their line could be recorded. Put the unit on their record, or file the " +
+                    "figures against whoever is in that truck now.");
+
+            // Miles come off the odometer, not off the player working them out. The reading is the one
+            // number the game will show them; the difference from last time is arithmetic, and arithmetic
+            // is the app's job. A direct figure is honoured as an override for when there is no reading.
+            if (line.Miles <= 0 && line.TruckOdometer > 0)
+            {
+                var truckNow = s.Trucks.FirstOrDefault(t => t.Unit == line.TruckUnit);
+                var moved = truckNow != null ? line.TruckOdometer - truckNow.AtsOdometer : 0;
+                if (moved > 0) line.Miles = Math.Round(moved, 0);
+            }
+
+            // Whichever trailer the player picked is the one this driver is on from now on.
+            AssignReportedTrailer(s, report, driver, line);
 
             // Wages default to the driver's agreed share of what they brought in.
             if (line.Wages <= 0 && line.Revenue > 0)
@@ -267,6 +300,7 @@ public static class FleetOpsService
         // on this period's figures rather than the last one's.
         ResolvePersonnel(s, report);
         AssessRetirements(s, report);
+        IssueTradeInstructions(s, report);
         // The company may also want another box somewhere. Occasional, and always an ask.
         TrailerFleet.Consider(s, report);
 
@@ -658,6 +692,182 @@ public static class FleetOpsService
     /// them is being swapped is confusing and they cannot act on it anyway; their trailer changes at
     /// home time, where they are parked at the yard and can actually do it. See HomeTime.
     /// </summary>
+    /// <summary>
+    /// Records the player's own equipment condition from their row of the review.
+    ///
+    /// Their tractor and trailer read a damage <b>percentage</b>, because they can open the repair screen
+    /// on what they are hooked to. Stars are for units somebody else is driving. The odometer is handled
+    /// the same way it is everywhere else: the reading advances the company's own figure by the
+    /// difference, and never overwrites it, because the odometer cannot be set in ATS.
+    /// </summary>
+    private static void ApplyPlayerLine(AppState s, FleetReport report, FleetReportLine line)
+    {
+        line.DriverName = s.Driver.Name;
+        if (string.IsNullOrWhiteSpace(line.TruckUnit)) line.TruckUnit = s.Driver.AssignedTruckUnit;
+        if (string.IsNullOrWhiteSpace(line.TrailerUnit)) line.TrailerUnit = s.Driver.AssignedTrailerUnit;
+
+        var truck = s.Trucks.FirstOrDefault(t => t.Unit == line.TruckUnit);
+        if (truck != null)
+        {
+            if (line.TruckOdometer > 0)
+            {
+                var moved = line.TruckOdometer - truck.AtsOdometer;
+                if (moved < 0)
+                    report.Findings.Add(
+                        $"Unit {truck.Ref}: the game reads {line.TruckOdometer:N0} against {truck.AtsOdometer:N0} " +
+                        "last time. Taking that as a replacement unit and starting the reading again — " +
+                        $"our own odometer stays at {truck.ServiceMiles:N0} mi.");
+                else
+                    truck.ServiceMiles = Math.Round(truck.ServiceMiles + moved, 0);
+                truck.AtsOdometer = line.TruckOdometer;
+            }
+            if (line.TruckDamagePct >= 0)
+            {
+                truck.DamagePct = Math.Clamp(line.TruckDamagePct, 0, 100);
+                report.Findings.Add($"Unit {truck.Ref} (yours): {truck.DamagePct:0.#}% damage, " +
+                                    $"{truck.ServiceMiles:N0} mi on our books.");
+            }
+        }
+
+        var trailer = s.Trailers.FirstOrDefault(t => t.Unit == line.TrailerUnit);
+        if (trailer != null && line.TrailerDamagePct >= 0)
+        {
+            trailer.DamagePct = Math.Clamp(line.TrailerDamagePct, 0, 100);
+            report.Findings.Add($"Trailer {trailer.Ref} (yours): {trailer.DamagePct:0.#}% damage.");
+        }
+    }
+
+    /// <summary>
+    /// Puts the driver on the trailer the player picked for them.
+    ///
+    /// The dropdown offers what is in that driver's garage, so this is mostly a matter of recording a
+    /// choice. It still refuses a trailer somebody else is on: two drivers cannot pull the same one, and
+    /// silently moving it would leave the app planning a tour around a trailer that is not there.
+    /// </summary>
+    private static void AssignReportedTrailer(AppState s, FleetReport report, HiredDriver driver,
+                                              FleetReportLine line)
+    {
+        if (string.IsNullOrWhiteSpace(line.TrailerUnit))
+        {
+            line.TrailerUnit = driver.AssignedTrailerUnit;
+            return;
+        }
+        if (line.TrailerUnit == driver.AssignedTrailerUnit) return;
+
+        var wanted = s.Trailers.FirstOrDefault(t => t.Unit == line.TrailerUnit && !t.Retired);
+        if (wanted == null)
+        {
+            report.Findings.Add($"{driver.Name}: trailer {line.TrailerUnit} is not in the fleet — left them on " +
+                                $"{(string.IsNullOrWhiteSpace(driver.AssignedTrailerUnit) ? "nothing" : driver.AssignedTrailerUnit)}.");
+            line.TrailerUnit = driver.AssignedTrailerUnit;
+            return;
+        }
+
+        if (wanted.Unit == s.Driver.AssignedTrailerUnit)
+        {
+            report.Findings.Add($"{driver.Name}: trailer {wanted.Ref} is the one you are pulling, so it is not theirs " +
+                                "to take. Left them where they were.");
+            line.TrailerUnit = driver.AssignedTrailerUnit;
+            return;
+        }
+
+        var other = s.HiredDrivers.FirstOrDefault(d => d.Id != driver.Id && d.Status == "Active"
+                                                       && d.AssignedTrailerUnit == wanted.Unit);
+        if (other != null)
+        {
+            report.Findings.Add($"{driver.Name}: trailer {wanted.Ref} is under {other.Name}. Two drivers cannot pull " +
+                                "the same trailer, so nothing was moved.");
+            line.TrailerUnit = driver.AssignedTrailerUnit;
+            return;
+        }
+
+        var was = driver.AssignedTrailerUnit;
+        driver.AssignedTrailerUnit = wanted.Unit;
+        wanted.AssignedTruckUnit = driver.AssignedTruckUnit;
+        report.Findings.Add(string.IsNullOrWhiteSpace(was)
+            ? $"{driver.Name} is now on trailer {wanted.Ref} ({wanted.Type})."
+            : $"{driver.Name} moved from trailer {was} to {wanted.Ref} ({wanted.Type}).");
+    }
+
+    /// <summary>
+    /// Turns a trade recommendation into something the player can act on, and occasionally into a new
+    /// truck for them.
+    ///
+    /// A recommendation nobody is told about is not a recommendation. The review concludes a tractor is
+    /// finished; the player then has to go and do something about it in ATS, so they are told what to
+    /// sell and what to buy, by make and spec.
+    ///
+    /// The new truck usually goes to the driver whose old one it replaces. Sometimes it goes to the
+    /// player — and only sometimes. A carrier that always gave its best driver the new tractor would not
+    /// be a carrier, it would be a reward table; the point is that this is the company's call and it does
+    /// not always fall your way however well you are running. So it is seeded on the report and the unit,
+    /// which means it cannot be re-rolled by filing again.
+    /// </summary>
+    private static void IssueTradeInstructions(AppState s, FleetReport report)
+    {
+        var trades = report.Retirements.Where(r => r.UnitKind == "Truck").ToList();
+        if (trades.Count == 0) return;
+
+        var spec = Seed.RecommendedTruck(s);
+        var home = Migrations.TerminalOf(s, s.Driver.HomeTerminalId)
+                   ?? s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters);
+        var homeLabel = home != null ? $"{home.City}, {home.State}" : "your home yard";
+
+        foreach (var trade in trades)
+        {
+            var old = s.Trucks.FirstOrDefault(t => t.Unit == trade.Unit);
+            if (old == null) continue;
+            var oldLabel = $"{old.Ref} ({old.Year} {old.Make} {old.Model}, {old.ServiceMiles:N0} mi on our books)";
+
+            if (trade.IsPlayerUnit)
+            {
+                report.Instructions.Add(
+                    $"Trade unit {oldLabel} in ATS and buy the replacement: {spec} Add what you actually " +
+                    "buy on the Fleet tab and I will move you into it.");
+                continue;
+            }
+
+            // A hired driver's truck. Who gets the new one is the company's decision.
+            var driverName = string.IsNullOrWhiteSpace(trade.AssignedTo) ? "the driver" : trade.AssignedTo;
+            var earned = s.Driver.Rank != "probationary" && SafetyService.CountingFaults(s).Count == 0;
+            var odds = (uint)Math.Clamp(s.Settings.Maintenance.PlayerGetsTradedTruckPct, 0, 100);
+            var lucky = odds > 0
+                        && Hash($"{s.Driver.EmployeeId}|newtruck|{report.Number}|{trade.Unit}") % 100 < odds;
+
+            if (!(earned && lucky))
+            {
+                report.Instructions.Add(
+                    $"Sell unit {oldLabel} in ATS and buy {driverName} a replacement: {spec} Put " +
+                    $"{driverName} in it and add it on the Fleet tab.");
+                continue;
+            }
+
+            // The new tractor is yours; the driver takes the one you are in.
+            report.PlayerGetsNewTruck = true;
+            var mine = DispatchEngine.AssignedTruck(s);
+            var mineLabel = mine != null ? $"{mine.Ref} ({mine.Year} {mine.Make} {mine.Model})" : "the truck you are in";
+
+            report.Instructions.Add(
+                $"Sell unit {oldLabel} in ATS and buy the replacement: {spec} " +
+                $"**That one is yours.** {driverName} takes {mineLabel} off you.");
+            report.Instructions.Add(
+                $"Do NOT put another driver in the new truck. It is going under you, and if {driverName} " +
+                "is sitting in it when you get to the yard there is nothing to swap into.");
+
+            var order = EquipmentService.IssuePurchasedUpgrade(s,
+                $"{report.Number}: {trade.Unit} traded out and the company is putting you in the new tractor " +
+                $"rather than {driverName}.",
+                homeLabel, home?.Id ?? "", driverName, mine?.Unit ?? "", spec);
+
+            report.Instructions.Add(order != null
+                ? $"{order.Number} is open: report to {homeLabel} and I will do the swap there. I will work you " +
+                  "back that way with freight rather than sending you empty."
+                : $"Report to {homeLabel} when you have it and we will do the swap there.");
+
+            report.Findings.Add($"Unit {trade.Unit} traded out — the new tractor goes to you, not {driverName}.");
+        }
+    }
+
     private static void AssessTrailers(AppState s, FleetReport report)
     {
         var m = s.Settings.Maintenance;
