@@ -900,6 +900,10 @@ public static class DispatchEngine
         // Empty miles the driver ran to get here — last receiver or truck stop to this shipper. Taken
         // from the two odometer readings they reported, so nothing is estimated, and paid as deadhead
         // because that is what it is.
+        // What the odometer read when this load was booked. The driver has not driven to the shipper
+        // yet, so this is the baseline the post-loading reading gets measured against.
+        trip.DispatchOdometer = s.Status.AtsOdometer;
+
         if (Repositioning.Measure(s, trip, s.Status.AtsOdometer) is { } leg)
         {
             trip.RepositionMiles = leg.Miles;

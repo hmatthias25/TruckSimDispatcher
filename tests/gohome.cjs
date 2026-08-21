@@ -241,6 +241,91 @@ async function badBoard(fromCity, fromState) {
     JSON.stringify(a3).includes('empty mi repositioning'), 'explained on the trip');
 
 
-  console.log(`\n${pass} passed, ${fail} failed`);
+  // Close 5b's load so the next dispatch is not blocked.
+  await api(`/trips/${a3.trip.id}/complete`, 'POST', {
+    deliveredGameTime: iso(53, '15:00'), actualMiles: 160, endOdometer: 41000, actualRevenue: 900,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 3, trailerDamageAfter: 2, cargoDamagePct: 0,
+    loadingHours: 1, unloadingHours: 1, detentionHours: 0,
+    layoverDays: 0, breakdownDays: 0, extraStops: 0, tarpsUsed: 0,
+    delayReason: '', damageCause: '', notes: '',
+    locationCity: 'Wichita', locationState: 'KS', fuelPct: 55, gameTime: iso(53, '15:00'),
+    hosDriveRemaining: 9, hosShiftRemaining: 11, hosBreakRemaining: 7, hosCycleRemaining: 50,
+  });
+
+  head('6. The reported sequence: odometer at the truck stop, odometer after loading');
+  // 1. Sitting at a truck stop, the pickup is 40 mi away.
+  // 2. Report the odometer here.
+  // 3. Authorise, drive to the shipper.
+  // 4. Load, and fill in the after-loading boxes -- weight, trailer damage, odometer.
+  // 5. That odometer is 40 higher.
+  // 6. The app works out the 40 empty miles and pays them.
+  await api('/board/clear', 'POST', {});
+  await place('Wichita', 'KS', 54, '06:00', 41000, 'TruckStop');
+  const dhBoard = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type,
+    originCity: 'Wichita', originState: 'KS', destCity: 'Topeka', destState: 'KS',
+    loadedMiles: 135, deadheadMiles: 55, gameRevenue: 900, deadlineHours: 26, weightLbs: 30000,
+  });
+  const dhTrip = (await api('/dispatch/authorize', 'POST',
+    { loadId: dhBoard.evaluations[0].load.id })).trip;
+  ok('the reading at booking is kept', dhTrip.dispatchOdometer === 41000, `${dhTrip.dispatchOdometer}`);
+  ok('and the listing quoted 55 mi of deadhead', dhTrip.deadheadMiles === 55, `${dhTrip.deadheadMiles}`);
+
+  // Drove 40, not the 55 the listing guessed.
+  const rep = await api(`/trips/${dhTrip.id}/loaded`, 'POST', {
+    weightLbs: 30000, trailerDamagePct: 2, odometer: 41040,
+  });
+  const said6 = (rep.notes || []).join(' | ');
+  ok('the empty run is measured at 40 mi', rep.trip.deadheadMiles === 40,
+    `${rep.trip.deadheadMiles} mi (41,000 -> 41,040)`);
+  ok('and flagged as measured, not quoted', rep.trip.deadheadMeasured === true, `${rep.trip.deadheadMeasured}`);
+  ok('the driver is told it beat the listing', /Going with yours/i.test(said6), said6.slice(0, 200));
+  ok('naming both figures', /40 mi/.test(said6) && /55 mi/.test(said6), '');
+
+  await api(`/trips/${dhTrip.id}/complete`, 'POST', {
+    deliveredGameTime: iso(54, '14:00'), actualMiles: 135, endOdometer: 41175, actualRevenue: 900,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 3, trailerDamageAfter: 2, cargoDamagePct: 0,
+    loadingHours: 1, unloadingHours: 1, detentionHours: 0,
+    layoverDays: 0, breakdownDays: 0, extraStops: 0, tarpsUsed: 0,
+    delayReason: '', damageCause: '', notes: '',
+    locationCity: 'Topeka', locationState: 'KS', fuelPct: 55, gameTime: iso(54, '14:00'),
+    hosDriveRemaining: 9, hosShiftRemaining: 11, hosBreakRemaining: 7, hosCycleRemaining: 48,
+  });
+
+  head('6b. A reading that cannot be true does not overwrite the quote');
+  // A fresh career, because by this point home time is thirty days overdue and every board is rejected
+  // and cleared. This section is about the odometer guard, not the home-time pressure.
+  await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+  const app2 = { driverName: 'D. Second', preferredDivision: 'Dry Van', transmissionPreference: 'either',
+    experienceYears: 9, homeCity: 'Topeka', homeState: 'KS', acceptsProbation: true,
+    homeTimePreference: 'biweekly' };
+  await api('/onboarding/market', 'POST', app2);
+  S = un(await api('/onboarding/hire', 'POST', { application: app2, force: true, gameTime: iso(1), code: 'PRI' }));
+  await place('Topeka', 'KS', 2, '06:00', 41200, 'TruckStop');
+  await api('/board/clear', 'POST', {});
+  const b6 = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type,
+    originCity: 'Topeka', originState: 'KS', destCity: 'Salina', destState: 'KS',
+    loadedMiles: 110, deadheadMiles: 30, gameRevenue: 800, deadlineHours: 26, weightLbs: 30000,
+  });
+  ok('a load is dispatchable on a fresh career', !!b6.evaluations?.[0],
+    `rejectAll=${b6.rejectAll} ${(b6.dispatchNotes || []).join(' ').slice(0, 120)}`);
+  const t6 = (await api('/dispatch/authorize', 'POST', { loadId: b6.evaluations[0].load.id })).trip;
+  ok('the booking reading is stored', t6.dispatchOdometer === 41200, `${t6.dispatchOdometer}`);
+
+  // Never updated the reading, but the listing says there was real deadhead to drive.
+  const rep2 = await api(`/trips/${t6.id}/loaded`, 'POST', {
+    weightLbs: 30000, trailerDamagePct: 2, odometer: 41200,
+  });
+  ok('the quoted deadhead is kept, not zeroed', rep2.trip.deadheadMiles === 30,
+    `${rep2.trip.deadheadMiles} mi`);
+  ok('and it is not claimed as measured', !rep2.trip.deadheadMeasured, `${rep2.trip.deadheadMeasured}`);
+  ok('the driver is told why', /has not moved since this load was booked/i.test((rep2.notes || []).join(' ')),
+    (rep2.notes || []).join(' | ').slice(0, 190));
+
+  console.log(`
+${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });

@@ -234,11 +234,76 @@ public static class TripService
             var truck = s.Trucks.FirstOrDefault(x => x.Unit == s.Driver.AssignedTruckUnit);
             if (truck != null) truck.AtsOdometer = odometer.Value;
             notes.Add($"Odometer {odometer.Value:N0} recorded as the start of this leg — close-out measures the run from it.");
+
+            // The empty run to the shipper, measured rather than taken off the listing. Both readings are
+            // the driver's own: one at the truck stop when the load was booked, this one after loading.
+            // The difference is the deadhead they actually drove, which is what should be paid — the
+            // listing's figure is the game's estimate of a route they may not have taken.
+            notes.AddRange(MeasureDeadhead(trip, odometer.Value));
         }
 
         trip.LoadedReported = true;
         if (notes.Count == 0) notes.Add("Nothing to change. Marked as reported so I stop asking.");
         return (trip, notes);
+    }
+
+    /// <summary>Cap on a believable empty run to a shipper. Beyond it, something was mistyped.</summary>
+    private const double ImplausibleDeadheadMiles = 600;
+
+    /// <summary>
+    /// Works the deadhead to the shipper out of the two odometer readings the driver gave.
+    ///
+    /// This is the leg the job listing quotes, and the quote is the game's estimate. The driver's own two
+    /// readings are a measurement, so where there is a measurement it wins — the same rule as the dock
+    /// clock beating a typed duration.
+    ///
+    /// Nothing is replaced on a reading that cannot be true. A zero gap against a listing that quoted
+    /// real deadhead means the reading was not updated rather than that the truck never moved, and
+    /// silently paying zero for a drive the driver made is the failure this whole path exists to stop.
+    /// </summary>
+    private static List<string> MeasureDeadhead(Trip trip, double loadedOdometer)
+    {
+        var notes = new List<string>();
+        if (trip.DispatchOdometer <= 0) return notes;          // older trip, nothing to measure against
+
+        var ran = loadedOdometer - trip.DispatchOdometer;
+        var quoted = trip.DeadheadMiles;
+
+        if (ran < 0)
+        {
+            notes.Add($"That reading is {Math.Abs(ran):N0} mi BELOW the {trip.DispatchOdometer:N0} on file when this " +
+                      "load was booked. Keeping the quoted deadhead and leaving it alone — check the number.");
+            return notes;
+        }
+
+        if (ran > ImplausibleDeadheadMiles)
+        {
+            notes.Add($"That is {ran:N0} mi between booking this load and loading it, which is too far to be a run " +
+                      $"to the shipper. Keeping the {quoted:N0} mi quoted — if you really ran that empty it wants " +
+                      "dispatching as an empty move.");
+            return notes;
+        }
+
+        if (ran < 0.5 && quoted >= 1)
+        {
+            notes.Add($"The odometer has not moved since this load was booked, but the listing quoted {quoted:N0} mi " +
+                      "of deadhead to the shipper. I am keeping the quoted figure rather than paying you nothing — " +
+                      "report the reading from the shipper if you want it exact.");
+            return notes;
+        }
+
+        trip.DeadheadMiles = Math.Round(ran, 0);
+        trip.DeadheadMeasured = true;
+
+        if (quoted >= 1 && Math.Abs(ran - quoted) >= 5)
+            notes.Add($"Deadhead to the shipper measured at {trip.DeadheadMiles:N0} mi from your own readings " +
+                      $"({trip.DispatchOdometer:N0} → {loadedOdometer:N0}), against {quoted:N0} mi on the listing. " +
+                      "Going with yours — you drove it, the listing guessed it.");
+        else
+            notes.Add($"Deadhead to the shipper: {trip.DeadheadMiles:N0} empty mi, measured " +
+                      $"({trip.DispatchOdometer:N0} → {loadedOdometer:N0}) and paid at the empty rate.");
+
+        return notes;
     }
 
     /// <summary>

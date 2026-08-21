@@ -741,6 +741,19 @@ public class Trip
     public double DispatchedMiles { get; set; }
     public double DeadheadMiles { get; set; }
     public double ActualMiles { get; set; }
+    /// <summary>
+    /// The odometer as it read when this load was authorised — before driving to the shipper.
+    ///
+    /// The other half of the empty-miles measurement. The driver reports a reading at the truck stop,
+    /// takes the load, drives to the shipper, and reports again after loading; the gap between the two is
+    /// the deadhead they actually ran. Without this stored, the second reading has nothing to be
+    /// differenced against and those miles came off the job listing's estimate instead.
+    /// </summary>
+    public double DispatchOdometer { get; set; }
+
+    /// <summary>True when the deadhead came off the driver's readings rather than the job listing.</summary>
+    public bool DeadheadMeasured { get; set; }
+
     public double StartOdometer { get; set; }
     public double EndOdometer { get; set; }
 
