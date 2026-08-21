@@ -37,7 +37,37 @@ async function runLoad(destCity, destState) {
     destCity, destState, loadedMiles: 400, deadheadMiles: 0,
     gameRevenue: 1900, deadlineHours: 60, weightLbs: 40000,
   });
-  const auth = await api('/dispatch/authorize', 'POST', { loadId: board.evaluations[0].load.id });
+  // Evaluating a board can CLEAR it — the out-of-hours and restart paths both do, so the evaluation
+  // handed back can reference a load that no longer exists. Say which, rather than dying on
+  // "that load is not on the current board" with no clue what blocked it.
+  const pick = board.evaluations && board.evaluations[0];
+  if (!pick) throw new Error(`board came back empty: ${JSON.stringify(board.headline || board)}`);
+  let auth;
+  try {
+    auth = await api('/dispatch/authorize', 'POST', { loadId: pick.load.id });
+  } catch (e) {
+    // Operations can park a driver for thirty-four hours of its own accord, with clean clocks. It is
+    // rare and seeded, so it turns up unpredictably in a long run of loads — and when it does, dispatch
+    // is held until the restart is sat. A driver would go and sit it, so that is what happens here
+    // rather than the suite falling over on freight it was never going to get.
+    const order = (await api('/bootstrap')).views.restart?.order;
+    if (!order) throw e;
+    await api('/restart/arrived', 'POST',
+      { gameTime: at(day), city: order.targetCity || 'Salt Lake City', state: order.targetState || 'UT' });
+    day += 2;                                     // thirty-four hours plus a margin
+    await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+    await api('/restart/complete', 'POST', { gameTime: at(day) });
+    // The board was cleared when dispatch was held, so the load has to go back on.
+    await api('/board/clear', 'POST', {});
+    const again = await api('/board/add', 'POST', {
+      cargo: 'Machinery', trailerType: S.trailers[0].type,
+      originCity: S.status.locationCity, originState: S.status.locationState,
+      destCity, destState, loadedMiles: 400, deadheadMiles: 0,
+      gameRevenue: 1900, deadlineHours: 60, weightLbs: 40000,
+    });
+    if (!again.evaluations?.[0]) throw new Error(`still no freight after sitting ${order.number}`);
+    auth = await api('/dispatch/authorize', 'POST', { loadId: again.evaluations[0].load.id });
+  }
   day += 1;
   const done = await api(`/trips/${auth.trip.id}/complete`, 'POST', {
     deliveredGameTime: at(day), actualMiles: 400, endOdometer: 0, actualRevenue: 1900,

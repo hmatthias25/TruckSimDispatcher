@@ -2554,7 +2554,7 @@ function fleetOpsHtml() {
                   value="${tk?.stars || ''}" placeholder="—"></td>
             <td><input id="fr-odo-${esc(d.id)}" type="number" step="1" min="0" style="width:96px"
                   value="${tk ? Math.round(tk.atsOdometer) : ''}" placeholder="—"></td>
-            <td>${trailerPickHtml(d, tl)}</td>
+            <td style="white-space:nowrap">${trailerPickHtml(d, tl)}</td>
             <td><input id="fr-lstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
                   value="${tl?.stars || ''}" placeholder="—"></td>
             <td>${dayTimeInput('fr-due-' + d.id, d.trailerDueBackGameTime || '', '')}</td>
@@ -2624,7 +2624,7 @@ function trailerPickHtml(d, current) {
   // Whatever they are on stays selectable even if it is parked somewhere else, or the dropdown would
   // silently move them off it just by filing a report.
   if (current && !options.some((t) => t.unit === current.unit)) options.unshift(current);
-  return `<select id="fr-tl-${esc(d.id)}" style="max-width:132px"${
+  return `<select id="fr-tl-${esc(d.id)}" style="min-width:172px"${
       elsewhere ? ' title="Nothing is parked at their own terminal, so the whole fleet is listed."' : ''}>
     <option value="">— none —</option>
     ${options.map((t) => `<option value="${esc(t.unit)}"${t.unit === d.assignedTrailerUnit ? ' selected' : ''}>
