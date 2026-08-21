@@ -1244,6 +1244,18 @@ function decisionHtml() {
         copy if it is one; ignore this if the shipper really has two of them.</p>
     </div>` : ''}
     ${d.evaluations.map((e) => loadCardHtml(e, d)).join('')}
+    ${d.rejectAll && (S.views.repositionOffers || []).length ? `<div class="callout info">
+      <h4>Running empty from here</h4>
+      <p>Nothing on this board is worth the truck and home time is close. These are the empty moves I
+        would raise — the mileage is worked out, so it goes on your pay properly instead of vanishing.</p>
+      ${S.views.repositionOffers.map((o) => `<div class="row-actions" style="margin:6px 0">
+        <button class="btn ${o.isHomeRun ? 'primary' : ''}" data-act="reposition"
+          data-city="${esc(o.city)}" data-state="${esc(o.state)}" data-miles="${o.miles}"
+          data-reason="${esc(o.reason)}">
+          ${o.isHomeRun ? 'Run home empty' : 'Reposition'} to ${esc(o.city)}, ${esc(o.state)} — ${num(o.miles)} mi</button>
+        <span class="hint" style="margin:0">${esc(o.reason)}</span>
+      </div>`).join('')}
+    </div>` : ''}
     ${d.localOnly ? `<div class="callout info">
       <h4>Next step: the wider board</h4>
       <p>Nothing at this dock is worth running. Open the full freight board for
@@ -4335,6 +4347,15 @@ async function handleAction(act, d, ev) {
 
     /* ---- moves */
     case 'show-move': return moveModal();
+    case 'reposition': return run(async () => {
+      // One press. The distance came from the app, so the empty pay is right without anyone typing it.
+      absorb(await api('/moves', 'POST', {
+        kind: 'EmptyMove', destCity: d.city, destState: d.state,
+        miles: parseFloat(d.miles) || 0, reason: d.reason || 'Repositioning',
+      }));
+      DECISION = null;
+    }, 'Empty move authorized — close it out when you get there.');
+
     case 'create-move': {
       if (!sv('mv-city')) return toast('Where am I going?', 'bad');
       const body = { kind: sv('mv-kind'), destCity: sv('mv-city'), destState: sv('mv-state'), miles: fv('mv-miles'), reason: sv('mv-reason') };

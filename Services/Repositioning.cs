@@ -60,8 +60,26 @@ public static class Repositioning
             AfterTrip = previous.Number
         };
 
-        // Parked between loads: no movement, no miles. Correct, and worth not treating as an error.
-        if (Math.Abs(delta) < 0.5) return null;
+        // No movement on the odometer. Usually right — the driver closed out and took the next load from
+        // the same dock. But if they are standing somewhere ELSE, they plainly drove there, and the app
+        // is about to pay nothing for it because nobody reported a new reading. Say so rather than
+        // quietly settling at zero: this is the case where a truck stop to terminal run, or a hop from
+        // one yard to another to pick up freight, silently earns nothing.
+        if (Math.Abs(delta) < 0.5)
+        {
+            var closedAt = $"{previous.DestCity}, {previous.DestState}".Trim(' ', ',');
+            var nowAt = $"{s.Status.LocationCity}, {s.Status.LocationState}".Trim(' ', ',');
+            if (closedAt.Length > 0 && nowAt.Length > 0
+                && !closedAt.Equals(nowAt, StringComparison.OrdinalIgnoreCase))
+            {
+                leg.Warning = $"You closed {previous.Number} in {closedAt} and you are dispatching from {nowAt}, " +
+                              $"but the odometer still reads {odometerAtDispatch:N0} — the same as when you closed. " +
+                              "I cannot pay empty miles I have no reading for. Report your odometer and I will put " +
+                              "the repositioning on this load.";
+                return leg;
+            }
+            return null;
+        }
 
         if (delta < 0)
         {

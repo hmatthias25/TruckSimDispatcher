@@ -674,6 +674,154 @@ public static class HomeTime
     }
 
     /// <summary>A dispatch-note line for the board decision, when home time is a live consideration.</summary>
+    /// <summary>A reposition dispatch would raise for the driver, ready to authorise.</summary>
+    public class RepositionOffer
+    {
+        public string City { get; set; } = "";
+        public string State { get; set; } = "";
+        public double Miles { get; set; }
+        public string Reason { get; set; } = "";
+        /// <summary>True when this is the last empty leg to the yard rather than a move to chase freight.</summary>
+        public bool IsHomeRun { get; set; }
+    }
+
+    /// <summary>
+    /// Empty moves worth offering when the board is rejected and home time is close.
+    ///
+    /// Two cases, and both are miles the driver actually runs with nothing on the trailer:
+    /// <list type="bullet">
+    ///   <item>Chasing a board — sitting in Austin, the load worth having is out of San Antonio.</item>
+    ///   <item>The last leg home — delivered in Kansas City, the yard is Springfield.</item>
+    /// </list>
+    ///
+    /// Either way the driver should not have to raise it by hand and type a mileage the app already
+    /// knows, because that mileage is what their empty pay is worked out from.
+    /// </summary>
+    public static List<RepositionOffer> RepositionOffers(AppState s)
+    {
+        var offers = new List<RepositionOffer>();
+        var st = Status(s);
+        if (!st.Tracked || !st.DueSoon) return offers;
+
+        var home = HomeTerminal(s);
+        if (home == null) return offers;
+
+        var here = (s.Status.LocationCity, s.Status.LocationState);
+        var mph = HosEngine.EffectiveMph(s.Settings, DispatchEngine.AssignedTruck(s));
+        if (mph <= 0) return offers;
+        var drivable = Math.Max(0, Math.Min(Math.Min(s.Hos.DriveRemaining, s.Hos.ShiftRemaining),
+                                            s.Hos.CycleRemaining));
+        var reach = drivable * mph;
+
+        var alreadyHome = here.LocationCity.Equals(home.City, StringComparison.OrdinalIgnoreCase)
+                          && here.LocationState.Equals(home.State, StringComparison.OrdinalIgnoreCase);
+        var toHome = Geo.MilesBetween(here.LocationCity, here.LocationState, home.City, home.State);
+
+        // The run home, when the yard is reachable and we are not standing in it.
+        if (!alreadyHome && toHome is { } hm && hm <= reach)
+            offers.Add(new RepositionOffer
+            {
+                City = home.City, State = home.State, Miles = Math.Round(hm, 0), IsHomeRun = true,
+                Reason = $"Empty to the yard for home time — {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}, " +
+                         "and nothing on the board is worth staying out for."
+            });
+
+        // Markets on the way, for pulling a fresh board from somewhere better placed.
+        foreach (var c in Markets.Effective(s)
+                     .Where(c => !(c.City.Equals(here.LocationCity, StringComparison.OrdinalIgnoreCase)
+                                   && c.State.Equals(here.LocationState, StringComparison.OrdinalIgnoreCase)))
+                     .Where(c => !(c.City.Equals(home.City, StringComparison.OrdinalIgnoreCase)
+                                   && c.State.Equals(home.State, StringComparison.OrdinalIgnoreCase)))
+                     .Select(c => new
+                     {
+                         c,
+                         out_ = Geo.MilesBetween(here.LocationCity, here.LocationState, c.City, c.State) ?? double.MaxValue,
+                         home_ = Geo.MilesBetween(c.City, c.State, home.City, home.State) ?? double.MaxValue
+                     })
+                     .Where(x => x.out_ <= reach && x.home_ < double.MaxValue)
+                     .Where(x => toHome == null || x.home_ < toHome.Value - 25)
+                     .OrderBy(x => x.c.Tier)
+                     .ThenBy(x => x.home_)
+                     .Take(3))
+            offers.Add(new RepositionOffer
+            {
+                City = c.c.City, State = c.c.State, Miles = Math.Round(c.out_, 0),
+                Reason = $"Empty to {DispatchEngine.Place(c.c.City, c.c.State)} to pull a board closer to " +
+                         $"{st.TerminalLabel} — tier-{c.c.Tier} market, {c.home_:N0} mi from the yard."
+            });
+
+        return offers;
+    }
+
+    /// <summary>
+    /// Where to go looking for freight when the board on offer has nothing and home time is close.
+    ///
+    /// The app only ever sees what the driver types in, and what they can type in is whatever ATS is
+    /// showing where they are standing. So "nothing here works" is not the same as "there is nothing" —
+    /// it means the search has to move. Dispatch knows which direction home is and roughly how far the
+    /// driver can legally get; naming two or three markets on the way is the difference between useful
+    /// advice and telling somebody to go and have a look round.
+    ///
+    /// Only called once a board has actually been rejected. If something on offer is worth running,
+    /// there is nothing to suggest and this never fires.
+    /// </summary>
+    public static string? WhereToLookForHome(AppState s)
+    {
+        var st = Status(s);
+        if (!st.Tracked || !st.DueSoon) return null;
+
+        var home = HomeTerminal(s);
+        if (home == null) return null;
+
+        var here = (s.Status.LocationCity, s.Status.LocationState);
+        var toHome = Geo.MilesBetween(here.LocationCity, here.LocationState, home.City, home.State);
+        var mph = HosEngine.EffectiveMph(s.Settings, DispatchEngine.AssignedTruck(s));
+        if (mph <= 0) return null;
+
+        // The binding clock, same as anywhere else the app talks about what is reachable.
+        var drivable = Math.Max(0, Math.Min(Math.Min(s.Hos.DriveRemaining, s.Hos.ShiftRemaining),
+                                            s.Hos.CycleRemaining));
+        var reach = drivable * mph;
+
+        // Home itself, if a load could plausibly finish there. Worth saying first — the driver can look
+        // at the board in their own yard's city and stop hunting.
+        if (toHome is { } miles && miles <= reach)
+            return $"Nothing here works and home time is {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}. " +
+                   $"{DispatchEngine.Place(home.City, home.State)} is only {miles:N0} mi out, inside what you can drive " +
+                   $"on {Hhmm.Of(drivable)}. Look at the board in {home.City} itself, or anything running that way, and " +
+                   "show me what is there.";
+
+        // Otherwise, markets that are both reachable and genuinely closer to home than we are.
+        var options = Markets.Effective(s)
+            .Where(c => !(c.City.Equals(here.LocationCity, StringComparison.OrdinalIgnoreCase)
+                          && c.State.Equals(here.LocationState, StringComparison.OrdinalIgnoreCase)))
+            .Select(c => new
+            {
+                c,
+                out_ = Geo.MilesBetween(here.LocationCity, here.LocationState, c.City, c.State) ?? double.MaxValue,
+                home_ = Geo.MilesBetween(c.City, c.State, home.City, home.State) ?? double.MaxValue
+            })
+            .Where(x => x.out_ <= reach && x.out_ < double.MaxValue && x.home_ < double.MaxValue)
+            .Where(x => toHome == null || x.home_ < toHome.Value - 25)      // real progress, not a shuffle
+            .OrderBy(x => x.c.Tier)
+            .ThenBy(x => x.home_)
+            .Take(3)
+            .ToList();
+
+        if (options.Count == 0)
+            return $"Nothing here works and home time is {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}. " +
+                   $"On {Hhmm.Of(drivable)} of driving I cannot reach anywhere closer to {st.TerminalLabel} that is worth " +
+                   "pulling a board in. Take your rest, and show me the board again when the clocks are back.";
+
+        var named = string.Join(", ", options.Select(x =>
+            $"{DispatchEngine.Place(x.c.City, x.c.State)} ({x.out_:N0} mi out, {x.home_:N0} from the yard)"));
+
+        return $"Nothing here works and home time is {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}. " +
+               $"Rather than sit on this board, check what is loading out of {named}. All of those are inside the " +
+               $"{Hhmm.Of(drivable)} you have left and every one puts you closer to {st.TerminalLabel} than you are now. " +
+               "Show me whichever board looks best and I will work from that.";
+    }
+
     public static string? BoardNote(HomeStatus st)
     {
         if (!st.Tracked || !st.DueSoon) return null;

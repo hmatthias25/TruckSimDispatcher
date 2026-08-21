@@ -557,10 +557,19 @@ app.MapPost("/api/dispatch/reject-all", (RejectRequest req) => Results.Ok(store.
 
 app.MapPost("/api/moves", (MoveRequest req) => Results.Ok(store.Mutate(s =>
 {
+    // Miles are the app's job, not the driver's. It has coordinates for both ends, so asking somebody to
+    // work out Austin to San Antonio by hand — and then judging their empty pay on what they typed — is
+    // the same mistake as asking them to convert a delivery window into hours from now.
+    var miles = req.Miles;
+    if (miles <= 0
+        && Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, req.DestCity, req.DestState)
+           is { } measured)
+        miles = Math.Round(measured, 0);
+
     var trip = req.Kind == "Maintenance"
-        ? DispatchEngine.CreateMaintenanceMove(s, req.DestCity, req.DestState, req.Miles, req.Reason)
-        : DispatchEngine.CreateEmptyMove(s, req.DestCity, req.DestState, req.Miles, req.Reason);
-    store.Log(s, "dispatch", $"{trip.Number} — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)} ({req.Miles:N0} mi): {req.Reason}", trip.Number);
+        ? DispatchEngine.CreateMaintenanceMove(s, req.DestCity, req.DestState, miles, req.Reason)
+        : DispatchEngine.CreateEmptyMove(s, req.DestCity, req.DestState, miles, req.Reason);
+    store.Log(s, "dispatch", $"{trip.Number} — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)} ({miles:N0} mi): {req.Reason}", trip.Number);
     return new { trip, snapshot = Snapshot(s) };
 })));
 
@@ -1447,6 +1456,10 @@ object Snapshot(AppState? given = null)
             networkSummary = DiscoveryService.NetworkSummary(s),
             unacknowledged = SafetyService.Unacknowledged(s),
             facilityTimes = FacilityLearning.View(s),
+            // Empty moves worth offering when the board is rejected and home time is close: the run
+            // to the yard, and markets on the way worth pulling a board from. Miles included, so the
+            // driver never types a distance the app already knows.
+            repositionOffers = HomeTime.RepositionOffers(s),
             payroll = new
             {
                 nextPaydayDay = PayEngine.NextPayday(s).Day,

@@ -265,9 +265,15 @@ public static class DispatchEngine
             return decision;
         }
 
-        decision.DispatchNotes.Add(decision.ResetWatch
-            ? $"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Reposition toward a restart location rather than chasing this board — see the reset options list."
-            : "Reposition and pull a fresh board. I would rather run empty a short distance than tie the truck to bad freight.");
+        // The board is rejected and the search has to move. Where to move it is a question the app can
+        // actually answer when home time is close, because it knows which way home is and how far the
+        // driver can legally get — so say that instead of "have a look somewhere else".
+        if (HomeTime.WhereToLookForHome(s) is { } lookThere)
+            decision.DispatchNotes.Add(lookThere);
+        else
+            decision.DispatchNotes.Add(decision.ResetWatch
+                ? $"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Reposition toward a restart location rather than chasing this board — see the reset options list."
+                : "Reposition and pull a fresh board. I would rather run empty a short distance than tie the truck to bad freight.");
 
         return decision;
     }
