@@ -1157,6 +1157,7 @@ function extractHtml() {
     <div class="tablewrap"><table>
       <thead><tr><th></th><th>Cargo</th><th>Origin</th><th>ST</th><th>Destination</th><th>ST</th>
         <th class="num">Loaded mi</th><th class="num">Revenue</th><th class="num">Deliver in</th>
+        <th class="num" title="When the receiver will take it, worked out from the window on the listing. Blank means the listing showed no opening time.">Opens in</th>
         <th class="num">Weight lb</th><th>Trailer</th><th>Read</th></tr></thead>
       <tbody>${rows.map((l, i) => {
         const missing = (l.unreadable || []);
@@ -1172,6 +1173,7 @@ function extractHtml() {
           <td><span${bad('loadedMiles')}>${cell(i, 'miles', l.loadedMiles || '', '72px')}</span></td>
           <td><span${bad('gameRevenue')}>${cell(i, 'rev', l.gameRevenue || '', '82px')}</span></td>
           <td><span${bad('deadlineHours')}>${cell(i, 'dl', l.deadlineHours ? hhmm(l.deadlineHours) : '', '72px')}</span></td>
+          <td>${cell(i, 'op', l.appointmentOpensHours ? hhmm(l.appointmentOpensHours) : '', '72px')}</td>
           <td>${cell(i, 'wt', l.weightLbs || '', '82px')}</td>
           <td>${cell(i, 'trailer', l.trailerType, '92px')}</td>
           <td>${conf(l.confidence)}${missing.length ? '<br>' + badge('bad', 'gaps') : ''}</td>
@@ -4256,6 +4258,9 @@ async function handleAction(act, d, ev) {
           destCity: sv(`x-dcity-${i}`), destState: sv(`x-dstate-${i}`),
           loadedMiles: fv(`x-miles-${i}`), gameRevenue: fv(`x-rev-${i}`),
           deadlineHours: hv(`x-dl-${i}`), weightLbs: fv(`x-wt-${i}`),
+          // The opening the reader found, so the plan waits for the gate rather than arriving early
+          // and calling the wait slack.
+          appointmentOpensHours: hvn(`x-op-${i}`) ?? (l.appointmentOpensHours || 0),
           hazmatClass: l.hazmatClass || '',
           trailerType: sv(`x-trailer-${i}`),
           shipper: l.shipper || '', receiver: l.receiver || '',

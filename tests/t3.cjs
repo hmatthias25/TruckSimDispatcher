@@ -171,6 +171,6 @@ const day = (n, hhmm = '06:00') => `2000-01-${String(n).padStart(2, '0')}T${hhmm
   check('trip moved to InTransit', t2.status === 'InTransit', t2.status);
 
   console.log(`\n${'='.repeat(52)}\n  ${passes} passed, ${fails} failed\n${'='.repeat(52)}`);
-  process.exit(fails ? 1 : 0);
-})().catch((e) => { console.error('\nHARNESS ERROR:', e.message, e.stack); process.exit(2); });
+  process.exitCode = fails ? 1 : 0;
+})().catch((e) => { console.error('\nHARNESS ERROR:', e.message, e.stack); process.exitCode = 2; });
 

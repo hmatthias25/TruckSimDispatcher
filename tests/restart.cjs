@@ -348,5 +348,5 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('ERROR', e.message); process.exit(1); });
+  process.exitCode = fail ? 1 : 0;
+})().catch((e) => { console.error('ERROR', e.message); process.exitCode = 1; });

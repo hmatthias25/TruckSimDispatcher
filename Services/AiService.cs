@@ -35,6 +35,17 @@ public class ExtractedLoad
     public double LoadedMiles { get; set; }
     public decimal GameRevenue { get; set; }
     public double DeadlineHours { get; set; }
+
+    /// <summary>
+    /// Hours from now until the receiver will take it, worked out here from the window text.
+    ///
+    /// Set by the app, never by the model: only the app has the game clock. It exists because the
+    /// opening half of a window used to be parsed and then thrown away — the reader transcribed
+    /// "6:15 AM to 12:55 PM" correctly, and the app kept the 12:55 and dropped the 6:15, which is how a
+    /// next-day window ended up planned as an arrival most of a day before anyone would unload it.
+    /// </summary>
+    public double AppointmentOpensHours { get; set; }
+
     public double WeightLbs { get; set; }
     /// <summary>ATS HazMat class off the listing, as a bare digit. Empty when nothing is placarded.</summary>
     public string HazmatClass { get; set; } = "";
@@ -589,6 +600,46 @@ public static class AiService
     /// exposes the distance arithmetic. All the judgement lives here — what parses, what stays blank,
     /// which boundaries are still ahead — and none of it needs a model to test.
     /// </summary>
+    /// <summary>
+    /// Turns one transcribed board row into the figures the app plans on.
+    ///
+    /// Split out and made public for the same reason <see cref="Interpret(AppState, HosPayload)"/> is:
+    /// this step is where the mistakes live, and it is pure arithmetic over text the model already read,
+    /// so it can be tested without a key or a network. It was not testable before, and an opening time
+    /// being silently dropped here went unnoticed until a driver was sent to deliver a day early.
+    /// </summary>
+    public static ExtractedLoad InterpretLoad(AppState state, ExtractedLoad l)
+    {
+        l.Unreadable ??= new List<string>();
+
+        // The reader reports what it saw; the subtraction is ours, because we have the clock.
+        //
+        // Read the WHOLE window, both ends. HoursUntil returns only the due time, so using it here
+        // silently discarded every opening the reader had correctly transcribed — and the opening is the
+        // half that decides whether arriving early is slack or a locked gate.
+        if (!string.IsNullOrWhiteSpace(l.DeliverByText)
+            && DeliveryWindow.Read(state, l.DeliverByText) is { } win)
+        {
+            if (l.DeadlineHours <= 0)
+            {
+                l.DeadlineHours = Math.Round(win.HoursUntilDue, 2);
+                l.Unreadable.RemoveAll(u => u.Equals("deadlineHours", StringComparison.OrdinalIgnoreCase));
+            }
+            if (win.OpensAt != null && GameClock.TryParse(state.Status.GameTime) is { } nowAt)
+                l.AppointmentOpensHours = Math.Max(0, Math.Round((win.OpensAt.Value - nowAt).TotalHours, 2));
+        }
+
+        // A window out of proportion to the run is a question, not an error — ATS is generous on short
+        // jobs. Flagging it puts it in front of the driver before it becomes the appointment they are
+        // judged against.
+        if (DeliveryWindow.Implausible(state, l.DeadlineHours, l.LoadedMiles, l.TrailerType) is { } why)
+            l.WindowWarning = why;
+
+        l.OriginState = (l.OriginState ?? "").Trim().ToUpperInvariant();
+        l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
+        return l;
+    }
+
     public static HosReading Interpret(AppState state, HosPayload raw)
     {
         raw ??= new HosPayload();
@@ -908,26 +959,7 @@ public static class AiService
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             var loads = parsed?.Loads ?? new List<ExtractedLoad>();
-            foreach (var l in loads)
-            {
-                // The reader reports what it saw; the subtraction is ours, because we have the clock.
-                if (l.DeadlineHours <= 0 && !string.IsNullOrWhiteSpace(l.DeliverByText)
-                    && DeliveryWindow.HoursUntil(state, l.DeliverByText) is { } derived)
-                {
-                    l.DeadlineHours = derived;
-                    l.Unreadable.RemoveAll(u => u.Equals("deadlineHours", StringComparison.OrdinalIgnoreCase));
-                }
-
-                // A window out of proportion to the run is a question, not an error — ATS is generous
-                // on short jobs. Flagging it puts it in front of the driver before it becomes the
-                // appointment they are judged against.
-                if (DeliveryWindow.Implausible(state, l.DeadlineHours, l.LoadedMiles, l.TrailerType) is { } why)
-                    l.WindowWarning = why;
-
-                l.OriginState = (l.OriginState ?? "").Trim().ToUpperInvariant();
-                l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
-                l.Unreadable ??= new List<string>();
-            }
+            foreach (var l in loads) InterpretLoad(state, l);
 
             return new ExtractionResult
             {

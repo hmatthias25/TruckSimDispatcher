@@ -214,5 +214,5 @@ async function board(dest, destState, miles) {
     S.views.shopOrder?.headline || '(none)');
 
   console.log(`\n${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('ERROR', e.message); process.exit(1); });
+  process.exitCode = fail ? 1 : 0;
+})().catch((e) => { console.error('ERROR', e.message); process.exitCode = 1; });

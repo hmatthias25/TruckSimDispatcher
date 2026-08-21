@@ -514,6 +514,12 @@ app.MapPost("/api/hos/undo", (HosSnapshot was) => Results.Ok(store.Mutate(s =>
 app.MapPost("/api/hos/interpret", (HosPayload payload) =>
     Results.Ok(AiService.Interpret(store.State, payload)));
 
+/// The board-reading equivalent: hand it what the model transcribed and get back the figures the app
+/// would plan on. Exposed so the conversion can be checked without a key — it is where a delivery
+/// window's opening half was being dropped.
+app.MapPost("/api/board/interpret", (List<ExtractedLoad> rows) =>
+    Results.Ok(new { loads = (rows ?? new()).Select(r => AiService.InterpretLoad(store.State, r)).ToList() }));
+
 app.MapPost("/api/dispatch/authorize", (AuthorizeRequest req) => Results.Ok(store.Mutate(s =>
 {
     var trip = DispatchEngine.Authorize(s, req.LoadId, req.Rationale, req.OverrideTight);

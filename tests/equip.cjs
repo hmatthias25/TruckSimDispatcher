@@ -107,5 +107,5 @@ async function hireAt(code, over) {
     `${S.company.equipmentStars} (expected ${low.equipmentStars})`);
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('ERR:', e.message); process.exit(2); });
+  process.exitCode = fail ? 1 : 0;
+})().catch((e) => { console.error('ERR:', e.message); process.exitCode = 2; });

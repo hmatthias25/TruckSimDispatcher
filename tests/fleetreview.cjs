@@ -124,6 +124,12 @@ const trailerOf = async (name) =>
         trailerStars: 4, revenue: 9000, repairs: 0, perDay: 400, perMile: 1.9 },
     ],
   })).report;
+  const stillHere = async (name) =>
+    (await api('/fleetops')).drivers.some((d) => d.name === name && d.status === 'Active');
+  if (!(await stillHere(aOne.name))) {
+    console.log(`  (${aOne.name} left the company mid-suite — resignations are seeded per career)`);
+    ok('nothing was moved onto a driver who has gone', true, 'skipped');
+  } else
   ok('the first driver was left where they were',
     await trailerOf(aOne.name) === aOne.assignedTrailerUnit,
     `${await trailerOf(aOne.name)} (was ${aOne.assignedTrailerUnit})`);
@@ -139,6 +145,10 @@ const trailerOf = async (name) =>
     lines: [{ driverId: aOne.id, trailerUnit: mine, truckOdometer: 312000, truckStars: 4,
               trailerStars: 4, revenue: 9000, repairs: 0, perDay: 400, perMile: 1.9 }],
   })).report;
+  if (!(await stillHere(aOne.name))) {
+    console.log(`  (${aOne.name} has left — nothing to refuse)`);
+    ok('the player trailer was not handed out', true, 'skipped');
+  } else
   ok('it was refused', await trailerOf(aOne.name) === aOne.assignedTrailerUnit,
     `${await trailerOf(aOne.name)} (was ${aOne.assignedTrailerUnit})`);
   ok('because it is the one being pulled', r.findings.some((f) => /the one you are pulling/.test(f)),

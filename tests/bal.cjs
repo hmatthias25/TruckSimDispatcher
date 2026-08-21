@@ -78,5 +78,5 @@ const head = (t) => console.log(`\n=== ${t} ===`);
   console.log('  (checked separately against the live career file)');
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('ERR:', e.message); process.exit(2); });
+  process.exitCode = fail ? 1 : 0;
+})().catch((e) => { console.error('ERR:', e.message); process.exitCode = 2; });

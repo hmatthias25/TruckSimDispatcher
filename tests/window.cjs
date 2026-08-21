@@ -244,5 +244,5 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('ERROR', e.message); process.exit(1); });
+  process.exitCode = fail ? 1 : 0;
+})().catch((e) => { console.error('ERROR', e.message); process.exitCode = 1; });

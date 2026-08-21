@@ -118,5 +118,5 @@ const addLoad = (o) => api('/board/add', 'POST', {
   ok('refused with a reason', /does not run a dedicated division/i.test(refused || ''), refused || '(allowed!)');
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('ERR:', e.message); process.exit(2); });
+  process.exitCode = fail ? 1 : 0;
+})().catch((e) => { console.error('ERR:', e.message); process.exitCode = 2; });

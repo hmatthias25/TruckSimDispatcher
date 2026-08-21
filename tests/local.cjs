@@ -92,5 +92,5 @@ const head = (t) => console.log(`\n=== ${t} ===`);
   ok('load stored with atLocation', board[0].atLocation === true, `${board[0].atLocation}`);
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('ERR:', e.message); process.exit(2); });
+  process.exitCode = fail ? 1 : 0;
+})().catch((e) => { console.error('ERR:', e.message); process.exitCode = 2; });

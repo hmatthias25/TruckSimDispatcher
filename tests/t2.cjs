@@ -98,5 +98,5 @@ const head = (t) => console.log(`\n=== ${t} ===`);
   check('Phoenix yard kept', S.company.terminals.some((t) => t.city === 'Phoenix'));
 
   console.log(`\n${'='.repeat(52)}\n  ${passes} passed, ${fails} failed\n${'='.repeat(52)}`);
-  process.exit(fails ? 1 : 0);
-})().catch((e) => { console.error('\nHARNESS ERROR:', e.message); process.exit(2); });
+  process.exitCode = fails ? 1 : 0;
+})().catch((e) => { console.error('\nHARNESS ERROR:', e.message); process.exitCode = 2; });

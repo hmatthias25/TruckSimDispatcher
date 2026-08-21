@@ -147,7 +147,7 @@ ${pass} passed, ${fail} failed`);
     JSON.stringify(a.views.equipmentOrder) === JSON.stringify(b.views.equipmentOrder));
 
   console.log(`\n${'='.repeat(50)}\n  ${pass} passed, ${fail} failed\n${'='.repeat(50)}`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('HARNESS ERROR:', e.message); process.exit(2); });
+  process.exitCode = fail ? 1 : 0;
+})().catch((e) => { console.error('HARNESS ERROR:', e.message); process.exitCode = 2; });
 
 

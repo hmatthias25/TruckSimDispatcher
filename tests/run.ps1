@@ -145,11 +145,15 @@ try {
                 ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
         }
 
-        # A suite that printed no assertions at all did not pass - it died. Count it, or a crashed
-        # suite reads as a clean zero and the total still says everything is green.
-        if ($p -eq 0 -and $f -eq 0) {
-            $f = 1
-            Write-Host "      no assertions - suite died" -ForegroundColor Red
+        # Every suite ends by printing its own "N passed, M failed". No such line means it stopped
+        # partway, and counting the assertions it managed before dying is not a pass.
+        #
+        # The zero-assertion check alone was not enough: a suite that died after seven of forty-one
+        # checks reported "7 pass 0 fail" and the run total said everything was green.
+        $summary = $text -match '(?m)^\s*\d+ passed, \d+ failed\s*$'
+        if (-not $summary) {
+            $f = [Math]::Max(1, $f)
+            Write-Host ("      DIED after {0} assertion(s) - no summary line" -f $p) -ForegroundColor Red
             $output | Select-Object -Last 6 | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkRed }
         }
         $results += [pscustomobject]@{ Suite = $suite.BaseName; Pass = $p; Fail = $f; Note = '' }

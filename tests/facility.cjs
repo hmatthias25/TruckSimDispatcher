@@ -119,5 +119,5 @@ async function runTrip({ day, events, typed }) {
   ok('status advanced on the last trip', r.audit.trip.status === 'Delivered', r.audit.trip.status);
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error('ERR:', e.message); process.exit(2); });
+  process.exitCode = fail ? 1 : 0;
+})().catch((e) => { console.error('ERR:', e.message); process.exitCode = 2; });

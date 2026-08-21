@@ -59,6 +59,43 @@ async function place(city, state, day, hm, cycle = 70, drive = 11, shift = 14) {
     ev.feasibility.appointmentOpensGameTime < ev.feasibility.dueGameTime,
     `${ev.feasibility.appointmentOpensGameTime} -> ${ev.feasibility.dueGameTime}`);
 
+  head('1b. THE SCREENSHOT PATH: both ends of the window survive the read');
+  // This is the path actually used. The reader transcribes the range; the app does the arithmetic. The
+  // opening used to be parsed here and thrown away, because the conversion called HoursUntil -- which
+  // returns the due time only. Nothing tested this step, so nothing caught it.
+  await place('Sonora', 'TX', 19, '07:00');
+  let got = (await api('/board/interpret', 'POST', [{
+    cargo: 'Steel', originCity: 'Sonora', originState: 'tx', destCity: 'DeRidder', destState: 'la',
+    loadedMiles: 509, gameRevenue: 1939, weightLbs: 19000, deadlineHours: 0,
+    deliverByText: 'Day 20 6:00 AM to 1:07 PM', trailerType: 'Flatbed', unreadable: ['deadlineHours'],
+  }])).loads[0];
+  ok('the due time was derived', got.deadlineHours > 0, `${hhmm(got.deadlineHours)} from now`);
+  ok('and the OPENING survived', got.appointmentOpensHours > 0,
+    `${hhmm(got.appointmentOpensHours)} from now`);
+  ok('the opening is earlier than the due time', got.appointmentOpensHours < got.deadlineHours,
+    `${hhmm(got.appointmentOpensHours)} vs ${hhmm(got.deadlineHours)}`);
+  ok('it is about 23 hours out, not 30', Math.abs(got.appointmentOpensHours - 23) < 0.2,
+    `${hhmm(got.appointmentOpensHours)}`);
+  ok('and deadlineHours stops being flagged unreadable',
+    !(got.unreadable || []).includes('deadlineHours'), JSON.stringify(got.unreadable));
+  ok('states are normalised on the way through', got.originState === 'TX' && got.destState === 'LA',
+    `${got.originState}/${got.destState}`);
+
+  head('1c. A same-day range still works, and a bare due time is left alone');
+  got = (await api('/board/interpret', 'POST', [{
+    cargo: 'Steel', destCity: 'Austin', destState: 'TX', loadedMiles: 200, gameRevenue: 800,
+    deliverByText: '9:00 AM to 11:30 AM', trailerType: 'Flatbed', unreadable: [],
+  }])).loads[0];
+  ok('a same-day window opens in about two hours', Math.abs(got.appointmentOpensHours - 2) < 0.2,
+    `${hhmm(got.appointmentOpensHours)}`);
+  got = (await api('/board/interpret', 'POST', [{
+    cargo: 'Steel', destCity: 'Austin', destState: 'TX', loadedMiles: 200, gameRevenue: 800,
+    deadlineHours: 9, deliverByText: '', trailerType: 'Flatbed', unreadable: [],
+  }])).loads[0];
+  ok('a countdown with no range keeps its hours', got.deadlineHours === 9, `${got.deadlineHours}`);
+  ok('and claims no opening it never saw', !got.appointmentOpensHours,
+    `${got.appointmentOpensHours}`);
+
   head('2. With no opening given, arriving a day early is not called slack');
   await api('/board/clear', 'POST', {});
   bd = await api('/board/add', 'POST', {
