@@ -97,6 +97,12 @@ public static class DispatchEngine
         var homeNote = HomeTime.BoardNote(HomeTime.Status(s));
         if (homeNote != null) decision.DispatchNotes.Add(homeNote);
 
+        // Empty miles are worked out once, at authorisation, from the reading on file. If the driver has
+        // plainly moved since their last close-out without reporting a new one, say so now — after the
+        // load is booked the figure is fixed and the warning is useless.
+        if (Repositioning.PendingReadingNote(s) is { } needsReading)
+            decision.DispatchNotes.Add(needsReading);
+
         // Hard stops that prevent ANY dispatch.
         var stops = DispatchBlockers(s, truck, trailer);
         if (stops.Count > 0)

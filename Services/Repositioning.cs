@@ -42,6 +42,37 @@ public static class Repositioning
     /// dispatch. Returns null when there is nothing to measure, which is the normal case for a first
     /// load or a driver who was already sitting at the shipper.
     /// </summary>
+    /// <summary>
+    /// Whether empty miles are about to be lost for want of an odometer reading — asked BEFORE anything
+    /// is booked.
+    ///
+    /// <see cref="Measure"/> runs when a load is authorised and never again, so a warning on the trip
+    /// afterwards tells the driver to do something that can no longer help: the load is dispatched, the
+    /// figure is fixed, and reporting the reading then changes nothing. This is the same check, put where
+    /// it can still be acted on.
+    /// </summary>
+    public static string? PendingReadingNote(AppState s)
+    {
+        var previous = s.Trips
+            .Where(t => t.EndOdometer > 0 && t.Status == "Delivered")
+            .OrderByDescending(t => GameClock.TryParse(t.DeliveredGameTime) ?? DateTime.MinValue)
+            .FirstOrDefault();
+        if (previous == null) return null;
+
+        // Only interesting when the reading has NOT moved. If it has, Measure will do its job.
+        if (Math.Abs(s.Status.AtsOdometer - previous.EndOdometer) >= 0.5) return null;
+
+        var closedAt = $"{previous.DestCity}, {previous.DestState}".Trim(' ', ',');
+        var nowAt = $"{s.Status.LocationCity}, {s.Status.LocationState}".Trim(' ', ',');
+        if (closedAt.Length == 0 || nowAt.Length == 0) return null;
+        if (closedAt.Equals(nowAt, StringComparison.OrdinalIgnoreCase)) return null;   // never left
+
+        return $"Before I book anything: you closed {previous.Number} in {closedAt} and you are standing in " +
+               $"{nowAt}, but the odometer still reads {s.Status.AtsOdometer:N0} — what it read when you closed. " +
+               "Report it on the status panel first and the empty run gets paid on this load. Authorise without " +
+               "it and those miles are gone, because I only work the repositioning out once.";
+    }
+
     public static Leg? Measure(AppState s, Trip trip, double odometerAtDispatch)
     {
         if (odometerAtDispatch <= 0) return null;

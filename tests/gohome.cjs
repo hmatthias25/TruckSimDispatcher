@@ -183,10 +183,53 @@ async function badBoard(fromCity, fromState) {
     hosDriveRemaining: 7, hosShiftRemaining: 9, hosBreakRemaining: 5, hosCycleRemaining: 40,
   });
 
+  head('5a. The ask comes BEFORE the load is booked, while it can still be acted on');
+  // Measure runs once, at authorisation. A warning on the trip afterwards tells the driver to do
+  // something that can no longer help -- the figure is already fixed. So the board says it first.
+  await api('/board/clear', 'POST', {});
+  await place('Amarillo', 'TX', 52, '07:00', 40275, 'TruckStop');
+  const preBoard = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type,
+    originCity: 'Amarillo', originState: 'TX', destCity: 'Lubbock', destState: 'TX',
+    loadedMiles: 120, deadheadMiles: 0, gameRevenue: 700, deadlineHours: 24, weightLbs: 30000,
+  });
+  const preNotes = (preBoard.dispatchNotes || []).join(' | ');
+  ok('the board asks for the reading up front', /Before I book anything/i.test(preNotes),
+    preNotes.slice(-240) || '(none)');
+  ok('it names where they closed and where they are',
+    /Wichita|closed .* in/i.test(preNotes) && /Amarillo/i.test(preNotes), '');
+  ok('and warns the miles are lost if they authorise anyway',
+    /those miles are gone|only work the repositioning out once/i.test(preNotes), '');
+
+  head('5a2. Report the reading and the ask goes away');
+  await place('Amarillo', 'TX', 52, '09:00', 40700, 'TruckStop');
+  const after = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type,
+    originCity: 'Amarillo', originState: 'TX', destCity: 'Lubbock', destState: 'TX',
+    loadedMiles: 120, deadheadMiles: 0, gameRevenue: 700, deadlineHours: 24, weightLbs: 30000,
+  });
+  const afterNotes = (after.dispatchNotes || []).join(' | ');
+  ok('nothing more is asked for', !/Before I book anything/i.test(afterNotes),
+    afterNotes.slice(-160) || '(none)');
+  const authed = await api('/dispatch/authorize', 'POST', { loadId: after.evaluations[0].load.id });
+  ok('and the empty run is on the load', authed.trip.repositionMiles === 425,
+    `${authed.trip.repositionMiles} mi (40,275 -> 40,700)`);
+  // Close it so the rest of the suite is not blocked.
+  await api(`/trips/${authed.trip.id}/complete`, 'POST', {
+    deliveredGameTime: iso(52, '13:00'), actualMiles: 120, endOdometer: 40820, actualRevenue: 700,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 3, trailerDamageAfter: 2, cargoDamagePct: 0,
+    loadingHours: 1, unloadingHours: 1, detentionHours: 0,
+    layoverDays: 0, breakdownDays: 0, extraStops: 0, tarpsUsed: 0,
+    delayReason: '', damageCause: '', notes: '',
+    locationCity: 'Lubbock', locationState: 'TX', fuelPct: 55, gameTime: iso(52, '13:00'),
+    hosDriveRemaining: 8, hosShiftRemaining: 10, hosBreakRemaining: 6, hosCycleRemaining: 45,
+  });
+
   head('5b. With the reading reported, the empty miles are paid');
   await api('/board/clear', 'POST', {});
   // Same again, but the odometer now reflects the empty run: 40115 -> 40255 is 140 mi.
-  await place('Oklahoma City', 'OK', 51, '07:00', 40415, 'Terminal');
+  await place('Oklahoma City', 'OK', 53, '07:00', 40960, 'Terminal');
   const b3 = await api('/board/add', 'POST', {
     cargo: 'Machinery', trailerType: S.trailers[0].type,
     originCity: 'Oklahoma City', originState: 'OK', destCity: 'Wichita', destState: 'KS',
