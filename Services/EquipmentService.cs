@@ -119,6 +119,11 @@ public static class EquipmentService
     /// </summary>
     public static string SwapTrailer(AppState s, string trailerUnit, bool force)
     {
+        // Hooking a different trailer is still operations' call, not the driver's — the physical checks
+        // below (it has to be here, nothing hooked to it) are about whether it is possible, not whether
+        // it is allowed.
+        Requests.GuardSelfAssignment(s, null, trailerUnit);
+
         var trailer = s.Trailers.FirstOrDefault(t => t.Unit.Equals(trailerUnit, StringComparison.OrdinalIgnoreCase))
                       ?? throw new InvalidOperationException($"Trailer {trailerUnit} is not in the fleet.");
         if (trailer.Status != "InService" && !force)

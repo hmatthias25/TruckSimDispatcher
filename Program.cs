@@ -692,6 +692,9 @@ app.MapPost("/api/fleet/trim", (TrimRequest req) => Results.Ok(store.Mutate<obje
 
 app.MapPost("/api/fleet/assign", (AssignRequest req) => Results.Ok(store.Mutate(s =>
 {
+    // A driver does not put themselves in a different truck. They ask, and they can be told no.
+    Requests.GuardSelfAssignment(s, req.TruckUnit, req.TrailerUnit);
+
     if (!string.IsNullOrWhiteSpace(req.TruckUnit))
     {
         var truck = s.Trucks.FirstOrDefault(t => t.Unit == req.TruckUnit)

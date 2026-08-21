@@ -30,6 +30,50 @@ public static class Requests
     /// It can be turned down. Noticing the newest tractor on the property does not entitle anybody to
     /// it: rank decides, and a driver-fault record counts against.
     /// </summary>
+    /// <summary>
+    /// Refuses to let the driver move themselves onto different equipment.
+    ///
+    /// A company driver does not pick their own tractor. They can <b>ask</b> — and be told no — which is
+    /// what <see cref="AskForBetterUnit"/> and the trailer request are for. Letting them assign
+    /// themselves whatever is on the property makes both of those pointless, and makes the whole ladder
+    /// pointless with them: there is no reward for clearing probation if the good unit was always one
+    /// dropdown away.
+    ///
+    /// Three things are still allowed, because none of them is the driver helping themselves:
+    /// <list type="bullet">
+    ///   <item>The first assignment of a career, when they have nothing yet.</item>
+    ///   <item>Equipment the company has already ordered them onto — an open order naming that unit.</item>
+    ///   <item>Staying where they are. Re-reporting the same unit is not a change.</item>
+    /// </list>
+    /// </summary>
+    public static void GuardSelfAssignment(AppState s, string? truckUnit, string? trailerUnit)
+    {
+        var open = EquipmentService.OpenOrder(s);
+
+        void Check(string? wanted, string? current, string kind, string ordered, string howToAsk)
+        {
+            if (string.IsNullOrWhiteSpace(wanted)) return;                       // not changing it
+            if (string.IsNullOrWhiteSpace(current)) return;                      // nothing to change from
+            if (wanted.Equals(current, StringComparison.OrdinalIgnoreCase)) return;
+            if (!string.IsNullOrWhiteSpace(ordered)
+                && wanted.Equals(ordered, StringComparison.OrdinalIgnoreCase)) return;   // the company said so
+
+            if (s.Driver.Rank == "probationary")
+                throw new InvalidOperationException(
+                    $"You do not pick your own {kind}, and you cannot ask for one while you are on probation. " +
+                    "Take what you are given until that is behind you.");
+
+            throw new InvalidOperationException(
+                $"You do not pick your own {kind} — operations does. {howToAsk} It can be turned down, and " +
+                "what you have behind you is what earns it a hearing.");
+        }
+
+        Check(truckUnit, s.Driver.AssignedTruckUnit, "tractor", open?.ToTruckUnit,
+              "Put in for one from the arrival briefing when you are at the yard.");
+        Check(trailerUnit, s.Driver.AssignedTrailerUnit, "trailer", open?.ToTrailerUnit,
+              "Ask to be re-rigged on the Career tab and it happens at your next home time.");
+    }
+
     public static (bool Granted, string Message, EquipmentOrder? Order) AskForBetterUnit(AppState s)
     {
         var current = DispatchEngine.AssignedTruck(s);

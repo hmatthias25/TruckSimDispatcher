@@ -2006,15 +2006,33 @@ function viewFleet() {
         <dt>Located</dt><dd>${esc(tr.currentLocation || '—')}</dd>
       </dl>` : '<div class="empty">No trailer assigned.</div>'}</div>
     </div>
-    <h3 class="sect">Reassign</h3>
+    ${!S.driver.assignedTruckUnit || !S.driver.assignedTrailerUnit ? `
+    <h3 class="sect">First assignment</h3>
+    <p class="hint">You have no ${!S.driver.assignedTruckUnit ? 'tractor' : 'trailer'} on file yet, so set it
+      here. After that, equipment is operations' call and changing it is a request.</p>
     <div class="grid3">
-      <label>Tractor<select id="as-truck"><option value="">(no change)</option>
-        ${S.trucks.map((x) => `<option value="${esc(x.unit)}">${esc(x.gameId || x.unit)} — ${x.year} ${esc(x.make)} ${esc(x.model)} (${esc(x.status)})</option>`).join('')}</select></label>
-      <label>Trailer<select id="as-trailer"><option value="">(no change)</option>
-        ${S.trailers.map((x) => `<option value="${esc(x.unit)}">${esc(x.gameId || x.unit)} — ${esc(x.length)} ${esc(x.type)} (${esc(x.status)})</option>`).join('')}</select></label>
-      <label style="align-self:end"><button class="btn primary wide" data-act="assign">Assign equipment</button></label>
-    </div>
-    <p class="hint">Operations normally decides equipment. Reassigning yourself is an override — it is logged.</p>
+      ${!S.driver.assignedTruckUnit ? `<label>Tractor<select id="as-truck"><option value="">(none)</option>
+        ${S.trucks.map((x) => `<option value="${esc(x.unit)}">${esc(x.gameId || x.unit)} — ${x.year} ${esc(x.make)} ${esc(x.model)} (${esc(x.status)})</option>`).join('')}</select></label>`
+        : '<input type="hidden" id="as-truck" value="">'}
+      ${!S.driver.assignedTrailerUnit ? `<label>Trailer<select id="as-trailer"><option value="">(none)</option>
+        ${S.trailers.map((x) => `<option value="${esc(x.unit)}">${esc(x.gameId || x.unit)} — ${esc(x.length)} ${esc(x.type)} (${esc(x.status)})</option>`).join('')}</select></label>`
+        : '<input type="hidden" id="as-trailer" value="">'}
+      <label style="align-self:end"><button class="btn primary wide" data-act="assign">Set equipment</button></label>
+    </div>` : `
+    <h3 class="sect">Changing your equipment</h3>
+    <div class="note">
+      <p>A company driver does not pick their own tractor or trailer &mdash; operations does. You can
+        <b>ask</b>, and the answer can be no.</p>
+      <ul style="margin:6px 0 0">
+        <li><b>A better tractor:</b> when you come in off the road, the arrival briefing names anything
+          better standing on the property and gives you a button to put in for it.</li>
+        <li><b>A different trailer:</b> ask on the Career tab. Granted, you swap at the yard on your next
+          home time like any other reassignment.</li>
+        <li><b>On probation:</b> neither, until that is behind you. That is what clearing it is for.</li>
+      </ul>
+      <p style="margin-top:6pt">Where the company has already ordered you onto something, close that
+        equipment order out and the swap goes through with it.</p>
+    </div>`}
   </div>
 
   ${terminalsHtml()}
