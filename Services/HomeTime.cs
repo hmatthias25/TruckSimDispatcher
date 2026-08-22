@@ -257,6 +257,10 @@ public static class HomeTime
         if (review is { ClearedProbation: true })
             CareerService.ClearProbation(s, force: true, note: $"Cleared on {review.Number} — {Probation.PassesToClear} good reviews in a row.");
 
+        // Off probation the reviewing carries on, just less often. Filed here for the same reason: the
+        // driver is standing at the yard, which is the only place this conversation happens.
+        PeriodicReview.ReviewOnArrival(s);
+
         ConsiderTrailerReassignment(s);
         return true;
     }
@@ -550,6 +554,20 @@ public static class HomeTime
         /// </summary>
         public bool BetterUnitAvailable { get; set; }
         public string BetterUnit { get; set; } = "";
+
+        /// <summary>
+        /// A review filed on this arrival, probationary or periodic, with the verdict and what follows.
+        ///
+        /// It used to be written to the file and nowhere else, so a driver could come in, have a review
+        /// filed on them, and drive away without knowing. A review nobody is told about is not a review.
+        /// </summary>
+        public object? Review { get; set; }
+
+        /// <summary>Set when the review just filed ended the job.</summary>
+        public bool Terminated { get; set; }
+
+        /// <summary>Advance notice of a periodic review, so it is never a surprise.</summary>
+        public string ReviewNotice { get; set; } = "";
     }
 
     /// <summary>
@@ -668,8 +686,28 @@ public static class HomeTime
         if (FleetOpsService.DueCheck(s) is { IsDue: true })
             b.Paperwork.Add("The fleet report is due. Good time to pull the hired drivers' numbers off the game.");
 
+        // ---- whatever review was filed on the way in
+        //
+        // Touch() files it just before this runs, so a review stamped with the current game time is one
+        // that happened on THIS arrival. Written to the file and nowhere else is how a driver ends up
+        // finding out weeks later that they had been reviewed.
+        var now = s.Status.GameTime;
+        if (s.PeriodicReviews.FirstOrDefault() is { } per && per.GameTime == now)
+        {
+            b.Review = per;
+            b.Terminated = per.EndsEmployment;
+        }
+        else if (s.ProbationReviews.FirstOrDefault() is { } prob && prob.GameTime == now)
+        {
+            b.Review = prob;
+        }
+
+        // And notice of the next one, so it is never a surprise — particularly once a bad one can end it.
+        b.ReviewNotice = PeriodicReview.Notice(s) ?? "";
+
         b.NothingToDo = b.Shop.All(x => x.Contains("fine at") || x.Contains("nothing needed"))
-                        && b.Equipment.Count == 0 && b.Paperwork.Count == 0;
+                        && b.Equipment.Count == 0 && b.Paperwork.Count == 0
+                        && b.Review == null && b.ReviewNotice.Length == 0;
         return b;
     }
 

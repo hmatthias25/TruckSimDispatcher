@@ -1809,6 +1809,46 @@ function paydayModal(paid) {
 }
 
 /* The brief handed over when the driver reports in at their home yard. */
+/**
+ * A review filed on the way in, and notice of the next one.
+ *
+ * This is the whole point of #64: a review used to be written to the file and nowhere else, so a driver
+ * could report in, be reviewed, and drive away not knowing. It leads the brief because it is the most
+ * consequential thing that can happen at a yard — once off probation, a bad one can end the job.
+ */
+function reviewHtml(b) {
+  const r = b.review;
+  let out = '';
+
+  if (r) {
+    const verdict = r.verdict || (r.clearedProbation ? 'Pass' : 'Fail');
+    const cls = b.terminated ? 'stop' : verdict === 'Pass' ? 'go' : 'warn';
+    const kind = r.reviewNumber && b.terminated ? 'Review'
+      : 'clearedProbation' in r ? 'Probation review' : 'Review';
+    out += `<div class="callout ${cls}">
+      <h4>${esc(kind)} ${esc(r.number || '')} — ${esc(verdict)}</h4>
+      <p><b>${esc(r.summary || '')}</b></p>
+      ${(r.strengths || []).length ? `<p class="hint" style="margin:4px 0"><b>For you:</b>
+        ${esc(r.strengths.join(' '))}</p>` : ''}
+      ${(r.concerns || []).length ? `<p style="margin:4px 0"><b>Against:</b>
+        ${esc(r.concerns.join(' '))}</p>` : ''}
+      <p class="hint" style="margin:4px 0">${num(r.loadsDelivered)} load(s),
+        ${num(r.onTimePct, 1)}% on time, ${num(r.preventableFaults)} preventable,
+        over ${num(r.daysCovered, 1)} days.</p>
+      ${r.whatNext ? `<p style="margin:6px 0 0"><b>What happens now:</b> ${esc(r.whatNext)}</p>` : ''}
+      ${r.warningIssued ? `<p style="margin:4px 0 0">${badge('bad', esc(r.warningIssued))}</p>` : ''}
+    </div>`;
+  }
+
+  // Notice of the next one. Only shown when there is no review in this brief, or it would read as a
+  // contradiction — being told one is due in the same breath as being given one.
+  if (!r && b.reviewNotice)
+    out += `<div class="callout info"><h4>Coming up</h4>
+      <p style="margin:0">${esc(b.reviewNotice)}</p></div>`;
+
+  return out;
+}
+
 function homeBriefModal(b) {
   const sec = (title, items, cls) => items && items.length
     ? `<div class="callout ${cls}"><h4>${title}</h4>
@@ -1820,6 +1860,8 @@ function homeBriefModal(b) {
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
 
     <div class="callout go"><p style="margin:0">${esc(b.headline)}</p></div>
+
+    ${reviewHtml(b)}
 
     ${b.nothingToDo ? `<div class="callout info">
       <h4>Nothing needs doing</h4>

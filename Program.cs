@@ -1494,6 +1494,10 @@ object Snapshot(AppState? given = null)
                 }).ToList(),
             countingFaults = SafetyService.CountingFaults(s).Count,
             homeTime = HomeTime.Status(s),
+            // Standing notice that a periodic review is coming, so a driver who is not at the yard still
+            // knows it is waiting for them. The popup covers the moment it happens; this covers before.
+            reviewNotice = PeriodicReview.Notice(s),
+            periodicReviews = s.PeriodicReviews.Take(10).ToList(),
             homeTimeOptions = HomeTime.Options.Select(o => new { key = o.Key, label = o.Label, days = o.Days, note = o.Note }).ToList(),
             backdrop = Backdrop(s),
             hos = HosEngine.Describe(s, truck),

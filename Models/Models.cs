@@ -59,6 +59,14 @@ public class AppState
     public List<HomeTimeRequest> HomeTimeRequests { get; set; } = new();
     /// <summary>Fortnightly reviews while on probation. Kept on the file afterwards.</summary>
     public List<ProbationReview> ProbationReviews { get; set; } = new();
+
+    /// <summary>
+    /// Reviews once probation is behind them. Newest first, same as everything else here.
+    ///
+    /// Clearing probation used to end the reviewing entirely, which is not how a company works: it stops
+    /// looking closely, it does not stop looking.
+    /// </summary>
+    public List<PeriodicReviewRecord> PeriodicReviews { get; set; } = new();
     /// <summary>Trailer types the driver has asked to be re-rigged onto.</summary>
     public List<TrailerTypeRequest> TrailerTypeRequests { get; set; } = new();
 
@@ -275,6 +283,7 @@ public class Driver
     public string LastHomeGameTime { get; set; } = "";
     /// <summary>Home times taken, for the driver file.</summary>
     public int HomeTimesTaken { get; set; }
+
 
     /// <summary>
     /// The driver is on a dedicated account: assigned to one customer, hauling their freight only.
@@ -1242,6 +1251,36 @@ public class PersonnelChange
 }
 
 /// <summary>A unit past its useful life, with the numbers behind the call.</summary>
+/// <summary>
+/// A review filed once probation is behind the driver. Roughly every sixty days, taken at the yard.
+/// </summary>
+public class PeriodicReviewRecord
+{
+    public string Number { get; set; } = "";
+    public string GameTime { get; set; } = "";
+    public string PeriodStartGameTime { get; set; } = "";
+    public double DaysCovered { get; set; }
+    public int LoadsDelivered { get; set; }
+    public double OnTimePct { get; set; }
+    public int PreventableFaults { get; set; }
+    public int ReviewNumber { get; set; }
+    public List<string> Strengths { get; set; } = new();
+    public List<string> Concerns { get; set; } = new();
+
+    /// <summary>Pass | Fail | Terminated</summary>
+    public string Verdict { get; set; } = "Pass";
+    public string Summary { get; set; } = "";
+
+    /// <summary>What happens now, in the driver's terms. Always populated.</summary>
+    public string WhatNext { get; set; } = "";
+
+    /// <summary>WrittenWarning | FinalWarning, where the review carried one. Empty otherwise.</summary>
+    public string WarningIssued { get; set; } = "";
+
+    /// <summary>True where this review ended the job.</summary>
+    public bool EndsEmployment { get; set; }
+}
+
 public class RetirementRecommendation
 {
     public string Unit { get; set; } = "";
