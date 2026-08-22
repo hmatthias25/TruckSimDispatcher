@@ -285,7 +285,29 @@ public static class SafetyService
             $"{created.Kind} on {(string.IsNullOrWhiteSpace(created.TripNumber) ? "no trip" : created.TripNumber)} — {created.Description}".Trim(),
             CorrectiveFor(level, created), created.Number, ExpiryFor(level));
         action.DriverAcknowledged = false;
+
+        // The top rung is not just a strongly worded note.
+        if (level == "Termination")
+            ApplyTermination(s, $"{action.Number}: {created.Kind} — {created.Description}", action.Number);
+
         return (created, action);
+    }
+
+    /// <summary>
+    /// Being let go off the safety ladder, with the same consequence as a failed review.
+    ///
+    /// Termination was the top rung and stopped at issuing the action. A driver fired for preventables is
+    /// employable, but not by the carriers that just read their record — so they land in front of
+    /// second-chance carriers only, same as a driver who failed two reviews.
+    /// </summary>
+    public static void ApplyTermination(AppState s, string reason, string reference)
+    {
+        if (s.Driver.TerminatedForCause) return;
+        s.Driver.TerminatedForCause = true;
+        s.Driver.TerminationReason = string.IsNullOrWhiteSpace(reason) ? reference : reason;
+        s.Driver.TerminatedGameTime = s.Status.GameTime;
+        s.Driver.Rank = "terminated";
+        s.Driver.Status = "Terminated";
     }
 
     /// <summary>What the company requires of the driver at each rung of the ladder.</summary>

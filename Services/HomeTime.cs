@@ -259,7 +259,16 @@ public static class HomeTime
 
         // Off probation the reviewing carries on, just less often. Filed here for the same reason: the
         // driver is standing at the yard, which is the only place this conversation happens.
-        PeriodicReview.ReviewOnArrival(s);
+        if (PeriodicReview.ReviewOnArrival(s) is { EndsEmployment: true } fired)
+        {
+            // The verdict said the job is over, so make it so. Without this the review announced a
+            // termination and nothing happened, which is worse than not having the rule.
+            s.Driver.TerminatedForCause = true;
+            s.Driver.TerminationReason = $"{fired.Number}: {fired.Summary}";
+            s.Driver.TerminatedGameTime = s.Status.GameTime;
+            s.Driver.Rank = "terminated";
+            s.Driver.Status = "Terminated";
+        }
 
         ConsiderTrailerReassignment(s);
         return true;

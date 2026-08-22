@@ -101,13 +101,18 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
         store.Log(s, "career", $"Home time taken at {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)}.");
     var homeBrief = wentHome ? HomeTime.ArrivalBrief(s) : null;
 
+    // Earning the ordinary market back happens on its own as the clock advances, rather than being
+    // something the driver has to remember to claim.
+    var redeemed = Redemption.CheckEarned(s);
+    if (redeemed != null) store.Log(s, "career", redeemed);
+
     // Payday is Friday. The app cannot see the game, so it settles the moment it is told the clock has
     // crossed one — and pays each Friday in turn if several have gone by.
     var paid = PayEngine.RunDuePaydays(s);
     foreach (var st in paid)
         store.Log(s, "pay", $"{st.Number} paid — ${st.Gross:N2} gross, ${st.Stub?.Net ?? st.Gross:N2} net.", st.Number);
 
-    return new { snapshot = Snapshot(s), discovery, wentHome, homeBrief, paid };
+    return new { snapshot = Snapshot(s), discovery, wentHome, homeBrief, paid, redeemed };
 })));
 
 // ---------------------------------------------------------------- discovery
@@ -1497,6 +1502,14 @@ object Snapshot(AppState? given = null)
             // Standing notice that a periodic review is coming, so a driver who is not at the yard still
             // knows it is waiting for them. The popup covers the moment it happens; this covers before.
             reviewNotice = PeriodicReview.Notice(s),
+            // Where the driver stands after being let go: which carriers will have them, and what the
+            // run back to the ordinary market still needs.
+            secondChance = new
+            {
+                applies = Carriers.NeedsSecondChance(s),
+                terminatedFor = s.Driver.TerminationReason,
+                progress = Redemption.Assess(s),
+            },
             periodicReviews = s.PeriodicReviews.Take(10).ToList(),
             homeTimeOptions = HomeTime.Options.Select(o => new { key = o.Key, label = o.Label, days = o.Days, note = o.Note }).ToList(),
             backdrop = Backdrop(s),

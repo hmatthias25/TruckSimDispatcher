@@ -125,6 +125,29 @@ async function goHome(day) {
   ok('newest first', kept.length < 2 || kept[0].reviewNumber > kept[1].reviewNumber,
     kept.map((x) => x.reviewNumber).join(', '));
 
+  head('68g. A termination lands the driver at a second-chance carrier');
+  S = un(await api('/bootstrap'));
+  ok('the driver was let go for the work', S.driver.terminatedForCause === true,
+    `${S.driver.terminatedForCause}`);
+  ok('and it says why', !!S.driver.terminationReason, (S.driver.terminationReason || '').slice(0, 110));
+  ok('rank reflects it', S.driver.rank === 'terminated', S.driver.rank);
+
+  const mkt = (await api('/market')).market;
+  ok('there is somewhere to go', mkt.length > 0, `${mkt.length} listing(s)`);
+  ok('and every carrier on offer is a second-chance outfit',
+    mkt.every((c) => /Rampart|Crossroads/.test(c.name)), mkt.map((c) => c.name).join(', '));
+  ok('none of them is a real company', mkt.every((c) => c.isRealCompany === false),
+    mkt.map((c) => `${c.name}:${c.isRealCompany}`).join(' '));
+  ok('the pay is visibly worse', mkt.every((c) => c.loadedCpm < 0.40),
+    mkt.map((c) => `${c.code} $${c.loadedCpm}`).join(', '));
+  ok('and they will take anyone', mkt.every((c) => c.takesRookies === true), 'takes rookies');
+
+  head('68h. The way back is stated, and not yet earned');
+  const sc = (await api('/bootstrap')).views.secondChance;
+  ok('the app knows this applies', sc.applies === true, `${sc.applies}`);
+  ok('it is not earned on day one', sc.progress.earned === false, `${sc.progress.earned}`);
+  ok('and it says what is still needed', !!sc.progress.summary, sc.progress.summary.slice(0, 160));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });

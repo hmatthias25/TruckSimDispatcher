@@ -28,7 +28,9 @@ public static class Carriers
         double MinYears, int MinLoads, double MinOnTime, int MaxFaults, double MaxAvgDamage,
         bool NeedsHazmat, bool NeedsTanker, bool TakesRookies, bool Specialized,
         int EquipmentStars, int HomeTimeStars, int PayStars,
-        string Blurb, string StandardsNote);
+        string Blurb, string StandardsNote,
+        // Last, with a default, so every existing entry compiles untouched.
+        bool SecondChance = false);
 
     /// <summary>
     /// Real US carriers. Names, headquarters, freight specialities and whether they run a
@@ -250,11 +252,59 @@ public static class Carriers
     /// Which roster is in play. Real carriers exist and their freight and headquarters are factual;
     /// the fictional set exists for anyone who would rather not work for a real name.
     /// </summary>
+    /// <summary>
+    /// Carriers that will take a driver nobody else will.
+    ///
+    /// Deliberately <b>fictional</b>. The real-carrier table above carries an explicit promise that
+    /// nothing in it characterises a real employer's equipment, safety or treatment of drivers, and
+    /// "this is where fired drivers go, the pay is poor and the trucks are worn out" is exactly that.
+    /// Inventing the names costs nothing and keeps that promise.
+    ///
+    /// Rough but survivable, which is the point: pay down about a third, tractors near the end of their
+    /// lives, thin freight, no say in equipment or home time. Unpleasant enough that redemption means
+    /// something, not so unpleasant that the career is over in practice.
+    /// </summary>
+    private static readonly Spec[] SecondChanceCarriers =
+    {
+        new("Rampart Freight Systems", "RFS",
+            new[] { "Dry Van", "Reefer" }, "Large",
+            "Memphis", "TN", new[] { "Laredo,TX", "Fontana,CA", "Gary,IN" },
+            0.34m, 0.24m, 0, 0, 0, 99, 100, false, false, true, false, 1, 1, 1,
+            "Takes drivers other carriers have let go, and makes no secret of why it can. The freight is " +
+            "thin and long, the tractors are high-mileage and governed low, and home time happens when the " +
+            "board allows. Run clean here for a few months and the industry will look at you again.",
+            "Hires drivers with terminations on their record. That is the business model.",
+            SecondChance: true),
+
+        new("Crossroads Carriers", "CRC",
+            new[] { "Dry Van", "Flatbed" }, "Medium",
+            "Oklahoma City", "OK", new[] { "Amarillo,TX", "Kansas City,MO" },
+            0.36m, 0.26m, 0, 0, 0, 99, 100, false, false, true, false, 1, 1, 1,
+            "A second-chance fleet out of Oklahoma City. Older equipment, backhaul-heavy lanes and pay to " +
+            "match, but they will put you in a truck when nobody else will and they do not hold the past " +
+            "against you while you are running for them.",
+            "No experience or record requirements. They hire on availability.",
+            SecondChance: true),
+    };
+
     private static Spec[] Roster(AppState s) =>
         string.Equals(s.Settings.CarrierRoster, "Fictional", StringComparison.OrdinalIgnoreCase)
             ? Fictional : RealWorld;
 
-    private static Spec[] AllSpecs => RealWorld.Concat(Fictional).ToArray();
+    private static Spec[] AllSpecs => RealWorld.Concat(Fictional).Concat(SecondChanceCarriers).ToArray();
+
+    /// <summary>
+    /// Whether this driver is only employable by a second-chance carrier.
+    ///
+    /// Being let go for the work — preventables, a failed review — is what puts somebody here. Quitting,
+    /// or being let go for anything else, does not.
+    /// </summary>
+    public static bool NeedsSecondChance(AppState s) =>
+        s.Driver.TerminatedForCause && string.IsNullOrWhiteSpace(s.Driver.RedeemedGameTime);
+
+    /// <summary>Second-chance carriers are the only ones on offer to a driver who has been let go.</summary>
+    public static bool IsSecondChance(string code) =>
+        SecondChanceCarriers.Any(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Game-days that make up one business period. Conditions are re-rolled per period.</summary>
     private const int PeriodDays = 30;
@@ -321,7 +371,13 @@ public static class Carriers
     public static List<CarrierListing> Market(AppState s, bool includeCurrent = false)
     {
         var list = new List<CarrierListing>();
-        foreach (var spec in Roster(s))
+
+        // A driver let go for the work has one kind of employer available, and it is not the ordinary
+        // market. Offering the usual roster to somebody who has just been fired would make the whole
+        // consequence decorative.
+        var roster = NeedsSecondChance(s) ? SecondChanceCarriers : Roster(s);
+
+        foreach (var spec in roster)
         {
             if (!includeCurrent && spec.Code == s.Company.Code) continue;
             var screening = Screen(s, spec);

@@ -284,6 +284,25 @@ public class Driver
     /// <summary>Home times taken, for the driver file.</summary>
     public int HomeTimesTaken { get; set; }
 
+    /// <summary>
+    /// Let go for the work — preventables, or a review that went badly twice.
+    ///
+    /// Not the same as quitting or being let go for anything else. This is what puts a driver in front of
+    /// second-chance carriers only, and it stays true until they have earned their way back.
+    /// </summary>
+    public bool TerminatedForCause { get; set; }
+
+    /// <summary>Why, in the company's words. Shown to the driver and to whoever hires them next.</summary>
+    public string TerminationReason { get; set; } = "";
+
+    /// <summary>When it happened, so the clean run that redeems them has a start.</summary>
+    public string TerminatedGameTime { get; set; } = "";
+
+    /// <summary>
+    /// When a second-chance stint earned the ordinary market back. Empty while still proving it.
+    /// </summary>
+    public string RedeemedGameTime { get; set; } = "";
+
 
     /// <summary>
     /// The driver is on a dedicated account: assigned to one customer, hauling their freight only.
