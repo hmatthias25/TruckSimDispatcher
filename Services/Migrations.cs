@@ -20,6 +20,7 @@ public static class Migrations
 
         RebaseGameCalendar(s);
         MatchGameDayNumbering(s);
+        ClearSafetyRecordWrittenUnderOldRules(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -36,6 +37,52 @@ public static class Migrations
         FlagImplausibleWindows(s);
         EnsureCarrierStanding(s);
         EnsureFleetStars(s);
+    }
+
+    /// <summary>
+    /// Clears the safety record, once, because it was written under rules that were wrong.
+    ///
+    /// Every late delivery used to file an incident — non-preventable ones included — and each one
+    /// restarted the clean-work counter, so a driver could never work anything off. On top of that a
+    /// single late load could reach a written warning, and some of those loads were only late because of
+    /// bugs since fixed. The result is a record that describes the app's mistakes rather than the
+    /// driver's, and there is nothing in it worth keeping.
+    ///
+    /// So: incidents, discipline and the late flags on delivered trips all go. The driver starts clean,
+    /// and the next thing that genuinely is their fault starts at coaching. Trips keep everything else —
+    /// pay, miles, times, settlements — because none of that was wrong.
+    /// </summary>
+    private static void ClearSafetyRecordWrittenUnderOldRules(AppState s)
+    {
+        if (s.SchemaVersion >= 3) return;
+        s.SchemaVersion = 3;
+
+        var incidents = s.Incidents.Count;
+        var actions = s.Discipline.Count;
+        var lateTrips = s.Trips.Count(t => t.ServiceResult == "Late");
+
+        s.Incidents.Clear();
+        s.Discipline.Clear();
+
+        // The late flags too. Loads that were never actually late are still marked so, and the on-time
+        // percentage those flags feed is what a review judges.
+        foreach (var t in s.Trips.Where(t => t.ServiceResult == "Late"))
+        {
+            t.ServiceResult = "OnTime";
+            t.DelayFault = "";
+        }
+
+        if (incidents + actions + lateTrips == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            GameTime = s.Status.GameTime,
+            Channel = "career",
+            Message = $"Safety record cleared: {incidents} incident(s), {actions} disciplinary action(s) and " +
+                      $"{lateTrips} late flag(s) removed. They were recorded under rules that punished a single " +
+                      "late load like a pattern, and some of those loads were only late because of faults in this " +
+                      "app. You start clean; the next thing that is genuinely yours starts at coaching."
+        });
     }
 
     /// <summary>

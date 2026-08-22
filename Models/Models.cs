@@ -10,6 +10,7 @@ public class AppState
     /// <list type="bullet">
     ///   <item><b>1</b> — day numbers were one ahead of the game's.</item>
     ///   <item><b>2</b> — day numbers match the game.</item>
+    ///   <item><b>3</b> — safety record cleared; it was written under rules that were wrong.</item>
     /// </list>
     ///
     /// This has to be the default on a fresh <see cref="AppState"/> rather than a flag set during
@@ -19,7 +20,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 2;
+    public const int Current = 3;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -726,6 +727,15 @@ public class Trip
     public string Status { get; set; } = "Authorized";
     /// <summary>OnTime | Late | NotApplicable</summary>
     public string ServiceResult { get; set; } = "NotApplicable";
+
+    /// <summary>
+    /// Who was at fault for a late delivery: Driver, Dispatcher, Mechanical, Unavoidable, GameLimitation.
+    ///
+    /// Kept on the trip so the pattern can be read off the run of work rather than off the incident
+    /// list. Counting incidents was the mistake: a driver whose lateness was nobody's fault still
+    /// collected records, and every record restarted the clean-work counter.
+    /// </summary>
+    public string DelayFault { get; set; } = "";
 
     public string Cargo { get; set; } = "";
     public string Division { get; set; } = "";

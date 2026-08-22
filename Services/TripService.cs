@@ -644,46 +644,88 @@ public static class TripService
         }
 
         // ---- safety record
-        if (late && fault == "Driver")
+        //
+        // Whose fault it was goes on the trip, so the pattern can be read off the work rather than off a
+        // pile of incident records. That distinction is the whole fix here: the app used to file an
+        // incident for EVERY late delivery, non-preventable ones included, and every incident restarted
+        // the clean-work counter — so a driver nobody blamed still looked like they had just started.
+        trip.DelayFault = late ? fault : "";
+
+        if (late && fault != "Driver")
         {
-            var (inc, action) = SafetyService.FileAndDecide(s, new Incident
-            {
-                Kind = "Late",
-                TripNumber = trip.Number,
-                GameTime = trip.DeliveredGameTime,
-                Description = $"Late delivery on {trip.Number} — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}. {req.DelayReason}".Trim(),
-                FaultAttribution = "Driver",
-                Severity = "Moderate",
-                Preventable = true,
-                LocationCity = trip.DestCity,
-                LocationState = trip.DestState
-            });
-            audit.IncidentNumber = inc.Number;
-            audit.DisciplineRecommendation = action?.Level;
+            // Not the driver's doing. Recorded on the trip and on the books, and nowhere else: no
+            // incident, no record to work off, nothing to age.
+            audit.ServiceFindings.Add(fault == "Dispatcher"
+                ? "Logged against dispatch, not you. No incident, nothing on your record, and it does not " +
+                  "count toward anything — I put you on a run that would not go."
+                : $"Logged as {Humanize(fault)}. Non-preventable, so there is no incident and nothing on your record.");
         }
         else if (late)
         {
-            audit.ServiceFindings.Add(fault == "Dispatcher"
-                ? "Logged as a dispatcher-caused service failure. It does not touch your record."
-                : $"Logged as {Humanize(fault)} — non-preventable, no effect on your record.");
-            SafetyService.RecordIncident(s, new Incident
+            // The driver's own. One is a bad day; a pattern is a different matter, and only a pattern
+            // reaches discipline. Strikes are counted over the last ten loads, so clean work walks them off.
+            var strikes = SafetyService.LateStrikes(s);
+            var window = SafetyService.LateStrikeWindow;
+            var needed = SafetyService.LateStrikesBeforeDiscipline;
+
+            if (strikes < needed)
             {
-                Kind = "Late",
-                TripNumber = trip.Number,
-                GameTime = trip.DeliveredGameTime,
-                Description = $"Late delivery on {trip.Number}. {req.DelayReason}".Trim(),
-                FaultAttribution = fault,
-                Severity = "Minor",
-                Preventable = false,
-                LocationCity = trip.DestCity,
-                LocationState = trip.DestState
-            });
+                audit.ServiceFindings.Add(
+                    $"Late, and down to you. That is {strikes} in your last {window} loads — noted on the file and " +
+                    $"nothing more. It takes {needed} before it becomes a safety matter, and {window} clean loads " +
+                    "clears the count.");
+                SafetyService.RecordIncident(s, new Incident
+                {
+                    Kind = "Late",
+                    TripNumber = trip.Number,
+                    GameTime = trip.DeliveredGameTime,
+                    Description = $"Late delivery on {trip.Number} — {trip.Cargo} to " +
+                                  $"{DispatchEngine.Place(trip.DestCity, trip.DestState)}. {req.DelayReason}".Trim(),
+                    FaultAttribution = "Driver",
+                    Severity = "Minor",
+                    // Noted, not held against them. Below the pattern threshold this is a diary entry.
+                    Preventable = false,
+                    LocationCity = trip.DestCity,
+                    LocationState = trip.DestState
+                });
+            }
+            else
+            {
+                var (inc, action) = SafetyService.FileAndDecide(s, new Incident
+                {
+                    Kind = "Late",
+                    TripNumber = trip.Number,
+                    GameTime = trip.DeliveredGameTime,
+                    Description = $"Late delivery on {trip.Number} — {trip.Cargo} to " +
+                                  $"{DispatchEngine.Place(trip.DestCity, trip.DestState)}. " +
+                                  $"{strikes} driver-fault late deliveries in the last {window} loads. {req.DelayReason}".Trim(),
+                    FaultAttribution = "Driver",
+                    Severity = "Moderate",
+                    Preventable = true,
+                    LocationCity = trip.DestCity,
+                    LocationState = trip.DestState
+                });
+                audit.IncidentNumber = inc.Number;
+                audit.DisciplineRecommendation = action?.Level;
+                audit.ServiceFindings.Add(
+                    $"That is {strikes} late in your last {window} loads, all down to you. One is a bad day; this is " +
+                    $"a pattern, so it goes on the record. {window} clean loads clears the count.");
+            }
         }
 
         var damageJump = trip.TruckDamageAfter - trip.TruckDamageBefore;
         if (damageJump >= 10)
         {
             var (dmgFault, dmgWhy) = AttributeDamage(req, damageJump);
+
+            // Damage nobody could have avoided still costs the company money, so it is recorded — but it
+            // is not a mark against the driver, and saying what to do about it is more use than a
+            // penalty. AI traffic driving into a parked truck is the case this exists for.
+            if (dmgFault != "Driver")
+                audit.ServiceFindings.Add(
+                    $"{damageJump:0.#}% of damage, logged as {Humanize(dmgFault)} — not your fault and not on your " +
+                    "record. Get it into a shop before the next load: damage left on a unit comes back as more " +
+                    "damage, and it is the company's bill either way. Book it on the Maintenance tab.");
             var (inc, dmgAction) = SafetyService.FileAndDecide(s, new Incident
             {
                 Kind = "Damage",
@@ -1186,7 +1228,9 @@ public static class TripService
         if (Mentions(reason, "overslept", "slept", "stopped", "forgot", "parked", "late start", "took my time"))
             return ("Driver", "Driver-preventable. The plan had adequate slack and it was not used.");
 
-        return ("Driver", $"Driver-preventable by default: the load was authorized with {Hhmm.Of(f?.SlackHours)} of slack and the plan was sound. If there is more to it, tell me and I will re-attribute it.");
+        return ("Driver", $"Driver-preventable by default: the load was authorized with {Hhmm.Of(f?.SlackHours)} of slack " +
+                          "and the plan was sound. If that is not the whole story, say whose fault it was on the " +
+                          "close-out — there is a box for it, and anything other than yours leaves your record alone.");
     }
 
     private static bool Mentions(string text, params string[] words) => words.Any(text.Contains);

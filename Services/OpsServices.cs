@@ -133,6 +133,34 @@ public static class SafetyService
     private static readonly string[] Ladder =
         { "Coaching", "WrittenWarning", "FinalWarning", "EquipmentDowngrade", "Suspension", "Termination" };
 
+    /// <summary>Driver-fault late deliveries it takes, inside the window, before discipline starts.</summary>
+    public const int LateStrikesBeforeDiscipline = 3;
+
+    /// <summary>How many recent loads the strikes are counted over. Clean work walks them off.</summary>
+    public const int LateStrikeWindow = 10;
+
+    /// <summary>
+    /// Driver-fault late deliveries among the last <see cref="LateStrikeWindow"/> loads.
+    ///
+    /// One late load is a bad day. Three in ten is a pattern, and only a pattern is worth disciplining
+    /// over — the app was reaching a written warning off a single one, for a load that was late because
+    /// of a bug in the app itself.
+    ///
+    /// Counted off the trips rather than the incident list, so lateness nobody blamed the driver for
+    /// leaves no trace here at all.
+    /// </summary>
+    public static int LateStrikes(AppState s)
+    {
+        var recent = s.Trips
+            .Where(t => t.Status == "Delivered" && t.Kind == "Freight")
+            .OrderByDescending(t => GameClock.TryParse(t.DeliveredGameTime) ?? DateTime.MinValue)
+            .Take(LateStrikeWindow)
+            .ToList();
+
+        return recent.Count(t => t.ServiceResult == "Late"
+                                 && t.DelayFault.Equals("Driver", StringComparison.OrdinalIgnoreCase));
+    }
+
     public static Incident RecordIncident(AppState s, Incident inc)
     {
         var code = string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code;
@@ -170,10 +198,17 @@ public static class SafetyService
             .ToList();
     }
 
-    /// <summary>Clean loads still needed before an incident stops counting. 0 = already clear.</summary>
+    /// <summary>
+    /// Clean loads still needed before an incident stops counting. 0 = already clear.
+    ///
+    /// Only ever asked about an incident that actually counts. A non-preventable one is not something
+    /// to work off — it never counted — and treating it as one is what made a driver look like they had
+    /// run two clean loads when they had run a dozen.
+    /// </summary>
     public static int LoadsToAgeOff(AppState s, Incident inc)
     {
         if (!string.IsNullOrWhiteSpace(inc.ForgivenGameTime)) return 0;
+        if (inc.FaultAttribution != "Driver" || !inc.Preventable) return 0;
         if (inc.AgesOffAfterLoads <= 0) return 0;
         var loadsNow = s.Trips.Count(t => t.Status == "Delivered");
         return Math.Max(0, inc.AgesOffAfterLoads - (loadsNow - inc.LoadCountAtIncident));

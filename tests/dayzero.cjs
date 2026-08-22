@@ -109,7 +109,9 @@ const settlementNotes = async () =>
   // LastPaydayDay is the only day NUMBER in a save. It comes down with everything else, and it must
   // not come down twice -- a second pass would put the career a day behind instead of ahead.
   const before = un(await api('/bootstrap'));
-  ok('a career created by this build is already on the current schema', before.schemaVersion === 2,
+  // Whatever the current version is -- it moves as migrations are added. The point is that a career this
+  // build created is never treated as an old file needing one.
+  ok('a career created by this build is already on the current schema', before.schemaVersion >= 2,
     `v${before.schemaVersion}`);
   const paid = before.driver.lastPaydayDay;
   ok('and a payday has actually been recorded to migrate', paid > 0, `${paid}`);

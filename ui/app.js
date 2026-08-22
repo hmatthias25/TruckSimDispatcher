@@ -1479,7 +1479,19 @@ function viewActive() {
         </div>
       </fieldset>
       <label>If anything delayed you, what happened?
-        <input id="c-delay" placeholder="e.g. closed for construction east of Ely — operations decides fault, not you"></label>
+        <input id="c-delay" placeholder="e.g. closed for construction east of Ely"></label>
+      <label>Whose fault was it?
+        <select id="c-fault">
+          <option value="">Let dispatch work it out from the plan and what you wrote</option>
+          <option value="Dispatcher">Dispatch — I was booked on something that would not go</option>
+          <option value="Unavoidable">Nobody's — traffic, weather, a dock that held me</option>
+          <option value="Mechanical">The equipment</option>
+          <option value="GameLimitation">The game — a crash, a bug, a reload</option>
+          <option value="Driver">Mine</option>
+        </select></label>
+      <p class="hint">Honour system, and it settles it: anything other than <b>Mine</b> means nothing
+        attaches to your record. Left on the first option, dispatch judges it from the slack the load was
+        booked with and the words you used &mdash; which meant guessing which words worked.</p>
       <label>If the equipment took damage, how?
         <input id="c-dmgcause" placeholder="e.g. blew a steer recap · deer strike · AI traffic spawned into me"></label>
       <label>Notes<input id="c-notes" placeholder="optional"></label>
@@ -4408,7 +4420,8 @@ async function handleAction(act, d, ev) {
         unloadAlreadyRan: $('c-unloadran')?.checked === true,
         releasedGameTime: releasedIso(),
         layoverDays: fv('c-lay'), breakdownDays: fv('c-bd'), extraStops: fv('c-stops'), tarpsUsed: fv('c-tarps'),
-        delayReason: sv('c-delay'), damageCause: sv('c-dmgcause'), notes: sv('c-notes'),
+        delayReason: sv('c-delay'), faultOverride: sv('c-fault'),
+        damageCause: sv('c-dmgcause'), notes: sv('c-notes'),
         locationKind: 'Receiver', fuelPct: fv('c-fuelpct'), gameTime: readDayTime('c-time'),
         hosDriveRemaining: hvn('c-hdrive'), hosShiftRemaining: hvn('c-hshift'),
         hosBreakRemaining: hvn('c-hbreak'), hosCycleRemaining: hvn('c-hcycle'),
