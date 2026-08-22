@@ -46,6 +46,14 @@ public class ExtractedLoad
     /// </summary>
     public double AppointmentOpensHours { get; set; }
 
+    /// <summary>
+    /// True when the distance was worked out from the map because the listing did not show one.
+    ///
+    /// Surfaced so the driver can see which figure is a transcription and which is the app's own —
+    /// a measured road distance is close but not identical to what ATS quotes.
+    /// </summary>
+    public bool MilesDerived { get; set; }
+
     public double WeightLbs { get; set; }
     /// <summary>ATS HazMat class off the listing, as a bare digit. Empty when nothing is placarded.</summary>
     public string HazmatClass { get; set; } = "";
@@ -627,6 +635,19 @@ public static class AiService
             }
             if (win.OpensAt != null && GameClock.TryParse(state.Status.GameTime) is { } nowAt)
                 l.AppointmentOpensHours = Math.Max(0, Math.Round((win.OpensAt.Value - nowAt).TotalHours, 2));
+        }
+
+        // Loaded miles come back blank often enough to matter, and most often off a facility's own list —
+        // ATS does not print a distance there the way the city board does, so there is nothing to read.
+        // The app has coordinates for both ends, so it can answer its own question rather than staging a
+        // load with no distance that the board then refuses.
+        if (l.LoadedMiles <= 0
+            && Geo.MilesBetween(l.OriginCity, l.OriginState, l.DestCity, l.DestState) is { } measured
+            && measured > 0)
+        {
+            l.LoadedMiles = Math.Round(measured, 0);
+            l.Unreadable.RemoveAll(u => u.Equals("loadedMiles", StringComparison.OrdinalIgnoreCase));
+            l.MilesDerived = true;
         }
 
         // A window out of proportion to the run is a question, not an error — ATS is generous on short

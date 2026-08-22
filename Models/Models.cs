@@ -1617,6 +1617,19 @@ public class AppSettings
     public double HookHours { get; set; } = 0.4;
 
     /// <summary>
+    /// Trailer types that must be <b>live loaded</b> even when the load comes off a facility's own board.
+    ///
+    /// Dry vans and reefers come hooked to a loaded trailer and no time passes — that is the whole
+    /// drop-and-hook case. A flatbed does not: the cargo has to be put on and secured, so the driver
+    /// drives to a loading spot and waits, and the clock moves.
+    ///
+    /// A list rather than a rule because the game is the authority and only flatbeds are confirmed.
+    /// Everything else is assumed drop-and-hook until somebody actually runs one, at which point adding
+    /// a word here is the whole fix.
+    /// </summary>
+    public List<string> LiveLoadTrailerTypes { get; set; } = new() { "Flatbed" };
+
+    /// <summary>
     /// How much 14-hour window a load should still have in hand once the driver is empty at the
     /// receiver. Below this the load is flagged before it is accepted: if the dock holds them even a
     /// little, the window closes while they are on the property and they cannot legally move the truck.

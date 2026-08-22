@@ -162,6 +162,28 @@ function gt(v) {
   return `Day ${dayOf(v)} · ${timeOf(v)}`;
 }
 
+/**
+ * Whether freight can be offered where the truck is standing.
+ *
+ * A shipper or a receiver is a company with loads going out. A truck stop, a rest area, the road or your
+ * own yard is not — there is nothing AT those places, only in the city around them. Offering the local
+ * board there invites entering a list that does not exist.
+ */
+function atCustomer() {
+  return S?.status?.locationKind === 'Shipper' || S?.status?.locationKind === 'Receiver';
+}
+
+/**
+ * Keeps the board stage honest when the truck moves.
+ *
+ * The stage is a UI variable, so a driver who picked the local board at a receiver and then reported in
+ * from a truck stop would still be entering loads flagged as offered where they are standing. Nothing
+ * is offered at a truck stop, so the stage goes back to the city board on its own.
+ */
+function fixBoardStage() {
+  if (BOARD_STAGE === 'local' && !atCustomer()) BOARD_STAGE = 'city';
+}
+
 /** A paired day-number + time-of-day input. */
 function dayTimeInput(idPrefix, iso, label) {
   return `<label>${esc(label)}
@@ -537,6 +559,7 @@ let PRIV = { summary: '' };   // freight-selection authority for the current ran
 
 function render() {
   if (!S || !S.onboarded) return;
+  fixBoardStage();
   const v = S.views;
   PRIV = v.privileges || { summary: '' };
 
@@ -749,8 +772,8 @@ function viewDispatch() {
           <span class="sub">One row per job you can see in ATS.</span></div>
 
         <div class="row-actions" style="margin:0 0 10px">
-          <button class="btn ${BOARD_STAGE === 'local' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="local">
-            Jobs at this location</button>
+          ${atCustomer() ? `<button class="btn ${BOARD_STAGE === 'local' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="local">
+            Jobs at this location</button>` : ''}
           <button class="btn ${BOARD_STAGE === 'city' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="city">
             Full city board</button>
         </div>

@@ -284,6 +284,17 @@ public static class DispatchEngine
         return decision;
     }
 
+    /// <summary>
+    /// Whether this trailer type has to be loaded at a dock even off a facility's own board.
+    ///
+    /// Flatbeds do: the cargo is put on and secured while the clock runs. Vans and reefers do not. The
+    /// list is a setting, because the game decides this and only flatbeds are confirmed.
+    /// </summary>
+    public static bool LiveLoaded(AppState s, string? trailerType) =>
+        !string.IsNullOrWhiteSpace(trailerType)
+        && (s.Settings.LiveLoadTrailerTypes ?? new List<string>())
+            .Any(x => x.Equals(trailerType, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Things that must be answered before ANY load can be authorized.</summary>
     /// <summary>
     /// Whether the board failed purely on hours.
@@ -536,7 +547,10 @@ public static class DispatchEngine
         // A pre-loaded trailer is a hook, not a load. Planning a two-hour live load against something ATS
         // hands over already loaded costs the driver hours they were never going to spend, and can refuse
         // a load that is comfortably legal.
-        var pickupHours = load.PreLoaded ? Math.Max(0, s.Settings.HookHours) : dock.Loading;
+        // Pre-loaded is a claim about the trailer, not about the board. A flatbed taken off a facility's
+        // own list still has to be loaded and secured — so the tick does not buy a hook time for it.
+        var hookable = load.PreLoaded && !LiveLoaded(s, load.TrailerType);
+        var pickupHours = hookable ? Math.Max(0, s.Settings.HookHours) : dock.Loading;
 
         e.Feasibility = HosEngine.Plan(s, new PlanRequest
         {
@@ -877,8 +891,13 @@ public static class DispatchEngine
             TrailerUnit = trailer?.Unit ?? "",
             TruckDamageBefore = Math.Max(truck?.DamagePct ?? 0, s.Status.TruckDamagePct),
             TrailerDamageBefore = Math.Max(trailer?.DamagePct ?? 0, s.Status.TrailerDamagePct),
-            LoadingHours = load.PreLoaded ? Math.Max(0, s.Settings.HookHours) : s.Settings.DefaultLoadingHours,
-            PreLoaded = load.PreLoaded,
+            LoadingHours = load.PreLoaded && !LiveLoaded(s, load.TrailerType)
+                ? Math.Max(0, s.Settings.HookHours)
+                : s.Settings.DefaultLoadingHours,
+            // Only recorded as pre-loaded where it really was a hook. A flatbed off a facility board was
+            // live loaded whatever the driver ticked, and the trip has to say so or the dock learning
+            // excludes a load that taught it something real.
+            PreLoaded = load.PreLoaded && !LiveLoaded(s, load.TrailerType),
             UnloadingHours = s.Settings.DefaultUnloadingHours,
             ExtraStops = load.ExtraStops,
             IsHazmat = load.IsHazmat,
