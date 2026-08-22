@@ -1129,13 +1129,36 @@ app.MapPost("/api/maintenance/writeoff", (WriteOffRequest req) => Results.Ok(sto
 // ---------------------------------------------------------------- safety
 
 // Filing an incident produces a decision, not a form. The driver reports; the company decides.
-app.MapPost("/api/incidents", (Incident inc) => Results.Ok(store.Mutate(s =>
+app.MapPost("/api/incidents", (Incident inc) => Results.Ok(store.Mutate<object>(s =>
 {
+    // Damage reported with the incident goes on the truck first, because whether the tractor survives is
+    // read off that figure and the driver has just told us what it is.
+    var truck = DispatchEngine.AssignedTruck(s);
+    if (inc.TruckDamagePctAfter >= 0 && truck != null)
+    {
+        truck.DamagePct = Math.Clamp(inc.TruckDamagePctAfter, 0, 100);
+        s.Status.TruckDamagePct = truck.DamagePct;
+    }
+
     var (created, action) = SafetyService.FileAndDecide(s, inc);
     store.Log(s, "safety", $"{created.Number} {created.Kind} ({created.FaultAttribution} fault): {created.Description}", created.Number);
     if (action != null)
         store.Log(s, "safety", $"{action.Number} {action.Level} issued on {created.Number}.", action.Number);
-    return new { incident = created, action, snapshot = Snapshot(s) };
+
+    // A tractor past the write-off line is not a shop job, and nobody goes looking for a repair estimate
+    // after putting a truck in a ditch — so it is said here, where they reported it.
+    List<string>? writeOff = null;
+    if (TotalLoss.Pending(s) is { } wrecked)
+    {
+        // Order the replacement before writing the steps, so they can name it.
+        TotalLoss.OrderReplacement(s, wrecked);
+        writeOff = TotalLoss.Steps(s, wrecked);
+        store.Log(s, "maintenance",
+            $"Unit {wrecked.Ref} written off in {created.Number} — {wrecked.DamagePct:0.#}%. Dispatch held until it is replaced.",
+            wrecked.Unit);
+    }
+
+    return new { incident = created, action, writeOff, snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/incidents/{number}/forgive", (string number, ForgiveRequest req) => Results.Ok(store.Mutate(s =>
@@ -1522,6 +1545,11 @@ object Snapshot(AppState? given = null)
             reviewNotice = PeriodicReview.Notice(s),
             // Where the driver stands after being let go: which carriers will have them, and what the
             // run back to the ordinary market still needs.
+            // Steps for a tractor that is finished, so they are in front of the driver rather than behind
+            // a shop estimate nobody thinks to ask for.
+            writeOff = TotalLoss.Pending(s) is { } wreck
+                ? new { unit = wreck.Ref, damagePct = wreck.DamagePct, steps = TotalLoss.Steps(s, wreck) }
+                : null,
             careerOver = s.Driver.CareerOver
                 ? new { over = true, reason = s.Driver.CareerOverReason, at = s.Driver.CareerOverGameTime }
                 : null,

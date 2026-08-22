@@ -443,6 +443,9 @@ public static class DispatchEngine
         // "no dispatch authority" is true but tells the driver nothing about why.
         if (CareerOverBlocker(s) is { } finished) return new List<string> { finished };
 
+        // Same again for a tractor that is finished: one reason, and everything else is beside the point.
+        if (TotalLoss.Blocker(s) is { } wrecked) return new List<string> { wrecked };
+
         // No window left to work a dock is the same kind of answer: a single reason that makes every
         // other check beside the point, and one the driver can act on without reading a board.
         if (NoWindowToWorkBlocker(s, trailer) is { } noWindow) return new List<string> { noWindow };

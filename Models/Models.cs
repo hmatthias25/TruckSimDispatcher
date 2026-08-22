@@ -1137,6 +1137,15 @@ public class Incident
     public string LocationCity { get; set; } = "";
     public string LocationState { get; set; } = "";
     public string DisciplineNumber { get; set; } = "";
+
+    /// <summary>
+    /// Tractor damage after the event, as the driver reads it off the game.
+    ///
+    /// Reported here because this is where somebody says what happened to the truck. It is what decides
+    /// whether the tractor is repairable — and that question has nothing to do with fault, which only
+    /// changes the deductible and the record.
+    /// </summary>
+    public double TruckDamagePctAfter { get; set; } = -1;
     /// <summary>
     /// Clean loads that must pass before this stops counting against hiring. Scaled by severity —
     /// a scraped mirror is not a rollover. It stays on the record for ever either way; ageing off
