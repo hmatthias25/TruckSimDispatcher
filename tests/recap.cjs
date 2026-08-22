@@ -90,8 +90,15 @@ async function board(dest, destState, miles) {
   ok('told to wait for midnight instead', /Do not take the 34/.test(d.rationale), d.rationale.slice(0, 130));
 
   head('4b. And recap can make a load runnable that otherwise is not');
+  // The window has to cover the dock work before any of this matters. Recap returns CYCLE, not the
+  // 14-hour clock, so a driver with an hour left is resting first whatever recap is about to give back —
+  // that is the dock rule, and it is separate from the recap-versus-restart question this section is
+  // about. Give them a window that can work a dock so the recap advice is what is being tested.
   await stand({ kind: 'Terminal', time: '20:00' });
-  S = un(await clocks(1, 1, 2, [{ hours: 11, inDays: 1 }]));
+  // Enough window to work the dock -- below that the board is refused outright and none of this is
+  // reached -- but not enough to finish the run, so the plan takes a ten. That reset crosses midnight,
+  // which is when recap lands, and the plan picks the hours up rather than demanding a 34.
+  S = un(await clocks(3, 3, 20, [{ hours: 11, inDays: 1 }]));
   d = await board('Salt Lake City', 'UT', 500);
   ok('the plan uses the recap rather than a restart', !!d.authorizedLoadId, d.headline);
   const plan = d.evaluations[0].feasibility;

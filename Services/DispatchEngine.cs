@@ -295,6 +295,41 @@ public static class DispatchEngine
         && (s.Settings.LiveLoadTrailerTypes ?? new List<string>())
             .Any(x => x.Equals(trailerType, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// Whether there is any point showing a board at all, given the window left.
+    ///
+    /// Every load starts with dock work — a live load is hours, a hook is minutes — and a driver has to
+    /// get off the customer's property afterwards. Below that, nothing on any board is runnable, and
+    /// asking the driver to type in two pages of freight so the app can reject all of it wastes their
+    /// evening and, where they are pasting screenshots, their API budget too.
+    ///
+    /// Measured against the learned dock time for the trailer they are pulling, because that is what the
+    /// next load will actually cost them: a flatbed live load is not a van hook.
+    /// </summary>
+    public static string? NoWindowToWorkBlocker(AppState s, Trailer? trailer)
+    {
+        var shift = s.Hos.ShiftRemaining;
+        var rules = s.Settings.Hos;
+
+        // Out of hours entirely is a different message, and a better one — it explains the ten against
+        // the thirty-four and clears the board. The line between them is whether the driver could still
+        // legally drive to parking: below that they cannot do anything at all, which is the out-of-hours
+        // case; above it they can move but cannot work a dock, which is this one.
+        var canReachParking = Math.Max(0, s.Settings.ParkingBufferHours);
+        if (shift <= canReachParking + 0.01) return null;
+
+        var dock = FacilityLearning.For(s, trailer?.Type);
+        var needed = Math.Max(s.Settings.HookHours, dock.Loading) + Math.Max(0, s.Settings.ParkingBufferHours);
+        if (shift >= needed) return null;
+
+        return $"You have {Hhmm.Of(shift)} of your {rules.ShiftLimit:0.#}-hour window left. Loading " +
+               $"{(trailer?.Type ?? "a trailer").ToLowerInvariant()} freight takes about {Hhmm.Of(dock.Loading)} " +
+               $"and you still have to get off their property afterwards, so there is nothing on any board " +
+               $"you could legally start. Do not bother pulling the job list — find a truck stop, take your " +
+               $"{rules.OffDutyReset:0.#}, and report in tomorrow with a fresh clock. I will have freight for " +
+               "you then.";
+    }
+
     /// <summary>The career is over; there is no freight and no market. Checked before anything else.</summary>
     private static string? CareerOverBlocker(AppState s) =>
         s.Driver.CareerOver
@@ -407,6 +442,10 @@ public static class DispatchEngine
         // Nothing moves for a career that has ended, and the reason has to be the first thing said —
         // "no dispatch authority" is true but tells the driver nothing about why.
         if (CareerOverBlocker(s) is { } finished) return new List<string> { finished };
+
+        // No window left to work a dock is the same kind of answer: a single reason that makes every
+        // other check beside the point, and one the driver can act on without reading a board.
+        if (NoWindowToWorkBlocker(s, trailer) is { } noWindow) return new List<string> { noWindow };
 
         var stops = new List<string>();
         var m = s.Settings.Maintenance;

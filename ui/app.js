@@ -169,6 +169,17 @@ function gt(v) {
  * own yard is not — there is nothing AT those places, only in the city around them. Offering the local
  * board there invites entering a list that does not exist.
  */
+/**
+ * The one blocker that means "do not even look at the board".
+ *
+ * Everything else is a reason a particular load will not go. This is a reason no load will, and it is
+ * worth pulling out of the list because acting on it saves the driver typing in two pages of freight —
+ * and, where they paste screenshots, an API call per board that was never going to produce a load.
+ */
+function noWindowToWork() {
+  return (S?.views?.dispatchBlockers || []).find((b) => /Do not bother pulling the job list/i.test(b)) || '';
+}
+
 function atCustomer() {
   return S?.status?.locationKind === 'Shipper' || S?.status?.locationKind === 'Receiver';
 }
@@ -771,7 +782,12 @@ function viewDispatch() {
           <div class="spacer"></div>
           <span class="sub">One row per job you can see in ATS.</span></div>
 
-        <div class="row-actions" style="margin:0 0 10px">
+        ${noWindowToWork() ? `<div class="callout stop">
+          <h4>Do not pull the board</h4>
+          <p style="margin:0">${esc(noWindowToWork())}</p>
+        </div>` : ''}
+
+        <div class="row-actions" style="margin:0 0 10px"${noWindowToWork() ? ' hidden' : ''}>
           ${atCustomer() ? `<button class="btn ${BOARD_STAGE === 'local' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="local">
             Jobs at this location</button>` : ''}
           <button class="btn ${BOARD_STAGE === 'city' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="city">

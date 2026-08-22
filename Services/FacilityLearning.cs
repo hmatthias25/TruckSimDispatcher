@@ -24,8 +24,12 @@ public static class FacilityLearning
         {
             ["Reefer"] = (3.0, 3.0),
             ["Dry Van"] = (1.5, 1.5),
-            ["Flatbed"] = (1.0, 1.0),
-            ["Step Deck"] = (1.0, 1.0),
+            // Reported from play at around two hours: a flatbed is not dropped and hooked, the cargo goes
+            // on and gets strapped and sometimes tarped, and the driver waits through it. The seed
+            // matters more than it used to now that a short window refuses the board outright — under-
+            // estimating it would let through exactly the load this is meant to stop.
+            ["Flatbed"] = (2.0, 1.5),
+            ["Step Deck"] = (2.0, 1.5),
             ["Lowboy"] = (1.5, 1.5),
             ["Tanker"] = (2.0, 2.0),
             ["Car Hauler"] = (2.5, 2.5),

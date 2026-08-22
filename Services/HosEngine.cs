@@ -11,6 +11,15 @@ public class HosTask
     public double Miles { get; set; }
     /// <summary>The drop itself, which cannot start before the receiver opens.</summary>
     public bool IsUnload { get; set; }
+
+    /// <summary>
+    /// Work done on a customer's property: loading or unloading.
+    ///
+    /// It matters because this kind of task <b>cannot be split by a ten-hour reset</b>. Nobody loads for
+    /// forty minutes, sleeps on the dock, and finishes in the morning — the driver either has the window
+    /// to do the whole job or they go and rest before they start it.
+    /// </summary>
+    public bool AtDock { get; set; }
 }
 
 public class PlanRequest
@@ -106,7 +115,10 @@ public static class HosEngine
             });
 
         if (req.LoadingHours > 0)
-            tasks.Add(new HosTask { Label = "Hook / load", Kind = "OnDuty", Hours = req.LoadingHours });
+            // A hook is a few minutes and can be done on the last of a window; a live load cannot. Both
+            // are dock work, and the planner refuses to split either around a reset.
+            tasks.Add(new HosTask { Label = "Hook / load", Kind = "OnDuty", Hours = req.LoadingHours,
+                                    AtDock = true });
 
         // Fuel stops planned across the loaded leg.
         var fuelStops = FuelStopsNeeded(s, totalMiles, req.UsableFuelRangeMiles);
@@ -144,7 +156,8 @@ public static class HosEngine
             tasks.Add(new HosTask { Label = $"Intermediate stop {i + 1}", Kind = "OnDuty", Hours = 0.5 });
 
         if (req.UnloadingHours > 0)
-            tasks.Add(new HosTask { Label = "Unload / drop", Kind = "OnDuty", Hours = req.UnloadingHours, IsUnload = true });
+            tasks.Add(new HosTask { Label = "Unload / drop", Kind = "OnDuty", Hours = req.UnloadingHours,
+                                    IsUnload = true, AtDock = true });
 
         return tasks;
     }
@@ -250,6 +263,48 @@ public static class HosEngine
                 if (cycle > before)
                     result.Warnings.Add($"Recap returns {Hhmm.Of(cycle - before)} to the cycle after the reset on {clock:ddd MMM d} (driver-reported projection).");
             }
+        }
+
+        /// <summary>
+        /// Takes the ten before starting work at a dock, going somewhere that will have you if needed.
+        ///
+        /// A customer's lot is not a rest area. Some will let a truck sit and most will not, which the
+        /// app already models for an early appointment — the same applies here, and it costs the hop out
+        /// and back.
+        /// </summary>
+        void RestBeforeDock(HosTask task)
+        {
+            var shortBy = task.Hours - shift;
+            var where = task.IsUnload ? "the receiver" : "the shipper";
+
+            if (req.ReceiverAllowsOvernight)
+            {
+                result.Warnings.Add(
+                    $"You have {Hhmm.Of(shift)} of window and {where} needs {Hhmm.Of(task.Hours)} — " +
+                    $"{Hhmm.Of(shortBy)} short. They will let you sit, so take the " +
+                    $"{rules.OffDutyReset:0.#} on their property first and start fresh.");
+                TakeReset();
+                return;
+            }
+
+            var hop = Facilities.RepositionHoursEachWay;
+            result.Warnings.Add(
+                $"You have {Hhmm.Of(shift)} of window and {where} needs {Hhmm.Of(task.Hours)} — you cannot " +
+                $"start that, let alone finish it and get off their lot. Run to a truck stop, take your " +
+                $"{rules.OffDutyReset:0.#}, and come back to it with a full window. That is about " +
+                $"{Hhmm.Of(hop * 2)} of driving either side plus the reset, and it is the only legal way to " +
+                "do this load.");
+
+            drive = Math.Max(0, drive - hop); shift = Math.Max(0, shift - hop);
+            cycle = Math.Max(0, cycle - hop);
+            if (requireBreak) brk = Math.Max(0, brk - hop);
+            Step("Reposition to a truck stop — no window left to work the dock", "Drive", hop, 0);
+
+            TakeReset();
+
+            drive -= hop; shift -= hop; cycle = Math.Max(0, cycle - hop);
+            if (requireBreak) brk -= hop;
+            Step($"Back to {where}", "Drive", hop, 0);
         }
 
         void TakeRestart()
@@ -367,6 +422,19 @@ public static class HosEngine
                 }
                 else
                 {
+                    // Work at a dock is indivisible. Splitting it around a ten-hour reset is how this
+                    // planner came to call a two-hour flatbed load legal on forty-six minutes of window:
+                    // it loaded for forty-six minutes, slept on the customer's property, and finished in
+                    // the morning. Nobody does that, and no receiver would allow it.
+                    //
+                    // So if the window will not cover the whole job, the rest happens BEFORE it starts.
+                    var notStarted = Math.Abs(remaining - task.Hours) < Eps;
+                    if (task.AtDock && notStarted && task.Hours > Eps && shift + Eps < task.Hours && cycle > Eps)
+                    {
+                        RestBeforeDock(task);
+                        continue;
+                    }
+
                     var cap = Min(shift, cycle, remaining);
                     if (cap <= Eps)
                     {
