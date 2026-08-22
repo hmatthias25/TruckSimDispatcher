@@ -337,8 +337,7 @@ public static class EquipmentService
     /// screen and given a date, that date is real and gets used. Otherwise the wait is on the event: they
     /// report in when the trailer turns up.
     /// </summary>
-    private static string? ReportedReturn(HiredDriver d) =>
-        string.IsNullOrWhiteSpace(d.TrailerDueBackGameTime) ? null : d.TrailerDueBackGameTime;
+    private static string? ReportedReturn(HiredDriver d) => null;
 
     private static uint StableHash(string text)
     {

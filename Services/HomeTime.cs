@@ -368,11 +368,9 @@ public static class HomeTime
         {
             msg += $" The {next.ToLowerInvariant()} we have is out under {holder.Name}, so there may be a wait at the " +
                    "yard — plan your home time around it rather than sitting on top of it.";
-            // No length on it. The app knows who has the trailer, not where they are.
-            msg += string.IsNullOrWhiteSpace(holder.TrailerDueBackGameTime)
-                ? " I cannot tell you how long: nothing you report tells me where a hired driver is. If your company " +
-                  "screen gives you a date, put it on their record and I will work to it."
-                : $" You have them down as due back around {GameClock.Pretty(holder.TrailerDueBackGameTime)}.";
+            // What the player last told us about where that driver is heading. Rough by nature, and
+            // enough to say whether the trailer is worth waiting for.
+            msg += " " + Whereabouts.Describe(s, holder);
         }
         else
             msg += " Should be one on the property, so it ought to be a straight swap.";
@@ -577,6 +575,15 @@ public static class HomeTime
 
         /// <summary>Advance notice of a periodic review, so it is never a surprise.</summary>
         public string ReviewNotice { get; set; } = "";
+
+        /// <summary>
+        /// Hired drivers holding a company trailer whose whereabouts are worth asking about.
+        ///
+        /// Asked here because this is the one moment the player is at the yard with the company screen in
+        /// front of them, and because the answer only ever decides one thing: whether a trailer they might
+        /// be re-rigged onto is worth waiting for.
+        /// </summary>
+        public List<object> AskWhereabouts { get; set; } = new();
     }
 
     /// <summary>
@@ -714,9 +721,24 @@ public static class HomeTime
         // And notice of the next one, so it is never a surprise — particularly once a bad one can end it.
         b.ReviewNotice = PeriodicReview.Notice(s) ?? "";
 
+        // Anybody out with a company trailer whose position we have nothing recent on.
+        foreach (var d in Whereabouts.WorthAsking(s))
+        {
+            var box = s.Trailers.FirstOrDefault(x => x.Unit == d.AssignedTrailerUnit);
+            b.AskWhereabouts.Add(new
+            {
+                driverId = d.Id,
+                driver = d.Name,
+                trailer = box?.Ref ?? d.AssignedTrailerUnit,
+                trailerType = box?.Type ?? "",
+                known = Whereabouts.Assess(s, d).Text,
+            });
+        }
+
         b.NothingToDo = b.Shop.All(x => x.Contains("fine at") || x.Contains("nothing needed"))
                         && b.Equipment.Count == 0 && b.Paperwork.Count == 0
-                        && b.Review == null && b.ReviewNotice.Length == 0;
+                        && b.Review == null && b.ReviewNotice.Length == 0
+                        && b.AskWhereabouts.Count == 0;
         return b;
     }
 

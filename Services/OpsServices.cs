@@ -302,6 +302,25 @@ public static class SafetyService
     /// </summary>
     public static void ApplyTermination(AppState s, string reason, string reference)
     {
+        // Let go BY the second chance. There is nowhere after this — a driver with two terminations for
+        // the work, the second from the outfit that exists to take drivers with one, is done. Said
+        // plainly rather than leaving them applying to a market that will not answer.
+        if (s.Driver.TerminatedForCause
+            && string.IsNullOrWhiteSpace(s.Driver.RedeemedGameTime)
+            && Carriers.IsSecondChance(s.Company.Code)
+            && !s.Driver.CareerOver)
+        {
+            s.Driver.CareerOver = true;
+            s.Driver.CareerOverGameTime = s.Status.GameTime;
+            s.Driver.CareerOverReason =
+                $"Let go by {s.Company.Name}, which is where drivers go after a termination. " +
+                (string.IsNullOrWhiteSpace(reason) ? reference : reason) +
+                " There is no carrier after this one. The record stays on file; a new career starts clean.";
+            s.Driver.Rank = "terminated";
+            s.Driver.Status = "Terminated";
+            return;
+        }
+
         if (s.Driver.TerminatedForCause) return;
         s.Driver.TerminatedForCause = true;
         s.Driver.TerminationReason = string.IsNullOrWhiteSpace(reason) ? reference : reason;

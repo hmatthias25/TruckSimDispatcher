@@ -372,6 +372,10 @@ public static class Carriers
     {
         var list = new List<CarrierListing>();
 
+        // Nobody is hiring. Two terminations for the work, the second from the carrier that exists to
+        // take drivers with one, and the industry is done with them.
+        if (s.Driver.CareerOver) return list;
+
         // A driver let go for the work has one kind of employer available, and it is not the ordinary
         // market. Offering the usual roster to somebody who has just been fired would make the whole
         // consequence decorative.
@@ -497,7 +501,11 @@ public static class Carriers
         var minLoads = (int)Math.Round(spec.MinLoads * cond.LoadsFactor);
         var minOnTime = Math.Clamp(spec.MinOnTime + cond.OnTimeShift, 0, 100);
 
-        if (!cond.Hiring)
+        // A second-chance carrier is always hiring. Being the place that takes drivers nobody else will
+        // is the entire business model, and a freight downturn closing the only door available to a
+        // terminated driver would leave them with nowhere to go and no way back — which is not a
+        // consequence, it is a dead end the app walked them into.
+        if (!cond.Hiring && !spec.SecondChance)
         {
             d.Hired = false;
             d.Decision = $"{spec.Name} — not hiring";
@@ -563,8 +571,14 @@ public static class Carriers
         if (totalLoads >= 5 && stats.AvgDamagePerTrip > spec.MaxAvgDamage)
             fails.Add($"Damage standard is {spec.MaxAvgDamage:0.#} points a trip; you average {stats.AvgDamagePerTrip:0.##}.");
 
-        if (s.Driver.Status == "Terminated")
+        // A termination follows a driver everywhere EXCEPT the carriers that exist to look past one.
+        // Refusing them there too would make the second chance unreachable, which is the opposite of
+        // the point — and would leave a terminated driver stuck with no employer and no way back.
+        if (s.Driver.Status == "Terminated" && !spec.SecondChance)
             fails.Add("You were terminated by your last carrier. That follows you.");
+        else if (s.Driver.Status == "Terminated" && spec.SecondChance)
+            notes.Add("They know about the termination and will take you anyway. That is what they do, and " +
+                      "it is why the pay looks like it does.");
 
         // Refusing their bread-and-butter freight is disqualifying; refusing a side division is not.
         if (app != null)

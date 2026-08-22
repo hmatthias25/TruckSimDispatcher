@@ -1849,6 +1849,40 @@ function reviewHtml(b) {
   return out;
 }
 
+/**
+ * Asks where the hired drivers are with the company's trailers.
+ *
+ * Only asked here, because this is the one moment the player is standing at the yard with the ATS company
+ * screen available — and the answer decides exactly one thing: whether a trailer they might be re-rigged
+ * onto is worth waiting for. A direction is all anybody can honestly give, so a direction is all it asks
+ * for; the city is optional and only sharpens the estimate.
+ */
+function whereaboutsHtml(b) {
+  const ask = b.askWhereabouts || [];
+  if (!ask.length) return '';
+  return `<div class="callout info">
+    <h4>Where are the trailers?</h4>
+    <p>Have a look at the company screen while you are here. I only need a direction — it decides whether
+      a trailer is worth sitting at the yard for.</p>
+    ${ask.map((a) => `<div style="margin:8px 0;padding-top:6px;border-top:1px solid var(--line)">
+      <p style="margin:0 0 4px"><b>${esc(a.driver)}</b> has ${esc(a.trailer)}
+        ${a.trailerType ? `(${esc(a.trailerType)})` : ''}</p>
+      <p class="hint" style="margin:0 0 6px">${esc(a.known)}</p>
+      <div class="grid3">
+        <label>Heading<select id="wa-dir-${esc(a.driverId)}">
+          <option value="Unknown">No idea</option>
+          <option value="Inbound">Toward a yard</option>
+          <option value="Outbound">Away from the yard</option>
+        </select></label>
+        <label>City (optional)<input id="wa-city-${esc(a.driverId)}" placeholder="e.g. Denver"></label>
+        <label>State<input id="wa-state-${esc(a.driverId)}" class="up" maxlength="2" placeholder="CO"></label>
+      </div>
+      <div class="row-actions"><button class="btn tiny" data-act="whereabouts"
+        data-id="${esc(a.driverId)}">Tell dispatch</button></div>
+    </div>`).join('')}
+  </div>`;
+}
+
 function homeBriefModal(b) {
   const sec = (title, items, cls) => items && items.length
     ? `<div class="callout ${cls}"><h4>${title}</h4>
@@ -1862,6 +1896,7 @@ function homeBriefModal(b) {
     <div class="callout go"><p style="margin:0">${esc(b.headline)}</p></div>
 
     ${reviewHtml(b)}
+    ${whereaboutsHtml(b)}
 
     ${b.nothingToDo ? `<div class="callout info">
       <h4>Nothing needs doing</h4>
@@ -2621,6 +2656,10 @@ function fleetOpsHtml() {
           and for their equipment the <b>star rating</b> — plus the truck's odometer. Those are the numbers
           the game gives for people and units you are not sitting in, so those are the numbers operations
           judges on. Leave wages blank to use the driver's agreed share.</p>
+        <p class="hint">Utilisation comes off the ATS <b>Trailer Manager</b> — the percentage of the past
+          week that box was in use. It is what decides whether a trailer is worth keeping; a trailer nobody
+          is using is not earning its place. Where a driver is with a trailer is asked when you report in
+          at the yard, not here.</p>
         <p class="hint">There is no damage percentage to read for a hired driver's truck or trailer, so
           nothing here asks for one. Condition is stars: five is a fresh unit, and
           <b>${num(S.settings.maintenance.truckReplaceStars, 0)} stars or under</b> is where the company
@@ -2642,7 +2681,7 @@ function fleetOpsHtml() {
             <th class="num" title="Tractor odometer as shown in game">Odometer</th>
             <th title="Which trailer this driver is on. Pick from the ones in their garage — setting it here re-rigs them onto it.">Trailer</th>
             <th class="num" title="Trailer condition in stars. Stars are all ATS shows for a trailer somebody else is pulling.">Trailer &starf;</th>
-            <th title="Optional. If your company screen says when they are back with the trailer, put it here — the app cannot see it and will not guess.">Due back</th>
+            <th class="num" title="Utilisation from the ATS Trailer Manager: the percentage of the past week the trailer was in use. An idle box is a candidate to sell.">Util %</th>
             <th class="num">Revenue $</th>
             <th class="num">Wages $ (blank = share)</th><th class="num">Repairs $</th></tr></thead>
           <tbody>${drivers.filter((d) => d.status === 'Active').map((d) => {
@@ -2664,7 +2703,8 @@ function fleetOpsHtml() {
             <td style="white-space:nowrap">${trailerPickHtml(d, tl)}</td>
             <td><input id="fr-lstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
                   value="${tl?.stars || ''}" placeholder="—"></td>
-            <td>${dayTimeInput('fr-due-' + d.id, d.trailerDueBackGameTime || '', '')}</td>
+            <td><input id="fr-util-${esc(d.id)}" type="number" step="1" min="0" max="100" style="width:74px"
+                  value="${tl && tl.utilisationPct >= 0 ? Math.round(tl.utilisationPct) : ''}" placeholder="—"></td>
             <td><input id="fr-rev-${esc(d.id)}" type="number" step="1" min="0" value="0"></td>
             <td><input id="fr-wage-${esc(d.id)}" type="number" step="0.01" min="0" placeholder="auto"></td>
             <td><input id="fr-rep-${esc(d.id)}" type="number" step="0.01" min="0" value="0"></td>
@@ -4297,6 +4337,16 @@ async function handleAction(act, d, ev) {
     /* ---- screenshot import */
     case 'shot-del': SHOTS.splice(+d.i, 1); return render();
     case 'shots-clear': SHOTS = []; EXTRACT = null; return render();
+    case 'whereabouts': return run(async () => {
+      const r = await api('/fleetops/whereabouts', 'POST', {
+        driverId: d.id,
+        direction: sv(`wa-dir-${d.id}`) || 'Unknown',
+        city: sv(`wa-city-${d.id}`), state: sv(`wa-state-${d.id}`),
+      });
+      absorb(r);
+      toast(r.estimate?.text || 'Noted.', r.estimate?.worthWaiting ? 'ok' : '');
+    });
+
     case 'hosread-drop': HOSREAD = null; HOSWAS = null; return render();
 
     case 'hosread-undo':
@@ -4678,7 +4728,7 @@ async function handleAction(act, d, ev) {
         // reading IS the mileage, and the app does the subtraction.
         truckStars: fv('fr-tstar-' + x.id), truckOdometer: fv('fr-odo-' + x.id),
         trailerStars: fv('fr-lstar-' + x.id),
-        trailerDueBackGameTime: readDayTime('fr-due-' + x.id),
+        trailerUtilisationPct: fvn(`fr-util-${x.id}`) ?? -1,
         revenue: fv('fr-rev-' + x.id),
         wages: fv('fr-wage-' + x.id), repairs: fv('fr-rep-' + x.id),
       })).filter((l) => l.revenue > 0 || l.repairs > 0 || l.perDay > 0 || l.perMile > 0

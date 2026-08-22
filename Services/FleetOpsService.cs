@@ -239,9 +239,14 @@ public static class FleetOpsService
             // the period: a trend needs the history, a decision needs the latest.
             if (line.Level > 0) driver.Level = line.Level;
             if (line.Rating > 0) driver.Rating = line.Rating;
-            // A due-back date only if the player gave one. Never derived, never guessed.
-            if (!string.IsNullOrWhiteSpace(line.TrailerDueBackGameTime))
-                driver.TrailerDueBackGameTime = line.TrailerDueBackGameTime;
+            // Utilisation, straight off the Trailer Manager. Recorded on the trailer rather than the
+            // driver, because it is a fact about the box.
+            if (line.TrailerUtilisationPct >= 0
+                && s.Trailers.FirstOrDefault(x => x.Unit == line.TrailerUnit) is { } utilTrailer)
+            {
+                utilTrailer.UtilisationPct = Math.Clamp(line.TrailerUtilisationPct, 0, 100);
+                utilTrailer.UtilisationReportedGameTime = report.PeriodEndGame;
+            }
 
             driver.Periods.Insert(0, new DriverPeriodResult
             {
@@ -907,6 +912,11 @@ public static class FleetOpsService
 
             var starsGone = tr.Stars > 0 && tr.Stars <= m.TrailerReplaceStars;
 
+            // Utilisation off the game's own Trailer Manager: what share of the week the box worked. A
+            // trailer nobody is using is not earning its place, and this is the first honest measure of
+            // that the app has had.
+            var idle = tr.UtilisationPct >= 0 && tr.UtilisationPct < m.TrailerLowUtilisationPct;
+
             double? ageYears = null;
             if (now != null && GameClock.TryParse(tr.AcquiredGameTime) is { } got)
                 ageYears = (now.Value - got).TotalDays / 365.0;
@@ -927,13 +937,24 @@ public static class FleetOpsService
                 unproductive = fleetDay > 0 && latest.PerDay < fleetDay * 0.7m;
             }
 
-            if (!starsGone && !(old && unproductive)) continue;
+            // Three ways a trailer earns a recommendation, and two of them need a second reason. Condition
+            // alone is the company's stated line. Age or idleness alone is a quiet fortnight, not a
+            // verdict — so they have to pair with something.
+            var idleAndOld = idle && old;
+            var idleAndQuiet = idle && unproductive;
+            if (!starsGone && !(old && unproductive) && !idleAndOld && !idleAndQuiet) continue;
 
             var evidence = new List<string>();
-            var reason = starsGone ? "condition" : "age and production";
+            var reason = starsGone ? "condition"
+                : idleAndOld ? "age and utilisation"
+                : idleAndQuiet ? "utilisation and production"
+                : "age and production";
 
             if (starsGone)
                 evidence.Add($"Down to {tr.Stars:0.#} stars — at or under our {m.TrailerReplaceStars:0.#}-star line.");
+            if (idle)
+                evidence.Add($"Utilisation {tr.UtilisationPct:0.#}% of the week, against the " +
+                             $"{m.TrailerLowUtilisationPct:0}% we want to see. It is not earning its place on the yard.");
             if (ageYears is { } yrs)
                 evidence.Add($"About {yrs:0.#} years in the fleet.");
             if (old && unproductive)

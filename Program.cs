@@ -983,6 +983,24 @@ app.MapPost("/api/trips/{id}/window", (string id, WindowFixRequest req) => Resul
     return new { snapshot = Snapshot(s), message };
 })));
 
+/// Where a hired driver is with the company trailer, as the player last saw it. Asked when they report
+/// in at the yard, because that is the moment it matters and the only moment they are looking at the
+/// company screen anyway.
+app.MapPost("/api/fleetops/whereabouts", (WhereaboutsRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var d = s.HiredDrivers.FirstOrDefault(x => x.Id == req.DriverId)
+            ?? throw new InvalidOperationException("No such driver on the roster.");
+
+    d.TrailerWhereabouts = req.Direction is "Inbound" or "Outbound" or "Unknown" ? req.Direction : "Unknown";
+    d.TrailerHeadingCity = (req.City ?? "").Trim();
+    d.TrailerHeadingState = (req.State ?? "").Trim().ToUpperInvariant();
+    d.TrailerWhereaboutsGameTime = s.Status.GameTime;
+
+    var estimate = Whereabouts.Assess(s, d);
+    store.Log(s, "career", $"{d.Name}: {estimate.Text}");
+    return new { estimate, snapshot = Snapshot(s) };
+})));
+
 app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mutate(s =>
 {
     var filed = FleetOpsService.FileReport(s, report);
@@ -1504,6 +1522,9 @@ object Snapshot(AppState? given = null)
             reviewNotice = PeriodicReview.Notice(s),
             // Where the driver stands after being let go: which carriers will have them, and what the
             // run back to the ordinary market still needs.
+            careerOver = s.Driver.CareerOver
+                ? new { over = true, reason = s.Driver.CareerOverReason, at = s.Driver.CareerOverGameTime }
+                : null,
             secondChance = new
             {
                 applies = Carriers.NeedsSecondChance(s),
@@ -1689,6 +1710,9 @@ record ApplyCalibration(decimal? OverheadPerLoad, decimal? FuelPricePerGal, doub
 record MoveRequest(string Kind, string DestCity, string DestState, double Miles, string Reason);
 record CancelRequest(string Reason, string Fault, bool ChargeCompany);
 record NoteRequest(string? Notes, string? SafetyNotes, string? FaultAttribution);
+
+/// Where a hired driver appears to be with the company's trailer. The direction is the honest part.
+record WhereaboutsRequest(string DriverId, string Direction, string? City, string? State);
 record AssignRequest(string? TruckUnit, string? TrailerUnit, bool Force);
 record CompleteWoRequest(decimal Cost, double DamageAfter, string Vendor, string PaidBy, string Notes);
 record WriteOffRequest(string Unit, bool DriverFault, decimal ScrapRecovery, string? Notes);

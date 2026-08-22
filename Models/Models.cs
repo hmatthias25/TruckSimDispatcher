@@ -303,6 +303,20 @@ public class Driver
     /// </summary>
     public string RedeemedGameTime { get; set; } = "";
 
+    /// <summary>
+    /// The career is finished — let go by the carrier that was the second chance.
+    ///
+    /// One bad stretch is recoverable and two are not, which is the whole point of the second chance
+    /// being a real one. Nothing here deletes anything: the file stays readable so the driver can see how
+    /// it went, and starting again is an explicit choice rather than something the app does to them.
+    /// </summary>
+    public bool CareerOver { get; set; }
+
+    /// <summary>Why it ended, in the company's words.</summary>
+    public string CareerOverReason { get; set; } = "";
+
+    public string CareerOverGameTime { get; set; } = "";
+
 
     /// <summary>
     /// The driver is on a dedicated account: assigned to one customer, hauling their freight only.
@@ -546,6 +560,17 @@ public class Trailer
     /// </summary>
     public double Stars { get; set; }
     public string StarsReportedGameTime { get; set; } = "";
+
+    /// <summary>
+    /// Utilisation as last reported off the game: the percentage of the week the box was working.
+    ///
+    /// ATS reports this in the Trailer Manager, so it is a reading rather than a derivation. Negative
+    /// means never reported. It is the basis for deciding a trailer is not worth keeping, which is a
+    /// question the app previously had no honest way to answer.
+    /// </summary>
+    public double UtilisationPct { get; set; } = -1;
+
+    public string UtilisationReportedGameTime { get; set; } = "";
 
     /// <summary>
     /// When this trailer joined the fleet. Trailers carry no odometer, so age is the only independent
@@ -1185,7 +1210,22 @@ public class HiredDriver
     /// fortnightly report carries a location or an ETA. It used to invent one — a seeded one-to-four
     /// days printed as a fact — which is exactly the fabrication this app refuses everywhere else.
     /// </summary>
-    public string TrailerDueBackGameTime { get; set; } = "";
+    /// <summary>
+    /// Roughly where this driver is with the company's trailer, as the player last saw it.
+    ///
+    /// Inbound | Outbound | Unknown. The honest limit of what anybody can tell from the ATS company
+    /// screen — a direction and somewhere they are heading — which is enough to say whether a trailer is
+    /// worth waiting for. It replaces a due-back date, which was asked for on a fleet review line and
+    /// was the wrong question in the wrong place.
+    /// </summary>
+    public string TrailerWhereabouts { get; set; } = "";
+
+    /// <summary>Where they appear to be heading, if the player could tell. City, state.</summary>
+    public string TrailerHeadingCity { get; set; } = "";
+    public string TrailerHeadingState { get; set; } = "";
+
+    /// <summary>Game time the whereabouts were reported, so a stale answer can be treated as stale.</summary>
+    public string TrailerWhereaboutsGameTime { get; set; } = "";
 
     /// <summary>
     /// On notice after a bad period. A carrier does not sack someone over one weak fortnight — it says
@@ -1578,10 +1618,17 @@ public class FleetReportLine
     /// <summary>Trailer condition in stars. Trailers have no odometer, so there is nothing else to read.</summary>
     public double TrailerStars { get; set; }
     /// <summary>
-    /// When this driver is due back at the yard, if the game tells the player. Optional — the app has no
-    /// way to work it out and will not guess, so blank simply means the wait is on the event instead.
+    /// Trailer utilisation, as ATS reports it: the percentage of the past week the trailer was in use.
+    ///
+    /// A real readable figure from the Trailer Manager, and a far better basis for retiring a trailer
+    /// than anything the app had. Low utilisation means the box is not earning — a candidate to sell and
+    /// re-rig onto whatever the lanes are actually asking for. Negative means not reported.
+    ///
+    /// Replaces a due-back time that used to be asked for here, which made no sense on a review line: it
+    /// was a question about where somebody is right now, asked in the wrong place. It is asked when the
+    /// driver reports in at the yard instead — see <see cref="HiredDriver.TrailerWhereabouts"/>.
     /// </summary>
-    public string TrailerDueBackGameTime { get; set; } = "";
+    public double TrailerUtilisationPct { get; set; } = -1;
 
     [Obsolete("ATS shows no damage percentage for an AI-driven tractor. Kept so older careers still load.")]
     public double DamagePctAfter { get; set; }
@@ -1887,6 +1934,15 @@ public class MaintenanceThresholds
     /// still earning is fine — but old and unproductive together is.
     /// </summary>
     public double TrailerOldYears { get; set; } = 8;
+
+    /// <summary>
+    /// Utilisation below which a trailer is a candidate to sell, as a percentage of the week.
+    ///
+    /// A box working a third of the time is not earning its place. Paired with something else — age, or
+    /// condition — the same way a truck needs two reasons, because a quiet fortnight is not a reason to
+    /// sell a good trailer.
+    /// </summary>
+    public double TrailerLowUtilisationPct { get; set; } = 35;
 
     /// <summary>
     /// Percent chance that a tractor replacing a hired driver's worn-out one goes to the <b>player</b>

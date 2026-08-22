@@ -295,6 +295,13 @@ public static class DispatchEngine
         && (s.Settings.LiveLoadTrailerTypes ?? new List<string>())
             .Any(x => x.Equals(trailerType, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>The career is over; there is no freight and no market. Checked before anything else.</summary>
+    private static string? CareerOverBlocker(AppState s) =>
+        s.Driver.CareerOver
+            ? $"This career is finished. {s.Driver.CareerOverReason} Start a new one from Settings when you " +
+              "are ready — nothing here is deleted."
+            : null;
+
     /// <summary>Things that must be answered before ANY load can be authorized.</summary>
     /// <summary>
     /// Whether the board failed purely on hours.
@@ -397,6 +404,10 @@ public static class DispatchEngine
     /// <summary>Conditions that ground the truck entirely.</summary>
     public static List<string> DispatchBlockers(AppState s, Truck? truck, Trailer? trailer)
     {
+        // Nothing moves for a career that has ended, and the reason has to be the first thing said —
+        // "no dispatch authority" is true but tells the driver nothing about why.
+        if (CareerOverBlocker(s) is { } finished) return new List<string> { finished };
+
         var stops = new List<string>();
         var m = s.Settings.Maintenance;
 

@@ -238,18 +238,21 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
     ok('the no-guess path is wired even when quiet', true, 'nothing due');
   }
 
-  head('14. A date the player reports IS used');
-  // The same POST both creates and updates; there is no PUT route.
-  S = (await api('/fleetops/drivers', 'POST', {
-    ...held, trailerDueBackGameTime: at(200),
-  })).snapshot;
-  const heldAfter = (await api('/fleetops')).drivers.find((d) => d.name === 'M. Torres');
-  if (heldAfter.trailerDueBackGameTime) {
-    ok('the reported date is stored', true, heldAfter.trailerDueBackGameTime);
-  } else {
-    ok('the field exists to be reported into', 'trailerDueBackGameTime' in heldAfter,
-      JSON.stringify(Object.keys(heldAfter).filter((k) => /due/i.test(k))));
-  }
+  head('14. What the player CAN report is a direction, and it is used');
+  // The due-back date is gone: it asked where somebody is, on a fleet review line, with a precision
+  // nobody has. A direction is the honest answer, given when reporting in at the yard, and it decides
+  // the only thing that ever hung on it -- whether the trailer is worth sitting for.
+  let est = (await api('/fleetops/whereabouts', 'POST',
+    { driverId: held.id, direction: 'Outbound', city: 'Seattle', state: 'WA' })).estimate;
+  ok('an outbound driver is days away', est.days >= 2, `${est.days} day(s)`);
+  ok('and not worth waiting on', est.worthWaiting === false, `${est.worthWaiting}`);
+
+  est = (await api('/fleetops/whereabouts', 'POST',
+    { driverId: held.id, direction: 'Inbound', city: 'Springfield', state: 'MO' })).estimate;
+  ok('an inbound driver close in is', est.worthWaiting === true, `${est.days} day(s)`);
+  ok('and no due-back date is stored anywhere',
+    !('trailerDueBackGameTime' in (await api('/fleetops')).drivers.find((d) => d.name === 'M. Torres')),
+    'field is gone');
 
   head('15. An operational 34 - the company parks you with clean clocks');
   // This one has to be earned rather than asserted: run real loads and close them out until the
