@@ -14,6 +14,7 @@ async function api(p, m = 'GET', b) {
 let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? ' -- ' + d : ''}`); } else { fail++; console.log(`  FAIL  ${l}${d ? ' -- ' + d : ''}`); } };
 const head = (t) => console.log(`\n=== ${t} ===`);
+const H = require('./lib/helpers.cjs');
 const un = (r) => r.snapshot || r;
 const iso = (day, hm = '08:00') => {
   const d = new Date(Date.UTC(2000, 0, 1) + day * 86400000);
@@ -110,7 +111,7 @@ const trailerOf = async (name) =>
   head('3. A trailer somebody else is on is refused');
   // Hired drivers resign of their own accord, and the seed differs per career, so which of the two is
   // still here varies between runs. Pick from whoever is actually active rather than assuming.
-  const act = (await api('/fleetops')).drivers.filter((d) => d.status === 'Active');
+  const act = await H.activeDrivers(api);
   ok('two drivers still on the roster to test with', act.length >= 2,
     `${act.length}: ${act.map((d) => d.name).join(', ')}`);
   const [aOne, aTwo] = act;
@@ -124,9 +125,7 @@ const trailerOf = async (name) =>
         trailerStars: 4, revenue: 9000, repairs: 0, perDay: 400, perMile: 1.9 },
     ],
   })).report;
-  const stillHere = async (name) =>
-    (await api('/fleetops')).drivers.some((d) => d.name === name && d.status === 'Active');
-  if (!(await stillHere(aOne.name))) {
+  if (!(await H.isActive(api, aOne.name))) {
     console.log(`  (${aOne.name} left the company mid-suite — resignations are seeded per career)`);
     ok('nothing was moved onto a driver who has gone', true, 'skipped');
   } else
@@ -145,7 +144,7 @@ const trailerOf = async (name) =>
     lines: [{ driverId: aOne.id, trailerUnit: mine, truckOdometer: 312000, truckStars: 4,
               trailerStars: 4, revenue: 9000, repairs: 0, perDay: 400, perMile: 1.9 }],
   })).report;
-  if (!(await stillHere(aOne.name))) {
+  if (!(await H.isActive(api, aOne.name))) {
     console.log(`  (${aOne.name} has left — nothing to refuse)`);
     ok('the player trailer was not handed out', true, 'skipped');
   } else

@@ -15,6 +15,7 @@ let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? ' -- ' + d : ''}`); } else { fail++; console.log(`  FAIL  ${l}${d ? ' -- ' + d : ''}`); } };
 const head = (t) => console.log(`\n=== ${t} ===`);
 const un = (r) => r.snapshot || r;
+const H = require('./lib/helpers.cjs');
 const iso = (day, hm = '08:00') => {
   const d = new Date(Date.UTC(2000, 0, 1) + day * 86400000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}T${hm}`;
@@ -48,19 +49,12 @@ async function haul(n, { late = false, reason = '', fault = '' } = {}) {
     auth = await api('/dispatch/authorize', 'POST',
       { loadId: bd.evaluations[0].load.id, overrideTight: true });
   } catch (e) {
-    // Operations parks a driver for thirty-four hours of its own accord now and then, with clean clocks,
-    // and holds dispatch until it is sat. Rare and seeded, so it turns up unpredictably in a long run of
-    // loads. A driver would go and sit it; so does this.
-    const order = (await api('/bootstrap')).views.restart?.order;
-    if (!order) {
+    // The operational 34 turns up unpredictably in a long run of loads. Sit it and carry on.
+    const sat = await H.sitRestartIfOrdered(api, (d) => { day += d; return iso(day, '07:00'); });
+    if (!sat) {
       const v = (await api('/bootstrap')).views;
       throw new Error(`${e.message} | blockers: ${(v.dispatchBlockers || []).join(' ; ').slice(0, 260) || 'none'}`);
     }
-    await api('/restart/arrived', 'POST',
-      { gameTime: iso(day, '07:00'), city: order.targetCity || 'Denver', state: order.targetState || 'CO' });
-    day += 2;
-    await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
-    await api('/restart/complete', 'POST', { gameTime: iso(day, '07:00') });
     await api('/board/clear', 'POST', {});
     const again = await api('/board/add', 'POST', {
       cargo: 'Machinery', trailerType: S.trailers[0].type,
@@ -68,7 +62,7 @@ async function haul(n, { late = false, reason = '', fault = '' } = {}) {
       loadedMiles: 110, deadheadMiles: 0, gameRevenue: 700,
       deadlineHours: late ? 12 : 40, weightLbs: 30000,
     });
-    if (!again.evaluations?.[0]) throw new Error(`still no freight after sitting ${order.number}`);
+    if (!again.evaluations?.[0]) throw new Error(`still no freight after sitting ${sat.number}`);
     auth = await api('/dispatch/authorize', 'POST',
       { loadId: again.evaluations[0].load.id, overrideTight: true });
   }
@@ -144,8 +138,7 @@ const discipline = async () => (await api('/bootstrap')).discipline || [];
   head('6. Clean work walks the strikes off');
   // A coaching action holds dispatch until the driver signs it off, which is correct -- and means the
   // clean run cannot start until they do.
-  for (const act of await discipline())
-    if (!act.driverAcknowledged) await api(`/discipline/${act.number}/acknowledge`, 'POST', {});
+  await H.clearDiscipline(api);
   ok('the coaching was signed off', (await discipline()).every((a2) => a2.driverAcknowledged), 'acknowledged');
 
   for (let i = 0; i < 10; i++) await haul(20 + i);

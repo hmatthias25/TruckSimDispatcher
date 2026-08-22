@@ -12,6 +12,7 @@ let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? ' -- ' + d : ''}`); } else { fail++; console.log(`  FAIL  ${l}${d ? ' -- ' + d : ''}`); } };
 const head = (t) => console.log(`\n=== ${t} ===`);
 const refuses = async (fn) => { try { await fn(); return null; } catch (e) { return e.message; } };
+const H = require('./lib/helpers.cjs');
 
 let S, day = 1;
 let dayCursor = 1;
@@ -46,18 +47,10 @@ async function runLoad(destCity, destState) {
   try {
     auth = await api('/dispatch/authorize', 'POST', { loadId: pick.load.id });
   } catch (e) {
-    // Operations can park a driver for thirty-four hours of its own accord, with clean clocks. It is
-    // rare and seeded, so it turns up unpredictably in a long run of loads — and when it does, dispatch
-    // is held until the restart is sat. A driver would go and sit it, so that is what happens here
-    // rather than the suite falling over on freight it was never going to get.
-    const order = (await api('/bootstrap')).views.restart?.order;
-    if (!order) throw e;
-    await api('/restart/arrived', 'POST',
-      { gameTime: at(day), city: order.targetCity || 'Salt Lake City', state: order.targetState || 'UT' });
-    day += 2;                                     // thirty-four hours plus a margin
-    await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
-    await api('/restart/complete', 'POST', { gameTime: at(day) });
-    // The board was cleared when dispatch was held, so the load has to go back on.
+    // Operations parks a driver for thirty-four hours of its own accord now and then, with clean clocks,
+    // and holds dispatch until it is sat. Seeded, so it turns up unpredictably in a long run of loads.
+    const sat = await H.sitRestartIfOrdered(api, (d) => { day += d; return at(day); });
+    if (!sat) throw e;
     await api('/board/clear', 'POST', {});
     const again = await api('/board/add', 'POST', {
       cargo: 'Machinery', trailerType: S.trailers[0].type,
@@ -65,7 +58,7 @@ async function runLoad(destCity, destState) {
       destCity, destState, loadedMiles: 400, deadheadMiles: 0,
       gameRevenue: 1900, deadlineHours: 60, weightLbs: 40000,
     });
-    if (!again.evaluations?.[0]) throw new Error(`still no freight after sitting ${order.number}`);
+    if (!again.evaluations?.[0]) throw new Error(`still no freight after sitting ${sat.number}`);
     auth = await api('/dispatch/authorize', 'POST', { loadId: again.evaluations[0].load.id });
   }
   day += 1;
