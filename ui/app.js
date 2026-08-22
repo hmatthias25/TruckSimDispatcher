@@ -1567,7 +1567,8 @@ function homeTimeHtml() {
     <div class="callout ${cls}" style="margin-top:12px"><p>${esc(h.headline)}</p>
       ${h.milesFromHome !== null && h.milesFromHome !== undefined
         ? `<p>Roughly <b>${num(h.milesFromHome)} mi</b> from ${esc(h.terminalLabel)} right now${
-            h.atHome ? ' — close enough to take it.' : '.'}</p>` : ''}
+            h.atYard ? ' — you are at the yard.'
+              : h.atHome ? ' — close enough that freight this way counts as heading home.' : '.'}</p>` : ''}
       ${h.homeTimesTaken > 0 ? `<p class="sub">${h.homeTimesTaken} home time(s) taken · last home ${gt(h.lastHomeGameTime)}.</p>` : ''}
     </div>
     <p class="hint">Distance is deliberately rough — it only has to tell a load heading home from one

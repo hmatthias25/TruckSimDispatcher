@@ -53,7 +53,19 @@ public static class HomeTime
         public bool Overdue { get; set; }
         /// <summary>Rough miles from where the truck is now to the home terminal. Null = unknown.</summary>
         public double? MilesFromHome { get; set; }
+
+        /// <summary>
+        /// Inside the planning radius — near enough that freight this way counts as heading home. This
+        /// is a routing hint. It does NOT mean the driver got there.
+        /// </summary>
         public bool AtHome { get; set; }
+
+        /// <summary>
+        /// Standing at the yard itself, which is the only thing that takes home time. Separate from
+        /// <see cref="AtHome"/> on purpose: two hundred miles is a hint, one mile is an arrival, and
+        /// telling a driver a day out that they are home is how an approved trip went missing.
+        /// </summary>
+        public bool AtYard { get; set; }
         public string Headline { get; set; } = "";
         public string LastHomeGameTime { get; set; } = "";
         public int HomeTimesTaken { get; set; }
@@ -155,6 +167,7 @@ public static class HomeTime
 
         st.MilesFromHome = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
         st.AtHome = st.MilesFromHome is { } m && m <= s.Settings.Scoring.HomeRadiusMiles;
+        st.AtYard = st.MilesFromHome is { } y && y <= AtYardMiles;
 
         // Re-rigged and waiting on the trailer to come back in — that wait is spent at home.
         if (EquipmentService.PendingTrailerWait(s) is { } wait)
@@ -173,9 +186,12 @@ public static class HomeTime
 
         if (st.Granted)
         {
-            st.Headline = st.AtHome
+            st.Headline = st.AtYard
                 ? "Home time approved and you are here. Take it."
-                : $"Home time approved — dispatch is working freight back toward {st.TerminalLabel}.";
+                : st.AtHome
+                    ? $"Home time approved — you are close. Bring it in to {st.TerminalLabel} and report " +
+                      "in at the yard to take it."
+                    : $"Home time approved — dispatch is working freight back toward {st.TerminalLabel}.";
             return st;
         }
 
@@ -187,7 +203,9 @@ public static class HomeTime
 
         st.Headline = st.Overdue
             ? $"Home time is OVERDUE — {st.DaysOut:0.#} days out against a {st.IntervalDays}-day arrangement. " +
-              (st.AtHome ? "You are close enough to take it now." : "Dispatch is routing you toward {0}.".Replace("{0}", st.TerminalLabel))
+              (st.AtYard ? "You are at the yard — take it now."
+                  : st.AtHome ? "You are close; bring it in to {0} and report in at the yard.".Replace("{0}", st.TerminalLabel)
+                  : "Dispatch is routing you toward {0}.".Replace("{0}", st.TerminalLabel))
             : st.DueSoon
                 ? $"Home time due in {st.DaysUntilDue:0.#} days. Operations is working freight back toward {st.TerminalLabel}."
                 : $"{st.DaysOut:0.#} days out, home time in {st.DaysUntilDue:0.#} days.";
@@ -196,30 +214,25 @@ public static class HomeTime
     }
 
     /// <summary>
-    /// Records a visit home when the driver reports being at (or near) their home terminal. Called on
-    /// every status report — being home is something we observe, not something we schedule.
-    /// </summary>
-    /// <summary>
     /// How long a driver on no arrangement can be out before the app mentions it. Roughly two months —
     /// long enough that it is genuinely unusual, short enough that somebody has not simply forgotten
     /// they have a house.
     /// </summary>
     public const double SuggestHomeAfterDays = 60;
 
+    /// <summary>
+    /// How close counts as standing at the yard. Home time is taken here and nowhere else — the
+    /// planning radius is a different number doing a different job, and conflating the two is what let
+    /// an approved home time be spent two hundred miles from the house.
+    /// </summary>
+    public const double AtYardMiles = 1;
+
+    /// <summary>
+    /// Records a visit home when the driver reports being at (or near) their home terminal. Called on
+    /// every status report — being home is something we observe, not something we schedule.
+    /// </summary>
     public static bool Touch(AppState s)
     {
-        // Arriving satisfies an approved request as much as a scheduled one.
-        if (s.Driver.HomeTimeGranted)
-        {
-            var here = HomeTerminal(s);
-            var fromHome = here == null ? null
-                : Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, here.City, here.State);
-            if (fromHome is { } away && away <= s.Settings.Scoring.HomeRadiusMiles)
-            {
-                s.Driver.HomeTimeGranted = false;
-                s.Driver.HomeTimeGrantedGameTime = "";
-            }
-        }
         // No early-out on the arrangement. Being home is something we OBSERVE, and it happens whether
         // or not a clock scheduled it — a driver who elected to stay out and then drove home anyway has
         // still been home. Skipping it left their days-out climbing forever and the long-stretch
@@ -231,12 +244,24 @@ public static class HomeTime
         var miles = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
         // Only the yard itself counts as actually taking home time. The radius is for planning loads,
         // not for claiming the driver got home when they are still two hours away.
-        var atYard = miles is { } m && m <= 1;
+        var atYard = miles is { } m && m <= AtYardMiles;
 
         if (!atYard)
         {
             s.Driver.AtHomeYard = false;
             return false;
+        }
+
+        // An approved request is satisfied by actually getting to the yard — the same mile that counts
+        // as taking home time. Clearing it on the planning radius spent the trip while the driver was
+        // still a day out: the approval vanished, no home time was recorded, and nothing said so.
+        //
+        // Cleared here rather than in the arriving branch below, so a grant that lands while the driver
+        // is already parked at the yard is satisfied too, instead of staying approved forever.
+        if (s.Driver.HomeTimeGranted)
+        {
+            s.Driver.HomeTimeGranted = false;
+            s.Driver.HomeTimeGrantedGameTime = "";
         }
 
         // Days out is measured from the last day they were home, so it keeps ticking over to today for
