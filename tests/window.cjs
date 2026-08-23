@@ -200,16 +200,25 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
     destCity: 'Aurora', destState: 'CO', receiver: noPark.who, loadedMiles: 19, deadheadMiles: 0,
     gameRevenue: 300, deadlineHours: 30, weightLbs: 20000, appointmentOpensHours: 18,
   });
-  f = away.evaluations[0].feasibility;
-  ok('the driver is sent to a truck stop',
-    (f.warnings || []).some((w) => /do not allow overnight parking/.test(w)),
-    (f.warnings || []).join(' | ') || '(none)');
-  ok('and the run either side is on the timeline',
-    (f.timeline || []).some((x) => /Reposition to a truck stop/.test(x.label)),
-    (f.timeline || []).map((x) => x.label).join(' | '));
-  ok('with the trip back for the appointment',
-    (f.timeline || []).some((x) => /Back to the receiver/.test(x.label)),
-    (f.timeline || []).map((x) => x.label).join(' | '));
+  const awayEv = away.evaluations[0];
+  f = awayEv.feasibility;
+  // #80: an early take means no wait, and a driver with nothing to wait through is not sent anywhere
+  // to wait it out. Only the waiting case can exercise the reposition.
+  if (awayEv.receiverTakesEarly) {
+    ok('taking it early, so there is no reset to reposition for',
+      !(f.timeline || []).some((x) => /Reposition to a truck stop/.test(x.label)),
+      (awayEv.pros || []).find((p) => /take it whenever/.test(p)) || 'no wait planned');
+  } else {
+    ok('the driver is sent to a truck stop',
+      (f.warnings || []).some((w) => /do not allow overnight parking/.test(w)),
+      (f.warnings || []).join(' | ') || '(none)');
+    ok('and the run either side is on the timeline',
+      (f.timeline || []).some((x) => /Reposition to a truck stop/.test(x.label)),
+      (f.timeline || []).map((x) => x.label).join(' | '));
+    ok('with the trip back for the appointment',
+      (f.timeline || []).some((x) => /Back to the receiver/.test(x.label)),
+      (f.timeline || []).map((x) => x.label).join(' | '));
+  }
   ok('it is still runnable', f.verdict !== 'Infeasible', f.verdict);
 
   await api('/board/clear', 'POST', {});

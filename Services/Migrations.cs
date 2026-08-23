@@ -26,6 +26,7 @@ public static class Migrations
         ClearTrailerDecisionsLeftToTheDriver(s);
         GiveRunningLoadsAnAppointment(s);
         ClearLateMarksFromUnreachableSlots(s);
+        WipeLateIncidents(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -116,6 +117,52 @@ public static class Migrations
     /// because the driver did nothing wrong. A load genuinely delivered past its deadline is left exactly
     /// as it is — that one is real and clearing it would be falsifying the record in the other direction.
     /// </summary>
+    /// <summary>
+    /// Drops a late note and any discipline hanging off it. Returns how many notes went.
+    /// </summary>
+    private static int RemoveLateNotes(AppState s, Func<Incident, bool> match)
+    {
+        var doomed = s.Incidents.Where(i => i.Kind == "Late" && match(i)).ToList();
+        if (doomed.Count == 0) return 0;
+
+        var numbers = doomed.Select(i => i.Number).Where(x => !string.IsNullOrWhiteSpace(x))
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        s.Discipline.RemoveAll(d => numbers.Contains(d.IncidentNumber ?? ""));
+        foreach (var i in doomed) s.Incidents.Remove(i);
+        return doomed.Count;
+    }
+
+    /// <summary>
+    /// Clears every late note off the safety file, once.
+    ///
+    /// The targeted reversal above shipped with a predicate that matched nothing, so the notes from the
+    /// unreachable-slot bug survived on careers that had already migrated — and a migration only runs
+    /// once, so fixing the predicate could not reach them. This is the blunt instrument that can, done
+    /// at the player's explicit request rather than on our own initiative.
+    ///
+    /// Service history is NOT touched. On-time percentage is computed from each trip's ServiceResult,
+    /// not from these notes, so a genuinely late delivery still reads as late where it counts. What goes
+    /// is the safety-file paperwork and any discipline issued off it.
+    /// </summary>
+    private static void WipeLateIncidents(AppState s)
+    {
+        if (s.SchemaVersion >= 9) return;
+        s.SchemaVersion = 9;
+
+        var removed = RemoveLateNotes(s, _ => true);
+        if (removed == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "safety",
+            GameTime = s.Status.GameTime,
+            Message = $"Cleared {removed} late note(s) from the safety file, and any discipline issued off " +
+                      "them. The app had booked delivery slots its own plans could not reach and filed notes " +
+                      "when drivers missed them; the first attempt at reversing that missed the notes " +
+                      "themselves. Your delivery history is unchanged — this is the paperwork, not the record.",
+        });
+    }
+
     private static void ClearLateMarksFromUnreachableSlots(AppState s)
     {
         if (s.SchemaVersion >= 8) return;
@@ -147,11 +194,13 @@ public static class Migrations
         if (fixedUp == 0) return;
 
         // The incidents raised off those loads go too — a note filed on a service failure that did not
-        // happen is not a record, it is an accusation.
-        var removed = s.Incidents.RemoveAll(i =>
-            i.Kind == "Service" && s.Trips.Any(t => t.ServiceResult == "OnTime"
-                && !string.IsNullOrWhiteSpace(t.Number)
-                && (i.Description ?? "").Contains(t.Number, StringComparison.OrdinalIgnoreCase)));
+        // happen is not a record, it is an accusation. Matched on Kind and TripNumber: the first attempt
+        // looked for Kind "Service" and searched the description text, so it matched nothing at all and
+        // the notes outlived the reversal.
+        var reversed = s.Trips.Where(t => t.ServiceResult == "OnTime" && !string.IsNullOrWhiteSpace(t.Number))
+                              .Select(t => t.Number)
+                              .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var removed = RemoveLateNotes(s, i => reversed.Contains(i.TripNumber ?? ""));
 
         s.Events.Insert(0, new LogEvent
         {
