@@ -407,7 +407,6 @@ public static class HomeTime
     {
         var app = s.Application;
         if (app == null) return true;
-        if (trailerType.Equals("Tanker", StringComparison.OrdinalIgnoreCase) && !app.HasTanker) return false;
         if (s.Driver.Restrictions.Any(r => r.Equals(trailerType, StringComparison.OrdinalIgnoreCase))) return false;
         // Never assign freight the driver said they would not haul.
         return !app.WillNotHaul.Any(w => w.Equals(trailerType, StringComparison.OrdinalIgnoreCase));

@@ -26,11 +26,97 @@ public static class Carriers
         string Size, string HqCity, string HqState, string[] OtherYards,
         decimal LoadedCpm, decimal DeadheadCpm,
         double MinYears, int MinLoads, double MinOnTime, int MaxFaults, double MaxAvgDamage,
-        bool NeedsHazmat, bool NeedsTanker, bool TakesRookies, bool Specialized,
+        string[] NeedsClasses, bool TakesRookies, bool Specialized,
         int EquipmentStars, int HomeTimeStars, int PayStars,
         string Blurb, string StandardsNote,
-        // Last, with a default, so every existing entry compiles untouched.
-        bool SecondChance = false);
+        // Last, with defaults, so every existing entry compiles untouched.
+        bool SecondChance = false,
+        // The highest rung this carrier promotes to. Empty means "work it out from their pay standing".
+        string Ceiling = "")
+    {
+        /// <summary>
+        /// Placarded freight of any class. Derived rather than stored so it cannot contradict the list
+        /// beside it — which is exactly how a carrier ended up demanding an endorsement that is not real.
+        /// </summary>
+        public bool NeedsHazmat => NeedsClasses.Length > 0;
+    }
+
+    /// <summary>Nothing placarded. Most carriers.</summary>
+    private static readonly string[] NoHaz = Array.Empty<string>();
+
+    /// <summary>The hazmat classes a carrier's freight actually carries. Sugar, to keep the table readable.</summary>
+    private static string[] Cls(params string[] classes) => classes;
+
+    /// <summary>
+    /// What each rung pays, as a multiple of the carrier's posted rate.
+    ///
+    /// Rank used to carry flat rates for everybody, so a senior driver at a bargain-basement fleet and a
+    /// senior driver at the best-paying carrier on the list earned exactly the same — which left no
+    /// reason to ever move. The shape of the ladder is the same everywhere; what it is a shape *of*
+    /// belongs to the employer.
+    ///
+    /// Lease and owner sit far above the rest because the driver is buying the fuel and the maintenance
+    /// out of that number. It is a bigger figure, not necessarily a better one.
+    /// </summary>
+    private static readonly (string Rank, decimal Mult)[] RankMultipliers =
+    {
+        ("probationary", 0.90m),
+        ("company",      1.00m),
+        ("senior",       1.10m),
+        ("lead",         1.20m),
+        ("lease",        2.13m),
+        ("owner",        2.75m),
+    };
+
+    private static decimal MultiplierFor(string? rank) =>
+        RankMultipliers.FirstOrDefault(r => r.Rank.Equals(rank ?? "", StringComparison.OrdinalIgnoreCase)).Mult is var m
+        && m > 0 ? m : 1.00m;
+
+    /// <summary>
+    /// How far a carrier will promote a driver.
+    ///
+    /// Taken from what they pay when they have not said otherwise: a fleet at the bottom of the market
+    /// is not running a lease-purchase programme. A second-chance carrier stops at company driver — that
+    /// is the whole point of it being somewhere you leave.
+    /// </summary>
+    private static string CeilingOf(Spec spec)
+    {
+        if (!string.IsNullOrWhiteSpace(spec.Ceiling)) return spec.Ceiling;
+        if (spec.SecondChance) return "company";
+        return spec.PayStars >= 5 ? "owner"
+             : spec.PayStars == 4 ? "lease"
+             : spec.PayStars == 3 ? "lead"
+             : "senior";
+    }
+
+    private static Spec? SpecOf(AppState s) =>
+        string.IsNullOrWhiteSpace(s.Company.Code)
+            ? null
+            : AllSpecs.FirstOrDefault(c => c.Code.Equals(s.Company.Code, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The rank this employer will not promote past. Empty when they have no ladder on file.</summary>
+    public static string CeilingRank(AppState s) => SpecOf(s) is { } spec ? CeilingOf(spec) : "";
+
+    /// <summary>
+    /// What this employer pays at a given rung. Null when the driver works somewhere the app has no
+    /// scale for — a hand-built company — and the caller should keep the generic ladder rate.
+    /// </summary>
+    public static (decimal Loaded, decimal Deadhead)? ScaleFor(AppState s, string? rank)
+    {
+        var spec = SpecOf(s);
+        if (spec == null) return null;
+        var mult = MultiplierFor(rank);
+        return (Math.Round(spec.LoadedCpm * mult, 3), Math.Round(spec.DeadheadCpm * mult, 3));
+    }
+
+    /// <summary>The posted rate and the top of the scale, for the job market card.</summary>
+    public static (decimal Posted, decimal Top, string TopRank)? ScaleSummary(string code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code ?? "", StringComparison.OrdinalIgnoreCase));
+        if (spec == null) return null;
+        var ceiling = CeilingOf(spec);
+        return (spec.LoadedCpm, Math.Round(spec.LoadedCpm * MultiplierFor(ceiling), 3), ceiling);
+    }
 
     /// <summary>
     /// Real US carriers. Names, headquarters, freight specialities and whether they run a
@@ -46,126 +132,126 @@ public static class Carriers
         new("Schneider National", "SNI",
             new[] { "Dry Van", "Intermodal", "Dedicated", "Tanker" }, "Large",
             "Green Bay", "WI", new[] { "Dallas,TX", "Charlotte,NC", "Phoenix,AZ", "Chicago,IL" },
-            0.52m, 0.42m, 0, 0, 0, 99, 100, false, false, true, false, 2, 2, 2,
+            0.52m, 0.42m, 0, 0, 0, 99, 100, NoHaz, true, false, 2, 2, 2,
             "One of the largest carriers in North America, running dry van, intermodal drayage and dedicated fleets out of Green Bay. Runs one of the industry's biggest driver-training programmes and regularly hires drivers straight out of CDL school.",
             "Hires inexperienced drivers through their training programme."),
 
         new("Werner Enterprises", "WER",
             new[] { "Dry Van", "Dedicated", "Reefer", "Intermodal" }, "Large",
             "Omaha", "NE", new[] { "Dallas,TX", "Atlanta,GA", "Phoenix,AZ" },
-            0.50m, 0.40m, 0, 0, 0, 99, 100, false, false, true, false, 2, 2, 2,
+            0.50m, 0.40m, 0, 0, 0, 99, 100, NoHaz, true, false, 2, 2, 2,
             "Omaha-based nationwide truckload carrier running van, dedicated, temperature-controlled and intermodal freight. Long-standing entry point for new drivers.",
             "Takes recent CDL graduates."),
 
         new("Knight-Swift Transport", "KNX",
             new[] { "Dry Van", "Intermodal", "Reefer", "Dedicated" }, "Large",
             "Phoenix", "AZ", new[] { "Dallas,TX", "Atlanta,GA", "Memphis,TN", "Denver,CO" },
-            0.51m, 0.41m, 0, 0, 0, 99, 100, false, false, true, false, 2, 2, 2,
+            0.51m, 0.41m, 0, 0, 0, 99, 100, NoHaz, true, false, 2, 2, 2,
             "The largest truckload carrier in the United States after the Knight and Swift merger, headquartered in Phoenix. Van, reefer, intermodal and dedicated across the whole country.",
             "Hires new CDL holders."),
 
         new("C.R. England", "CRE",
             new[] { "Reefer", "Dedicated", "Dry Van" }, "Large",
             "Salt Lake City", "UT", new[] { "Dallas,TX", "Indianapolis,IN", "Phoenix,AZ" },
-            0.53m, 0.43m, 0, 0, 0, 99, 100, false, false, true, false, 2, 2, 2,
+            0.53m, 0.43m, 0, 0, 0, 99, 100, NoHaz, true, false, 2, 2, 2,
             "Salt Lake City refrigerated carrier, one of the biggest reefer fleets in the country, with dedicated and van divisions alongside. Operates large driver-training and hiring programmes for people entering the industry.",
             "Trains and hires inexperienced drivers."),
 
         new("Roehl Transport", "ROE",
             new[] { "Flatbed", "Reefer", "Dry Van", "Dedicated" }, "Regional",
             "Marshfield", "WI", new[] { "Chicago,IL", "Dallas,TX", "Atlanta,GA" },
-            0.56m, 0.45m, 0, 0, 88, 3, 10, false, false, true, false, 4, 4, 3,
+            0.56m, 0.45m, 0, 0, 88, 3, 10, NoHaz, true, false, 4, 4, 3,
             "Family-owned Wisconsin carrier running flatbed, refrigerated and dry van, with around 2,000 trucks. Offers on-the-job training for recent CDL school graduates and is known for structured onboarding and home-time programmes.",
             "Hires inexperienced drivers with on-the-job training."),
 
         new("Prime Inc.", "PRI",
             new[] { "Reefer", "Flatbed", "Tanker", "Dry Van" }, "Large",
             "Springfield", "MO", new[] { "Salt Lake City,UT", "Pittston,PA", "Denver,CO" },
-            0.57m, 0.46m, 0, 0, 88, 3, 9, false, false, true, false, 4, 3, 4,
+            0.57m, 0.46m, 0, 0, 88, 3, 9, NoHaz, true, false, 4, 3, 4,
             "Springfield, Missouri carrier with large refrigerated, flatbed and tanker divisions and over $2.5 billion in revenue. Its size and constant demand make it a common first job for new CDL graduates.",
             "Runs a well-known training programme for new drivers."),
 
         new("Marten Transport", "MRT",
             new[] { "Reefer", "Dedicated", "Intermodal" }, "Regional",
             "Mondovi", "WI", new[] { "Dallas,TX", "Atlanta,GA", "Ontario,CA" },
-            0.59m, 0.48m, 2, 0, 93, 1, 6, false, false, false, false, 4, 3, 4,
+            0.59m, 0.48m, 2, 0, 93, 1, 6, NoHaz, false, false, 4, 3, 4,
             "A leader in refrigerated transportation, based in Mondovi, Wisconsin. Temperature-controlled truckload, dedicated and intermodal — food-grade freight with tight appointment windows.",
             "Two years of verifiable experience."),
 
         new("KLLM Transport Services", "KLM",
             new[] { "Reefer", "Dedicated", "Dry Van" }, "Regional",
             "Richland", "MS", new[] { "Dallas,TX", "Atlanta,GA", "Laredo,TX" },
-            0.58m, 0.47m, 1, 0, 92, 1, 7, false, false, false, false, 3, 3, 3,
+            0.58m, 0.47m, 1, 0, 92, 1, 7, NoHaz, false, false, 3, 3, 3,
             "Mississippi-based temperature-controlled carrier that has moved perishables across the US and Mexico for around fifty years. Heavy cross-border produce and food freight.",
             "One year, or their training programme."),
 
         new("Melton Truck Lines", "MEL",
             new[] { "Flatbed", "Step Deck" }, "Regional",
             "Tulsa", "OK", new[] { "Laredo,TX", "Birmingham,AL", "Salt Lake City,UT" },
-            0.62m, 0.50m, 2, 0, 92, 1, 6, false, false, false, true, 4, 2, 4,
+            0.62m, 0.50m, 2, 0, 92, 1, 6, NoHaz, false, true, 4, 2, 4,
             "Tulsa-based flatbed specialist running steel, building products and machinery across the US, Canada and Mexico. Tarping and load securement are the daily job.",
             "Two years, open-deck experience strongly preferred."),
 
         new("Maverick Transportation", "MAV",
             new[] { "Flatbed", "Step Deck", "Reefer" }, "Regional",
             "North Little Rock", "AR", new[] { "Dallas,TX", "Atlanta,GA", "Chicago,IL" },
-            0.63m, 0.51m, 2, 0, 93, 1, 5, false, false, false, true, 4, 3, 4,
+            0.63m, 0.51m, 2, 0, 93, 1, 5, NoHaz, false, true, 4, 3, 4,
             "Arkansas open-deck carrier known for flatbed, glass and specialised securement work, with a temperature-controlled division alongside.",
             "Two years and demonstrated securement ability."),
 
         new("PS Logistics", "PSL",
             new[] { "Flatbed", "Step Deck", "Heavy Haul" }, "Large",
             "Birmingham", "AL", new[] { "Houston,TX", "Atlanta,GA", "Indianapolis,IN" },
-            0.61m, 0.49m, 2, 0, 90, 2, 7, false, false, false, true, 3, 2, 4,
+            0.61m, 0.49m, 2, 0, 90, 2, 7, NoHaz, false, true, 3, 2, 4,
             "One of the largest flatbed operators in the country, grown through acquisition and headquartered in Birmingham, Alabama. Steel, building materials and heavy specialised freight.",
             "Two years of open-deck work."),
 
         new("Anderson Trucking Service", "ATS",
             new[] { "Heavy Haul", "Flatbed", "Step Deck", "Lowboy" }, "Regional",
             "St. Cloud", "MN", new[] { "Houston,TX", "Denver,CO", "Chicago,IL" },
-            0.72m, 0.58m, 4, 25, 95, 0, 5, false, false, false, true, 5, 2, 5,
+            0.72m, 0.58m, 4, 25, 95, 0, 5, NoHaz, false, true, 5, 2, 5,
             "St. Cloud, Minnesota specialised carrier known for heavy haul, wind-energy components and oversized machinery. Permitted, route-surveyed freight.",
             "Four years and real heavy-haul history."),
 
         new("Bennett Motor Express", "BEN",
             new[] { "Heavy Haul", "Lowboy", "Flatbed", "Step Deck" }, "Regional",
             "McDonough", "GA", new[] { "Houston,TX", "Chicago,IL", "Denver,CO" },
-            0.74m, 0.60m, 5, 40, 96, 0, 4, false, false, false, true, 5, 3, 5,
+            0.74m, 0.60m, 5, 40, 96, 0, 4, NoHaz, false, true, 5, 3, 5,
             "Georgia-based specialised and heavy-haul carrier moving oversize machinery, transformers and project cargo. Every load is planned around permits and routing.",
             "Five years and forty loads of verifiable specialised history."),
 
         new("Groendyke Transport", "GRO",
             new[] { "Tanker", "Hazmat", "Bulk" }, "Regional",
             "Enid", "OK", new[] { "Houston,TX", "Baton Rouge,LA", "Odessa,TX" },
-            0.70m, 0.57m, 2, 0, 94, 1, 5, true, true, false, true, 4, 2, 5,
+            0.70m, 0.57m, 2, 0, 94, 1, 5, Cls("3", "8"), false, true, 4, 2, 5,
             "Enid, Oklahoma chemical and petroleum tank carrier. Placarded liquid bulk with the regulatory load that comes with it.",
-            "Hazmat and tanker endorsements required."),
+            "Hazmat endorsement required — they run class 3 and class 8."),
 
         new("Trimac Transportation", "TRI",
             new[] { "Tanker", "Bulk", "Pneumatic", "Hazmat" }, "Large",
             "Houston", "TX", new[] { "Baton Rouge,LA", "Chicago,IL", "Salt Lake City,UT" },
-            0.68m, 0.55m, 2, 0, 94, 1, 5, true, true, false, true, 4, 2, 4,
+            0.68m, 0.55m, 2, 0, 94, 1, 5, Cls("3", "8"), false, true, 4, 2, 4,
             "Bulk tank carrier hauling chemicals, fuels and dry bulk across North America, with a strong emphasis on safety and driver training.",
-            "Tanker and hazmat endorsements required."),
+            "Hazmat endorsement required — class 3 and class 8 chemical bulk."),
 
         new("Kenan Advantage Group", "KAG",
             new[] { "Tanker", "Bulk", "Hazmat" }, "Large",
             "North Canton", "OH", new[] { "Houston,TX", "Atlanta,GA", "Chicago,IL" },
-            0.66m, 0.53m, 1, 0, 93, 1, 6, false, true, false, true, 4, 3, 4,
+            0.66m, 0.53m, 1, 0, 93, 1, 6, Cls("3"), false, true, 4, 3, 4,
             "North Canton, Ohio bulk transporter — fuel delivery, chemicals and food-grade liquid across a large regional network. Shorter runs and more home time than most tank work.",
-            "Tanker endorsement required; one year minimum."),
+            "Hazmat endorsement required — class 3 fuel haulage. One year minimum."),
 
         new("Jack Cooper Transport", "JCT",
             new[] { "Auto", "Dry Van" }, "Regional",
             "Kansas City", "MO", new[] { "Detroit,MI", "Louisville,KY", "Dallas,TX" },
-            0.65m, 0.53m, 3, 15, 95, 1, 3, false, false, false, true, 4, 3, 4,
+            0.65m, 0.53m, 3, 15, 95, 1, 3, NoHaz, false, true, 4, 3, 4,
             "Kansas City finished-vehicle carrier moving cars from assembly plants to dealers on multi-car rigs. Every unit is inspected at both ends.",
             "Three years and a clean damage record."),
 
         new("United Road Services", "URS",
             new[] { "Auto", "Dry Van" }, "Regional",
             "Romulus", "MI", new[] { "Dallas,TX", "Atlanta,GA", "Newark,NJ" },
-            0.64m, 0.52m, 3, 15, 94, 1, 3, false, false, false, true, 4, 3, 4,
+            0.64m, 0.52m, 3, 15, 94, 1, 3, NoHaz, false, true, 4, 3, 4,
             "Michigan-based vehicle logistics carrier hauling new and used automobiles for manufacturers, auctions and dealer groups.",
             "Three years and a clean damage record."),
     };
@@ -180,70 +266,70 @@ public static class Carriers
         new("Beacon Express", "BEX",
             new[] { "Dry Van", "Reefer", "Intermodal" }, "Large",
             "Dallas", "TX", new[] { "Atlanta,GA", "Columbus,OH", "Phoenix,AZ", "Chicago,IL" },
-            0.46m, 0.36m, 0, 0, 0, 99, 100, false, false, true, false, 2, 2, 1,
+            0.46m, 0.36m, 0, 0, 0, 99, 100, NoHaz, true, false, 2, 2, 1,
             "Big nationwide van fleet running dry van, reefer and rail drayage. Freight is never short and neither are the miles, but the pay is bottom-of-market and the trucks are governed low. Where a lot of drivers get their first year.",
             "Takes anyone with a Class A. No experience required."),
 
         new("Sierra Freight Lines", "SFL",
             new[] { "Dry Van", "Reefer", "Flatbed" }, "Regional",
             "Phoenix", "AZ", new[] { "Denver,CO", "Salt Lake City,UT" },
-            0.54m, 0.44m, 1, 0, 90, 2, 8, false, false, true, false, 3, 3, 3,
+            0.54m, 0.44m, 1, 0, 90, 2, 8, NoHaz, true, false, 3, 3, 3,
             "Steady southwestern regional. Mostly van and reefer with a small open-deck division for building materials. Treats drivers decently and will take a developing driver who wants to learn.",
             "One year preferred, not required. They will look past a rough patch."),
 
         new("Cold Harbor Carriers", "CHC",
             new[] { "Reefer", "Dry Van" }, "Regional",
             "Fresno", "CA", new[] { "Denver,CO", "Dallas,TX" },
-            0.58m, 0.47m, 2, 0, 93, 1, 6, false, false, false, false, 3, 3, 3,
+            0.58m, 0.47m, 2, 0, 93, 1, 6, NoHaz, false, false, 3, 3, 3,
             "Produce and frozen out of the Central Valley. Appointment freight, tight windows, and they care about service numbers more than anything else.",
             "Two years and a service record they can actually look at."),
 
         new("Ironline Transport", "ILT",
             new[] { "Flatbed", "Step Deck", "Heavy Haul" }, "Regional",
             "Salt Lake City", "UT", new[] { "Denver,CO", "Casper,WY", "Boise,ID" },
-            0.62m, 0.50m, 2, 0, 92, 1, 6, false, false, false, true, 4, 2, 4,
+            0.62m, 0.50m, 2, 0, 92, 1, 6, NoHaz, false, true, 4, 2, 4,
             "Steel, building materials and machinery across the mountain west. Flatbed and step deck daily, with an RGN division for the bigger machinery moves. Tarping is part of the job and the pay reflects it.",
             "Two years minimum. Open-deck experience helps a great deal."),
 
         new("Great Plains Livestock", "GPL",
             new[] { "Livestock", "Ag", "Hopper", "Reefer" }, "Regional",
             "Amarillo", "TX", new[] { "Dodge City,KS", "Grand Island,NE", "Sioux Falls,SD" },
-            0.60m, 0.48m, 2, 0, 90, 1, 7, false, false, false, true, 3, 2, 3,
+            0.60m, 0.48m, 2, 0, 90, 1, 7, NoHaz, false, true, 3, 2, 3,
             "Cattle, grain and ag freight through the plains. Pot loads, hopper bottoms and some reefer in season. Live loads, odd hours, and a schedule that answers to the animals rather than to you.",
             "Two years. Livestock is its own skill — they will train the right person, but not a rookie."),
 
         new("Timberline Logging", "TLL",
             new[] { "Log", "Flatbed", "Heavy Haul" }, "Small",
             "Eugene", "OR", new[] { "Boise,ID", "Missoula,MT" },
-            0.59m, 0.47m, 3, 0, 88, 2, 12, false, false, false, true, 2, 4, 3,
+            0.59m, 0.47m, 3, 0, 88, 2, 12, NoHaz, false, true, 2, 4, 3,
             "Log and lumber out of the Pacific Northwest, plus the occasional equipment move to a landing. Forest roads, weather, and equipment that takes a beating. Home most nights, which is why people stay.",
             "Three years. They expect you to handle a rough road without tearing up the truck."),
 
         new("Meridian Auto Transport", "MAT",
             new[] { "Auto", "Dry Van" }, "Regional",
             "Detroit", "MI", new[] { "Columbus,OH", "Louisville,KY", "Dallas,TX" },
-            0.64m, 0.52m, 3, 15, 95, 1, 3, false, false, false, true, 4, 3, 4,
+            0.64m, 0.52m, 3, 15, 95, 1, 3, NoHaz, false, true, 4, 3, 4,
             "Finished vehicles from the plants to the dealers on multi-car stingers. Every unit is inspected at both ends and damage comes straight out of the settlement conversation.",
             "Three years and a genuinely clean damage record. They do not hire people who scrape things."),
 
         new("Redstone Bulk Lines", "RBL",
             new[] { "Tanker", "Bulk", "Pneumatic", "Dry Van" }, "Regional",
             "Houston", "TX", new[] { "Baton Rouge,LA", "Odessa,TX", "Corpus Christi,TX" },
-            0.68m, 0.55m, 2, 0, 93, 1, 5, false, true, false, true, 4, 2, 4,
+            0.68m, 0.55m, 2, 0, 93, 1, 5, Cls("3"), false, true, 4, 2, 4,
             "Petrochemical, food-grade and dry bulk on the gulf coast. Liquid tank, pneumatic and a small van division for packaged product. Surge is a real thing and so is the money.",
-            "Tanker endorsement required, no exceptions. Two years minimum."),
+            "Hazmat endorsement required for the petrochemical side — class 3. Two years minimum."),
 
         new("Anvil Chemical Transport", "ACT",
             new[] { "Tanker", "Hazmat", "Bulk" }, "Regional",
             "Baton Rouge", "LA", new[] { "Houston,TX", "Mobile,AL" },
-            0.74m, 0.60m, 4, 25, 96, 0, 4, true, true, false, true, 5, 2, 5,
+            0.74m, 0.60m, 4, 25, 96, 0, 4, Cls("8", "3"), false, true, 5, 2, 5,
             "Regulated chemical haulage — placarded liquid and dry bulk. The best per-mile rate on this list and the least forgiving safety department attached to it.",
-            "Hazmat AND tanker, four years, and a spotless record. They will check."),
+            "Hazmat endorsement, four years, and a spotless record. Class 8 and class 3. They will check."),
 
         new("Cascade Heavy Haul", "CHH",
             new[] { "Heavy Haul", "Lowboy", "Step Deck", "Flatbed" }, "Small",
             "Portland", "OR", new[] { "Seattle,WA", "Boise,ID" },
-            0.78m, 0.63m, 5, 40, 96, 0, 4, false, false, false, true, 5, 3, 5,
+            0.78m, 0.63m, 5, 40, 96, 0, 4, NoHaz, false, true, 5, 3, 5,
             "Permitted oversize and machinery moves on RGN and lowboy, with step deck and flat for the smaller pieces. Small outfit, senior drivers only, and every load is planned around a permit and a route survey.",
             "Five years, forty loads of verifiable history, and nothing preventable on your record."),
     };
@@ -269,7 +355,7 @@ public static class Carriers
         new("Rampart Freight Systems", "RFS",
             new[] { "Dry Van", "Reefer" }, "Large",
             "Memphis", "TN", new[] { "Laredo,TX", "Fontana,CA", "Gary,IN" },
-            0.34m, 0.24m, 0, 0, 0, 99, 100, false, false, true, false, 1, 1, 1,
+            0.34m, 0.24m, 0, 0, 0, 99, 100, NoHaz, true, false, 1, 1, 1,
             "Takes drivers other carriers have let go, and makes no secret of why it can. The freight is " +
             "thin and long, the tractors are high-mileage and governed low, and home time happens when the " +
             "board allows. Run clean here for a few months and the industry will look at you again.",
@@ -279,7 +365,7 @@ public static class Carriers
         new("Crossroads Carriers", "CRC",
             new[] { "Dry Van", "Flatbed" }, "Medium",
             "Oklahoma City", "OK", new[] { "Amarillo,TX", "Kansas City,MO" },
-            0.36m, 0.26m, 0, 0, 0, 99, 100, false, false, true, false, 1, 1, 1,
+            0.36m, 0.26m, 0, 0, 0, 99, 100, NoHaz, true, false, 1, 1, 1,
             "A second-chance fleet out of Oklahoma City. Older equipment, backhaul-heavy lanes and pay to " +
             "match, but they will put you in a truck when nobody else will and they do not hold the past " +
             "against you while you are running for them.",
@@ -406,7 +492,11 @@ public static class Carriers
                 Blurb = spec.Blurb,
                 StandardsNote = spec.StandardsNote,
                 RequiresHazmat = spec.NeedsHazmat,
-                RequiresTanker = spec.NeedsTanker,
+                RequiresClasses = spec.NeedsClasses.ToList(),
+                RequiresClassesLabel = Endorsements.Describe(spec.NeedsClasses),
+                CeilingRank = CeilingOf(spec),
+                CeilingTitle = CareerService.RankTitle(CeilingOf(spec)),
+                TopLoadedCpm = Math.Round(spec.LoadedCpm * MultiplierFor(CeilingOf(spec)), 3),
                 TakesRookies = spec.TakesRookies,
                 Specialized = spec.Specialized,
                 MinExperienceYears = spec.MinYears,
@@ -527,13 +617,16 @@ public static class Carriers
         var fails = new List<string>();
         var notes = new List<string>();
 
-        var hasHazmat = (app?.HasHazmat ?? false) || s.Driver.Qualifications.Contains("Hazmat");
-        var hasTanker = (app?.HasTanker ?? false) || s.Driver.Qualifications.Contains("Tanker");
+        // What gates a tank carrier is what is in the tank, not the trailer. A fuel hauler wants class 3,
+        // a chemical hauler class 8; a food-grade or dry-bulk operator wants nothing at all. "Tanker
+        // endorsement" was never a real credential and the freight is what decides.
+        var hasHazmat = (app?.HasHazmat ?? false)
+                        || Endorsements.HasAny(s)
+                        || s.Driver.Qualifications.Contains("Hazmat");
 
-        if (spec.NeedsHazmat && !hasHazmat)
-            fails.Add("Hazmat endorsement is required for their placarded freight and you do not hold one.");
-        if (spec.NeedsTanker && !hasTanker)
-            fails.Add("Tanker endorsement is required and you do not hold one.");
+        if (spec.NeedsClasses.Length > 0 && !hasHazmat)
+            fails.Add($"Their freight is placarded — {Endorsements.Describe(spec.NeedsClasses)} — and you do not " +
+                      "hold a hazmat endorsement.");
 
         var credited = CreditedExperience(s, years);
         if (years < minYears && !(spec.TakesRookies && totalLoads == 0))
@@ -741,24 +834,27 @@ public static class Carriers
         var years = app?.ExperienceYears ?? 0;
         var totalLoads = s.Driver.PriorLoads;
         var cond = ConditionOf(s, code);
-        var loaded = Math.Round(spec.LoadedCpm * cond.PayFactor, 3);
-        var deadhead = Math.Round(spec.DeadheadCpm * cond.PayFactor, 3);
-        var note = cond.PayFactor > 1m
-            ? $"{spec.Name} probationary scale, {(cond.PayFactor - 1m) * 100:0}% over posted while they are short of drivers."
-            : $"{spec.Name} probationary scale.";
+        // Probation pays under the carrier's own scale — the same rung the ladder calls probationary.
+        // Without this an experienced hire started ON the company rate, and clearing probation was worth
+        // nothing at all: same money, new title.
+        var probationary = MultiplierFor("probationary");
+        var underTheBar = years < spec.MinYears && totalLoads < 20;
+        var entry = underTheBar ? 0.85m : probationary;
 
-        // Under their experience bar with no history to lean on: start below the posted rate.
-        if (years < spec.MinYears && totalLoads < 20)
-        {
-            loaded = Math.Round(loaded * 0.90m, 3);
-            deadhead = Math.Round(deadhead * 0.90m, 3);
-            note = $"{spec.Name} entry scale — 10% under the posted rate until probation clears.";
-        }
-        else if (totalLoads >= 60)
+        var loaded = Math.Round(spec.LoadedCpm * cond.PayFactor * entry, 3);
+        var deadhead = Math.Round(spec.DeadheadCpm * cond.PayFactor * entry, 3);
+        var note = underTheBar
+            ? $"{spec.Name} entry scale — under even their probationary rate, on experience. It comes up when probation clears."
+            : cond.PayFactor > 1m
+                ? $"{spec.Name} probationary scale, {(cond.PayFactor - 1m) * 100:0}% over posted while they are short of drivers."
+                : $"{spec.Name} probationary scale.";
+
+        // A driver arriving with real history is worth more than a first-timer, even on probation.
+        if (!underTheBar && totalLoads >= 60)
         {
             loaded = Math.Round(loaded * 1.04m, 3);
             deadhead = Math.Round(deadhead * 1.04m, 3);
-            note = $"{spec.Name} scale with a seniority premium for {totalLoads} loads of history.";
+            note = $"{spec.Name} probationary scale with a seniority premium for {totalLoads} loads of history.";
         }
 
         s.Driver.Pay.LoadedCpm = loaded;
@@ -959,7 +1055,16 @@ public class CarrierListing
     public string Blurb { get; set; } = "";
     public string StandardsNote { get; set; } = "";
     public bool RequiresHazmat { get; set; }
-    public bool RequiresTanker { get; set; }
+    /// <summary>The hazmat classes their freight actually carries. Empty means nothing placarded.</summary>
+    public List<string> RequiresClasses { get; set; } = new();
+
+    /// <summary>Those classes in words, for the job market card.</summary>
+    public string RequiresClassesLabel { get; set; } = "";
+
+    /// <summary>How far they promote, and what the top of their scale pays.</summary>
+    public string CeilingRank { get; set; } = "";
+    public string CeilingTitle { get; set; } = "";
+    public decimal TopLoadedCpm { get; set; }
     public bool TakesRookies { get; set; }
     public bool Specialized { get; set; }
     public double MinExperienceYears { get; set; }

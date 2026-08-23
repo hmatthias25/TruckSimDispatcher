@@ -22,6 +22,7 @@ public static class Migrations
         MatchGameDayNumbering(s);
         ClearSafetyRecordWrittenUnderOldRules(s);
         UndoProbationClearedWithoutTheReviews(s);
+        DropEndorsementsThatAreNotReal(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -65,6 +66,38 @@ public static class Migrations
     /// by then the record speaks for itself and demoting them would do more damage than the original
     /// mistake. Anyone legitimately cleared still has their three passes on file and is untouched.
     /// </summary>
+    /// <summary>
+    /// Clears out "Tanker" and "Doubles/Triples", which were never endorsements.
+    ///
+    /// A tanker is a trailer and what gates it is what is inside — a fuel tanker is class 3, a gas
+    /// tanker class 2, a food-grade tanker nothing at all. Doubles and triples are a trailer
+    /// configuration available in particular states, not something on a licence. Both were written onto
+    /// driver files anyway, and carriers were refusing applications over one of them.
+    ///
+    /// Real hazmat classes are left exactly as they are.
+    /// </summary>
+    private static void DropEndorsementsThatAreNotReal(AppState s)
+    {
+        if (s.SchemaVersion >= 5) return;
+        s.SchemaVersion = 5;
+
+        var fictional = new[] { "tanker", "doubles/triples", "doubles", "triples" };
+        bool IsFiction(string q) => fictional.Contains((q ?? "").Trim().ToLowerInvariant());
+
+        var removedQuals = s.Driver.Qualifications.RemoveAll(IsFiction);
+        var removedEnds = s.Driver.Endorsements.RemoveAll(IsFiction);
+        if (removedQuals + removedEnds == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "career",
+            GameTime = s.Status.GameTime,
+            Message = "Tidied the licence file: \"Tanker\" and \"Doubles/Triples\" are not endorsements — " +
+                      "a tanker is a trailer and what gates it is what is inside. Your hazmat classes are " +
+                      "untouched, and carriers now ask for the class their freight actually carries.",
+        });
+    }
+
     private static void UndoProbationClearedWithoutTheReviews(AppState s)
     {
         if (s.SchemaVersion >= 4) return;

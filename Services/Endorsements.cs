@@ -94,6 +94,25 @@ public static class Endorsements
         return s.Driver.Endorsements.Any(q => Normalise(q) == k);
     }
 
+    /// <summary>
+    /// A set of classes in words: "class 3 (flammable liquids) and class 8 (corrosive substances)".
+    ///
+    /// Used wherever the app has to say what a carrier's freight actually is, instead of naming a
+    /// credential that does not exist.
+    /// </summary>
+    public static string Describe(IEnumerable<string>? keys)
+    {
+        var named = (keys ?? Enumerable.Empty<string>())
+            .Select(Find)
+            .Where(c => c != null)
+            .Select(c => $"class {c!.Key} ({c.Covers.Split(',')[0].Trim()})")
+            .ToList();
+        if (named.Count == 0) return "nothing placarded";
+        return named.Count == 1
+            ? named[0]
+            : string.Join(", ", named.Take(named.Count - 1)) + " and " + named[^1];
+    }
+
     /// <summary>Cleared for anything at all — what a hazmat load with no stated class needs.</summary>
     public static bool HasAny(AppState s) => s.Driver.Endorsements.Any(q => Find(q) != null);
 
@@ -149,17 +168,49 @@ public static class Endorsements
     }
 
     /// <summary>
-    /// Keeps the old application flags roughly in step, for anything still reading them.
+    /// What the company adds per loaded mile for the classes this driver is cleared for.
     ///
-    /// Approximate on purpose: the flags describe a model ATS does not use, so they are derived from
-    /// the classes rather than the other way round. Any class means "hazmat" to an old reader, and the
-    /// tanker flag follows from holding what a placarded tanker actually needs.
+    /// Getting an endorsement should be worth something, and worth more for the ones fewer drivers
+    /// bother with: explosives and toxics are the awkward end of the business, and the freight pays
+    /// accordingly. Capped, because this is a premium on a rate and not a second rate.
+    /// </summary>
+    public static decimal PremiumFor(AppState s)
+    {
+        var held = Held(s);
+        if (held.Count == 0) return 0m;
+
+        var premium = 0.04m;                      // holding hazmat at all
+        foreach (var k in held)
+            premium += k switch
+            {
+                "1" => 0.04m,                     // explosives
+                "6" => 0.03m,                     // toxic and infectious
+                "2" => 0.02m,                     // gases
+                "3" => 0.02m,                     // flammable liquids — most fuel haulage
+                _   => 0.01m,                     // flammable solids, corrosives
+            };
+        return Math.Round(Math.Min(premium, MaxPremiumCpm), 3);
+    }
+
+    /// <summary>A premium on a rate, not a second rate.</summary>
+    public const decimal MaxPremiumCpm = 0.15m;
+
+    /// <summary>
+    /// Keeps the old application flags in step, for anything still reading them, and keeps the hazmat
+    /// premium matching what the driver actually holds.
+    ///
+    /// The flag is derived from the classes rather than the other way round: any class means "hazmat"
+    /// to an old reader. The premium is recomputed here so that unlocking a class in the game and
+    /// reporting it is immediately worth money, which is the whole incentive.
     /// </summary>
     private static void SyncLegacyFlags(AppState s)
     {
-        if (s.Application == null) return;
-        s.Application.HasHazmat = HasAny(s);
-        s.Application.HasTanker = Has(s, "3") || Has(s, "2") || Has(s, "8");
+        if (s.Application != null) s.Application.HasHazmat = HasAny(s);
+
+        // Never below what the employer already pays for placarded freight — a carrier that hauls
+        // nothing but chemicals sets its own floor.
+        var earned = PremiumFor(s);
+        if (earned > s.Driver.Pay.HazmatCpm) s.Driver.Pay.HazmatCpm = earned;
     }
 
     /// <summary>

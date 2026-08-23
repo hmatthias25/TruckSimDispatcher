@@ -65,8 +65,6 @@ public static class Seed
 
         var endorsements = new List<string>();
         if (app.HasHazmat) endorsements.Add("hazmat");
-        if (app.HasTanker) endorsements.Add("tanker");
-        if (app.HasDoublesTriples) endorsements.Add("doubles/triples");
         if (endorsements.Count > 0)
             d.Reasons.Add($"Your {string.Join(", ", endorsements)} endorsement(s) open freight most of our drivers cannot touch. That is worth money to us and to you.");
 
@@ -546,7 +544,6 @@ public static class Seed
             Notes = "Probationary scale. Reviewed when probation clears."
         };
         if (app.HasHazmat) pay.HazmatCpm = 0.05m;
-        if (app.HasTanker) pay.ReeferCpm = Math.Max(pay.ReeferCpm, 0.03m);
 
         var probation = new ProbationPlan
         {
@@ -567,8 +564,7 @@ public static class Seed
 
         var quals = new List<string> { "Class A CDL" };
         if (app.HasHazmat) quals.Add("Hazmat");
-        if (app.HasTanker) quals.Add("Tanker");
-        if (app.HasDoublesTriples) quals.Add("Doubles/Triples");
+
         foreach (var f in app.FreightExperience) quals.Add($"Experience: {f}");
 
         var restrictions = new List<string> { "Oversize", "Heavy Haul" };

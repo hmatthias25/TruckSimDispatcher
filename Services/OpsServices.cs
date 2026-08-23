@@ -505,6 +505,11 @@ public class CareerReview
     public string? NextRankTitle { get; set; }
     public List<RequirementProgress> NextRankProgress { get; set; } = new();
     public bool NextRankMet { get; set; }
+
+    /// <summary>The highest rung this employer promotes to, and whether the driver is standing on it.</summary>
+    public string CeilingRank { get; set; } = "";
+    public string CeilingTitle { get; set; } = "";
+    public bool AtCeiling { get; set; }
     public List<string> Findings { get; set; } = new();
     public List<string> AvailableActions { get; set; } = new();
     public SafetyRecord Safety { get; set; } = new();
@@ -673,7 +678,27 @@ public static class CareerService
 
         var idx = Array.FindIndex(Ladder, r => r.Key == s.Driver.Rank);
         if (idx < 0) idx = 0;
-        if (idx < Ladder.Length - 1)
+
+        // How far this employer promotes. A fleet at the bottom of the market does not run a
+        // lease-purchase programme, and a driver deserves to be told that rather than wondering why
+        // the promotions stopped coming.
+        var ceilingKey = Carriers.CeilingRank(s);
+        var ceilingIdx = string.IsNullOrWhiteSpace(ceilingKey)
+            ? Ladder.Length - 1
+            : Math.Max(0, Array.FindIndex(Ladder, r => r.Key == ceilingKey));
+        review.CeilingRank = Ladder[ceilingIdx].Key;
+        review.CeilingTitle = Ladder[ceilingIdx].Title;
+        review.AtCeiling = idx >= ceilingIdx && ceilingIdx < Ladder.Length - 1;
+
+        if (review.AtCeiling)
+        {
+            var best = Ladder[Math.Min(Ladder.Length - 1, ceilingIdx + 1)];
+            review.Findings.Add(
+                $"{Ladder[ceilingIdx].Title} is as far as {s.Company.Name} takes a driver. " +
+                $"{best.Title} and above exist, but not here — that one is a reason to look at the job " +
+                "market, not something more loads will earn you.");
+        }
+        else if (idx < ceilingIdx)
         {
             var next = Ladder[idx + 1];
             review.NextRank = next.Key;
@@ -755,8 +780,12 @@ public static class CareerService
 
         s.Driver.Rank = target.Key;
         s.Driver.RankTitle = target.Title;
-        s.Driver.Pay.LoadedCpm = target.LoadedCpm;
-        s.Driver.Pay.DeadheadCpm = target.DeadheadCpm;
+
+        // The employer's own scale wherever we have one. Rank is the shape of the raise; the carrier is
+        // the size of it, which is what makes a better carrier worth moving to.
+        var scale = Carriers.ScaleFor(s, target.Key);
+        s.Driver.Pay.LoadedCpm = scale?.Loaded ?? target.LoadedCpm;
+        s.Driver.Pay.DeadheadCpm = scale?.Deadhead ?? target.DeadheadCpm;
         s.Driver.Pay.Notes = $"{target.Title} scale. {note}".Trim();
 
         if (target.Key is "senior" or "lead" or "lease" or "owner")
@@ -942,6 +971,10 @@ public static class CareerService
     /// </summary>
     public static bool IsChoice(string? rankKey) => rankKey is "lease" or "owner";
 
+    /// <summary>The title for a rank key, for anything outside this class that has to name one.</summary>
+    public static string RankTitle(string? key) =>
+        Ladder.FirstOrDefault(r => r.Key.Equals(key ?? "", StringComparison.OrdinalIgnoreCase))?.Title ?? "";
+
     /// <summary>
     /// Puts a driver back on probation, at the probationary scale.
     ///
@@ -1006,6 +1039,16 @@ public static class CareerService
         if (s.Driver.CareerOver || s.Driver.TerminatedForCause) return null;
 
         var review = Review(s);
+
+        // Nothing left here. Said once, when they reach it, because it is the moment the job market stops
+        // being flavour and starts being the only way up.
+        if (review.AtCeiling)
+        {
+            if (s.Driver.CeilingToldAtRank == s.Driver.Rank) return null;
+            s.Driver.CeilingToldAtRank = s.Driver.Rank;
+            return CeilingNotice(s, review);
+        }
+
         if (!review.NextRankMet || string.IsNullOrWhiteSpace(review.NextRank)) return null;
 
         // An offer is not a promotion. Say it is there and leave it with them.
@@ -1014,6 +1057,37 @@ public static class CareerService
         var before = (s.Driver.Pay.LoadedCpm, s.Driver.Pay.DeadheadCpm);
         Promote(s, review.NextRank, "Earned on performance.", force: true);
         return NoticeFor(s, "promotion", before.LoadedCpm, before.DeadheadCpm);
+    }
+
+    /// <summary>
+    /// The top of this employer's ladder, said plainly.
+    ///
+    /// Not a promotion and not a failure — the driver has run out of road at this carrier and the only
+    /// thing left that pays more is a different employer. Saying so is the point: a driver who keeps
+    /// delivering and never hears anything assumes the app has stopped noticing.
+    /// </summary>
+    private static AdvanceNotice CeilingNotice(AppState s, CareerReview review)
+    {
+        var employer = string.IsNullOrWhiteSpace(s.Company.Name) ? "this carrier" : s.Company.Name;
+        var n = new AdvanceNotice
+        {
+            Kind = "ceiling",
+            Rank = s.Driver.Rank,
+            RankTitle = s.Driver.RankTitle,
+            LoadedCpm = s.Driver.Pay.LoadedCpm,
+            DeadheadCpm = s.Driver.Pay.DeadheadCpm,
+            PreviousLoadedCpm = s.Driver.Pay.LoadedCpm,
+            PreviousDeadheadCpm = s.Driver.Pay.DeadheadCpm,
+            Headline = $"{review.CeilingTitle} is the top of the ladder at {employer}.",
+        };
+
+        n.Detail.Add($"You are on ${s.Driver.Pay.LoadedCpm:0.000} a loaded mile and ${s.Driver.Pay.DeadheadCpm:0.000} " +
+                     "empty, which is as far as their scale goes. More loads will not move it.");
+        n.Detail.Add("Higher rungs exist — they are just not on offer here. Carriers set their own scale, " +
+                     "and a better one pays more at every rank, not only at the top.");
+        n.Detail.Add("Your record travels with you: the loads, the miles, the on-time percentage and the " +
+                     "safety file are what open the door somewhere better. Have a look at the Job Market.");
+        return n;
     }
 
     /// <summary>

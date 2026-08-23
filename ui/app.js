@@ -311,8 +311,6 @@ function readApplication() {
     willNotHaul: list('ap-nohaul'),
     acceptsProbation: bv('ap-probation'),
     hasHazmat: bv('ap-hazmat'),
-    hasTanker: bv('ap-tanker'),
-    hasDoublesTriples: bv('ap-doubles'),
     notes: sv('ap-notes'),
   };
 }
@@ -344,8 +342,8 @@ function renderMarket(market, { onboarding }) {
           c.condition?.state || 'Steady')}</span>
         <span>divisions <b>${esc(c.divisions.join(', '))}</b></span>
         ${c.specialized ? '<span>' + badge('violet', 'specialised') + '</span>' : ''}
-        ${c.requiresHazmat ? '<span>' + badge('warn', 'hazmat required') + '</span>' : ''}
-        ${c.requiresTanker ? '<span>' + badge('warn', 'tanker required') + '</span>' : ''}
+        ${c.requiresClasses && c.requiresClasses.length
+          ? '<span>' + badge('warn', 'hazmat: ' + esc(c.requiresClassesLabel)) + '</span>' : ''}
         ${c.takesRookies ? '<span>' + badge('info', 'hires rookies') + '</span>' : ''}
       </div>
       <p style="margin:0 0 8px;color:var(--ink2)">${esc(c.blurb)}</p>
@@ -354,6 +352,10 @@ function renderMarket(market, { onboarding }) {
         <span>equipment ${stars(c.equipmentStars)}</span>
         <span>home time ${stars(c.homeTimeStars)}</span>
         <span>yards <b>${esc([c.hqCity + ', ' + c.hqState].concat(c.yards).join(' · '))}</b></span>
+      </div>
+      <div class="kv">
+        <span>scale <b>$${(+c.loadedCpm).toFixed(3)}</b> &rarr; <b>$${(+c.topLoadedCpm).toFixed(3)}</b>/loaded mi</span>
+        <span>tops out at <b>${esc(c.ceilingTitle)}</b></span>
       </div>
       <p class="hint" style="margin-bottom:6px"><b>Their bar:</b> ${esc(c.standardsNote)}</p>
       ${c.condition && c.condition.state !== 'Steady' ? `<p class="hint" style="margin-bottom:6px">
@@ -1812,7 +1814,7 @@ let ADVANCE_NEXT = null;      // a home brief or payday waiting behind the promo
 function advanceHtml(n) {
   if (!n) return '';
   const up = (+n.loadedCpm) - (+n.previousLoadedCpm);
-  return `<div class="callout go" style="margin-top:14px">
+  return `<div class="callout ${n.kind === 'ceiling' ? 'warn' : 'go'}" style="margin-top:14px">
     <h4>${esc(n.headline)}</h4>
     <ul>${(n.detail || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
     <dl class="kv" style="margin-top:8px">
@@ -1827,8 +1829,10 @@ function advanceHtml(n) {
 function advanceModal(n, brief, paid) {
   ADVANCE_NEXT = { brief: brief || null, paid: paid && paid.length ? paid : null };
   const more = ADVANCE_NEXT.brief || ADVANCE_NEXT.paid;
-  modal(`<div class="panel-head"><h2>${n.kind === 'probation' ? 'Probation cleared' : 'Promotion'}</h2>
-      ${badge('ok', esc(n.rankTitle))}
+  const title = n.kind === 'probation' ? 'Probation cleared'
+    : n.kind === 'ceiling' ? 'Top of their scale' : 'Promotion';
+  modal(`<div class="panel-head"><h2>${title}</h2>
+      ${badge(n.kind === 'ceiling' ? 'warn' : 'ok', esc(n.rankTitle))}
       <div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
     ${advanceHtml(n)}
@@ -3705,6 +3709,17 @@ function viewCareer() {
     <p class="hint">Operations clears this itself once the numbers <em>and</em> the reviews are both there,
       and tells you at your next report-in. It is not something you click — a driver does not sign off
       their own probation any more than they authorise their own equipment.</p>
+  </div>` : ''}
+
+  ${c.atCeiling ? `<div class="panel">
+    <div class="panel-head"><h2>Top of their scale</h2>
+      ${badge('warn', esc(c.ceilingTitle))}</div>
+    <p>${esc(c.ceilingTitle)} is as far as ${esc(S.company.name || 'this carrier')} promotes. You are on
+      <b>$${(+S.driver.pay.loadedCpm).toFixed(3)}</b> a loaded mile and
+      <b>$${(+S.driver.pay.deadheadCpm).toFixed(3)}</b> empty, and more loads will not move either.</p>
+    <p class="hint">Higher rungs exist, just not here. Carriers set their own scale and a better one pays
+      more at every rank, not only at the top — the Job Market shows what each pays now, what it tops out
+      at, and how far it promotes. Your record travels with you.</p>
   </div>` : ''}
 
   ${c.nextRank ? `<div class="panel">

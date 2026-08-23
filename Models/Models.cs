@@ -20,7 +20,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 4;
+    public const int Current = 5;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -99,8 +99,9 @@ public class DriverApplication
     public List<string> WillNotHaul { get; set; } = new();
     public bool AcceptsProbation { get; set; } = true;
     public bool HasHazmat { get; set; }
-    public bool HasTanker { get; set; }
-    public bool HasDoublesTriples { get; set; }
+    // HasTanker and HasDoublesTriples used to live here. Neither is a real endorsement: a tanker is a
+    // trailer and what gates it is what is inside, and doubles/triples are a trailer configuration.
+    // Asking an applicant for either was asking for a credential the game does not model.
     public string Notes { get; set; } = "";
     public string SubmittedUtc { get; set; } = DateTime.UtcNow.ToString("o");
 }
@@ -311,6 +312,12 @@ public class Driver
     /// it went, and starting again is an explicit choice rather than something the app does to them.
     /// </summary>
     public bool CareerOver { get; set; }
+
+    /// <summary>
+    /// The rank the driver was standing on when they were told this carrier goes no higher. Stored so
+    /// the message is said once and not repeated at every close-out for the rest of the career.
+    /// </summary>
+    public string CeilingToldAtRank { get; set; } = "";
 
     /// <summary>Why it ended, in the company's words.</summary>
     public string CareerOverReason { get; set; } = "";
