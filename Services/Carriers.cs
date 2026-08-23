@@ -499,9 +499,12 @@ public static class Carriers
                 TopLoadedCpm = Math.Round(spec.LoadedCpm * MultiplierFor(CeilingOf(spec)), 3),
                 TakesRookies = spec.TakesRookies,
                 Specialized = spec.Specialized,
-                MinExperienceYears = spec.MinYears,
-                MinLoads = spec.MinLoads,
-                MinOnTimePct = spec.MinOnTime,
+                MinExperienceYears = Math.Max(0, spec.MinYears + cond.YearsShift),
+                MinLoads = (int)Math.Round(spec.MinLoads * cond.LoadsFactor),
+                MinOnTimePct = Math.Clamp(spec.MinOnTime + cond.OnTimeShift, 0, 100),
+                PostedMinExperienceYears = spec.MinYears,
+                PostedMinLoads = spec.MinLoads,
+                PostedMinOnTimePct = spec.MinOnTime,
                 MaxDriverFaultIncidents = spec.MaxFaults,
                 WouldHire = screening.Hired,
                 Screening = screening,
@@ -509,6 +512,7 @@ public static class Carriers
                 IsRealCompany = IsRealCompany(spec.Code),
                 CreditedExperienceYears = CreditedExperience(s, s.Application?.ExperienceYears ?? 0),
                 LoadsToQualify = LoadsStillNeeded(s, spec),
+                DaysToQualify = DaysStillNeeded(s, spec),
                 Condition = cond,
             });
         }
@@ -523,11 +527,16 @@ public static class Carriers
         RealWorld.Any(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Loads that count as a year of experience. A regional driver realistically runs a few hundred
-    /// loads a year, so this is deliberately generous — the point is that freight actually hauled in
-    /// the app is what earns a move up, and the grind has to be reachable inside a game.
+    /// Days that make a year of experience. Time served is the only thing that accrues years, because
+    /// that is what years are.
+    ///
+    /// Loads used to buy them at thirty a year, which made the whole gate meaningless: a fortnight of
+    /// running credited a driver with a year behind the wheel, and a hundred and fifty loads let a
+    /// greenhorn apply to a fleet wanting five years. Loads still matter — a carrier's minimum-loads
+    /// requirement is a separate gate and freight is what satisfies it — but they are corroboration
+    /// that the time was worked, not a substitute for it.
     /// </summary>
-    public const double LoadsPerYear = 30;
+    public const double DaysPerYear = 365.0;
 
     /// <summary>
     /// What a hiring office would credit this driver with: what they declared, plus time actually
@@ -545,12 +554,34 @@ public static class Carriers
         var declared = s.Application?.ExperienceYears ?? 0;
 
         var byExperience = 0;
-        var credited = CreditedExperience(s, declared);
-        if (credited < spec.MinYears && !(spec.TakesRookies && totalLoads == 0))
-            byExperience = (int)Math.Ceiling((spec.MinYears - credited) * LoadsPerYear);
+        _ = byExperience;
+        // Only the loads gate is answerable in loads. Being short of years is answered in days, which
+        // DaysStillNeeded reports — quoting a load count against a time requirement was the bug.
+        return Math.Max(0, spec.MinLoads - totalLoads);
+    }
 
-        var byHistory = Math.Max(0, spec.MinLoads - totalLoads);
-        return Math.Max(byExperience, byHistory);
+    /// <summary>
+    /// Days of service still needed to clear this carrier's experience bar, so the market can show a
+    /// target in the units that actually apply. Zero when years are not what is holding them back.
+    /// </summary>
+    public static int DaysStillNeeded(AppState s, string code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code ?? "", StringComparison.OrdinalIgnoreCase));
+        if (spec == null) return 0;
+        return DaysStillNeeded(s, spec);
+    }
+
+    private static int DaysStillNeeded(AppState s, Spec spec)
+    {
+        var stats = s.Onboarded ? CareerService.Compute(s) : new CareerStats();
+        var totalLoads = stats.LoadsDelivered + s.Driver.PriorLoads;
+        if (spec.TakesRookies && totalLoads == 0) return 0;
+
+        var credited = CreditedExperience(s, s.Application?.ExperienceYears ?? 0);
+        var cond = ConditionOf(s, spec.Code);
+        var minYears = Math.Max(0, spec.MinYears + cond.YearsShift);
+        if (credited >= minYears) return 0;
+        return (int)Math.Ceiling((minYears - credited) * DaysPerYear);
     }
 
     public static double CreditedExperience(AppState s, double declaredYears)
@@ -564,7 +595,10 @@ public static class Carriers
             var to = GameClock.TryParse(h.EndedGameDate);
             if (from != null && to != null) daysServed += Math.Max(0, (int)(to.Value - from.Value).TotalDays);
         }
-        return Math.Round(declaredYears + daysServed / 365.0 + loads / LoadsPerYear, 2);
+        // Loads are deliberately absent. They satisfy a carrier's minimum-loads gate on their own and
+        // they are what proves the time was actually worked — but a year is a year.
+        _ = loads;
+        return Math.Round(declaredYears + daysServed / DaysPerYear, 2);
     }
 
     /// <summary>
@@ -634,17 +668,20 @@ public static class Carriers
             if (credited < minYears)
             {
                 var shortBy = minYears - credited;
-                var loadsToGo = (int)Math.Ceiling(shortBy * LoadsPerYear);
+                var daysToGo = (int)Math.Ceiling(shortBy * DaysPerYear);
+                var howLong = daysToGo >= 365
+                    ? $"about {daysToGo / 365.0:0.#} more year(s) on the job"
+                    : $"about {daysToGo} more day(s) on the job";
                 fails.Add($"They want {minYears:0.#} years on {spec.Divisions[0].ToLowerInvariant()}" +
                           (Math.Abs(cond.YearsShift) > 0.01 ? $" ({cond.State.ToLowerInvariant()} — normally {spec.MinYears:0.#})" : "") + ". " +
-                          $"You credit at {credited:0.0} years ({years:0.#} declared" +
-                          (totalLoads > 0 ? $" plus {totalLoads} loads and time served" : "") +
-                          $") — roughly {loadsToGo} more load(s) to close the gap.");
+                          $"You credit at {credited:0.0} years ({years:0.#} declared plus time served) — " +
+                          $"{howLong}. Loads do not shorten it; running hard proves the time was worked, " +
+                          "it does not make more of it.");
             }
             else
             {
-                notes.Add($"{years:0.#} declared years is light, but {totalLoads} loads of verifiable history " +
-                          $"credits you at {credited:0.0} years, which clears their bar.");
+                notes.Add($"{years:0.#} declared years is light, but time served brings you to " +
+                          $"{credited:0.0} years, which clears their bar.");
             }
         }
 
@@ -1061,6 +1098,9 @@ public class CarrierListing
     /// <summary>Those classes in words, for the job market card.</summary>
     public string RequiresClassesLabel { get; set; } = "";
 
+    /// <summary>Days of service still needed to clear their experience bar. 0 when years are not the problem.</summary>
+    public int DaysToQualify { get; set; }
+
     /// <summary>How far they promote, and what the top of their scale pays.</summary>
     public string CeilingRank { get; set; } = "";
     public string CeilingTitle { get; set; } = "";
@@ -1068,6 +1108,14 @@ public class CarrierListing
     public bool TakesRookies { get; set; }
     public bool Specialized { get; set; }
     public double MinExperienceYears { get; set; }
+
+    /// <summary>
+    /// What they normally ask, before business conditions moved it. Kept beside the effective figure so
+    /// a raised or lowered bar reads as exactly that rather than looking like a mistake.
+    /// </summary>
+    public double PostedMinExperienceYears { get; set; }
+    public int PostedMinLoads { get; set; }
+    public double PostedMinOnTimePct { get; set; }
     public int MinLoads { get; set; }
     public double MinOnTimePct { get; set; }
     public int MaxDriverFaultIncidents { get; set; }

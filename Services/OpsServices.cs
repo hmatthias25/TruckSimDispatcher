@@ -506,6 +506,13 @@ public class CareerReview
     public List<RequirementProgress> NextRankProgress { get; set; } = new();
     public bool NextRankMet { get; set; }
 
+    /// <summary>
+    /// Years a hiring office would credit this driver with: what they declared plus time actually
+    /// served. On the career view as well as the job market, because it is the number every experience
+    /// gate is judged on and the driver should not have to go shopping to find out what it is.
+    /// </summary>
+    public double CreditedExperienceYears { get; set; }
+
     /// <summary>The highest rung this employer promotes to, and whether the driver is standing on it.</summary>
     public string CeilingRank { get; set; } = "";
     public string CeilingTitle { get; set; } = "";
@@ -675,6 +682,8 @@ public static class CareerService
                 ? "Probation is served — the numbers are there and the reviews are behind you."
                 : $"Probation is still open: {string.Join(", ", review.ProbationProgress.Where(r => !r.Met).Select(r => r.Label.ToLowerInvariant()))} outstanding.");
         }
+
+        review.CreditedExperienceYears = Carriers.CreditedExperience(s, s.Application?.ExperienceYears ?? 0);
 
         var idx = Array.FindIndex(Ladder, r => r.Key == s.Driver.Rank);
         if (idx < 0) idx = 0;

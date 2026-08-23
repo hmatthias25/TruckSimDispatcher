@@ -361,9 +361,17 @@ function renderMarket(market, { onboarding }) {
       ${c.condition && c.condition.state !== 'Steady' ? `<p class="hint" style="margin-bottom:6px">
         <b>${esc(c.condition.state)}:</b> ${esc(c.condition.note)}
         ${!c.condition.hiring ? ` Reviewed around <b>${gt(c.condition.reviewedOn)}</b>.` : ''}</p>` : ''}
-      ${!c.wouldHire && c.loadsToQualify > 0 ? `<div class="progress-row">
-        <span class="pl">Credited experience ${num(c.creditedExperienceYears, 1)} of ${num(c.minExperienceYears, 1)} yr</span>
+      ${!c.wouldHire && c.daysToQualify > 0 ? `<div class="progress-row">
+        <span class="pl">Credited experience ${num(c.creditedExperienceYears, 1)} of ${num(c.minExperienceYears, 1)} yr${
+          c.postedMinExperienceYears !== undefined && c.minExperienceYears !== c.postedMinExperienceYears
+            ? ` <span class="sub">(normally ${num(c.postedMinExperienceYears, 1)})</span>` : ''}</span>
         <span class="pb"><i style="width:${Math.min(100, (c.creditedExperienceYears / Math.max(0.1, c.minExperienceYears)) * 100)}%"></i></span>
+        <span class="pv">${c.daysToQualify >= 365
+          ? '~' + num(c.daysToQualify / 365, 1) + ' more yr'
+          : '~' + c.daysToQualify + ' more days'}</span></div>` : ''}
+      ${!c.wouldHire && c.loadsToQualify > 0 ? `<div class="progress-row">
+        <span class="pl">Verifiable loads ${c.minLoads - c.loadsToQualify} of ${c.minLoads}</span>
+        <span class="pb"><i style="width:${Math.min(100, ((c.minLoads - c.loadsToQualify) / Math.max(1, c.minLoads)) * 100)}%"></i></span>
         <span class="pv">~${c.loadsToQualify} more load(s)</span></div>` : ''}
       ${c.wouldHire
         ? `<ul class="reasons good">${c.screening.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
@@ -3750,10 +3758,15 @@ function viewCareer() {
         <dt>Loaded mile</dt><dd>$${(+S.driver.pay.loadedCpm).toFixed(3)}</dd>
         <dt>Empty mile</dt><dd>$${(+S.driver.pay.deadheadCpm).toFixed(3)}</dd>
         <dt>Scale</dt><dd>${esc(S.driver.rankTitle)}</dd>
+        <dt>Credited experience</dt><dd>${num(c.creditedExperienceYears, 1)} yr
+          <span class="sub">declared + time served</span></dd>
       </dl>
       <p class="hint">Rates come from your rank, a carrier change, or the scale a second-chance carrier
         runs. There is no box to type a new one into — a rate you set yourself would make every
         settlement and every promotion check downstream of it meaningless.</p>
+      <p class="hint">Credited experience is what every hiring bar is judged against. It comes from what
+        you declared plus the days you have actually served — 365 of them is a year. Loads do not add to
+        it; they satisfy a carrier's minimum-loads requirement instead, which is a separate thing.</p>
     </div>
   </div>
 
