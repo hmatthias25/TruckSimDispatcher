@@ -567,19 +567,6 @@ public static class DispatchEngine
         var dest = Markets.Find(s, load.DestCity, load.DestState);
         e.DestTier = dest?.Tier ?? 2;
 
-        // Said on the card, before the load is picked. A receiver taking it early is worth hours, and
-        // hours are only worth planning around if you know about them in time to plan.
-        e.ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load.Id) && load.AppointmentOpensHours > 0;
-        if (!e.ReceiverTakesEarly && load.AppointmentOpensHours > 0
-            && GameClock.TryParse(s.Status.GameTime) is { } evalNow)
-            e.AppointmentGameTime = GameClock.Format(evalNow.AddHours(AppointmentHoursFor(s, load)));
-
-        if (e.ReceiverTakesEarly)
-            e.Pros.Add($"{Place(load.DestCity, load.DestState)} is quiet — they will take it whenever you " +
-                       "arrive, so none of the window is spent sitting.");
-        else if (!string.IsNullOrWhiteSpace(e.AppointmentGameTime))
-            e.Cons.Add($"Booked in at {GameClock.Pretty(e.AppointmentGameTime)}. Arriving before that is " +
-                       "sitting on their gate, not slack.");
         e.DestResetFriendly = dest?.ResetFriendly ?? false;
 
         // ---- hard gates
@@ -659,6 +646,27 @@ public static class DispatchEngine
         }, truck);
 
         // ---- economics
+        // Said on the card, before the load is picked. A receiver taking it early is worth hours, and
+        // hours are only worth planning around if you know about them in time to plan.
+        e.ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load.Id) && load.AppointmentOpensHours > 0;
+        if (!e.ReceiverTakesEarly && load.AppointmentOpensHours > 0
+            && GameClock.TryParse(s.Status.GameTime) is { } evalNow)
+        {
+            var shown = evalNow.AddHours(AppointmentHoursFor(s, load));
+            // Same rule as authorisation: never quote a slot the plan does not reach.
+            if (GameClock.TryParse(e.Feasibility.ProjectedArrivalGameTime) is { } plannedAt && plannedAt > shown)
+                shown = DeliveryWindow.NextHalfHour(plannedAt);
+            var dueShown = GameClock.TryParse(e.Feasibility.DueGameTime);
+            e.AppointmentGameTime = dueShown == null || shown <= dueShown.Value ? GameClock.Format(shown) : "";
+        }
+
+        if (e.ReceiverTakesEarly)
+            e.Pros.Add($"{Place(load.DestCity, load.DestState)} is quiet — they will take it whenever you " +
+                       "arrive, so none of the window is spent sitting.");
+        else if (!string.IsNullOrWhiteSpace(e.AppointmentGameTime))
+            e.Cons.Add($"Booked in at {GameClock.Pretty(e.AppointmentGameTime)}. Arriving before that is " +
+                       "sitting on their gate, not slack.");
+
         e.EstimatedCompanyRevenue = Math.Round(load.GameRevenue * (decimal)Math.Clamp(s.Settings.RevenueFactor, 0.05, 3.0), 2);
         var mpg = truck?.AvgMpg > 0 ? truck.AvgMpg : 6.5;
         e.EstimatedFuelCost = Math.Round((decimal)(total / mpg) * s.Settings.FuelPricePerGal, 2);
@@ -1065,7 +1073,20 @@ public static class DispatchEngine
         // measure against the same time.
         if (GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opensAt
             && GameClock.TryParse(trip.DueGameTime) is { } dueAt && dueAt > opensAt)
-            trip.AppointmentGameTime = GameClock.Format(DeliveryWindow.AppointmentIn(opensAt, dueAt, load.Id));
+        {
+            var slot = DeliveryWindow.AppointmentIn(opensAt, dueAt, load.Id);
+
+            // A dock does not book you in before you can physically get there, and neither should we.
+            // Where our own plan arrives later than the slot — an overnight rest at the shipper, a long
+            // leg, a required 34 — the arrival IS the appointment. Handing out a plan that cannot meet
+            // the slot we just invented, then marking the driver late for the difference, is the app
+            // blaming somebody for its own arithmetic.
+            if (GameClock.TryParse(eval.Feasibility.ProjectedArrivalGameTime) is { } planned && planned > slot)
+                slot = DeliveryWindow.NextHalfHour(planned);
+
+            // Past the deadline there is no slot worth stating; the window closing governs.
+            trip.AppointmentGameTime = slot <= dueAt ? GameClock.Format(slot) : "";
+        }
 
         // Both of these are only worth anything before the driver leaves, so they go on the rationale
         // the dispatcher gives at authorisation rather than turning up in the close-out.

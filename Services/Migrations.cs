@@ -25,6 +25,7 @@ public static class Migrations
         DropEndorsementsThatAreNotReal(s);
         ClearTrailerDecisionsLeftToTheDriver(s);
         GiveRunningLoadsAnAppointment(s);
+        ClearLateMarksFromUnreachableSlots(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -103,6 +104,65 @@ public static class Migrations
     /// The receiver-takes-early flag is deliberately NOT rolled retrospectively: that is a promise made
     /// at dispatch, and this driver was never given it.
     /// </summary>
+    /// <summary>
+    /// Takes back Late marks that only happened because the app booked a slot the driver could not reach.
+    ///
+    /// The appointment rule shipped with a real flaw: the slot was placed in the front half of the
+    /// window without asking whether the run could physically get there. A driver who followed the plan
+    /// they were given — overnight at the shipper, arrive on the window — could deliver inside the window
+    /// and still be marked late against an appointment that was never achievable.
+    ///
+    /// Anything delivered inside its window and failed only by that comparison is put back to OnTime,
+    /// because the driver did nothing wrong. A load genuinely delivered past its deadline is left exactly
+    /// as it is — that one is real and clearing it would be falsifying the record in the other direction.
+    /// </summary>
+    private static void ClearLateMarksFromUnreachableSlots(AppState s)
+    {
+        if (s.SchemaVersion >= 8) return;
+        s.SchemaVersion = 8;
+
+        var grace = Math.Max(0, s.Settings.AppointmentGraceHours);
+        var fixedUp = 0;
+
+        foreach (var t in s.Trips.Where(x => x.ServiceResult == "Late" && x.Kind == "Freight"))
+        {
+            var due = GameClock.TryParse(t.DueGameTime);
+            var del = GameClock.TryParse(t.DeliveredGameTime);
+            if (due == null || del == null) continue;
+            if (del.Value > due.Value) continue;                    // genuinely past the deadline
+
+            // Inside the window, so the only thing that could have failed it is the slot comparison.
+            var slot = GameClock.TryParse(t.AppointmentGameTime);
+            if (slot == null) continue;
+
+            var planned = GameClock.TryParse(t.FeasibilityAtDispatch?.ProjectedArrivalGameTime ?? "");
+            var reachable = planned == null || planned.Value <= slot.Value.AddHours(grace);
+            if (reachable) continue;                                // it was makeable; the mark stands
+
+            t.ServiceResult = "OnTime";
+            t.DelayFault = "";
+            fixedUp++;
+        }
+
+        if (fixedUp == 0) return;
+
+        // The incidents raised off those loads go too — a note filed on a service failure that did not
+        // happen is not a record, it is an accusation.
+        var removed = s.Incidents.RemoveAll(i =>
+            i.Kind == "Service" && s.Trips.Any(t => t.ServiceResult == "OnTime"
+                && !string.IsNullOrWhiteSpace(t.Number)
+                && (i.Description ?? "").Contains(t.Number, StringComparison.OrdinalIgnoreCase)));
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "safety",
+            GameTime = s.Status.GameTime,
+            Message = $"Reversed {fixedUp} late mark(s){(removed > 0 ? $" and {removed} note(s)" : "")}: the app had " +
+                      "booked a delivery slot earlier than its own plan could reach, then held the driver to it. " +
+                      "Those loads were delivered inside their windows and are back to on time.",
+        });
+    }
+
     private static void GiveRunningLoadsAnAppointment(AppState s)
     {
         if (s.SchemaVersion >= 7) return;

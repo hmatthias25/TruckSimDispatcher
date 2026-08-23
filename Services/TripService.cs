@@ -1196,8 +1196,15 @@ public static class TripService
             // receiver with the doors still open is not writing you up over ninety minutes. Past the
             // grace it counts, even though the window is still open. Where the receiver took the load
             // whenever it arrived, there was no slot to miss.
+            // Never fail a driver against a slot our own plan did not reach. Placement keeps that from
+            // happening at dispatch, but a plan can change underneath a load — a reroute, a breakdown,
+            // an operational 34 — and leave an old slot behind it. This produced a false strike on a
+            // real career once; it does not get to happen twice.
+            var plannedArrival = GameClock.TryParse(trip.FeasibilityAtDispatch?.ProjectedArrivalGameTime ?? "");
+
             if (margin >= 0 && !trip.ReceiverTakesEarly
-                && GameClock.TryParse(trip.AppointmentGameTime) is { } slot)
+                && GameClock.TryParse(trip.AppointmentGameTime) is { } slot
+                && (plannedArrival == null || plannedArrival.Value <= slot.AddHours(grace)))
             {
                 var pastSlot = (del.Value - slot).TotalHours;
                 if (pastSlot > grace)

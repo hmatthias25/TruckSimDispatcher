@@ -210,6 +210,57 @@ async function offer(cargo, opensHours = 8, deadlineHours = 20) {
     ok('(that load rolled an early take; grace not exercised)', true, 'skipped');
   }
 
+  head('8. #81 The slot is never earlier than the plan can arrive');
+  // The reported case: appointment 6:30, told to rest at the shipper overnight, delivered 6:30 exactly
+  // — and marked LATE against a slot the app itself had booked hours before its own projected arrival.
+  day += 1;
+  await place('07:00');
+  await setEarlyPct(0);
+  await api('/board/clear', 'POST', {});
+  const far = (await api('/board/add', 'POST', {
+    cargo: 'Overnight steel', trailerType: S.trailers[0].type,
+    originCity: 'Denver', originState: 'CO', destCity: 'Amarillo', destState: 'TX',
+    loadedMiles: 430, deadheadMiles: 0, gameRevenue: 1500, deadlineHours: 44,
+    weightLbs: 40000, appointmentOpensHours: 6,
+  })).evaluations[0];
+
+  const arrive = far.feasibility.projectedArrivalGameTime;
+  ok('the plan arrives when it arrives', !!arrive, arrive || '(none)');
+  if (far.appointmentGameTime && arrive) {
+    ok('the quoted slot is not before that arrival',
+      new Date(far.appointmentGameTime + 'Z') >= new Date(arrive + 'Z'),
+      `slot ${far.appointmentGameTime} vs arrival ${arrive}`);
+  } else {
+    ok('no slot is quoted when the plan cannot make one', !far.appointmentGameTime,
+      far.appointmentGameTime || 'none quoted');
+  }
+
+  const auth8 = await api('/dispatch/authorize', 'POST', { loadId: far.load.id });
+  const slot8 = auth8.trip.appointmentGameTime;
+  const plan8 = auth8.trip.feasibilityAtDispatch?.projectedArrivalGameTime;
+  if (slot8 && plan8) {
+    ok('and the trip agrees', new Date(slot8 + 'Z') >= new Date(plan8 + 'Z'),
+      `slot ${slot8} vs plan ${plan8}`);
+  }
+
+  // Deliver exactly on the slot the app stated. This must never be late.
+  const onSlot = slot8 || auth8.trip.dueGameTime;
+  const r8 = await api(`/trips/${auth8.trip.id}/complete`, 'POST', {
+    deliveredGameTime: onSlot, actualMiles: 430, endOdometer: 0, actualRevenue: 1500,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 2, trailerDamageAfter: 1, cargoDamagePct: 0,
+    loadingHours: 1, unloadingHours: 1, detentionHours: 0, layoverDays: 0, breakdownDays: 0,
+    extraStops: 0, tarpsUsed: 0, delayReason: '', damageCause: '', notes: '',
+    locationCity: 'Amarillo', locationState: 'TX', fuelPct: 60, gameTime: onSlot,
+  });
+  const t8 = r8.snapshot.trips.find((x) => x.id === auth8.trip.id);
+  ok('delivering exactly on the stated appointment is ON TIME',
+    t8.serviceResult === 'OnTime', `${t8.serviceResult} — delivered ${onSlot}, slot ${slot8 || '(none)'}`);
+  ok('and no service note was filed against the driver',
+    !(r8.snapshot.incidents || []).some((i) => (i.description || '').includes(auth8.trip.number)),
+    (r8.snapshot.incidents || []).filter((i) => (i.description || '').includes(auth8.trip.number))
+      .map((i) => i.number).join(', ') || 'nothing filed');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });

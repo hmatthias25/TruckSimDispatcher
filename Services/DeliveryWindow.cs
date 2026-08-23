@@ -110,7 +110,7 @@ public static class DeliveryWindow
         if (span <= 0.5) return opensAt;
 
         var frac = 0.10 + (Hash("slot|" + seedKey) % 46) / 100.0;      // 0.10 .. 0.55 of the window
-        var at = opensAt.AddHours(span * frac);
+        var at = opensAt.AddHours(Math.Min(span * frac, MaxPastOpeningHours));
         var halves = Math.Round((at - opensAt.Date).TotalHours * 2, MidpointRounding.AwayFromZero) / 2;
         var slot = opensAt.Date.AddHours(halves);
 
@@ -121,8 +121,26 @@ public static class DeliveryWindow
         return slot < opensAt ? opensAt : slot;
     }
 
+    /// <summary>Rounds up to the next half hour, because that is how docks book.</summary>
+    public static DateTime NextHalfHour(DateTime at)
+    {
+        var halves = Math.Ceiling((at - at.Date).TotalHours * 2) / 2;
+        return at.Date.AddHours(halves);
+    }
+
     /// <summary>Hours kept clear before the window closes, so unloading still fits after the slot.</summary>
     private const double TailRoomHours = 3;
+
+    /// <summary>
+    /// How far past the opening a slot can sit.
+    ///
+    /// A dock booking you two or three hours into its window is ordinary. Booking you most of a day in
+    /// is not, and it did real damage: on a short run with a wide window the extra waiting crossed the
+    /// ten-hour reset threshold, so the planner inserted a rest and a reposition, and arrival landed past
+    /// the deadline. Loads that had always been runnable started being refused — the third time this
+    /// change found a way to quietly make the game harder.
+    /// </summary>
+    private const double MaxPastOpeningHours = 4;
 
     /// <summary>
     /// Whether this receiver will take the load whenever it turns up.
