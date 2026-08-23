@@ -21,6 +21,7 @@ public static class Migrations
         RebaseGameCalendar(s);
         MatchGameDayNumbering(s);
         ClearSafetyRecordWrittenUnderOldRules(s);
+        UndoProbationClearedWithoutTheReviews(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -52,6 +53,44 @@ public static class Migrations
     /// and the next thing that genuinely is their fault starts at coaching. Trips keep everything else —
     /// pay, miles, times, settlements — because none of that was wrong.
     /// </summary>
+    /// <summary>
+    /// Puts back probation that was cleared without the three good reviews.
+    ///
+    /// The Career tab used to offer a button the moment the loads/miles/on-time thresholds were met,
+    /// without counting the reviews at all — so a driver could be moved onto the Company Driver scale
+    /// having never sat three good reviews in a row. The reviews are half the requirement.
+    ///
+    /// Deliberately narrow. It only touches a driver sitting at <b>exactly</b> the rank that button
+    /// granted: anybody who has since been promoted on merit to senior or above is left alone, because
+    /// by then the record speaks for itself and demoting them would do more damage than the original
+    /// mistake. Anyone legitimately cleared still has their three passes on file and is untouched.
+    /// </summary>
+    private static void UndoProbationClearedWithoutTheReviews(AppState s)
+    {
+        if (s.SchemaVersion >= 4) return;
+        s.SchemaVersion = 4;
+
+        if (s.Driver.Probation.Active) return;                 // still on it — nothing to undo
+        if (s.Driver.Rank != "company") return;                // moved up on merit since; leave it
+        if (s.Driver.CareerOver || s.Driver.TerminatedForCause) return;
+
+        var passes = Probation.ConsecutivePasses(s);
+        if (passes >= Probation.PassesToClear) return;          // earned it properly
+
+        CareerService.RestoreProbation(s,
+            $"Probation restored: cleared on thresholds alone with {passes} good review(s) in a row against " +
+            $"{Probation.PassesToClear} required.");
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "career",
+            GameTime = s.Status.GameTime,
+            Message = $"Probation put back: it had been cleared without the reviews ({passes} of " +
+                      $"{Probation.PassesToClear} good reviews in a row). Back on the probationary scale until " +
+                      "you have sat them. Settlements already paid are untouched.",
+        });
+    }
+
     private static void ClearSafetyRecordWrittenUnderOldRules(AppState s)
     {
         if (s.SchemaVersion >= 3) return;

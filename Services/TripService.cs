@@ -107,6 +107,9 @@ public class TripAudit
     public bool ClocksReported { get; set; }
     /// <summary>Set when delivering here put a new city on the map.</summary>
     public DiscoveryService.DiscoveryNotice? Discovery { get; set; }
+
+    /// <summary>A rank the driver has just moved into, or an offer waiting on them.</summary>
+    public CareerService.AdvanceNotice? Advance { get; set; }
     /// <summary>Home-time instructions: report to the yard, and what to put through the shop while there.</summary>
     public List<string> HomeTimeInstructions { get; set; } = new();
     /// <summary>
@@ -611,6 +614,10 @@ public static class TripService
         }
         if (Requests.AnswerTrailerRequest(s) is { } trailerReq)
             audit.RequestAnswers.Add($"{trailerReq.Number} — {trailerReq.RequestedType}: {trailerReq.Answer}");
+
+        // ---- has this load earned them the next rung? The close-out is where the numbers move, so it is
+        // where the company notices. Probation is not done here — that clears at the yard review.
+        audit.Advance = CareerService.AutoAdvance(s);
 
         // ---- and where does it leave us on home time?
         var homeNow = HomeTime.Status(s);

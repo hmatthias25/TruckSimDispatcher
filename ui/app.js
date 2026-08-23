@@ -1797,9 +1797,47 @@ function clocksAtDeliveryHtml() {
    moved, so they surface here rather than being something the driver has to go looking for. */
 function afterStatus(r, fallback = 'Status updated.') {
   const paid = r.paid || [];
+  // Moving up the ladder outranks everything else a report-in can turn up, so it goes first — and
+  // carries whatever else was waiting so nothing is lost behind it.
+  if (r.advance) return advanceModal(r.advance, r.homeBrief || null, paid);
   if (paid.length) return paydayModal(paid);
   if (r.homeBrief) return homeBriefModal(r.homeBrief);
   toast(DISCOVERY ? DISCOVERY.headline : fallback, 'ok');
+}
+
+/* What a promotion looks like when the company hands it to you rather than you taking it.
+   The rates are the point — a rank with no number attached is a job title, not a raise. */
+let ADVANCE_NEXT = null;      // a home brief or payday waiting behind the promotion
+
+function advanceHtml(n) {
+  if (!n) return '';
+  const up = (+n.loadedCpm) - (+n.previousLoadedCpm);
+  return `<div class="callout go" style="margin-top:14px">
+    <h4>${esc(n.headline)}</h4>
+    <ul>${(n.detail || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    <dl class="kv" style="margin-top:8px">
+      <dt>Loaded mile</dt><dd>$${(+n.loadedCpm).toFixed(3)}${up > 0
+        ? ` <span class="sub">was $${(+n.previousLoadedCpm).toFixed(3)}</span>` : ''}</dd>
+      <dt>Empty mile</dt><dd>$${(+n.deadheadCpm).toFixed(3)}${up > 0
+        ? ` <span class="sub">was $${(+n.previousDeadheadCpm).toFixed(3)}</span>` : ''}</dd>
+    </dl>
+  </div>`;
+}
+
+function advanceModal(n, brief, paid) {
+  ADVANCE_NEXT = { brief: brief || null, paid: paid && paid.length ? paid : null };
+  const more = ADVANCE_NEXT.brief || ADVANCE_NEXT.paid;
+  modal(`<div class="panel-head"><h2>${n.kind === 'probation' ? 'Probation cleared' : 'Promotion'}</h2>
+      ${badge('ok', esc(n.rankTitle))}
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+    ${advanceHtml(n)}
+    <div class="row-actions">
+      <div style="flex:1"></div>
+      ${more ? `<button class="btn primary" data-act="advance-next">${
+        ADVANCE_NEXT.paid ? 'And you have been paid' : 'Now, your home brief'}</button>`
+        : '<button class="btn primary" data-act="close-modal">Got it</button>'}
+    </div>`);
 }
 
 /* Payday. Getting paid should not be a line in a log you scroll past. */
@@ -2000,6 +2038,7 @@ function auditModal(a) {
       <p>Incident ${esc(a.incidentNumber || '')} was opened. Acknowledge it on the Safety tab.</p></div>` : ''}
 
     ${a.discovery ? discoveryHtml(a.discovery) : ''}
+    ${advanceHtml(a.advance)}
 
     <div class="row-actions">
       <div style="flex:1"></div>
@@ -2028,6 +2067,7 @@ function auditHtml(a) {
       <h4>Home time — report to the yard</h4>
       <ul>${a.homeTimeInstructions.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
     ${a.discovery ? discoveryHtml(a.discovery) : ''}
+    ${advanceHtml(a.advance)}
     ${a.directives.length ? `<div class="callout ${a.maintenanceStatus === 'OutOfService' ? 'stop' : 'info'}" style="margin-top:14px">
       <h4>What happens next</h4><ul>${a.directives.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
     ${a.trip.pay.lines.length ? `<h3 class="sect">Driver pay accrued — ${money(a.driverPay)}</h3>
@@ -3662,19 +3702,20 @@ function viewCareer() {
       ${badge(c.probationMet ? 'ok' : 'warn', c.probationMet ? 'requirements met' : 'in progress')}
       <div class="spacer"></div><span class="sub">${S.driver.probation.durationDays}-day period · ${esc(S.driver.probation.notes)}</span></div>
     ${prog(c.probationProgress)}
-    ${c.probationMet ? `<div class="row-actions" style="margin-top:12px">
-      <button class="btn go" data-act="clear-probation">Clear probation &amp; move to Company Driver scale</button></div>`
-      : `<div class="row-actions" style="margin-top:12px">
-      <button class="btn ghost" data-act="clear-probation" data-force="1">Clear early (management override)</button></div>`}
+    <p class="hint">Operations clears this itself once the numbers <em>and</em> the reviews are both there,
+      and tells you at your next report-in. It is not something you click — a driver does not sign off
+      their own probation any more than they authorise their own equipment.</p>
   </div>` : ''}
 
   ${c.nextRank ? `<div class="panel">
     <div class="panel-head"><h2>Toward ${esc(c.nextRankTitle)}</h2>
       ${badge(c.nextRankMet ? 'ok' : 'mute', c.nextRankMet ? 'eligible' : 'not yet')}</div>
     ${prog(c.nextRankProgress)}
-    <div class="row-actions" style="margin-top:12px">
-      <button class="btn ${c.nextRankMet ? 'go' : 'ghost'}" data-act="promote" ${c.nextRankMet ? '' : 'data-force="1"'}>
-        ${c.nextRankMet ? 'Promote to ' + esc(c.nextRankTitle) : 'Promote early (override)'}</button></div>
+    ${(c.availableActions || []).includes('accept-offer') ? `<div class="row-actions" style="margin-top:12px">
+      <button class="btn go" data-act="accept-offer">Accept ${esc(c.nextRankTitle)}</button></div>
+      <p class="hint">This one is a decision rather than a raise — you take on the fuel and the
+        maintenance. Nothing happens until you say so.</p>`
+      : '<p class="hint">Promotions go through on their own when the record earns them. Nothing to click.</p>'}
   </div>` : ''}
 
   <div class="cols">
@@ -3689,15 +3730,15 @@ function viewCareer() {
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>Adjust pay</h2><span class="sub">Management action</span></div>
-      <div class="grid2">
-        <label>Loaded $/mi<input id="cp-loaded" type="number" step="0.005" value="${S.driver.pay.loadedCpm}"></label>
-        <label>Empty $/mi<input id="cp-empty" type="number" step="0.005" value="${S.driver.pay.deadheadCpm}"></label>
-      </div>
-      <label>Reason<input id="cp-reason" placeholder="why the rate is changing"></label>
-      <div class="row-actions"><button class="btn primary" data-act="adjust-pay">Apply new rate</button></div>
-      <p class="hint">Progression should come from performance. Use this for negotiated raises or corrections,
-        not to skip the ladder.</p>
+      <div class="panel-head"><h2>Your rate</h2><span class="sub">set by rank</span></div>
+      <dl class="kv">
+        <dt>Loaded mile</dt><dd>$${(+S.driver.pay.loadedCpm).toFixed(3)}</dd>
+        <dt>Empty mile</dt><dd>$${(+S.driver.pay.deadheadCpm).toFixed(3)}</dd>
+        <dt>Scale</dt><dd>${esc(S.driver.rankTitle)}</dd>
+      </dl>
+      <p class="hint">Rates come from your rank, a carrier change, or the scale a second-chance carrier
+        runs. There is no box to type a new one into — a rate you set yourself would make every
+        settlement and every promotion check downstream of it meaningless.</p>
     </div>
   </div>
 
@@ -4234,6 +4275,14 @@ async function handleAction(act, d, ev) {
       if (TAB === 'fleet' && !FLEETOPS) loadFleetOps();
       return;
     case 'close-modal': return closeModal();
+    // Whatever was queued behind the promotion — a payday or the home brief — still gets shown.
+    case 'advance-next': {
+      const q = ADVANCE_NEXT || {};
+      ADVANCE_NEXT = null;
+      if (q.paid) return paydayModal(q.paid);
+      if (q.brief) return homeBriefModal(q.brief);
+      return closeModal();
+    }
     case 'clear-audit': TRIP_AUDIT = null; return render();
 
     /* ---- status & HOS */
@@ -5091,19 +5140,11 @@ async function handleAction(act, d, ev) {
         toast(r.message, 'ok');
       });
     }
-    case 'clear-probation': return run(async () => {
-      const r = absorb(await api('/career/clear-probation', 'POST',
-        { force: d.force === '1', note: 'Probation review' }));
-      toast(r.message, 'ok');
-    });
-    case 'promote': return run(async () => {
+    // Lease-purchase and owner-operator are the only rungs the driver moves into by choosing to. No
+    // force here: an offer you are not eligible for is not an offer.
+    case 'accept-offer': return run(async () => {
       const r = absorb(await api('/career/promote', 'POST',
-        { rank: null, note: 'Performance review', force: d.force === '1' }));
-      toast(r.message, 'ok');
-    });
-    case 'adjust-pay': return run(async () => {
-      const r = absorb(await api('/career/pay', 'POST',
-        { loadedCpm: fv('cp-loaded'), deadheadCpm: fv('cp-empty'), reason: sv('cp-reason') }));
+        { rank: null, note: 'Accepted', force: false }));
       toast(r.message, 'ok');
     });
 

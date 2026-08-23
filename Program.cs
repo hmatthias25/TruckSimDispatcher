@@ -95,6 +95,12 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     // Arriving somewhere new grows the network — and may be worth a yard.
     var discovery = DiscoveryService.Note(s, s.Status.LocationCity, s.Status.LocationState, s.Status.GameTime);
 
+    // Rank and rates as they stand before the yard review gets a look at them. A probation that clears
+    // itself has to be announced, not left for the driver to spot on a settlement two days later.
+    var rankBefore = s.Driver.Rank;
+    var loadedBefore = s.Driver.Pay.LoadedCpm;
+    var deadheadBefore = s.Driver.Pay.DeadheadCpm;
+
     // Reporting in at the home yard is how home time gets taken — we observe it, we do not schedule it.
     var wentHome = HomeTime.Touch(s);
     if (wentHome)
@@ -112,7 +118,15 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     foreach (var st in paid)
         store.Log(s, "pay", $"{st.Number} paid — ${st.Gross:N2} gross, ${st.Stub?.Net ?? st.Gross:N2} net.", st.Number);
 
-    return new { snapshot = Snapshot(s), discovery, wentHome, homeBrief, paid, redeemed };
+    // Either the yard review just cleared probation, or the driver has earned the next rung. Both are
+    // the company acting on its own, and both get said out loud.
+    var advance = s.Driver.Rank != rankBefore
+        ? CareerService.NoticeFor(s, rankBefore == "probationary" ? "probation" : "promotion",
+                                  loadedBefore, deadheadBefore)
+        : CareerService.AutoAdvance(s);
+    if (advance != null) store.Log(s, "career", advance.Headline);
+
+    return new { snapshot = Snapshot(s), discovery, wentHome, homeBrief, paid, redeemed, advance };
 })));
 
 // ---------------------------------------------------------------- discovery
@@ -1338,13 +1352,6 @@ app.MapPost("/api/career/dedicated", (DedicatedRequest req) => Results.Ok(store.
     return new { snapshot = Snapshot(s), message };
 })));
 
-app.MapPost("/api/career/pay", (PayAdjustRequest req) => Results.Ok(store.Mutate(s =>
-{
-    var message = CareerService.AdjustPay(s, req.LoadedCpm, req.DeadheadCpm, req.Reason ?? "");
-    store.Log(s, "pay", message);
-    return new { message, snapshot = Snapshot(s) };
-})));
-
 // ---------------------------------------------------------------- packet & AI
 
 app.MapGet("/api/packet", (string? mode) =>
@@ -1748,7 +1755,6 @@ record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? 
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
 record ReconcileRequest(string? Account, decimal Amount, string Memo, decimal? FixUnsettledPay, int? FixFreightCounter);
 record CareerActionRequest(string? Rank, string? Note, bool Force);
-record PayAdjustRequest(decimal LoadedCpm, decimal DeadheadCpm, string? Reason);
 record AiRequest(string? Message);
 record ExtractRequest(List<ScreenshotImage>? Images);
 record RestoreRequest(string File);

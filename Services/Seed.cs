@@ -518,15 +518,31 @@ public static class Seed
 
     // ---------------------------------------------------------------- driver setup
 
+    /// <summary>
+    /// What a probationary driver of this much experience starts on.
+    ///
+    /// Shared so hiring and any later restoration of probation cannot drift apart — a driver put back
+    /// on probation should land on the scale they would have been hired onto, not a different number
+    /// that happens to be written somewhere else.
+    /// </summary>
+    public static (decimal Loaded, decimal Deadhead) ProbationaryScale(double experienceYears)
+    {
+        var experienced = experienceYears >= 5;
+        var green = experienceYears < 1;
+        return (green ? 0.48m : experienced ? 0.58m : 0.54m,
+                green ? 0.38m : experienced ? 0.48m : 0.44m);
+    }
+
     public static void HireDriver(AppState s, DriverApplication app, HireDecision decision)
     {
         var experienced = app.ExperienceYears >= 5;
         var green = app.ExperienceYears < 1;
+        var scale = ProbationaryScale(app.ExperienceYears);
 
         var pay = new PayPlan
         {
-            LoadedCpm = green ? 0.48m : experienced ? 0.58m : 0.54m,
-            DeadheadCpm = green ? 0.38m : experienced ? 0.48m : 0.44m,
+            LoadedCpm = scale.Loaded,
+            DeadheadCpm = scale.Deadhead,
             Notes = "Probationary scale. Reviewed when probation clears."
         };
         if (app.HasHazmat) pay.HazmatCpm = 0.05m;

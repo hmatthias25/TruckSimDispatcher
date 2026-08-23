@@ -658,12 +658,17 @@ public static class CareerService
             review.ProbationProgress.Add(ReqPct("On-time service", stats.OnTimePct, p.RequiredOnTimePct));
             review.ProbationProgress.Add(ReqMax("Avg damage per trip", stats.AvgDamagePerTrip, p.MaxAvgDamagePct, "0.##", "%"));
             review.ProbationProgress.Add(ReqMax("Driver-fault incidents", stats.DriverFaultIncidents, p.MaxDriverFaultIncidents));
+
+            // The reviews are the other half of the requirement, and they were missing from this list
+            // entirely — so the tab reported "requirements met" to a driver who had never sat three good
+            // reviews, and lit the button that cleared them on the strength of it.
+            review.ProbationProgress.Add(Req("Good reviews in a row",
+                Probation.ConsecutivePasses(s), Probation.PassesToClear));
             review.ProbationMet = review.ProbationProgress.All(r => r.Met);
 
             review.Findings.Add(review.ProbationMet
-                ? "Probation requirements are met. Operations can clear probation and move you to the Company Driver scale."
+                ? "Probation is served — the numbers are there and the reviews are behind you."
                 : $"Probation is still open: {string.Join(", ", review.ProbationProgress.Where(r => !r.Met).Select(r => r.Label.ToLowerInvariant()))} outstanding.");
-            if (review.ProbationMet) review.AvailableActions.Add("clear-probation");
         }
 
         var idx = Array.FindIndex(Ladder, r => r.Key == s.Driver.Rank);
@@ -682,8 +687,10 @@ public static class CareerService
 
             if (review.NextRankMet)
             {
-                review.Findings.Add($"Eligible for promotion to {next.Title}: ${next.LoadedCpm:0.000}/loaded mi. {next.Note}");
-                review.AvailableActions.Add("promote");
+                review.Findings.Add(IsChoice(next.Key)
+                    ? $"{next.Title} is on the table: ${next.LoadedCpm:0.000}/loaded mi. {next.Note} That one is yours to accept or leave."
+                    : $"Earned {next.Title}: ${next.LoadedCpm:0.000}/loaded mi. {next.Note} It goes through at your next report-in.");
+                if (IsChoice(next.Key)) review.AvailableActions.Add("accept-offer");
             }
             else if (!s.Driver.Probation.Active)
             {
@@ -709,8 +716,18 @@ public static class CareerService
     {
         var review = Review(s);
         if (!s.Driver.Probation.Active) return "Probation is already cleared.";
-        if (!review.ProbationMet && !force)
-            throw new InvalidOperationException("Probation requirements are not met. Override explicitly if operations is clearing it early.");
+        if (!force)
+        {
+            // Checked on its own rather than leaning on ProbationMet, so this holds even if the progress
+            // list is ever rearranged. Probation is not served on numbers alone.
+            var passes = Probation.ConsecutivePasses(s);
+            if (passes < Probation.PassesToClear)
+                throw new InvalidOperationException(
+                    $"{passes} good review(s) in a row against {Probation.PassesToClear} required. The numbers are only " +
+                    "half of it — the reviews are the other half.");
+            if (!review.ProbationMet)
+                throw new InvalidOperationException("Probation requirements are not met. Override explicitly if operations is clearing it early.");
+        }
 
         s.Driver.Probation.Active = false;
         s.Driver.Probation.ClearedGameDate = s.Status.GameTime;
@@ -916,13 +933,136 @@ public static class CareerService
         }
     }
 
-    public static string AdjustPay(AppState s, decimal loadedCpm, decimal deadheadCpm, string reason)
+    /// <summary>
+    /// Ranks the company does not simply hand somebody.
+    ///
+    /// Lease-purchase and owner-operator are not raises — the driver takes on fuel and maintenance and
+    /// carries the truck. Promoting a driver into one of those on their behalf would be doing something
+    /// TO them, however good the per-mile number looks. They are offered and accepted, not applied.
+    /// </summary>
+    public static bool IsChoice(string? rankKey) => rankKey is "lease" or "owner";
+
+    /// <summary>
+    /// Puts a driver back on probation, at the probationary scale.
+    ///
+    /// Only used to undo a clearing that was never earned. Past settlements are left exactly as they
+    /// were — they were paid, and unpaying them would be inventing history to fix a different mistake.
+    /// </summary>
+    public static void RestoreProbation(AppState s, string why)
     {
-        var oldLoaded = s.Driver.Pay.LoadedCpm;
-        if (loadedCpm > 0) s.Driver.Pay.LoadedCpm = loadedCpm;
-        if (deadheadCpm > 0) s.Driver.Pay.DeadheadCpm = deadheadCpm;
-        s.Driver.Pay.Notes = reason;
-        return $"Pay adjusted from ${oldLoaded:0.000} to ${s.Driver.Pay.LoadedCpm:0.000}/loaded mile. {reason}";
+        var start = Ladder[0];
+        s.Driver.Probation.Active = true;
+        s.Driver.Probation.ClearedGameDate = "";
+        s.Driver.Rank = start.Key;
+        s.Driver.RankTitle = start.Title;
+
+        // Promotion overwrote the rate outright, so what they were on beforehand is not in the file any
+        // more. The employer's own probationary scale reproduces it exactly, since it is derived rather
+        // than stored — which beats guessing at a number in an app that makes a point of not doing that.
+        if (!string.IsNullOrWhiteSpace(s.Company.Code) && s.Application != null)
+        {
+            Carriers.ApplyPayScale(s, s.Company.Code, s.Application);
+        }
+        else
+        {
+            // No carrier on file — a fictional or hand-built company. Fall back to the hiring table, and
+            // cap it at what they hold so undoing an unearned raise can never hand out a bigger one.
+            var scale = Seed.ProbationaryScale(s.Application?.ExperienceYears ?? 0);
+            s.Driver.Pay.LoadedCpm = Math.Min(s.Driver.Pay.LoadedCpm, scale.Loaded);
+            s.Driver.Pay.DeadheadCpm = Math.Min(s.Driver.Pay.DeadheadCpm, scale.Deadhead);
+        }
+        s.Driver.Pay.Notes = why;
+    }
+
+    /// <summary>What the company has just done for the driver, so it can be said rather than discovered.</summary>
+    public class AdvanceNotice
+    {
+        /// <summary>probation | promotion | offer</summary>
+        public string Kind { get; set; } = "promotion";
+        public string Rank { get; set; } = "";
+        public string RankTitle { get; set; } = "";
+        public string Headline { get; set; } = "";
+        public List<string> Detail { get; set; } = new();
+        public decimal LoadedCpm { get; set; }
+        public decimal DeadheadCpm { get; set; }
+        public decimal PreviousLoadedCpm { get; set; }
+        public decimal PreviousDeadheadCpm { get; set; }
+        public List<string> Unlocked { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Moves the driver up when they have earned it, without anybody clicking anything.
+    ///
+    /// A company driver does not promote themselves any more than they authorise their own equipment or
+    /// their own home time. The requirements are already tracked every close-out; the only thing that was
+    /// missing was the company acting on them.
+    ///
+    /// Probation is not handled here — it clears at the yard review, which is where that conversation
+    /// belongs and where it already worked correctly.
+    /// </summary>
+    public static AdvanceNotice? AutoAdvance(AppState s)
+    {
+        if (s.Driver.Probation.Active) return null;
+        if (s.Driver.CareerOver || s.Driver.TerminatedForCause) return null;
+
+        var review = Review(s);
+        if (!review.NextRankMet || string.IsNullOrWhiteSpace(review.NextRank)) return null;
+
+        // An offer is not a promotion. Say it is there and leave it with them.
+        if (IsChoice(review.NextRank)) return null;
+
+        var before = (s.Driver.Pay.LoadedCpm, s.Driver.Pay.DeadheadCpm);
+        Promote(s, review.NextRank, "Earned on performance.", force: true);
+        return NoticeFor(s, "promotion", before.LoadedCpm, before.DeadheadCpm);
+    }
+
+    /// <summary>
+    /// Builds the notice for a rank the driver has just moved into, from where they were before.
+    ///
+    /// Takes the previous rates rather than looking them up, because by the time this is called the new
+    /// ones are already on the file and the old ones are gone.
+    /// </summary>
+    public static AdvanceNotice NoticeFor(AppState s, string kind, decimal prevLoaded, decimal prevDeadhead)
+    {
+        var rank = Ladder.FirstOrDefault(r => r.Key == s.Driver.Rank);
+        var n = new AdvanceNotice
+        {
+            Kind = kind,
+            Rank = s.Driver.Rank,
+            RankTitle = s.Driver.RankTitle,
+            LoadedCpm = s.Driver.Pay.LoadedCpm,
+            DeadheadCpm = s.Driver.Pay.DeadheadCpm,
+            PreviousLoadedCpm = prevLoaded,
+            PreviousDeadheadCpm = prevDeadhead,
+            Unlocked = rank?.Unlocks.ToList() ?? new List<string>(),
+        };
+
+        n.Headline = kind == "probation"
+            ? $"Probation cleared. You are a {s.Driver.RankTitle}."
+            : $"Promoted to {s.Driver.RankTitle}.";
+
+        if (kind == "probation")
+            n.Detail.Add($"{Probation.PassesToClear} good reviews in a row and every threshold met. " +
+                         "That is the probationary period served — nothing hanging over the job now.");
+        else
+            n.Detail.Add("Earned on the record: the loads, the miles, the service and the safety file. " +
+                         "Nothing you had to ask for.");
+
+        var up = s.Driver.Pay.LoadedCpm - prevLoaded;
+        n.Detail.Add(up > 0
+            ? $"Loaded rate goes from ${prevLoaded:0.000} to ${s.Driver.Pay.LoadedCpm:0.000} a mile — up {up:0.000}. " +
+              $"Empty from ${prevDeadhead:0.000} to ${s.Driver.Pay.DeadheadCpm:0.000}."
+            : $"${s.Driver.Pay.LoadedCpm:0.000}/loaded mile, ${s.Driver.Pay.DeadheadCpm:0.000}/empty.");
+
+        n.Detail.Add("It applies from your next settlement — work already paid stays paid at the old rate.");
+
+        if (n.Unlocked.Count > 0)
+            n.Detail.Add($"Opens up: {string.Join(", ", n.Unlocked)}.");
+
+        if (rank != null && !string.IsNullOrWhiteSpace(rank.Note))
+            n.Detail.Add(rank.Note);
+
+        return n;
     }
 
     private static RequirementProgress Req(string label, double current, double required, string fmt = "0.#")
