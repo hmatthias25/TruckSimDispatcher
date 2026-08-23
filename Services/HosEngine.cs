@@ -42,6 +42,16 @@ public class PlanRequest
     /// them.
     /// </summary>
     public double AppointmentOpensHours { get; set; }
+
+    /// <summary>
+    /// The booked slot the plan should wait for, in hours from the start. Zero means do not wait at all
+    /// — the receiver has agreed to take it whenever it arrives.
+    ///
+    /// Separate from <see cref="AppointmentOpensHours"/> on purpose: that one is a fact off the load
+    /// text and is reported back as the window opening. Using it for both meant an early take deleted
+    /// the opening from the feasibility result, which is not the app's to delete.
+    /// </summary>
+    public double WaitUntilHours { get; set; }
     /// <summary>
     /// Whether the receiver will let a truck sit on their property. Only consulted when the wait is
     /// long enough to be worth sleeping; a short wait is sat at the gate either way.
@@ -324,9 +334,9 @@ public static class HosEngine
             // the first time is when the receiver will actually take it, so arriving early is dead
             // time rather than slack. Skipped entirely when no opening time is known, which is how
             // every load dispatched before this existed keeps the plan it was given.
-            if (task.IsUnload && req.AppointmentOpensHours > 0)
+            if (task.IsUnload && req.WaitUntilHours > 0)
             {
-                var opensAt = start.Value.AddHours(req.AppointmentOpensHours);
+                var opensAt = start.Value.AddHours(req.WaitUntilHours);
                 var waiting = (opensAt - clock).TotalHours;
                 if (waiting > Eps)
                 {

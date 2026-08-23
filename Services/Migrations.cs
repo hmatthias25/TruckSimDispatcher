@@ -24,6 +24,7 @@ public static class Migrations
         UndoProbationClearedWithoutTheReviews(s);
         DropEndorsementsThatAreNotReal(s);
         ClearTrailerDecisionsLeftToTheDriver(s);
+        GiveRunningLoadsAnAppointment(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -89,6 +90,48 @@ public static class Migrations
     /// current utilisation, and inventing one here would be guessing at figures the next fleet report is
     /// about to read properly.
     /// </summary>
+    /// <summary>
+    /// Gives loads already on the road a booked slot.
+    ///
+    /// The plan used to target the moment the doors unlocked; it targets an appointment now, and a trip
+    /// dispatched before that existed has no slot on it. Left empty, those loads would be judged against
+    /// the window close alone while every load after them answered to a slot — the same job graded two
+    /// different ways depending on when it happened to be dispatched.
+    ///
+    /// Only trips still running are touched. A delivered trip is a record of what happened and inventing
+    /// an appointment for it afterwards would be rewriting history to match a rule it never ran under.
+    /// The receiver-takes-early flag is deliberately NOT rolled retrospectively: that is a promise made
+    /// at dispatch, and this driver was never given it.
+    /// </summary>
+    private static void GiveRunningLoadsAnAppointment(AppState s)
+    {
+        if (s.SchemaVersion >= 7) return;
+        s.SchemaVersion = 7;
+
+        var stamped = 0;
+        foreach (var t in s.Trips.Where(x => x.Status is "Authorized" or "InTransit"))
+        {
+            if (!string.IsNullOrWhiteSpace(t.AppointmentGameTime)) continue;
+            if (GameClock.TryParse(t.AppointmentOpensGameTime) is not { } opensAt) continue;
+            if (GameClock.TryParse(t.DueGameTime) is not { } dueAt || dueAt <= opensAt) continue;
+
+            t.AppointmentGameTime = GameClock.Format(DeliveryWindow.AppointmentIn(opensAt, dueAt, t.Id));
+            stamped++;
+        }
+
+        if (stamped == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "dispatch",
+            GameTime = s.Status.GameTime,
+            Message = $"Booked a delivery slot on {stamped} load(s) already running. Receivers work to " +
+                      "appointments now rather than taking anything from the moment they open, and a load " +
+                      "dispatched before that would otherwise have had no slot to aim at. Check the Active " +
+                      "tab for the time.",
+        });
+    }
+
     private static void ClearTrailerDecisionsLeftToTheDriver(AppState s)
     {
         if (s.SchemaVersion >= 6) return;

@@ -423,9 +423,28 @@ public static class TripService
             trip.Notes = string.IsNullOrWhiteSpace(trip.Notes) ? req.Notes : trip.Notes + " | " + req.Notes;
 
         // ---- service result
-        var late = DetermineLate(trip, req, out var serviceNote);
+        var late = DetermineLate(s, trip, req, out var serviceNote);
         trip.ServiceResult = trip.Kind == "Freight" ? (late ? "Late" : "OnTime") : "NotApplicable";
         audit.ServiceFindings.Add(serviceNote);
+
+        // An early take is the receiver's doing, not a schedule beaten. Recorded so the figure is on the
+        // file rather than quietly flattering the driver's numbers when somebody reads them back later.
+        if (trip.ReceiverTakesEarly && trip.Kind == "Freight"
+            && GameClock.TryParse(trip.DeliveredGameTime) is { } deliveredAt)
+        {
+            var against = GameClock.TryParse(trip.AppointmentGameTime)
+                          ?? GameClock.TryParse(trip.AppointmentOpensGameTime);
+            trip.EarlyTakeHoursSaved = against is { } slot
+                ? Math.Max(0, Math.Round((slot - deliveredAt).TotalHours, 2))
+                : 0;
+
+            audit.ServiceFindings.Add(trip.EarlyTakeHoursSaved > 0.1
+                ? $"The receiver took this one ahead of the appointment — {Hhmm.Of(trip.EarlyTakeHoursSaved)} " +
+                  "earlier than the slot. Their call, not a schedule beaten, so it counts as on time and " +
+                  "nothing more."
+                : "The receiver had agreed to take this one whenever it arrived. It still counts as on " +
+                  "time and nothing more.");
+        }
 
         // ---- fault attribution: the company owns its own bad dispatching
         var (fault, rationale) = AttributeFault(s, trip, req, late);
@@ -1150,8 +1169,9 @@ public static class TripService
         string.IsNullOrWhiteSpace(f.City) ? (string.IsNullOrWhiteSpace(f.Vendor) ? "an unnamed stop" : f.Vendor)
                                           : DispatchEngine.Place(f.City, f.State);
 
-    private static bool DetermineLate(Trip trip, CompleteTripRequest req, out string note)
+    private static bool DetermineLate(AppState s, Trip trip, CompleteTripRequest req, out string note)
     {
+        var grace = Math.Max(0, s.Settings.AppointmentGraceHours);
         if (trip.Kind != "Freight") { note = "Non-revenue move — no service window."; return false; }
 
         var due = GameClock.TryParse(trip.DueGameTime);
@@ -1161,7 +1181,8 @@ public static class TripService
         // was not taking it yet, so either the time is wrong or the window was. Said, not blocked:
         // this app reconciles what the driver saw, the same as it does for an odometer that reads
         // backwards.
-        if (del != null && GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opens && del < opens)
+        if (del != null && !trip.ReceiverTakesEarly
+            && GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opens && del < opens)
             trip.WindowWarning =
                 $"Delivered {GameClock.Pretty(del.Value)}, but the window did not open until " +
                 $"{GameClock.Pretty(opens)}. They would not have taken it yet — check the delivery time, " +
@@ -1170,6 +1191,30 @@ public static class TripService
         if (due != null && del != null)
         {
             var margin = (due.Value - del.Value).TotalHours;
+
+            // Missing the booked slot is not instantly a service failure — traffic happens and a
+            // receiver with the doors still open is not writing you up over ninety minutes. Past the
+            // grace it counts, even though the window is still open. Where the receiver took the load
+            // whenever it arrived, there was no slot to miss.
+            if (margin >= 0 && !trip.ReceiverTakesEarly
+                && GameClock.TryParse(trip.AppointmentGameTime) is { } slot)
+            {
+                var pastSlot = (del.Value - slot).TotalHours;
+                if (pastSlot > grace)
+                {
+                    note = $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(slot)} " +
+                           $"appointment — {Hhmm.Of(pastSlot)} past the slot, beyond the {Hhmm.Of(grace)} " +
+                           "grace. Inside the window, but the dock was expecting you earlier.";
+                    return true;
+                }
+                if (pastSlot > 0)
+                {
+                    note = $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(slot)} " +
+                           $"appointment — {Hhmm.Of(pastSlot)} past the slot, inside the {Hhmm.Of(grace)} grace.";
+                    return false;
+                }
+            }
+
             note = margin >= 0
                 ? $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Hhmm.Of(margin)} early."
                 : $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Hhmm.Of(Math.Abs(margin))} LATE.";

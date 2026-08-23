@@ -78,6 +78,62 @@ public static class DeliveryWindow
     /// <summary>Hours until the load is due, or null when the text cannot be read.</summary>
     public static double? HoursUntil(AppState s, string? windowText) => Read(s, windowText)?.HoursUntilDue;
 
+    /// <summary>FNV-1a, so a slot and a receiver's mood are stable and cannot be re-rolled by reloading.</summary>
+    private static uint Hash(string text)
+    {
+        unchecked
+        {
+            uint h = 2166136261;
+            foreach (var c in text ?? "") { h ^= c; h *= 16777619; }
+            return h;
+        }
+    }
+
+    /// <summary>
+    /// The booked slot inside a window.
+    ///
+    /// ATS gives a range; a dock gives you a time. Targeting the front of the range meant every load was
+    /// planned to arrive the moment the doors unlocked, which is not how an appointment works and threw
+    /// away the difference as dead time.
+    ///
+    /// Kept off both edges — a slot right on opening or right on closing is not really a slot — and
+    /// rounded to the half hour, because that is how docks book.
+    ///
+    /// Deliberately in the front half of the window. A slot near the close leaves no room for the dock
+    /// work itself, which turned loads that had always been runnable into ones the planner refused —
+    /// a difficulty change smuggled in by a cosmetic one. <see cref="TailRoomHours"/> keeps clear of
+    /// the close so unloading still fits.
+    /// </summary>
+    public static DateTime AppointmentIn(DateTime opensAt, DateTime dueAt, string seedKey)
+    {
+        var span = (dueAt - opensAt).TotalHours;
+        if (span <= 0.5) return opensAt;
+
+        var frac = 0.10 + (Hash("slot|" + seedKey) % 46) / 100.0;      // 0.10 .. 0.55 of the window
+        var at = opensAt.AddHours(span * frac);
+        var halves = Math.Round((at - opensAt.Date).TotalHours * 2, MidpointRounding.AwayFromZero) / 2;
+        var slot = opensAt.Date.AddHours(halves);
+
+        // Never so late that the dock work cannot finish inside the window.
+        var latest = dueAt.AddHours(-TailRoomHours);
+        if (latest < opensAt) latest = opensAt;
+        if (slot > latest) slot = latest;
+        return slot < opensAt ? opensAt : slot;
+    }
+
+    /// <summary>Hours kept clear before the window closes, so unloading still fits after the slot.</summary>
+    private const double TailRoomHours = 3;
+
+    /// <summary>
+    /// Whether this receiver will take the load whenever it turns up.
+    ///
+    /// A quiet week and a free dock. Uncommon on purpose — a window nobody keeps is not a window — and
+    /// decided at dispatch rather than on arrival, so the hours it frees are bankable against a reload
+    /// instead of a surprise the driver could not have planned around.
+    /// </summary>
+    public static bool TakesEarly(AppState s, string seedKey) =>
+        Hash("early|" + seedKey) % 100 < Math.Clamp(s.Settings.ReceiverTakesEarlyPct, 0, 100);
+
     /// <summary>
     /// Every clock time in a string, in order, resolved through any AM/PM marker that follows it.
     ///

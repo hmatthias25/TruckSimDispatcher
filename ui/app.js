@@ -1429,8 +1429,18 @@ function viewActive() {
       <dt>Dispatched at</dt><dd>${gt(t.dispatchedGameTime)}</dd>
       ${t.appointmentOpensGameTime
         ? `<dt>Window</dt><dd>${gt(t.appointmentOpensGameTime)} → <b>${gt(t.dueGameTime)}</b>
-             <div class="sub">They will not take it before the window opens.</div></dd>`
+             <div class="sub">${t.receiverTakesEarly
+               ? 'They agreed to take it whenever you arrive — do not sit waiting for the window.'
+               : 'They will not take it before the window opens.'}</div></dd>`
         : `<dt>Due</dt><dd>${gt(t.dueGameTime)}</dd>`}
+      ${t.receiverTakesEarly
+        ? `<dt>Appointment</dt><dd>${badge('ok', 'taking it early')}
+             <div class="sub">No slot to keep. Anything you save is yours to reload against.</div></dd>`
+        : t.appointmentGameTime
+          ? `<dt>Appointment</dt><dd><b>${gt(t.appointmentGameTime)}</b>
+               <div class="sub">Aim for the slot. Past it you have ${num(S.settings.appointmentGraceHours, 1)}h
+                 of grace before it counts against you, even with the window open.</div></dd>`
+          : ''}
       ${t.weightLbs ? `<dt>Weight</dt><dd>${num(t.weightLbs)} lb</dd>` : ''}
       <dt>Rationale</dt><dd style="font-family:inherit">${esc(t.authorizationRationale)}</dd>
     </dl>

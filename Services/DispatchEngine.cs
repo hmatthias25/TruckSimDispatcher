@@ -290,6 +290,23 @@ public static class DispatchEngine
     /// Flatbeds do: the cargo is put on and secured while the clock runs. Vans and reefers do not. The
     /// list is a setting, because the game decides this and only flatbeds are confirmed.
     /// </summary>
+    /// <summary>
+    /// Hours from now to the booked slot at the receiver.
+    ///
+    /// Falls back to the window opening when there is no range to place a slot inside — an unknown
+    /// window plans exactly as it always did.
+    /// </summary>
+    public static double AppointmentHoursFor(AppState s, BoardLoad load)
+    {
+        if (load.AppointmentOpensHours <= 0) return 0;
+        if (GameClock.TryParse(s.Status.GameTime) is not { } now) return load.AppointmentOpensHours;
+
+        var opensAt = now.AddHours(load.AppointmentOpensHours);
+        var dueAt = now.AddHours(Math.Max(load.AppointmentOpensHours, load.DeadlineHours));
+        var slot = DeliveryWindow.AppointmentIn(opensAt, dueAt, load.Id);
+        return Math.Max(0, Math.Round((slot - now).TotalHours, 2));
+    }
+
     public static bool LiveLoaded(AppState s, string? trailerType) =>
         !string.IsNullOrWhiteSpace(trailerType)
         && (s.Settings.LiveLoadTrailerTypes ?? new List<string>())
@@ -549,6 +566,20 @@ public static class DispatchEngine
 
         var dest = Markets.Find(s, load.DestCity, load.DestState);
         e.DestTier = dest?.Tier ?? 2;
+
+        // Said on the card, before the load is picked. A receiver taking it early is worth hours, and
+        // hours are only worth planning around if you know about them in time to plan.
+        e.ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load.Id) && load.AppointmentOpensHours > 0;
+        if (!e.ReceiverTakesEarly && load.AppointmentOpensHours > 0
+            && GameClock.TryParse(s.Status.GameTime) is { } evalNow)
+            e.AppointmentGameTime = GameClock.Format(evalNow.AddHours(AppointmentHoursFor(s, load)));
+
+        if (e.ReceiverTakesEarly)
+            e.Pros.Add($"{Place(load.DestCity, load.DestState)} is quiet — they will take it whenever you " +
+                       "arrive, so none of the window is spent sitting.");
+        else if (!string.IsNullOrWhiteSpace(e.AppointmentGameTime))
+            e.Cons.Add($"Booked in at {GameClock.Pretty(e.AppointmentGameTime)}. Arriving before that is " +
+                       "sitting on their gate, not slack.");
         e.DestResetFriendly = dest?.ResetFriendly ?? false;
 
         // ---- hard gates
@@ -614,7 +645,12 @@ public static class DispatchEngine
             NavEstimateHours = load.NavEstimateHours,
             ExtraStops = load.ExtraStops,
             DeadlineHours = load.DeadlineHours,
+            // The window opening stays a fact off the load, whatever the receiver has agreed to.
             AppointmentOpensHours = load.AppointmentOpensHours,
+
+            // What the plan actually waits for: the booked slot, or nothing where they will take it
+            // whenever it turns up.
+            WaitUntilHours = DeliveryWindow.TakesEarly(s, load.Id) ? 0 : AppointmentHoursFor(s, load),
             ReceiverAllowsOvernight = Facilities.AllowsOvernightParking(
                 s, load.DestCity, load.DestState, load.Receiver),
             UsableFuelRangeMiles = fuelRange,
@@ -959,6 +995,7 @@ public static class DispatchEngine
                 && GameClock.TryParse(s.Status.GameTime) is { } opensFrom
                 ? GameClock.Format(opensFrom.AddHours(load.AppointmentOpensHours))
                 : "",
+            ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load.Id),
             IsOversize = load.IsOversize,
             TarpsUsed = load.RequiresTarp ? 1 : 0,
             FeasibilityAtDispatch = eval.Feasibility,
@@ -1023,6 +1060,32 @@ public static class DispatchEngine
             Kind = "Note",
             Detail = $"Authorized by operations. {trip.AuthorizationRationale}"
         });
+
+        // The slot the dock is expecting, stamped once so the plan, the close-out and the report all
+        // measure against the same time.
+        if (GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opensAt
+            && GameClock.TryParse(trip.DueGameTime) is { } dueAt && dueAt > opensAt)
+            trip.AppointmentGameTime = GameClock.Format(DeliveryWindow.AppointmentIn(opensAt, dueAt, load.Id));
+
+        // Both of these are only worth anything before the driver leaves, so they go on the rationale
+        // the dispatcher gives at authorisation rather than turning up in the close-out.
+        if (trip.ReceiverTakesEarly)
+        {
+            var saved = GameClock.TryParse(trip.AppointmentGameTime) is { } slot
+                        && GameClock.TryParse(s.Status.GameTime) is { } from
+                ? Math.Max(0, (slot - from).TotalHours - eval.Feasibility.ElapsedHours)
+                : 0;
+            trip.AuthorizationRationale +=
+                $" {DispatchEngine.Place(load.DestCity, load.DestState)} is quiet this week — they will take it " +
+                "whenever you get there, appointment or not. Do not sit on their gate waiting for a slot" +
+                (saved > 0.25 ? $"; that is about {Hhmm.Of(saved)} you do not have to spend, so a reload is worth looking at." : ".");
+        }
+        else if (!string.IsNullOrWhiteSpace(trip.AppointmentGameTime))
+        {
+            trip.AuthorizationRationale +=
+                $" Your slot is {GameClock.Pretty(trip.AppointmentGameTime)} — aim for it. Turning up early " +
+                "means sitting, and the dock is not expecting you before then.";
+        }
 
         s.Trips.Insert(0, trip);
         s.Status.ActiveTripId = trip.Id;

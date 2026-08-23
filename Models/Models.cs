@@ -20,7 +20,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 6;
+    public const int Current = 7;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -898,6 +898,22 @@ public class Trip
     public string AppointmentOpensGameTime { get; set; } = "";
 
     /// <summary>
+    /// The booked slot, somewhere between the window opening and its close. What the plan targets and
+    /// what dispatch tells the driver to aim for — the opening is when the doors unlock, not when the
+    /// dock is expecting you.
+    /// </summary>
+    public string AppointmentGameTime { get; set; } = "";
+
+    /// <summary>
+    /// The receiver agreed to take this one whenever it turns up. Decided at dispatch and stated there,
+    /// so the hours it frees are bankable rather than a surprise found on arrival.
+    /// </summary>
+    public bool ReceiverTakesEarly { get; set; }
+
+    /// <summary>Hours the early take actually saved, measured at close-out. For the delivery report.</summary>
+    public double EarlyTakeHoursSaved { get; set; }
+
+    /// <summary>
     /// Empty miles run between the last load closing and this one being dispatched — getting from the
     /// receiver or the truck stop to where this job starts. Derived from the two odometer readings the
     /// driver reported, never estimated. Separate from <see cref="DeadheadMiles"/>, which is the
@@ -1746,6 +1762,24 @@ public class AppSettings
     public double ParkingBufferHours { get; set; } = 0.75;
 
     /// <summary>
+    /// How long past a booked appointment still counts as ordinary slippage.
+    ///
+    /// A dock books a slot and expects you in it, but traffic happens and a receiver with the doors
+    /// still open is not writing a service failure over ninety minutes. Past this it counts against the
+    /// driver even though the window is open.
+    /// </summary>
+    public double AppointmentGraceHours { get; set; } = 2;
+
+    /// <summary>
+    /// How often a receiver takes a load ahead of its appointment, as a percentage of loads.
+    ///
+    /// A quiet week and a free dock, and they will have you early. Deliberately uncommon — roughly one
+    /// load in eight — because a window nobody keeps is not a window. Seeded on the trip, so it cannot
+    /// be re-rolled by reloading the page.
+    /// </summary>
+    public double ReceiverTakesEarlyPct { get; set; } = 12;
+
+    /// <summary>
     /// On-duty time for hooking a trailer that is already loaded.
     ///
     /// Back in, pin it, cable up, walk round it. Twenty-five minutes is a fair drop-and-hook; a live load
@@ -2208,6 +2242,16 @@ public class LoadEvaluation
     public List<string> Pros { get; set; } = new();
     public List<string> Cons { get; set; } = new();
     public int DestTier { get; set; } = 2;
+
+    /// <summary>
+    /// This receiver will take the load whenever it arrives. On the evaluation and not only on the
+    /// authorised trip, because the hours it frees are worth knowing BEFORE you pick the load — that is
+    /// the difference between banking them against a reload and finding out on the gate.
+    /// </summary>
+    public bool ReceiverTakesEarly { get; set; }
+
+    /// <summary>The booked slot at the receiver, as a game time. Empty when the window gave no range.</summary>
+    public string AppointmentGameTime { get; set; } = "";
     public bool DestResetFriendly { get; set; }
     public decimal EstimatedDriverPay { get; set; }
     public decimal EstimatedCompanyRevenue { get; set; }

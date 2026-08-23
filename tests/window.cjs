@@ -218,10 +218,18 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
     destCity: 'Aurora', destState: 'CO', receiver: yesPark.who, loadedMiles: 19, deadheadMiles: 0,
     gameRevenue: 300, deadlineHours: 30, weightLbs: 20000, appointmentOpensHours: 18,
   });
-  f = stay.evaluations[0].feasibility;
-  ok('a friendly receiver keeps you on their property',
-    (f.warnings || []).some((w) => /let you sit on their/.test(w)),
-    (f.warnings || []).join(' | ') || '(none)');
+  const stayEv = stay.evaluations[0];
+  f = stayEv.feasibility;
+  // #80: this one can roll an early take, and then there is no sitting to do anywhere.
+  if (stayEv.receiverTakesEarly) {
+    ok('taking it early, so there is nothing to sit through',
+      !(f.warnings || []).some((w) => /wait at the receiver/.test(w)),
+      (stayEv.pros || []).find((p) => /take it whenever/.test(p)) || 'no wait planned');
+  } else {
+    ok('a friendly receiver keeps you on their property',
+      (f.warnings || []).some((w) => /let you sit on their/.test(w)),
+      (f.warnings || []).join(' | ') || '(none)');
+  }
   ok('and there is no repositioning',
     !(f.timeline || []).some((x) => /truck stop/i.test(x.label)),
     (f.timeline || []).map((x) => x.label).join(' | '));
@@ -234,10 +242,19 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
       destCity: 'Aurora', destState: 'CO', receiver: who, loadedMiles: 19, deadheadMiles: 0,
       gameRevenue: 300, deadlineHours: 12, weightLbs: 20000, appointmentOpensHours: 6,
     });
-    const bf = brief.evaluations[0].feasibility;
-    ok(`${who}: a short wait stays at the receiver`,
-      (bf.warnings || []).some((w) => /wait at the receiver/.test(w)),
-      (bf.warnings || []).find((w) => /before they open/.test(w)) || '(none)');
+    const ev = brief.evaluations[0];
+    const bf = ev.feasibility;
+    // #80: roughly one receiver in eight takes it whenever you turn up, and then there is no wait to
+    // sit anywhere. Seeded on the load, so which one it is here is fixed rather than flaky.
+    if (ev.receiverTakesEarly) {
+      ok(`${who}: taking it early, so there is no wait at all`,
+        !(bf.warnings || []).some((w) => /wait at the receiver/.test(w)),
+        (ev.pros || []).find((p) => /take it whenever/.test(p)) || 'no wait planned');
+    } else {
+      ok(`${who}: a short wait stays at the receiver`,
+        (bf.warnings || []).some((w) => /wait at the receiver/.test(w)),
+        (bf.warnings || []).find((w) => /before they open/.test(w)) || '(none)');
+    }
     ok(`${who}: and nobody is sent to a truck stop`,
       !(bf.timeline || []).some((x) => /truck stop/i.test(x.label)),
       (bf.timeline || []).map((x) => x.label).join(' | '));
