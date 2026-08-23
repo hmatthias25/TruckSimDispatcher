@@ -412,7 +412,7 @@ public static class HomeTime
         return !app.WillNotHaul.Any(w => w.Equals(trailerType, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string TrailerTypeFor(string division) => (division ?? "").Trim() switch
+    public static string TrailerTypeFor(string division) => (division ?? "").Trim() switch
     {
         // Dedicated is not a trailer type — the customer's freight decides what you pull.
         "Dedicated" => "",

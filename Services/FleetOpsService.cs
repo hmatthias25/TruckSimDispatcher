@@ -942,7 +942,27 @@ public static class FleetOpsService
             // verdict — so they have to pair with something.
             var idleAndOld = idle && old;
             var idleAndQuiet = idle && unproductive;
-            if (!starsGone && !(old && unproductive) && !idleAndOld && !idleAndQuiet) continue;
+            if (!starsGone && !(old && unproductive) && !idleAndOld && !idleAndQuiet)
+            {
+                // One soft reason is a quiet fortnight, not a verdict. Say it is being watched rather
+                // than dropping it — the driver should not have a replacement land out of nowhere.
+                if (idle)
+                    report.Watching.Add(new TrailerWatchNote
+                    {
+                        Unit = tr.Unit, Type = tr.Type,
+                        Note = $"Trailer {tr.Ref} ({tr.Type.ToLowerInvariant()}) ran at {tr.UtilisationPct:0.#}% of the " +
+                               $"week, under the {m.TrailerLowUtilisationPct:0}% we look for. Keeping an eye on it — " +
+                               "nothing for you to do.",
+                    });
+                else if (old)
+                    report.Watching.Add(new TrailerWatchNote
+                    {
+                        Unit = tr.Unit, Type = tr.Type,
+                        Note = $"Trailer {tr.Ref} ({tr.Type.ToLowerInvariant()}) is about {ageYears:0.#} years old but " +
+                               "still earning, so it stays. On the list to watch.",
+                    });
+                continue;
+            }
 
             var evidence = new List<string>();
             var reason = starsGone ? "condition"
@@ -960,16 +980,29 @@ public static class FleetOpsService
             if (old && unproductive)
                 evidence.Add("Old, and what it is pulling is not paying. Either reason alone would be fine; together they are not.");
             if (holder != null) evidence.Add($"Currently under {holder.Name}.");
-            evidence.Add($"Replace with the same {tr.Type.ToLowerInvariant()}, or re-rig for whatever the lane is actually offering — " +
-                         "buy it in ATS and confirm it here.");
+
+            // Operations decides what replaces it. The driver is a company driver — what the fleet buys
+            // is not their call, and being handed the utilisation figures as homework was the bug.
+            var (newType, why) = ReplacementFor(s, tr);
+            evidence.Add(why);
+
+            var order = EquipmentService.OrderReplacementTrailer(s, tr, newType,
+                $"Trailer {tr.Ref} coming off the fleet on {reason}.");
+            evidence.Add(order != null
+                ? $"{order.Number} is raised for it — buy the {newType.ToLowerInvariant()} in ATS and add it on the " +
+                  "Fleet tab, then close the order out."
+                : $"We will raise the order for the {newType.ToLowerInvariant()} once the equipment order " +
+                  "already open is closed out.");
 
             report.Retirements.Add(new RetirementRecommendation
             {
                 Unit = tr.Unit,
                 UnitKind = "Trailer",
                 Headline = starsGone
-                    ? $"Trailer {tr.Ref} ({tr.Type}) is down to {tr.Stars:0.#} stars. Recommend replacing it."
-                    : $"Trailer {tr.Ref} ({tr.Type}) is old and not earning. Worth replacing.",
+                    ? $"Trailer {tr.Ref} ({tr.Type}) is down to {tr.Stars:0.#} stars. We are replacing it with a " +
+                      $"{newType.ToLowerInvariant()}."
+                    : $"Trailer {tr.Ref} ({tr.Type}) is old and not earning its keep. We are replacing it with a " +
+                      $"{newType.ToLowerInvariant()}.",
                 Evidence = evidence,
                 ServiceMiles = tr.ServiceMiles,
                 DamagePct = 0,
@@ -977,8 +1010,60 @@ public static class FleetOpsService
                 IsPlayerUnit = false
             });
 
-            report.Findings.Add($"Trailer {tr.Ref}: replacement recommended on {reason}.");
+            report.Findings.Add($"Trailer {tr.Ref}: being replaced with a {newType.ToLowerInvariant()} on {reason}.");
         }
+    }
+
+    /// <summary>
+    /// Average utilisation by trailer type, across everything with a figure reported off the game's
+    /// Trailer Manager. The basis for deciding what a retiring trailer is replaced with.
+    /// </summary>
+    private static Dictionary<string, double> UtilisationByType(AppState s) =>
+        s.Trailers
+            .Where(t => !t.Retired && t.UtilisationPct >= 0 && !string.IsNullOrWhiteSpace(t.Type))
+            .GroupBy(t => t.Type, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Average(t => t.UtilisationPct), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Trailer types this carrier actually runs, off its own divisions. A lowboy is not a candidate at a
+    /// fleet with no heavy-haul division, however well lowboys might do elsewhere.
+    /// </summary>
+    private static List<string> TypesWeRun(AppState s) =>
+        s.Company.Divisions
+            .Select(HomeTime.TrailerTypeFor)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    /// <summary>
+    /// What operations replaces a retiring trailer with, and why.
+    ///
+    /// The driver does not choose this and should not be asked to. The company has the utilisation
+    /// figures for the whole fleet, so it makes the call: if another type it runs is decisively better
+    /// used, the replacement changes type and the reasoning is stated. Otherwise it is like for like.
+    ///
+    /// The gap is wide on purpose — a few points is noise, and a fleet that re-rigged on noise would be
+    /// a fleet with no plan.
+    /// </summary>
+    private static (string Type, string Why) ReplacementFor(AppState s, Trailer tr)
+    {
+        var same = (tr.Type, $"Like for like — another {tr.Type.ToLowerInvariant()}.");
+        var util = UtilisationByType(s);
+        if (!util.TryGetValue(tr.Type, out var mine)) return same;
+
+        var gap = s.Settings.Maintenance.TrailerTypeSwitchGapPct;
+        var best = TypesWeRun(s)
+            .Where(t => !t.Equals(tr.Type, StringComparison.OrdinalIgnoreCase) && util.ContainsKey(t))
+            .Select(t => (Type: t, Util: util[t]))
+            .OrderByDescending(x => x.Util)
+            .FirstOrDefault();
+
+        if (best.Type == null || best.Util - mine < gap) return same;
+
+        return (best.Type,
+            $"Going to a {best.Type.ToLowerInvariant()} rather than another {tr.Type.ToLowerInvariant()}: our " +
+            $"{best.Type.ToLowerInvariant()}s are running at {best.Util:0.#}% against {mine:0.#}% on the " +
+            $"{tr.Type.ToLowerInvariant()}s. That is where the freight is.");
     }
 
     /// <summary>

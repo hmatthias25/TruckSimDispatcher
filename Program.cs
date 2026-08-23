@@ -868,6 +868,7 @@ app.MapGet("/api/fleetops", () => Results.Ok(new
     pendingTerminations = store.State.FleetReports
         .SelectMany(r => r.Personnel).Where(p => p.Pending).ToList(),
     retirements = store.State.FleetReports.FirstOrDefault()?.Retirements ?? new List<RetirementRecommendation>(),
+    watching = store.State.FleetReports.FirstOrDefault()?.Watching ?? new List<TrailerWatchNote>(),
     recommendedTruck = Seed.RecommendedTruck(store.State)
 }));
 

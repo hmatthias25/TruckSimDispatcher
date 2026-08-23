@@ -195,9 +195,18 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
     trRet.map((r) => r.unit).join(', '));
   ok('the player\'s own trailer is never touched', !trRet.some((r) => r.unit === mine),
     `mine is ${mine}`);
-  ok('it offers a same-or-different re-rig',
-    (trRet[0]?.evidence || []).some((e) => /re-rig/.test(e)),
-    (trRet[0]?.evidence || []).join(' | '));
+  // #79: operations decides. A company driver is not handed the utilisation figures as homework.
+  const trEv = (trRet[0]?.evidence || []).join(' | ');
+  ok('the decision is taken, not offered',
+    /We are replacing it with|Like for like|Going to a/i.test(trRet[0]?.headline + ' | ' + trEv),
+    (trRet[0]?.headline || '').slice(0, 110));
+  ok('and the replacement type is named',
+    /like for like|going to a/i.test(trEv), trEv.slice(0, 130));
+  ok('nothing asks the driver to work it out',
+    !/re-rig for whatever|or re-rig|figure out|if it really/i.test(trEv), trEv.slice(0, 130));
+  ok('an order is raised for it, with a number',
+    /is raised for it|once the equipment order/i.test(trEv),
+    (trEv.match(/[^|]*raised for it[^|]*/i) || ['(no order line)'])[0].trim().slice(0, 120));
 
   head('9. The company can ask for another trailer');
   // Give the yard more drivers than trailers so the ask has a real basis, then file until it fires.

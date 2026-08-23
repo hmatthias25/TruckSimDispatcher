@@ -2587,12 +2587,20 @@ function fleetDecisionsHtml() {
   const probation = S.views.fleetOps?.onProbation || [];
   const risks = S.views.fleetOps?.flightRisks || [];
   const ask = S.views.fleetOps?.trailerRequest || null;
+  const watching = FLEETOPS?.watching || [];
   const count = pending.length + retire.length + open.length + probation.length + (ask ? 1 : 0);
-  if (!count && !risks.length) return '';
+  if (!count && !risks.length && !watching.length) return '';
 
   return `<div class="panel">
     <div class="panel-head"><h2>Decisions from the last report</h2>
       ${count ? badge('warn', count + ' outstanding') : badge('mute', 'nothing outstanding')}</div>
+
+    ${watching.length ? `<div class="callout info">
+      <h4>Trailers we are watching</h4>
+      <ul>${watching.map((w) => `<li>${esc(w.note)}</li>`).join('')}</ul>
+      <p class="hint">Nothing for you to do with these. Operations decides whether a trailer stays or
+        goes and orders the replacement itself — this is just so nothing arrives out of nowhere.</p>
+    </div>` : ''}
 
     ${probation.map((pr) => `<div class="callout warn">
       <h4>${esc(pr.driverName)} is on probation${pr.attempt > 1 ? ` (time ${pr.attempt})` : ''}</h4>

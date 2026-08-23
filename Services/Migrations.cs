@@ -23,6 +23,7 @@ public static class Migrations
         ClearSafetyRecordWrittenUnderOldRules(s);
         UndoProbationClearedWithoutTheReviews(s);
         DropEndorsementsThatAreNotReal(s);
+        ClearTrailerDecisionsLeftToTheDriver(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -76,6 +77,41 @@ public static class Migrations
     ///
     /// Real hazmat classes are left exactly as they are.
     /// </summary>
+    /// <summary>
+    /// Clears trailer replacement notes that asked the driver to make the decision.
+    ///
+    /// They read "replace with the same one, or re-rig for whatever the lane is actually offering — buy
+    /// it in ATS and confirm it here", which is a fleet decision handed to a company driver as homework.
+    /// Operations decides now, names the replacement type off utilisation across the fleet, and raises a
+    /// numbered order for it.
+    ///
+    /// The stale notes are removed rather than rewritten: the replacement type has to be worked out from
+    /// current utilisation, and inventing one here would be guessing at figures the next fleet report is
+    /// about to read properly.
+    /// </summary>
+    private static void ClearTrailerDecisionsLeftToTheDriver(AppState s)
+    {
+        if (s.SchemaVersion >= 6) return;
+        s.SchemaVersion = 6;
+
+        var cleared = 0;
+        foreach (var report in s.FleetReports)
+            cleared += report.Retirements.RemoveAll(r =>
+                r.UnitKind == "Trailer" &&
+                r.Evidence.Any(e => e.Contains("re-rig for whatever the lane", StringComparison.OrdinalIgnoreCase)));
+
+        if (cleared == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "fleet",
+            GameTime = s.Status.GameTime,
+            Message = $"Dropped {cleared} trailer note(s) that left the replacement decision to you. Whether a " +
+                      "trailer earns its place, and what replaces it, is operations' call — the next fleet report " +
+                      "will say which trailers are going and what is ordered for them.",
+        });
+    }
+
     private static void DropEndorsementsThatAreNotReal(AppState s)
     {
         if (s.SchemaVersion >= 5) return;

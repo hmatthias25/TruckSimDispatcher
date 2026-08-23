@@ -20,7 +20,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 5;
+    public const int Current = 6;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -1356,6 +1356,20 @@ public class PeriodicReviewRecord
     public bool EndsEmployment { get; set; }
 }
 
+/// <summary>
+/// A trailer operations has an eye on but has not decided about.
+///
+/// One soft reason is a quiet fortnight, not a verdict, and those used to be dropped on the floor — so
+/// the first the driver heard was a replacement decision. This is the warning shot: nothing to do, but
+/// nothing arrives out of nowhere either.
+/// </summary>
+public class TrailerWatchNote
+{
+    public string Unit { get; set; } = "";
+    public string Type { get; set; } = "";
+    public string Note { get; set; } = "";
+}
+
 public class RetirementRecommendation
 {
     public string Unit { get; set; } = "";
@@ -1385,6 +1399,9 @@ public class FleetReport
     public List<string> Findings { get; set; } = new();
     /// <summary>Units the report put into the shop queue, with the work order raised for each.</summary>
     public List<RepairFlag> RepairsNeeded { get; set; } = new();
+
+    /// <summary>Trailers on the radar, with no decision taken yet.</summary>
+    public List<TrailerWatchNote> Watching { get; set; } = new();
 
     /// <summary>
     /// What the player has to go and do in ATS now the report is filed — sell a truck, buy a
@@ -1959,6 +1976,15 @@ public class MaintenanceThresholds
     /// sell a good trailer.
     /// </summary>
     public double TrailerLowUtilisationPct { get; set; } = 35;
+
+    /// <summary>
+    /// How far ahead another trailer type has to be, in utilisation points, before operations replaces a
+    /// retiring trailer with that type instead of the same one.
+    ///
+    /// Deliberately a wide gap. Chasing every few points would have the fleet churning through trailer
+    /// types on noise, and a type change should mean the lanes really have moved.
+    /// </summary>
+    public double TrailerTypeSwitchGapPct { get; set; } = 20;
 
     /// <summary>
     /// Percent chance that a tractor replacing a hired driver's worn-out one goes to the <b>player</b>

@@ -320,6 +320,43 @@ public static class EquipmentService
     }
 
     /// <summary>
+    /// Orders the trailer that replaces one coming off the fleet.
+    ///
+    /// Raised by the fleet report rather than asked for: whether a trailer earns its place and what
+    /// replaces it are operations decisions, so the driver gets a number and a spec instead of a
+    /// question. Same shape as the order raised when a tractor is written off.
+    ///
+    /// Returns null when an equipment order is already open — one at a time, and the report says so
+    /// rather than pretending the order exists.
+    /// </summary>
+    public static EquipmentOrder? OrderReplacementTrailer(AppState s, Trailer retiring, string newType, string reason)
+    {
+        if (OpenOrder(s) != null) return null;
+
+        var homeYard = HomeTime.HomeTerminal(s);
+        var homeLabel = homeYard != null ? $"{homeYard.City}, {homeYard.State}" : "your home yard";
+        var advice = TrailerSpec.IsTanker(newType)
+            ? TrailerSpec.BuyingAdvice(s, newType, null)
+            : $"a {newType.ToLowerInvariant()}.";
+
+        return Issue(s, new EquipmentOrder
+        {
+            Kind = "TrailerSwap",
+            Reason = reason,
+            FromTrailerUnit = retiring.Unit,
+            ToTrailerUnit = "",
+            TerminalId = homeYard?.Id ?? "",
+            TerminalLabel = homeLabel,
+            MustPurchase = true,
+            AvailableFromGameTime = s.Status.GameTime,
+            Instruction = $"{retiring.Ref} is coming off the fleet. Buy the replacement in ATS at {homeLabel}: " +
+                          $"{advice} Add it on the Fleet tab, then mark this order complete — " +
+                          $"{retiring.Ref} retires when the new one is on the books.",
+            Notes = $"Replacing {retiring.Ref} ({retiring.Type}) with a {newType}."
+        });
+    }
+
+    /// <summary>
     /// Roughly how long until a hired driver brings a trailer back. Seeded on the driver and the day
     /// so the answer does not change when the page is refreshed.
     /// </summary>
