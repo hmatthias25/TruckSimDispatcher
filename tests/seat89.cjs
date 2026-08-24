@@ -157,6 +157,76 @@ let S;
       /work freight back that way/i.test(order.instruction || ''), (order.instruction || '').slice(-100));
   }
 
+  head('7. #90 A full yard is a swap, not a wall');
+  // Denver small = one slot, an AI driver in it. Every truck the company owns takes a garage slot in the
+  // game, the player's included — so the domicile has to have somewhere to put the tractor. It always
+  // does, because the driver is vacating a slot at the same moment they need one.
+  {
+    const den = (await api('/terminals', 'POST', {
+      city: 'Denver', state: 'CO', level: 'Small', truckCapacity: 1,
+      hasFuel: true, hasParking: true, hasTrailerDrop: true, monthlyCost: 1150,
+    })).snapshot;
+    const denver = (den.company.terminals || []).find((x) => x.city === 'Denver');
+    ok('a one-slot yard exists', !!denver && denver.truckCapacity === 1,
+      denver ? `${denver.city} cap ${denver.truckCapacity}` : 'not created');
+
+    await api('/fleet/truck', 'POST', {
+      unit: 'D100', year: 2022, make: 'Peterbilt', model: '579', cabConfig: 'Sleeper',
+      serviceMiles: 200000, status: 'InService', homeTerminalId: denver.id, inGameGarage: true,
+    });
+    let S7 = (await api('/fleetops/drivers', 'POST', {
+      name: 'Denver Dan', assignedTruckUnit: 'D100', assignedTrailerUnit: '', skill: 'Competent',
+      status: 'Active', wageShare: 0.3, homeTerminalId: denver.id,
+    })).snapshot;
+
+    const denTrucksBefore = (S7.trucks || []).filter((x) => x.homeTerminalId === denver.id).length;
+    ok('Denver is full before the ask', denTrucksBefore >= denver.truckCapacity,
+      `${denTrucksBefore} of ${denver.truckCapacity}`);
+
+    const homeBefore = S7.driver.homeTerminalId;
+    const myTruck = S7.driver.assignedTruckUnit;
+
+    const move = (await api('/terminals/transfer', 'POST',
+      { terminalId: denver.id, reason: 'family is in Denver' })).request;
+    const factors = (move.factors || []).join(' | ');
+    S7 = (await api('/bootstrap'));
+
+    ok('the request is answered', !!move.outcome, `${move.outcome}`);
+    ok('a full yard reads as a swap, not a refusal',
+      /somebody moves the other way/i.test(factors),
+      (factors.match(/[^|]*moves the other way[^|]*/i) || ['(not explained)'])[0].trim().slice(0, 110));
+
+    if (move.outcome === 'Approved') {
+      ok('the domicile actually moved', S7.driver.homeTerminalId === denver.id,
+        `${homeBefore} -> ${S7.driver.homeTerminalId}`);
+      ok('and the truck went with it',
+        (S7.trucks || []).find((x) => x.unit === myTruck)?.homeTerminalId === denver.id,
+        `${myTruck} now at ${(S7.trucks || []).find((x) => x.unit === myTruck)?.homeTerminalId}`);
+      ok('somebody moved the other way to make the room',
+        (S7.trucks || []).find((x) => x.unit === 'D100')?.homeTerminalId !== denver.id,
+        `D100 now at ${(S7.trucks || []).find((x) => x.unit === 'D100')?.homeTerminalId}`);
+      ok('and the decision says who',
+        /takes the slot you are leaving behind/i.test(move.decision || ''),
+        (move.decision || '').slice(0, 150));
+
+      const denAfter = (S7.trucks || []).filter((x) => x.homeTerminalId === denver.id).length;
+      ok('Denver is not over capacity afterwards', denAfter <= denver.truckCapacity,
+        `${denAfter} of ${denver.truckCapacity}`);
+    } else {
+      ok('and a non-approval is not blamed on parking',
+        !/no slot|at capacity/i.test(move.decision || ''), (move.decision || '').slice(0, 120));
+    }
+
+    // Holds whichever way the request went: the yard is never left over capacity, and the domicile
+    // never moves without the truck moving with it.
+    const denNow = (S7.trucks || []).filter((x) => x.homeTerminalId === denver.id).length;
+    ok('Denver is never left over capacity', denNow <= denver.truckCapacity,
+      `${denNow} of ${denver.truckCapacity} after a ${move.outcome}`);
+    const truckAt = (S7.trucks || []).find((x) => x.unit === myTruck)?.homeTerminalId;
+    ok('and the domicile and the truck agree', S7.driver.homeTerminalId === truckAt,
+      `domicile ${S7.driver.homeTerminalId} / truck ${truckAt}`);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });

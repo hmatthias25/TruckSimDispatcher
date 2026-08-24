@@ -896,11 +896,19 @@ public static class CareerService
             }
         }
 
-        // Room at the target yard
+        // Every truck the company owns takes a garage slot, the one the player drives included — so a
+        // domicile change has to have somewhere to put the tractor.
+        //
+        // It is not scored, because it is not a judgement on the driver and it is not something more
+        // freight fixes. A moving domicile is a SWAP: the truck leaves the old yard at the same moment it
+        // needs a slot at the new one, so the space the driver vacates is the space the target yard's own
+        // unit moves into. Penalising it would have blocked every transfer for the rest of a career the
+        // moment the fleet was doing well, which is the opposite of what a populated network should mean.
         var based = Migrations.TrucksBasedAt(s, target.Id);
         var room = Migrations.RoomAt(s, target);
-        if (room <= 0) { score -= 35; req.Factors.Add($"{target.City} is at capacity — {based} of {target.TruckCapacity} slots used."); }
-        else { score += 10; req.Factors.Add($"{target.City} has {room} of {target.TruckCapacity} slots open."); }
+        req.Factors.Add(room > 0
+            ? $"{target.City} has {room} of {target.TruckCapacity} slot(s) open."
+            : $"{target.City} is full at {based} of {target.TruckCapacity}, so somebody moves the other way.");
 
         // Does the company want a truck there?
         var market = Markets.Find(s, target.City, target.State);
@@ -913,10 +921,29 @@ public static class CareerService
 
         if (score >= 55)
         {
-            req.Outcome = "Approved";
-            req.Decision = $"Approved. You are domiciled out of {target.City} effective now.";
-            req.Effective = true;
-            s.Driver.HomeTerminalId = target.Id;
+            var swap = room > 0 ? null : MakeRoomAt(s, target);
+            if (room <= 0 && swap == null)
+            {
+                // Nothing there can be moved — the slot is held by something the company cannot shuffle.
+                req.Outcome = "Deferred";
+                req.LoadsRequired = 0;
+                req.Decision =
+                    $"You have earned it, but {target.City} is full at {target.TruckCapacity} and there is " +
+                    "nothing there I can move to make room. More loads will not change that — upgrade the " +
+                    "yard in ATS (small takes one tractor, medium three, large five) and ask me again.";
+            }
+            else
+            {
+                req.Outcome = "Approved";
+                req.Effective = true;
+                s.Driver.HomeTerminalId = target.Id;
+                MoveDriverTruckTo(s, target.Id);
+
+                req.Decision = swap == null
+                    ? $"Approved. You are domiciled out of {target.City} effective now."
+                    : $"Approved. You are domiciled out of {target.City} effective now, and {swap} takes the " +
+                      "slot you are leaving behind — one out, one in, so neither yard is over.";
+            }
         }
         else if (score >= 38)
         {
@@ -929,9 +956,7 @@ public static class CareerService
         {
             req.Outcome = "Deferred";
             req.LoadsRequired = 20;
-            req.Decision = room <= 0
-                ? $"Deferred. {target.City} has no slot right now. I will revisit it in about {req.LoadsRequired} loads."
-                : $"Deferred. Not yet — ask again in about {req.LoadsRequired} loads.";
+            req.Decision = $"Deferred. Not yet — ask again in about {req.LoadsRequired} loads.";
         }
         else
         {
@@ -944,6 +969,65 @@ public static class CareerService
     }
 
     /// <summary>Makes a conditional transfer effective once the driver has run the loads asked for.</summary>
+    /// <summary>
+    /// Frees a slot at a yard by moving whatever is sitting in one somewhere with room.
+    ///
+    /// Called only when a transfer has been earned and the target is full. Because the driver is
+    /// simultaneously vacating their own yard, there is somewhere for the displaced unit to go — that is
+    /// what makes the swap work however populated the network is.
+    ///
+    /// Prefers to move a spare with nobody on it before disturbing a driver. Returns what was moved, or
+    /// null when there was nothing movable.
+    /// </summary>
+    private static string? MakeRoomAt(AppState s, Terminal target)
+    {
+        var leaving = s.Driver.HomeTerminalId;
+
+        // Where the displaced unit goes: the yard being vacated first, then anywhere with space.
+        Terminal? Destination()
+        {
+            var vacated = Migrations.TerminalOf(s, leaving);
+            if (vacated != null && vacated.Id != target.Id) return vacated;
+            return s.Company.Terminals.FirstOrDefault(t => t.Id != target.Id && Migrations.RoomAt(s, t) > 0);
+        }
+
+        var to = Destination();
+        if (to == null) return null;
+
+        var here = s.Trucks.Where(t => t.HomeTerminalId == target.Id && t.Status != "OutOfService").ToList();
+        if (here.Count == 0) return null;
+
+        // A spare nobody is on moves before a driver does.
+        var spare = here.FirstOrDefault(t => !s.HiredDrivers.Any(d => d.Status == "Active"
+                        && d.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase))
+                        && !t.Unit.Equals(s.Driver.AssignedTruckUnit, StringComparison.OrdinalIgnoreCase));
+        if (spare != null)
+        {
+            spare.HomeTerminalId = to.Id;
+            return $"spare unit {spare.Ref} moves to {to.City}";
+        }
+
+        var held = here.FirstOrDefault(t => !t.Unit.Equals(s.Driver.AssignedTruckUnit, StringComparison.OrdinalIgnoreCase));
+        if (held == null) return null;
+
+        var driver = s.HiredDrivers.FirstOrDefault(d => d.Status == "Active"
+                     && d.AssignedTruckUnit.Equals(held.Unit, StringComparison.OrdinalIgnoreCase));
+        held.HomeTerminalId = to.Id;
+        if (driver != null)
+        {
+            driver.HomeTerminalId = to.Id;
+            return $"{driver.Name} re-domiciles to {to.City}";
+        }
+        return $"unit {held.Ref} moves to {to.City}";
+    }
+
+    /// <summary>Takes the driver own tractor with them when the domicile moves.</summary>
+    private static void MoveDriverTruckTo(AppState s, string terminalId)
+    {
+        var mine = DispatchEngine.AssignedTruck(s);
+        if (mine != null) mine.HomeTerminalId = terminalId;
+    }
+
     public static string SettleConditionalTransfer(AppState s, string requestId)
     {
         var req = s.Driver.Transfers.FirstOrDefault(t => t.Id == requestId)
@@ -959,10 +1043,25 @@ public static class CareerService
         var target = s.Company.Terminals.FirstOrDefault(t => t.Id == req.ToTerminalId);
         if (target == null) throw new InvalidOperationException("That terminal is no longer ours.");
 
+        // Same rules as a transfer approved on the spot: the yard has to have somewhere to put the
+        // tractor, and the tractor goes with the driver. Settling used to do neither, so a condition met
+        // months later quietly domiciled somebody at a full yard and left their truck at the old one.
+        var swap = Migrations.RoomAt(s, target) > 0 ? null : MakeRoomAt(s, target);
+        if (Migrations.RoomAt(s, target) <= 0 && swap == null)
+        {
+            req.Decision = $"Condition met, but {target.City} is full at {target.TruckCapacity} and there is " +
+                           "nothing there I can move. Upgrade the yard in ATS and check back.";
+            return req.Decision;
+        }
+
         req.Outcome = "Approved";
         req.Effective = true;
-        req.Decision = $"Condition met after {loadsSince} loads. Domiciled out of {target.City} effective now.";
         s.Driver.HomeTerminalId = target.Id;
+        MoveDriverTruckTo(s, target.Id);
+        req.Decision = swap == null
+            ? $"Condition met after {loadsSince} loads. Domiciled out of {target.City} effective now."
+            : $"Condition met after {loadsSince} loads. Domiciled out of {target.City} effective now, and " +
+              $"{swap} takes the slot you are leaving behind.";
         return req.Decision;
     }
 
