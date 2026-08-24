@@ -268,6 +268,16 @@ public class Driver
     /// conflating the two hands out an endorsement nobody earned. Both have to be true to haul it.
     /// </summary>
     public List<string> Endorsements { get; set; } = new();
+
+    /// <summary>
+    /// What the driver has levelled up in the game, 0 to 5 each.
+    ///
+    /// Reported by the player, never inferred: these live in ATS where only they can read them, and
+    /// guessing at a level would let somebody take work they are not cleared for. Dangerous Cargo is
+    /// absent on purpose — it is modelled properly as hazmat classes on <see cref="Endorsements"/>.
+    /// Fuel economy is absent because nothing here turns on it.
+    /// </summary>
+    public DriverSkills Skills { get; set; } = new();
     public List<string> Restrictions { get; set; } = new();
     public string AssignedTruckUnit { get; set; } = "";
     public string AssignedTrailerUnit { get; set; } = "";
@@ -391,6 +401,38 @@ public class TransferRequest
     public int LoadCountAtRequest { get; set; }
     public bool Effective { get; set; }
     public string CreatedUtc { get; set; } = DateTime.UtcNow.ToString("o");
+}
+
+public class DriverSkills
+{
+    /// <summary>The top of every skill. ATS runs these 0 to 5.</summary>
+    public const int Max = 5;
+
+    public int LongDistance { get; set; }
+    public int HighValue { get; set; }
+    public int Fragile { get; set; }
+    public int JustInTime { get; set; }
+
+    public int Of(string key) => (key ?? "").Trim().ToLowerInvariant() switch
+    {
+        "longdistance" or "long" => LongDistance,
+        "highvalue" or "high" => HighValue,
+        "fragile" => Fragile,
+        "justintime" or "jit" => JustInTime,
+        _ => 0
+    };
+
+    /// <summary>Nothing entered yet, which is where every career starts until the player fills it in.</summary>
+    public bool Untouched => LongDistance == 0 && HighValue == 0 && Fragile == 0 && JustInTime == 0;
+
+    public static string Label(string key) => (key ?? "").Trim().ToLowerInvariant() switch
+    {
+        "longdistance" or "long" => "Long Distance",
+        "highvalue" or "high" => "High Value Cargo",
+        "fragile" => "Fragile Cargo",
+        "justintime" or "jit" => "Just in Time",
+        _ => key ?? ""
+    };
 }
 
 public class PayPlan

@@ -576,13 +576,13 @@ public static class CareerService
         {
             CanRequestAlternate = true, CanRefuseLoad = true, CanChooseAlternateLoad = true,
             CanOverrideTightLoad = true,
-            Summary = "On a lease-purchase you carry the risk, so you choose your freight and may accept a tight window as your own call."
+            Summary = "Specialist Driver: trusted with the awkward freight, so you get a say in what you take and can call a tight window yourself."
         },
         "owner" => new DriverPrivileges
         {
             CanRequestAlternate = true, CanRefuseLoad = true, CanChooseAlternateLoad = true,
             CanOverrideTightLoad = true,
-            Summary = "Owner-operator: your truck, your freight decisions, within our operating authority."
+            Summary = "Master Driver: first refusal on the freight and your judgement taken on a tight window. Still our authority and our truck — the latitude is earned, not owned."
         },
         _ => new DriverPrivileges
         {
@@ -600,10 +600,15 @@ public static class CareerService
             new[] { "Oversize" }, "Trusted with tighter windows, high-value freight and oversize with a permit."),
         new("lead", "Lead Driver / Driver Trainer", 70, 65_000, 97, 3, 0, 0.72m, 0.56m,
             new[] { "Heavy Haul" }, "Newest tractor in the fleet, heavy haul access, and trainer pay."),
-        new("lease", "Lease-Purchase Operator", 120, 120_000, 97, 3, 0, 1.28m, 1.05m,
-            Array.Empty<string>(), "Lease-purchase on your tractor: you take fuel and maintenance, you keep far more per mile."),
-        new("owner", "Owner-Operator", 200, 220_000, 98, 3, 0, 1.65m, 1.35m,
-            Array.Empty<string>(), "Truck is yours. Percentage or per-mile settlement, and you choose your own freight within our authority.")
+        // The keys stay as they are so a stored career keeps the rung it is standing on. What changed is
+        // what they mean: a lease-purchase and an owner-operator are not this app. There is no lease
+        // payment, no fuel or maintenance out of the driver's pocket, and a driver picking their own
+        // freight under their own authority is a different game entirely. Both were also paid as though
+        // that simulation existed — $1.28 and $1.65 a loaded mile is owner gross handed over as wages.
+        new("lease", "Specialist Driver", 120, 120_000, 97, 3, 0, 0.78m, 0.60m,
+            new[] { "High Value" }, "The awkward freight: oversize, high-value, the loads with a permit attached. Best equipment in the fleet and the rate to match."),
+        new("owner", "Master Driver", 200, 220_000, 98, 3, 0, 0.87m, 0.66m,
+            Array.Empty<string>(), "Top of the company scale. The work nobody else is trusted with, first refusal on the freight, and the miles to prove it.")
     };
 
     public static CareerStats Compute(AppState s)
@@ -688,9 +693,9 @@ public static class CareerService
         var idx = Array.FindIndex(Ladder, r => r.Key == s.Driver.Rank);
         if (idx < 0) idx = 0;
 
-        // How far this employer promotes. A fleet at the bottom of the market does not run a
-        // lease-purchase programme, and a driver deserves to be told that rather than wondering why
-        // the promotions stopped coming.
+        // How far this employer promotes. A fleet at the bottom of the market does not promote past a
+        // senior seat, and a driver deserves to be told that rather than wondering why the promotions
+        // stopped coming.
         var ceilingKey = Carriers.CeilingRank(s);
         var ceilingIdx = string.IsNullOrWhiteSpace(ceilingKey)
             ? Ladder.Length - 1
@@ -735,7 +740,7 @@ public static class CareerService
         }
         else
         {
-            review.Findings.Add("Top of the ladder — owner-operator. Nothing left for me to promote you into.");
+            review.Findings.Add("Top of the ladder — Master Driver. Nothing left for me to promote you into.");
         }
 
         if (review.Safety.CurrentLevel != "Clear")
@@ -972,13 +977,13 @@ public static class CareerService
     }
 
     /// <summary>
-    /// Ranks the company does not simply hand somebody.
+    /// Ranks the driver is offered rather than moved into.
     ///
-    /// Lease-purchase and owner-operator are not raises — the driver takes on fuel and maintenance and
-    /// carries the truck. Promoting a driver into one of those on their behalf would be doing something
-    /// TO them, however good the per-mile number looks. They are offered and accepted, not applied.
+    /// Lease-purchase and owner-operator were offers because signing one is a decision with money and
+    /// risk attached. Neither exists here now, and Specialist and Master Driver are ordinary company
+    /// rungs — earned, not signed for — so nothing is an offer at present.
     /// </summary>
-    public static bool IsChoice(string? rankKey) => rankKey is "lease" or "owner";
+    public static bool IsChoice(string? rankKey) => false;
 
     /// <summary>The title for a rank key, for anything outside this class that has to name one.</summary>
     public static string RankTitle(string? key) =>

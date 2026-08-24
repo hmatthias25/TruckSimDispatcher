@@ -134,12 +134,19 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
     destCity: 'Aurora', destState: 'CO', loadedMiles: 19, deadheadMiles: 0,
     gameRevenue: 300, deadlineHours: 12, weightLbs: 20000, appointmentOpensHours: 6,
   });
-  let f = near.evaluations[0].feasibility;
-  ok('the wait is planned, not ignored', f.waitForAppointmentHours > 0,
-    `${hhmm(f.waitForAppointmentHours || 0)}`);
-  ok('and it is called out as coming off the window',
-    (f.warnings || []).some((w) => /before they open/.test(w)),
-    (f.warnings || []).join(' | ') || '(none)');
+  const nearEv = near.evaluations[0];
+  let f = nearEv.feasibility;
+  // #80: an early take has nothing to wait through. Fourth section in this suite that needs the split.
+  if (nearEv.receiverTakesEarly) {
+    ok('taking it early, so no wait is planned', !f.waitForAppointmentHours,
+      (nearEv.pros || []).find((p) => /take it whenever/.test(p)) || 'no wait planned');
+  } else {
+    ok('the wait is planned, not ignored', f.waitForAppointmentHours > 0,
+      `${hhmm(f.waitForAppointmentHours || 0)}`);
+    ok('and it is called out as coming off the window',
+      (f.warnings || []).some((w) => /before they open/.test(w)),
+      (f.warnings || []).join(' | ') || '(none)');
+  }
 
   head('11. A load with NO opening time plans exactly as before');
   await api('/board/clear', 'POST', {});

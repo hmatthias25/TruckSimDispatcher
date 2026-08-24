@@ -14,7 +14,7 @@ public static class Build
     /// <b>0.9 is followed by 0.10</b>, then 0.11. A 1.0 means released, and this is not that. Beta will
     /// have its own numbering.
     /// </summary>
-    public const string Version = "0.15";
+    public const string Version = "0.16";
 
     /// <summary>Alpha | Beta | Release — shown alongside the number.</summary>
     public const string Stage = "alpha";

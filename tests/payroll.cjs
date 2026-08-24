@@ -186,6 +186,54 @@ async function reeferLoad(d) {
     `${S.views.payroll.stateCode} (${S.company.terminals[0].city})`);
   ok('Texas withholds no wage tax', S.views.payroll.stateRate === 0, `${S.views.payroll.stateRate}`);
 
+  head('#86 Payday lands on the first action of the day, not only on a status report');
+  // Reported: close a load out on a Friday and nothing pays until a status report happens to follow.
+  {
+    const st = (await api('/bootstrap'));
+    ok('the app knows when the next payday falls', !!st.views.payroll?.nextPaydayDay,
+      `day ${st.views.payroll?.nextPaydayDay}`);
+
+    // GAME day, not calendar date: day(n) builds 2000-01-n and the epoch is 2000-01-01, so game day 4
+    // is the 5th. Getting that backwards targets a day that crosses no payday at all.
+    const payGameDay = st.views.payroll.nextPaydayDay;
+    const nextPay = payGameDay + 1;          // the date on which that game day falls
+
+    console.log(`     clock ${st.status.gameTime} | payday is game day ${payGameDay} = date ${nextPay}`);
+    if (nextPay && nextPay < 28) {
+      // Put the driver just short of it, then close a load out ON the payday itself.
+      const dayBefore = nextPay - 1;
+      await status(dayBefore);
+      await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+      await api('/board/clear', 'POST', {});
+      const bd = await api('/board/add', 'POST', {
+        cargo: 'Machinery', trailerType: S.trailers[0].type,
+        originCity: S.status.locationCity, originState: S.status.locationState,
+        destCity: 'Amarillo', destState: 'TX', loadedMiles: 380, deadheadMiles: 0,
+        gameRevenue: 1500, deadlineHours: 60, weightLbs: 40000,
+      });
+      const pick = bd.evaluations && bd.evaluations[0];
+      if (pick) {
+        const auth = await api('/dispatch/authorize', 'POST', { loadId: pick.load.id });
+        const done = await api(`/trips/${auth.trip.id}/complete`, 'POST', {
+          deliveredGameTime: day(nextPay), actualMiles: 380, endOdometer: 0, actualRevenue: 1500,
+          fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+          truckDamageAfter: 3, trailerDamageAfter: 2, cargoDamagePct: 0,
+          loadingHours: 1, unloadingHours: 1, detentionHours: 0, layoverDays: 0, breakdownDays: 0,
+          extraStops: 0, tarpsUsed: 0, delayReason: '', damageCause: '', notes: '',
+          locationCity: 'Amarillo', locationState: 'TX', fuelPct: 60, gameTime: day(nextPay),
+        });
+        ok('closing a load out on payday pays there and then',
+          Array.isArray(done.paid) && done.paid.length > 0,
+          done.paid ? `${done.paid.length} settlement(s): ${done.paid.map((x) => x.number).join(', ')}` : 'nothing paid');
+        ok('and it is flagged as a payday, not an ad-hoc settlement',
+          (done.paid || []).every((x) => x.trigger === 'Payday'),
+          (done.paid || []).map((x) => x.trigger).join(', ') || 'n/a');
+      } else {
+        ok('(no load available to close out on the payday)', true, 'skipped');
+      }
+    }
+  }
+
   console.log(`\n  ${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERR:', e.message); process.exitCode = 2; });

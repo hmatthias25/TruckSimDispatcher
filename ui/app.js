@@ -344,6 +344,10 @@ function renderMarket(market, { onboarding }) {
         ${c.specialized ? '<span>' + badge('violet', 'specialised') + '</span>' : ''}
         ${c.requiresClasses && c.requiresClasses.length
           ? '<span>' + badge('warn', 'hazmat: ' + esc(c.requiresClassesLabel)) + '</span>' : ''}
+        ${(c.skillsWanted || []).length
+          ? '<span>' + badge((c.skillShortfall || []).length ? 'bad' : 'ok',
+              'skills: ' + esc(c.skillsWanted.join(', '))) + '</span>' : ''}
+        ${c.startsAboveProbation ? '<span>' + badge('ok', 'starts you above probation') + '</span>' : ''}
         ${c.takesRookies ? '<span>' + badge('info', 'hires rookies') + '</span>' : ''}
       </div>
       <p style="margin:0 0 8px;color:var(--ink2)">${esc(c.blurb)}</p>
@@ -3789,6 +3793,30 @@ function viewCareer() {
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h2>Your skills</h2><span class="sub">from the game</span></div>
+      ${S.driver.skills && S.driver.skills.longDistance + S.driver.skills.highValue
+        + S.driver.skills.fragile + S.driver.skills.justInTime === 0
+        ? `<div class="callout warn"><p>Nothing entered yet. Carriers hire on these, so a blank sheet reads
+             as a driver who has never levelled anything — set what you already have in the game.</p></div>`
+        : ''}
+      <div class="grid2">
+        ${[['sk-long', 'Long Distance', 'longDistance'],
+           ['sk-high', 'High Value Cargo', 'highValue'],
+           ['sk-frag', 'Fragile Cargo', 'fragile'],
+           ['sk-jit', 'Just in Time', 'justInTime']]
+          .map(([id, label, key]) => `<label>${label}
+            <select id="${id}">${[0, 1, 2, 3, 4, 5].map((v) =>
+              `<option value="${v}" ${((S.driver.skills || {})[key] || 0) === v ? 'selected' : ''}>${v}</option>`).join('')}
+            </select></label>`).join('')}
+      </div>
+      <div class="row-actions"><button class="btn primary" data-act="save-skills">Update skills</button></div>
+      <p class="hint">Read these off ATS and enter them as they stand. Nothing is guessed at &mdash; the app
+        cannot see your game, and a level it invented could put you on freight you are not cleared for.
+        Dangerous Cargo is handled separately as hazmat classes; fuel economy is not tracked because
+        nothing here turns on it.</p>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>Your rate</h2><span class="sub">set by rank</span></div>
       <dl class="kv">
         <dt>Loaded mile</dt><dd>$${(+S.driver.pay.loadedCpm).toFixed(3)}</dd>
@@ -3849,7 +3877,9 @@ function viewJobMarket() {
         : `<p>You are off probation at ${esc(S.company.name)} as a ${esc(S.driver.rankTitle)}. Moving now
            carries your record with you: loads, service percentage and safety all follow you. The
            company's books do not — a new employer means new equipment and a new ledger.</p>`}
-      <p>Resigning requires no open load and no unsettled pay. Settle up on the Payroll tab first.</p>
+      <p>Resigning needs no open load &mdash; finish or cancel it first. Your final pay settles itself the
+        moment you take the new job: there is nothing to press on the Payroll tab, and no wages get left
+        on the old employer's books.</p>
     </div>
     <div class="row-actions">
       <button class="btn primary" data-act="load-market">${MARKET ? 'Refresh the market' : 'See who is hiring'}</button>
@@ -4338,7 +4368,16 @@ async function handleAction(act, d, ev) {
       // "Load roster" button, which also hid "Hire a driver" — a primary action nobody could find.
       if (TAB === 'fleet' && !FLEETOPS) loadFleetOps();
       return;
-    case 'close-modal': return closeModal();
+    // A payday that landed on whatever this modal was reporting comes up as it closes, rather than
+    // waiting for a status report that may not happen for another day of driving.
+    case 'close-modal': {
+      const queued = ADVANCE_NEXT;
+      if (queued && queued.paid && queued.paid.length) {
+        ADVANCE_NEXT = null;
+        return paydayModal(queued.paid);
+      }
+      return closeModal();
+    }
     // Whatever was queued behind the promotion — a payday or the home brief — still gets shown.
     case 'advance-next': {
       const q = ADVANCE_NEXT || {};
@@ -4396,6 +4435,10 @@ async function handleAction(act, d, ev) {
       absorb(r);
       toast(r.message, 'ok');
     });
+    case 'save-skills': return run(async () => absorb(await api('/career/skills', 'POST', {
+      longDistance: +sv('sk-long'), highValue: +sv('sk-high'),
+      fragile: +sv('sk-frag'), justInTime: +sv('sk-jit'),
+    })), 'Skills updated.');
     case 'save-trip-length': return run(async () => absorb(await api('/career/trip-length', 'POST',
       { preference: sv('tl-pref') })), 'Trip-length preference updated.');
     case 'save-home-time': return run(async () => absorb(await api('/career/home-time', 'POST',
@@ -4678,7 +4721,9 @@ async function handleAction(act, d, ev) {
       // New dock, new starting point: show me what is going out from here before the whole city.
       BOARD_STAGE = 'local';
       // The audit belongs in front of the driver the moment the load closes, not sitting on a tab
-      // until they have already taken the next one.
+      // until they have already taken the next one. A payday that landed on this close-out queues
+      // behind it rather than being lost — closing out on a Friday is how most of them arrive.
+      ADVANCE_NEXT = (r.paid && r.paid.length) ? { paid: r.paid, brief: null } : null;
       auditModal(r.audit);
     });
     case 'show-cancel': return cancelModal(d.id);
@@ -5206,8 +5251,9 @@ async function handleAction(act, d, ev) {
         toast(r.message, 'ok');
       });
     }
-    // Lease-purchase and owner-operator are the only rungs the driver moves into by choosing to. No
-    // force here: an offer you are not eligible for is not an offer.
+    // Kept for a rank that is ever offered rather than applied. Nothing is at present — lease-purchase
+    // and owner-operator were the only two, and neither is in scope — so this never surfaces. No force
+    // either way: an offer you are not eligible for is not an offer.
     case 'accept-offer': return run(async () => {
       const r = absorb(await api('/career/promote', 'POST',
         { rank: null, note: 'Accepted', force: false }));

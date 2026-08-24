@@ -331,9 +331,25 @@ app.MapPost("/api/onboarding/hire", (HireRequest req) => Results.Ok(store.Mutate
     if (string.IsNullOrWhiteSpace(req.Code)) Seed.CreateCompany(s, a);
     else Carriers.Employ(s, req.Code, a);
     Seed.CreateFleet(s, a);
+    // Read before the hire replaces the driver object — SkillsExceed reads the skills off it.
+    var comesInStrong = !string.IsNullOrWhiteSpace(req.Code) && Carriers.SkillsExceed(s, req.Code);
+
     Seed.HireDriver(s, a, decision);
     // HireDriver has its own generic starting-rate table; the employer's posted scale wins.
     if (!string.IsNullOrWhiteSpace(req.Code)) Carriers.ApplyPayScale(s, req.Code, a);
+
+    // Somebody who turns up already levelled for the work is not a probationary hire. Promote rather
+    // than hand-set the fields, so the rate comes off the employer's own scale like any other rung.
+    if (comesInStrong)
+    {
+        s.Driver.Probation.Active = false;
+        s.Driver.Probation.ClearedGameDate = s.Status.GameTime;
+        s.Driver.Status = "Active";
+        CareerService.Promote(s, "company", "Hired straight onto the company scale — skills already at the level the work needs.", force: true);
+        store.Log(s, "career",
+            $"{s.Driver.Name} starts as a Company Driver rather than on probation: the skill levels are " +
+            "already there for the freight they run.");
+    }
     var (truck, trailer) = Seed.AssignEquipment(s, a);
 
     s.Status.LocationCity = s.Company.TerminalCity;
@@ -594,13 +610,26 @@ app.MapPost("/api/moves", (MoveRequest req) => Results.Ok(store.Mutate(s =>
 
 // ---------------------------------------------------------------- trips
 
+// Payday is Friday, and the app only learns the date when the driver tells it. Anything that moves the
+// game clock can cross a payday — closing a load out is the commonest of all — so every one of those
+// paths settles what the calendar owes rather than leaving it for whenever a status report happens next.
+// RunDuePaydays advances LastPaydayDay and skips what is already settled, so calling it often is safe.
+List<Settlement> SettleDue(AppState s)
+{
+    var due = PayEngine.RunDuePaydays(s);
+    foreach (var st in due)
+        store.Log(s, "pay", $"{st.Number} paid — ${st.Gross:N2} gross, ${st.Stub?.Net ?? st.Gross:N2} net.", st.Number);
+    return due;
+}
+
 app.MapGet("/api/trips", () => Results.Ok(store.State.Trips));
 
 app.MapPost("/api/trips/{id}/event", (string id, TripEvent ev) => Results.Ok(store.Mutate(s =>
 {
     if (string.IsNullOrWhiteSpace(ev.GameTime)) ev.GameTime = s.Status.GameTime;
     TripService.LogEvent(s, id, ev);
-    return Snapshot(s);
+    var paid = SettleDue(s);
+    return new { paid, snapshot = Snapshot(s) };
 })));
 
 // What dispatch asks for once the trailer is on: real weight, trailer condition as hooked, odometer.
@@ -609,14 +638,17 @@ app.MapPost("/api/trips/{id}/loaded", (string id, LoadedReportRequest req) => Re
 {
     var (trip, notes) = TripService.ReportLoaded(s, id, req.WeightLbs, req.TrailerDamagePct, req.Odometer);
     store.Log(s, "dispatch", $"{trip.Number} loaded report: {string.Join(" ", notes)}", trip.Number);
-    return new { trip, notes, snapshot = Snapshot(s) };
+    var paid = SettleDue(s);
+    return new { trip, notes, paid, snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/trips/{id}/complete", (string id, CompleteTripRequest req) => Results.Ok(store.Mutate(s =>
 {
     var audit = TripService.Complete(s, id, req);
     store.Log(s, "trip", audit.Headline, audit.Trip.Number);
-    return new { audit, snapshot = Snapshot(s) };
+    // The commonest way the clock crosses a Friday, and the one that never used to pay.
+    var paid = SettleDue(s);
+    return new { audit, paid, snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/trips/{id}/cancel", (string id, CancelRequest req) => Results.Ok(store.Mutate(s =>
@@ -1324,6 +1356,24 @@ app.MapPost("/api/career/endorsement", (EndorsementRequest req) => Results.Ok(st
     return new { snapshot = Snapshot(s), message };
 })));
 
+// The driver telling us what they have levelled up in the game. Nothing here is ever inferred — these
+// numbers live in ATS where only the player can read them.
+app.MapPost("/api/career/skills", (SkillsRequest req) => Results.Ok(store.Mutate(s =>
+{
+    static int Clamp(int? v, int now) => v is null ? now : Math.Clamp(v.Value, 0, DriverSkills.Max);
+
+    var sk = s.Driver.Skills;
+    var before = $"{sk.LongDistance}/{sk.HighValue}/{sk.Fragile}/{sk.JustInTime}";
+    sk.LongDistance = Clamp(req.LongDistance, sk.LongDistance);
+    sk.HighValue = Clamp(req.HighValue, sk.HighValue);
+    sk.Fragile = Clamp(req.Fragile, sk.Fragile);
+    sk.JustInTime = Clamp(req.JustInTime, sk.JustInTime);
+
+    store.Log(s, "career", $"Skills updated: Long Distance {sk.LongDistance}, High Value {sk.HighValue}, " +
+                           $"Fragile {sk.Fragile}, Just in Time {sk.JustInTime} (was {before}).");
+    return Snapshot(s);
+})));
+
 // What the driver wants to be running. Read live by load scoring, so it takes effect on the next board.
 app.MapPost("/api/career/trip-length", (TripLengthRequest req) => Results.Ok(store.Mutate(s =>
 {
@@ -1795,3 +1845,4 @@ record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? Tr
 record AdoptRequest(string Path);
 record HomeTimeArrangementRequest(string Preference);
 record TripLengthRequest(string? Preference);
+record SkillsRequest(int? LongDistance, int? HighValue, int? Fragile, int? JustInTime);

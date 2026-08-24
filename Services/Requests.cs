@@ -383,8 +383,8 @@ public static class Requests
 
     private static string RankLabel(string rank) => rank switch
     {
-        "owner" => "owner-operator",
-        "lease" => "on a lease-purchase",
+        "owner" => "a master driver",
+        "lease" => "a specialist driver",
         "lead" => "a lead driver",
         "senior" => "a senior driver",
         "company" => "a company driver",

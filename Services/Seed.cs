@@ -570,6 +570,10 @@ public static class Seed
         var restrictions = new List<string> { "Oversize", "Heavy Haul" };
         if (green) restrictions.Add("Hazmat");
 
+        // Skills belong to the driver, not the job. Changing employer does not un-learn them, and this
+        // whole object is replaced below.
+        var carriedSkills = s.Driver?.Skills ?? new DriverSkills();
+
         s.Driver = new Driver
         {
             Name = app.DriverName,
@@ -583,6 +587,7 @@ public static class Seed
             Qualifications = quals,
             Restrictions = restrictions,
             Probation = probation,
+            Skills = carriedSkills,
             // The home-time arrangement is a commitment the company makes, so it is recorded on the
             // driver file in days and routed for — not left as a note nobody reads.
             HomeTimeIntervalDays = HomeTime.DaysFor(app.HomeTimePreference),

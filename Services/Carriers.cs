@@ -55,8 +55,9 @@ public static class Carriers
     /// reason to ever move. The shape of the ladder is the same everywhere; what it is a shape *of*
     /// belongs to the employer.
     ///
-    /// Lease and owner sit far above the rest because the driver is buying the fuel and the maintenance
-    /// out of that number. It is a bigger figure, not necessarily a better one.
+    /// Every rung is a company scale. The top two used to sit far above the rest because they were a
+    /// lease-purchase and an owner-operator paying their own fuel — neither of which this app simulates,
+    /// so neither is paid as though it does.
     /// </summary>
     private static readonly (string Rank, decimal Mult)[] RankMultipliers =
     {
@@ -64,8 +65,8 @@ public static class Carriers
         ("company",      1.00m),
         ("senior",       1.10m),
         ("lead",         1.20m),
-        ("lease",        2.13m),
-        ("owner",        2.75m),
+        ("lease",        1.30m),   // Specialist Driver
+        ("owner",        1.45m),   // Master Driver
     };
 
     private static decimal MultiplierFor(string? rank) =>
@@ -76,7 +77,7 @@ public static class Carriers
     /// How far a carrier will promote a driver.
     ///
     /// Taken from what they pay when they have not said otherwise: a fleet at the bottom of the market
-    /// is not running a lease-purchase programme. A second-chance carrier stops at company driver — that
+    /// does not promote past a senior seat. A second-chance carrier stops at company driver — that
     /// is the whole point of it being somewhere you leave.
     /// </summary>
     private static string CeilingOf(Spec spec)
@@ -87,6 +88,101 @@ public static class Carriers
              : spec.PayStars == 4 ? "lease"
              : spec.PayStars == 3 ? "lead"
              : "senior";
+    }
+
+    /// <summary>
+    /// What a carrier wants a driver levelled up in, and how far.
+    ///
+    /// Derived from the freight they actually run rather than typed into thirty table rows, so it stays
+    /// honest when a carrier's divisions change: a car hauler wants fragile and a delivery window kept, a
+    /// heavy-haul outfit wants high-value and the miles behind it, a grocery account lives on just in
+    /// time. Fleets that hire rookies want none of it — that is what makes them the way in.
+    ///
+    /// The level is not the same everywhere. A four-star car hauler asking for Fragile 3 and a five-star
+    /// one asking for Fragile 4 is the difference between them, and it is the whole point of having a
+    /// market rather than a checklist.
+    /// </summary>
+    public static (int LongDistance, int HighValue, int Fragile, int JustInTime) SkillsNeeded(string code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code ?? "", StringComparison.OrdinalIgnoreCase));
+        return spec == null ? (0, 0, 0, 0) : SkillsNeeded(spec);
+    }
+
+    private static (int LongDistance, int HighValue, int Fragile, int JustInTime) SkillsNeeded(Spec spec)
+    {
+        // The way in stays open, and it stays wide. Only specialised outfits and the top of the market
+        // hire on skills at all — an ordinary dry van fleet takes anyone who can drive, which is what
+        // makes a career possible from nothing. Gating the whole board on levels the player has not
+        // entered yet would close the market on every existing career at once.
+        if (spec.SecondChance) return (0, 0, 0, 0);
+        if (spec.TakesRookies && !spec.Specialized) return (0, 0, 0, 0);
+        if (!spec.Specialized && spec.PayStars < 4) return (0, 0, 0, 0);
+
+        bool Runs(params string[] any) =>
+            any.Any(x => spec.Divisions.Contains(x, StringComparer.OrdinalIgnoreCase));
+
+        int lng = 0, hv = 0, fr = 0, jit = 0;
+
+        if (Runs("Auto", "Car Hauling")) { fr = 3; hv = 2; jit = 2; }
+        if (Runs("Heavy Haul", "Lowboy")) { hv = Math.Max(hv, 3); lng = Math.Max(lng, 2); }
+        if (Runs("Dedicated")) jit = Math.Max(jit, 2);
+        if (Runs("Tanker", "Hazmat", "Bulk", "Pneumatic")) hv = Math.Max(hv, 2);
+        if (Runs("Livestock")) jit = Math.Max(jit, 2);
+
+        // Open deck is deliberately absent. Flatbed freight is steel, lumber and machinery — securement
+        // and tarping work, not delicate cargo — so asking a flatbed outfit's drivers for Fragile was
+        // reading the trailer instead of the freight, and it shut a whole class of carrier to anyone who
+        // had not levelled a skill their work never uses.
+
+        // The better the outfit, the more they ask — but only where they were asking at all. A carrier
+        // that does not care about fragile freight does not start caring because it pays well.
+        var bump = spec.PayStars >= 5 ? 1 : 0;
+        int Up(int v) => v <= 0 ? 0 : Math.Min(DriverSkills.Max, v + bump);
+
+        return (Up(lng), Up(hv), Up(fr), Up(jit));
+    }
+
+    /// <summary>Which of a carrier's skill bars this driver is short of, and by how much.</summary>
+    public static List<string> SkillShortfalls(AppState s, string code)
+    {
+        var need = SkillsNeeded(code);
+        var have = s.Driver.Skills;
+        var gaps = new List<string>();
+
+        void Check(int want, int held, string label)
+        {
+            if (want > held) gaps.Add($"{label} {want} (you are at {held})");
+        }
+
+        Check(need.LongDistance, have.LongDistance, "Long Distance");
+        Check(need.HighValue, have.HighValue, "High Value Cargo");
+        Check(need.Fragile, have.Fragile, "Fragile Cargo");
+        Check(need.JustInTime, have.JustInTime, "Just in Time");
+        return gaps;
+    }
+
+    /// <summary>
+    /// True when the driver clears every bar this carrier sets by a comfortable margin.
+    ///
+    /// Somebody turning up already levelled for the work is not a probationary hire, so this is what
+    /// starts them further up the ladder. Requires the carrier to actually ask for something — clearing
+    /// a bar nobody set is not an achievement.
+    /// </summary>
+    public static bool SkillsExceed(AppState s, string code, int by = 2)
+    {
+        var need = SkillsNeeded(code);
+        if (need.LongDistance + need.HighValue + need.Fragile + need.JustInTime == 0) return false;
+
+        var have = s.Driver.Skills;
+
+        // Capped at the top of the scale, or the bar becomes unreachable: a carrier wanting 4 would need
+        // a 6 to clear "by two", and the scale stops at 5. Maxing a skill counts as clearing it.
+        bool Clears(int want, int held) => want <= 0 || held >= Math.Min(DriverSkills.Max, want + by);
+
+        return Clears(need.LongDistance, have.LongDistance)
+            && Clears(need.HighValue, have.HighValue)
+            && Clears(need.Fragile, have.Fragile)
+            && Clears(need.JustInTime, have.JustInTime);
     }
 
     private static Spec? SpecOf(AppState s) =>
@@ -494,6 +590,18 @@ public static class Carriers
                 RequiresHazmat = spec.NeedsHazmat,
                 RequiresClasses = spec.NeedsClasses.ToList(),
                 RequiresClassesLabel = Endorsements.Describe(spec.NeedsClasses),
+                SkillsWanted = SkillsNeeded(spec) is var sk
+                    ? new List<string>(
+                        new[]
+                        {
+                            sk.LongDistance > 0 ? $"Long Distance {sk.LongDistance}" : null,
+                            sk.HighValue > 0 ? $"High Value {sk.HighValue}" : null,
+                            sk.Fragile > 0 ? $"Fragile {sk.Fragile}" : null,
+                            sk.JustInTime > 0 ? $"Just in Time {sk.JustInTime}" : null,
+                        }.Where(x => x != null).Select(x => x!))
+                    : new List<string>(),
+                SkillShortfall = SkillShortfalls(s, spec.Code),
+                StartsAboveProbation = SkillsExceed(s, spec.Code),
                 CeilingRank = CeilingOf(spec),
                 CeilingTitle = CareerService.RankTitle(CeilingOf(spec)),
                 TopLoadedCpm = Math.Round(spec.LoadedCpm * MultiplierFor(CeilingOf(spec)), 3),
@@ -661,6 +769,15 @@ public static class Carriers
         if (spec.NeedsClasses.Length > 0 && !hasHazmat)
             fails.Add($"Their freight is placarded — {Endorsements.Describe(spec.NeedsClasses)} — and you do not " +
                       "hold a hazmat endorsement.");
+
+        // What the driver has levelled up in the game. Named to the level, the same way the hazmat
+        // refusal names the class — "not qualified" tells somebody nothing they can act on.
+        var skillGaps = SkillShortfalls(s, spec.Code);
+        if (skillGaps.Count > 0)
+            fails.Add($"They run freight that wants {string.Join(", ", skillGaps)}. " +
+                      (s.Driver.Skills.Untouched
+                          ? "If you have levelled these in the game, put them on the Career tab and apply again."
+                          : "Level it up in the game and come back."));
 
         var credited = CreditedExperience(s, years);
         if (years < minYears && !(spec.TakesRookies && totalLoads == 0))
@@ -1100,6 +1217,15 @@ public class CarrierListing
 
     /// <summary>Days of service still needed to clear their experience bar. 0 when years are not the problem.</summary>
     public int DaysToQualify { get; set; }
+
+    /// <summary>Skill levels this carrier asks for, in words. Empty when they ask for none.</summary>
+    public List<string> SkillsWanted { get; set; } = new();
+
+    /// <summary>Which of those the driver is short of, and by how much. Empty when they clear the bar.</summary>
+    public List<string> SkillShortfall { get; set; } = new();
+
+    /// <summary>Clears their bars by a margin, so they would come in above probation.</summary>
+    public bool StartsAboveProbation { get; set; }
 
     /// <summary>How far they promote, and what the top of their scale pays.</summary>
     public string CeilingRank { get; set; } = "";
