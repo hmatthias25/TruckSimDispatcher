@@ -1276,11 +1276,19 @@ app.MapPost("/api/finance/balance", (BalanceRequest req) => Results.Ok(store.Mut
     return Snapshot(s);
 })));
 
-app.MapPost("/api/finance/true-up", (NoteRequest req) => Results.Ok(store.Mutate(s =>
+// Squaring the books against what ATS actually holds. Takes the balance rather than reading whatever was
+// last reported, because this is the moment the player is looking at the game and typing what they see.
+app.MapPost("/api/finance/true-up", (TrueUpRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
-    var message = LedgerService.TrueUpToGame(s, req.Notes ?? "");
-    store.Log(s, "ledger", message);
-    return new { message, position = LedgerService.Position(s), snapshot = Snapshot(s) };
+    var balance = req.AtsBalance ?? s.Status.AtsBankBalance;
+    var (squared, expected, shortfall, message) = LedgerService.TrueUp(s, balance);
+
+    store.Log(s, "ledger", squared
+        ? $"True-up: ATS ${balance:N2} against ${expected:N2} on the books. Squared."
+        : $"True-up: ATS ${balance:N2} against ${expected:N2} on the books — short ${shortfall:N2}, not adjusted.");
+
+    return new { squared, expected, shortfall, message,
+                 position = LedgerService.Position(s), snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/finance/entry", (LedgerEntry e) => Results.Ok(store.Mutate(s =>
@@ -1372,6 +1380,46 @@ app.MapPost("/api/career/skills", (SkillsRequest req) => Results.Ok(store.Mutate
     store.Log(s, "career", $"Skills updated: Long Distance {sk.LongDistance}, High Value {sk.HighValue}, " +
                            $"Fragile {sk.Fragile}, Just in Time {sk.JustInTime} (was {before}).");
     return Snapshot(s);
+})));
+
+// Taking the truck a Master Driver has earned. A choice, not an assignment — the app cannot buy anything
+// in ATS, so what it raises is the usual equipment order.
+app.MapPost("/api/career/showcase", (ShowcaseRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    if (!s.Driver.ShowcaseOffered || s.Driver.ShowcaseTaken)
+        throw new InvalidOperationException("There is no truck on offer.");
+    if (req.Index is null) throw new InvalidOperationException("Pick one.");
+
+    var pick = Seed.ShowcaseChoice(req.Index.Value)
+               ?? throw new InvalidOperationException("That is not one of the trucks on offer.");
+
+    var yard = HomeTime.HomeTerminal(s);
+    var label = yard != null ? DispatchEngine.Place(yard.City, yard.State) : "your home yard";
+
+    var order = EquipmentService.IssuePurchasedUpgrade(s,
+        $"{s.Driver.RankTitle} award — {s.Driver.Name} picked their truck.",
+        label, yard?.Id ?? "", s.Driver.Name,
+        s.Driver.AssignedTruckUnit, pick.Label);
+
+    // The truck being stepped out of does not evaporate — it either goes down the list or it is sold.
+    var stepping = DispatchEngine.AssignedTruck(s);
+    var cascade = stepping == null ? null : EquipmentService.CascadeOldTruck(s, stepping);
+    if (cascade != null && order != null) order.Instruction += " " + cascade;
+
+    s.Driver.ShowcaseTaken = true;
+    s.Driver.ShowcaseOffered = false;
+
+    // Picking a gearbox they did not ask for at hire is them changing their mind, and the app takes them
+    // at their word rather than quietly issuing something they said they did not want.
+    var before = s.Application?.TransmissionPreference ?? "either";
+    if (s.Application != null && before != "either" && before != pick.TransType)
+    {
+        s.Application.TransmissionPreference = pick.TransType;
+        store.Log(s, "career", $"Transmission preference now {pick.TransType} — picked one on the award truck.");
+    }
+
+    store.Log(s, "career", $"{s.Driver.RankTitle} award taken: {pick.Label}.", order?.Number ?? "");
+    return new { order, picked = pick.Label, snapshot = Snapshot(s) };
 })));
 
 // What the driver wants to be running. Read live by load scoring, so it takes effect on the next board.
@@ -1694,7 +1742,25 @@ object Snapshot(AppState? given = null)
             position = LedgerService.Position(s),
             privileges = CareerService.Privileges(s),
             atTerminal = Migrations.At(s),
-            aiConfigured = AiService.Configured(s.Settings)
+            aiConfigured = AiService.Configured(s.Settings),
+
+            showcase = new
+            {
+                offered = s.Driver.ShowcaseOffered && !s.Driver.ShowcaseTaken,
+                taken = s.Driver.ShowcaseTaken,
+                choices = s.Driver.ShowcaseOffered && !s.Driver.ShowcaseTaken
+                    ? Seed.ShowcaseChoices(s)
+                    : new List<object>()
+            },
+
+            // Monday, and the books have not been squared against the game this week.
+            trueUp = new
+            {
+                due = LedgerService.TrueUpDue(s),
+                expected = LedgerService.TotalCompanyCash(s),
+                lastReported = s.Status.AtsBankBalance,
+                shortfall = s.Driver.TrueUpShortfall
+            }
         }
     };
 }
@@ -1826,4 +1892,6 @@ record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? Tr
 record AdoptRequest(string Path);
 record HomeTimeArrangementRequest(string Preference);
 record TripLengthRequest(string? Preference);
+record TrueUpRequest(decimal? AtsBalance);
+record ShowcaseRequest(int? Index);
 record SkillsRequest(int? LongDistance, int? HighValue, int? Fragile, int? JustInTime);

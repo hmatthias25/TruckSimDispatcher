@@ -329,6 +329,24 @@ public class Driver
     /// </summary>
     public string CeilingToldAtRank { get; set; } = "";
 
+    /// <summary>
+    /// Game day of the last time the books were trued against the ATS bank balance. -1 means never.
+    ///
+    /// The two drift the moment anything is bought in game that the app does not post — a garage, a
+    /// couple of tractors — so they are squared up weekly rather than left to diverge quietly.
+    /// </summary>
+    public int LastTrueUpDay { get; set; } = -1;
+
+    /// <summary>
+    /// Reaching the top of the ladder earns the pick of a truck. Offered once and it waits — a reward
+    /// that expires is a deadline, and this one is meant to be enjoyed.
+    /// </summary>
+    public bool ShowcaseOffered { get; set; }
+    public bool ShowcaseTaken { get; set; }
+
+    /// <summary>What the game was short by at the last true-up. Zero when the books and the game agree.</summary>
+    public decimal TrueUpShortfall { get; set; }
+
     /// <summary>Why it ended, in the company's words.</summary>
     public string CareerOverReason { get; set; } = "";
 

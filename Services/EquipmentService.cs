@@ -814,6 +814,44 @@ public static class EquipmentService
     /// </summary>
     private const double EquipmentPullWeight = 0.5;
 
+    /// <summary>
+    /// What becomes of the tractor a driver is stepping out of when they take the award truck.
+    ///
+    /// It does not simply evaporate. If it is better than the worst thing in the fleet, the worst unit is
+    /// the one that goes and whoever was driving it moves up into the vacated truck — the good equipment
+    /// works its way down the seniority list, which is how a real fleet renews itself. Only when the
+    /// driver was already in the worst unit does theirs go instead.
+    ///
+    /// Returns the instruction to hand the player, or null when there is nothing to say.
+    /// </summary>
+    public static string? CascadeOldTruck(AppState s, Truck stepping)
+    {
+        // Rank by what the fleet report already calls a better truck: newer first, then fewer miles.
+        int Worth(Truck t) => t.Year * 1000 - (int)Math.Min(999, t.ServiceMiles / 1000);
+
+        var others = s.Trucks
+            .Where(t => !t.Retired && t.Status != "OutOfService"
+                        && !t.Unit.Equals(stepping.Unit, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var worst = others.OrderBy(Worth).FirstOrDefault();
+
+        if (worst == null || Worth(stepping) <= Worth(worst))
+            return $"Sell {stepping.Ref} in ATS once the new one is on the property, and write it off on " +
+                   "the Maintenance tab with what it fetched. It is the oldest thing we have and there is " +
+                   "nobody it would be an upgrade for.";
+
+        var holder = s.HiredDrivers.FirstOrDefault(d => d.Status == "Active"
+                     && d.AssignedTruckUnit.Equals(worst.Unit, StringComparison.OrdinalIgnoreCase));
+
+        return holder != null
+            ? $"{stepping.Ref} does not go anywhere: {holder.Name} is in {worst.Ref}, which is older, so they " +
+              $"move into yours. Sell {worst.Ref} in ATS instead and write it off on the Maintenance tab with " +
+              "what it fetched. Good equipment works its way down the list."
+            : $"{stepping.Ref} stays on the property as the spare. Sell {worst.Ref} in ATS instead — it is the " +
+              "oldest thing we have — and write it off on the Maintenance tab with what it fetched.";
+    }
+
     /// <summary>FNV-1a, so a decision is stable and cannot be re-rolled by reloading the page.</summary>
     private static uint Hash(string text)
     {

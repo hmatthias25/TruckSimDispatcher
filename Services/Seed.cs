@@ -213,6 +213,67 @@ public static class Seed
     };
 
     /// <summary>
+    /// The trucks a carrier hands its best driver.
+    ///
+    /// Not simply a newer Cascadia. These are the flagships spec-ed the way a driver would spec them if
+    /// somebody else were paying — the big engines, the good gearboxes — sitting alongside the long-nose
+    /// classics that are the whole point of being seen on the road. A Master Driver picks one.
+    ///
+    /// Every other reward in this app is a number: a rate, a rank, a percentage. This is the one that is
+    /// visible out of the windscreen every mile, which is why it is a choice rather than an assignment.
+    /// </summary>
+    private static readonly TruckSpec[] ShowcaseSpecs =
+    {
+        // The long noses. Nothing else on this list turns a head in a truck stop.
+        new("Peterbilt",    "389 Pride & Class", 2024, "Cummins X15",   605, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 70, 300, 5.7, 5),
+        new("Kenworth",     "W900L Studio",      2024, "Cummins X15",   605, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 70, 300, 5.7, 5),
+        new("Western Star", "49X",               2024, "Detroit DD16",  600, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 68, 300, 5.8, 5),
+
+        // The modern flagships, for somebody who would rather have the quiet cab and the fuel.
+        new("Volvo",        "VNL 860 Globetrotter", 2024, "Volvo D13TC", 500, "Volvo I-Shift 14-spd AMT", "automatic", "Sleeper", 70, 300, 7.6, 5),
+        new("Mack",         "Anthem 70in Stand-Up", 2024, "Mack MP8HE",  505, "Mack mDRIVE HD 14-spd AMT", "automatic", "Sleeper", 70, 280, 7.2, 5),
+        new("Peterbilt",    "579 UltraLoft",        2024, "PACCAR MX-13", 510, "PACCAR TX-12 Pro 12-spd AMT", "automatic", "Sleeper", 70, 280, 7.4, 5),
+        new("Kenworth",     "T680 Next Gen",        2024, "PACCAR MX-13", 510, "PACCAR TX-12 Pro 12-spd AMT", "automatic", "Sleeper", 70, 280, 7.4, 5),
+        new("Freightliner", "Cascadia 126 Raised",  2024, "Detroit DD16", 600, "Detroit DT12-O 12-spd AMT", "automatic", "Sleeper", 70, 300, 7.0, 5),
+    };
+
+    /// <summary>
+    /// The award list, described well enough to choose from and to go and buy.
+    ///
+    /// The whole list is offered whatever gearbox the driver asked for at hire, because this is a reward
+    /// and not an issue of equipment — but anything against that preference is flagged rather than
+    /// quietly handed over. Choosing it says they have changed their mind, and the app takes them at
+    /// their word.
+    /// </summary>
+    public static List<object> ShowcaseChoices(AppState s)
+    {
+        var pref = (s.Application?.TransmissionPreference ?? "either").Trim().ToLowerInvariant();
+        return ShowcaseSpecs.Select((x, i) => (object)new
+        {
+            index = i,
+            make = x.Make,
+            model = x.Model,
+            year = x.Year,
+            engine = x.Engine,
+            hp = x.Hp,
+            transmission = x.Trans,
+            transType = x.TransType,
+            mpg = x.Mpg,
+            label = $"{x.Year} {x.Make} {x.Model} — {x.Engine} {x.Hp} hp, {x.Trans}",
+            matchesPreference = pref is "either" || pref == x.TransType,
+        }).ToList();
+    }
+
+    /// <summary>The chosen unit, described the way an equipment order needs it.</summary>
+    public static (string Label, string TransType)? ShowcaseChoice(int index)
+    {
+        if (index < 0 || index >= ShowcaseSpecs.Length) return null;
+        var x = ShowcaseSpecs[index];
+        return ($"a {x.Year} {x.Make} {x.Model} — {x.Engine} at {x.Hp} hp, {x.Trans}, {x.Cab.ToLowerInvariant()}",
+                x.TransType);
+    }
+
+    /// <summary>
     /// Equipment a carrier of this standard would put a driver in.
     ///
     /// Picks at the carrier's tier and falls outward if that band is thin, so every carrier issues

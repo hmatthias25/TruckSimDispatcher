@@ -1823,6 +1823,10 @@ function afterStatus(r, fallback = 'Status updated.') {
   if (r.advance) return advanceModal(r.advance, r.homeBrief || null, paid);
   if (paid.length) return paydayModal(paid);
   if (r.homeBrief) return homeBriefModal(r.homeBrief);
+  // Monday, and the books have not been squared against the game this week. Behind anything with money
+  // or a career move in it, because those are the ones the driver came here for.
+  const tu = S.views && S.views.trueUp;
+  if (tu && tu.due) return trueUpModal(tu);
   toast(DISCOVERY ? DISCOVERY.headline : fallback, 'ok');
 }
 
@@ -1864,6 +1868,25 @@ function advanceModal(n, brief, paid) {
 }
 
 /* Payday. Getting paid should not be a line in a log you scroll past. */
+/* ---- Monday: square the books against what the game actually holds.
+   Prompted rather than left on a tab, because the two drift the moment anything is bought in game the app
+   never posted — a garage, a tractor — and nobody goes looking for a discrepancy they cannot see. */
+function trueUpModal(t) {
+  modal(`<div class="panel-head"><h2>Monday — true up the books</h2>
+      ${badge('info', 'weekly')}<div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Later</button></div>
+    <p>The company reckons it is holding <b>${money(t.expected)}</b> all in — operating cash plus the
+      maintenance and payroll earmarks. Open ATS and tell me what the bank actually shows.</p>
+    ${t.shortfall > 0 ? `<div class="callout warn"><p>Last time it was short by
+      <b>${money(t.shortfall)}</b>. If that has not been put back yet, it will still be short.</p></div>` : ''}
+    <label>ATS bank balance
+      <input id="tu-balance" type="number" step="0.01" value="${(+t.lastReported || 0)}"></label>
+    <div class="row-actions"><button class="btn primary" data-act="true-up-submit">Square it up</button></div>
+    <p class="hint">If the game is short of the books, something was bought in ATS the app never saw. I will
+      tell you by how much — you put it back with a save editor rather than the company quietly writing it
+      off. If the game is level or over, the game wins and the books come up to it.</p>`);
+}
+
 function paydayModal(paid) {
   const total = paid.reduce((a, p) => a + (p.stub ? p.stub.net : p.gross), 0);
   modal(`<div class="panel-head"><h2>${paid.length > 1 ? 'You have been paid' : 'Payday'}</h2>
@@ -3756,6 +3779,26 @@ function viewCareer() {
       their own probation any more than they authorise their own equipment.</p>
   </div>` : ''}
 
+  ${S.views.showcase && S.views.showcase.offered ? `<div class="panel">
+    <div class="panel-head"><h2>Your truck</h2>${badge('ok', 'earned')}</div>
+    <p>You have run this company to the top of its ladder, and that earns the pick of the fleet. Choose
+      one and operations will put the order in.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Truck</th><th>Engine</th><th>Gearbox</th><th class="num">mpg</th><th></th></tr></thead>
+      <tbody>${(S.views.showcase.choices || []).map((x) => `<tr>
+        <td><b>${esc(x.year + ' ' + x.make + ' ' + x.model)}</b></td>
+        <td>${esc(x.engine)} <span class="sub">${x.hp} hp</span></td>
+        <td>${esc(x.transmission)}${x.matchesPreference ? ''
+          : ` <span class="sub">— you asked for ${esc((S.application && S.application.transmissionPreference) || 'either')}</span>`}</td>
+        <td class="num">${num(x.mpg, 1)}</td>
+        <td><button class="btn tiny primary" data-act="take-showcase" data-index="${x.index}">Take it</button></td>
+      </tr>`).join('')}</tbody></table></div>
+    <p class="hint">The whole list is here whatever gearbox you asked for at hire — it is a reward, not an
+      issue of equipment. Picking one you did not ask for just means you have changed your mind, and the
+      app will take you at your word. What you are stepping out of either goes down the list to a driver
+      in something older, or gets sold; the order will say which.</p>
+  </div>` : ''}
+
   ${c.atCeiling ? `<div class="panel">
     <div class="panel-head"><h2>Top of their scale</h2>
       ${badge('warn', esc(c.ceilingTitle))}</div>
@@ -4395,6 +4438,10 @@ async function handleAction(act, d, ev) {
       absorb(r);
       toast(r.message, 'ok');
     });
+    case 'take-showcase': return run(async () => {
+      const r = absorb(await api('/career/showcase', 'POST', { index: +d.index }));
+      toast(`${r.picked} — ${r.order ? r.order.number + ' raised.' : 'ordered.'}`, 'ok');
+    });
     case 'save-skills': return run(async () => absorb(await api('/career/skills', 'POST', {
       longDistance: +sv('sk-long'), highValue: +sv('sk-high'),
       fragile: +sv('sk-frag'), justInTime: +sv('sk-jit'),
@@ -4732,8 +4779,14 @@ async function handleAction(act, d, ev) {
       });
     }
 
+    case 'true-up-submit': return run(async () => {
+      const r = absorb(await api('/finance/true-up', 'POST', { atsBalance: fv('tu-balance') }));
+      closeModal();
+      toast(r.message, r.squared ? 'ok' : 'bad');
+    });
     case 'true-up': return run(async () => {
-      const r = absorb(await api('/finance/true-up', 'POST', { notes: '' }));
+      const r = absorb(await api('/finance/true-up', 'POST',
+        { atsBalance: S.status.atsBankBalance }));
       loadLedger();
       toast(r.message, 'ok');
     });

@@ -86,7 +86,11 @@ public static class LedgerService
         p.HasReportedBalance = s.Status.AtsBankBalance != 0 || !string.IsNullOrWhiteSpace(s.Status.AtsBalanceGameTime);
         var basis = p.HasReportedBalance ? p.AtsBankBalance : p.LedgerCash;
         p.Spendable = Math.Round(basis - p.MaintenanceEarmark - p.PayrollEarmark - p.WagesOwed, 2);
-        p.Variance = Math.Round(p.AtsBankBalance - p.LedgerCash, 2);
+        // Against TOTAL company cash, not just operating. ATS keeps one pot, and the reserves are an
+        // internal earmark rather than money sitting somewhere else — comparing the game against only
+        // part of the books would report a variance that is not really there.
+        p.TotalCash = TotalCompanyCash(s);
+        p.Variance = Math.Round(p.AtsBankBalance - p.TotalCash, 2);
         p.InSync = !p.HasReportedBalance || Math.Abs(p.Variance) < 1m;
 
         if (!p.HasReportedBalance)
@@ -117,20 +121,6 @@ public static class LedgerService
     }
 
     /// <summary>Posts the difference between the books and the game as an explicit adjustment.</summary>
-    public static string TrueUpToGame(AppState s, string memo)
-    {
-        var p = Position(s);
-        if (!p.HasReportedBalance) throw new InvalidOperationException("Report your ATS bank balance first.");
-        if (p.InSync) return "Already in sync — nothing to adjust.";
-
-        Post(s, Operating, p.Variance, "Adjustment",
-            string.IsNullOrWhiteSpace(memo)
-                ? $"True-up to the ATS bank balance (${p.AtsBankBalance:N2})."
-                : memo,
-            isAdjustment: true);
-        return $"Posted ${p.Variance:N2} to bring the books in line with your game.";
-    }
-
     private static string Name(AppState s, string key) =>
         s.Accounts.FirstOrDefault(a => a.Key == key)?.Name ?? key;
 
@@ -303,6 +293,66 @@ public static class LedgerService
     /// Ledger integrity check. Rather than quietly inventing a balance, this reports exactly
     /// what does not tie and offers a single explicit adjusting entry to fix it.
     /// </summary>
+    /// <summary>
+    /// What the company reckons it is holding, all in: operating cash plus the maintenance and payroll
+    /// earmarks. ATS keeps one pot, and the reserves are an accounting split rather than money sitting
+    /// somewhere else, so this is the figure the game has to be able to cover.
+    /// </summary>
+    public static decimal TotalCompanyCash(AppState s) =>
+        Balance(s, Operating) + Balance(s, MaintenanceReserve) + Balance(s, PayrollReserve);
+
+    /// <summary>Monday, and not yet squared up this week.</summary>
+    public static bool TrueUpDue(AppState s)
+    {
+        var day = GameClock.DayOf(s.Status.GameTime);
+        if (day == null) return false;
+        return day.Value % 7 == 0 && s.Driver.LastTrueUpDay < day.Value;
+    }
+
+    /// <summary>
+    /// Squares the books against what ATS actually holds.
+    ///
+    /// The game is the world and the books follow it — but only upward. If the game is short of what the
+    /// company owns, no amount of bookkeeping fixes that: the money has to be put back with a save
+    /// editor, and the app says by how much rather than leaving it to be worked out.
+    /// </summary>
+    public static (bool Squared, decimal Expected, decimal Shortfall, string Message) TrueUp(AppState s, decimal atsBalance)
+    {
+        var expected = TotalCompanyCash(s);
+        var day = GameClock.DayOf(s.Status.GameTime) ?? 0;
+
+        s.Status.AtsBankBalance = atsBalance;
+        s.Status.AtsBalanceGameTime = s.Status.GameTime;
+        s.Driver.LastTrueUpDay = day;
+
+        if (atsBalance < expected)
+        {
+            var shortfall = expected - atsBalance;
+            s.Driver.TrueUpShortfall = shortfall;
+            return (false, expected, shortfall,
+                $"The books say the company is holding ${expected:N2} and ATS shows ${atsBalance:N2} — " +
+                $"short by ${shortfall:N2}. That usually means something was bought in game the app never " +
+                "posted: a garage, a tractor, a trailer. The game cannot fund what the company owns, so put " +
+                $"${shortfall:N2} back into the ATS account with a save editor and true it up again. " +
+                "Nothing has been changed on the books.");
+        }
+
+        var over = atsBalance - expected;
+        s.Driver.TrueUpShortfall = 0;
+
+        if (over > 0.005m)
+            Post(s, Operating, over, "Adjustment",
+                 $"Monday true-up: ATS holds ${atsBalance:N2} against ${expected:N2} on the books. " +
+                 "Taking the game as the world and bringing the books up to it.",
+                 isAdjustment: true);
+
+        return (true, expected, 0,
+            over > 0.005m
+                ? $"Squared up. ATS holds ${atsBalance:N2}, which is ${over:N2} over the books — the game is " +
+                  "the world, so the difference is on the books now. Next true-up is Monday."
+                : $"Squared up. ATS and the books agree at ${atsBalance:N2}. Next true-up is Monday.");
+    }
+
     public static Reconciliation Reconcile(AppState s)
     {
         var r = new Reconciliation();
@@ -389,6 +439,9 @@ public class CompanyPosition
     public string BalanceReportedAt { get; set; } = "";
     public bool HasReportedBalance { get; set; }
     public decimal LedgerCash { get; set; }
+
+    /// <summary>Operating plus the earmarked reserves — what the game has to be able to cover.</summary>
+    public decimal TotalCash { get; set; }
     public decimal Variance { get; set; }
     public bool InSync { get; set; }
 

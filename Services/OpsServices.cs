@@ -795,6 +795,10 @@ public static class CareerService
         s.Driver.Rank = target.Key;
         s.Driver.RankTitle = target.Title;
 
+        // Top of the ladder. Every other reward here is a number on a settlement; this is the one that is
+        // visible out of the windscreen, so it is offered as a choice rather than issued.
+        if (target.Key == "owner" && !s.Driver.ShowcaseTaken) s.Driver.ShowcaseOffered = true;
+
         // The employer's own scale wherever we have one. Rank is the shape of the raise; the carrier is
         // the size of it, which is what makes a better carrier worth moving to.
         var scale = Carriers.ScaleFor(s, target.Key);
