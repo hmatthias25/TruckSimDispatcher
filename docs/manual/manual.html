@@ -135,7 +135,7 @@
 
 <!-- ============================================================ COVER -->
 <div class="page cover">
-  <div class="kicker">User manual &middot; v0.16 alpha</div>
+  <div class="kicker">User manual &middot; v0.17 alpha</div>
   <h1>TruckSim<br>Dispatcher</h1>
   <div class="rulebar"></div>
   <div class="sub">A dispatch office for American&nbsp;Truck&nbsp;Simulator.<br>
@@ -146,13 +146,13 @@
     <div><span>Runs on</span> Windows &middot; one portable .exe &middot; no install</div>
     <div><span>Needs</span> Nothing. No internet, no account, no runtime</div>
     <div><span>Your game</span> ATS, any DLC, mods welcome</div>
-    <div><span>This manual</span> Covers v0.16 alpha &middot; the build is shown in the app header</div>
+    <div><span>This manual</span> Covers v0.17 alpha &middot; the build is shown in the app header</div>
   </div>
 
   <div class="alphabox">
     <div class="ab-tag">Alpha</div>
     <div>
-      <b>This is v0.16 alpha and is not ready for release.</b>
+      <b>This is v0.17 alpha and is not ready for release.</b>
       It is being play-tested. Expect rough edges, expect things to change, and expect the occasional
       bug. Keep backups of your career file — Settings → Data will take one for you.
       Please report anything that looks wrong.
@@ -244,14 +244,15 @@
     <div class="sub"><span class="n"></span><span class="t">Probation, and asking operations for things</span><span class="p">70</span></div>
     <div class="sub"><span class="n"></span><span class="t">Your licence, and asking to be re-rigged</span><span class="p">71</span></div>
     <div class="sub"><span class="n"></span><span class="t">Asking for a better unit</span><span class="p">72</span></div>
-    <div class="sub"><span class="n"></span><span class="t">The 34-hour restart, and the miles between loads</span><span class="p">73</span></div>
-    <div class="sub"><span class="n"></span><span class="t">Restarts, continued &mdash; and the miles between loads</span><span class="p">74</span></div>
-    <div class="sub"><span class="n"></span><span class="t">The two empty legs, and the readings that pay them</span><span class="p">75</span></div>
-    <div class="sub"><span class="n"></span><span class="t">When operations parks you and your clocks are fine</span><span class="p">76</span></div>
+    <div class="sub"><span class="n"></span><span class="t">When a seat comes free</span><span class="p">73</span></div>
+    <div class="sub"><span class="n"></span><span class="t">The 34-hour restart, and the miles between loads</span><span class="p">74</span></div>
+    <div class="sub"><span class="n"></span><span class="t">Restarts, continued &mdash; and the miles between loads</span><span class="p">75</span></div>
+    <div class="sub"><span class="n"></span><span class="t">The two empty legs, and the readings that pay them</span><span class="p">76</span></div>
+    <div class="sub"><span class="n"></span><span class="t">When operations parks you and your clocks are fine</span><span class="p">77</span></div>
     <div class="grp">Reference</div>
-    <div><span class="n">22</span><span class="t">Settings, backups and updating the app</span><span class="p">77</span></div>
-    <div><span class="n">23</span><span class="t">If something looks wrong</span><span class="p">78</span></div>
-    <div><span class="n">24</span><span class="t">Credits</span><span class="p">79</span></div>
+    <div><span class="n">22</span><span class="t">Settings, backups and updating the app</span><span class="p">78</span></div>
+    <div><span class="n">23</span><span class="t">If something looks wrong</span><span class="p">79</span></div>
+    <div><span class="n">24</span><span class="t">Credits</span><span class="p">80</span></div>
   </div>
 
   <div class="note" style="margin-top:10pt">
@@ -3897,7 +3898,8 @@
   <table>
     <tr><th style="width:1.85in">Situation</th><th>Answer</th></tr>
     <tr><td><b>Off probation, clean record</b></td>
-        <td>Approved. An equipment order is raised there and then and you swap at the yard.</td></tr>
+        <td>Considered &mdash; and rank decides how likely it is. A company driver is close to a coin toss;
+            a lead driver usually gets it. Approved means an equipment order raised there and then.</td></tr>
     <tr><td><b>Still on probation</b></td>
         <td>No. <i>"Take what you are given until that is behind you &mdash; the good units go to drivers
             who have earned them."</i> The ladder is the whole point of the ladder.</td></tr>
@@ -3909,6 +3911,19 @@
     <tr><td><b>An order already open</b></td>
         <td>Close that one out first. One equipment order at a time.</td></tr>
   </table>
+
+  <div class="rule">
+    <h4>Seniority shortens the odds</h4>
+    <p>Being off probation with a clean file gets you a hearing, not a yes. What settles it is rank:</p>
+    <table style="margin-top:6pt">
+      <tr><th style="width:2.1in">Company Driver</th><td>about 45%</td></tr>
+      <tr><th>Senior Company Driver</th><td>about 70%</td></tr>
+      <tr><th>Lead Driver</th><td>about 85%</td></tr>
+      <tr><th>Specialist / Master Driver</th><td>about 95%</td></tr>
+    </table>
+    <p style="margin-top:6pt">The answer is settled per unit and does not change on a reload &mdash; asking
+      again about the same truck gets the same answer. A different truck is a different question.</p>
+  </div>
 
   <div class="rule">
     <h4>A no costs you five days</h4>
@@ -3925,6 +3940,44 @@
   </div>
 
   <div class="pfoot"><span>21 &middot; Probation and requests</span><span>72</span></div>
+</div>
+
+<!-- ============================================================ 21h - a seat coming free -->
+<div class="page">
+  <div class="kicker">Section 21, continued</div>
+  <h2>When a seat comes free</h2>
+
+  <p class="lede">A hired driver leaves or is let go, and their tractor is suddenly standing empty. If it
+    is better than yours and you have the seniority for it, you do not have to ask.</p>
+
+  <h3>Operations moves you</h3>
+  <p>The company decides and raises a numbered order. It is blunt about what not to do, because the
+    obvious instinct &mdash; fill the empty seat with a new hire &mdash; is the wrong one here:</p>
+  <p style="margin-top:6pt"><i>"T900 &mdash; a 2024 Kenworth W990 with 40,000 mi &mdash; is standing at
+    Springfield, MO with nobody in it. It is yours: do not hire for that seat. No rush and no empty
+    running &mdash; I will work freight back that way, and you swap over when you get in."</i></p>
+  <p>The Fleet tab stops offering to hire for that seat while the order stands. Being told to fill a seat
+    the company has already given you is the app arguing with itself.</p>
+
+  <div class="rule">
+    <h4>You are not sent running empty for it</h4>
+    <p>A seat can come free while you are four days out, so the board leans toward the yard holding the
+      truck for as long as the order stands &mdash; the same way it does when home time is due. Loads
+      finishing there gain, loads running the other way lose, and the reasoning says so on the card:
+      <i>"Finishes at Springfield, MO, where PRI-EQ-001 is waiting: +0.50"</i>.</p>
+    <p style="margin-top:6pt">The pull is deliberately gentler than the home-time one. A truck standing
+      empty is worth routing for; it is not worth hauling bad freight over.</p>
+  </div>
+
+  <div class="note">
+    <h4>Seniority still decides</h4>
+    <p>The same odds apply as when you ask: probation or a preventable incident on the file and it does
+      not happen at all, and above that rank shortens it. A company driver may well be left where they
+      are; a lead driver usually gets the call. The answer is settled per unit, so reloading does not
+      change it.</p>
+  </div>
+
+  <div class="pfoot"><span>21 &middot; Probation and requests</span><span>73</span></div>
 </div>
 
 <!-- ============================================================ 21g -->
@@ -3956,7 +4009,7 @@
       it here and I will get you home with freight."</i> Both figures are editable.</p>
   </div>
 
-  <div class="pfoot"><span>21 &middot; Restarts and empty miles</span><span>73</span></div>
+  <div class="pfoot"><span>21 &middot; Restarts and empty miles</span><span>74</span></div>
 </div>
 
 <!-- ============================================================ 21h -->
@@ -4004,7 +4057,7 @@
   <p>A reading that goes backwards, or a gap too big to be repositioning, pays nothing and is flagged
     &mdash; that is a bad odometer, not a windfall.</p>
 
-  <div class="pfoot"><span>21 &middot; Restarts and empty miles</span><span>74</span></div>
+  <div class="pfoot"><span>21 &middot; Restarts and empty miles</span><span>75</span></div>
 </div>
 
 <!-- ============================================================ 21z - the two empty legs -->
@@ -4058,7 +4111,7 @@
       the quote too and is flagged.</p>
   </div>
 
-  <div class="pfoot"><span>21 &middot; Restarts and empty miles</span><span>75</span></div>
+  <div class="pfoot"><span>21 &middot; Restarts and empty miles</span><span>76</span></div>
 </div>
 
 <!-- ============================================================ 22c - the operational 34 -->
@@ -4109,7 +4162,7 @@
       everything else, it is seeded &mdash; you cannot refresh your way out of it.</p>
   </div>
 
-  <div class="pfoot"><span>21 &middot; Restarts and empty miles</span><span>76</span></div>
+  <div class="pfoot"><span>21 &middot; Restarts and empty miles</span><span>77</span></div>
 </div>
 
 <!-- ============================================================ 22 -->
@@ -4143,7 +4196,7 @@
       if that is genuinely what you want.</p>
   </div>
 
-  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.16 alpha</b>.</p>
+  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.17 alpha</b>.</p>
 
   <h3>Updating without losing your career</h3>
   <p>Replace <code>TruckSimDispatcher.exe</code> in the folder you are already using and leave the
@@ -4157,7 +4210,7 @@
   <p>Any career it finds elsewhere on the machine is listed under <b>Settings → Data → List backups</b>
     with a button to load it — so an update never silently looks like a lost save.</p>
 
-  <div class="pfoot"><span>22 &middot; Settings and data</span><span>77</span></div>
+  <div class="pfoot"><span>22 &middot; Settings and data</span><span>78</span></div>
 </div>
 
 <!-- ============================================================ 23 -->
@@ -4196,7 +4249,7 @@
       report it.</p>
   </div>
 
-  <div class="pfoot"><span>23 &middot; If something looks wrong</span><span>78</span></div>
+  <div class="pfoot"><span>23 &middot; If something looks wrong</span><span>79</span></div>
 </div>
 
 <!-- ============================================================ 24 -->
@@ -4251,7 +4304,7 @@
     Idea by SimRacerSteve.
   </p>
 
-  <div class="pfoot"><span>24 &middot; Credits</span><span>79</span></div>
+  <div class="pfoot"><span>24 &middot; Credits</span><span>80</span></div>
 </div>
 
 </body>

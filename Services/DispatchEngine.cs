@@ -769,6 +769,14 @@ public static class DispatchEngine
         if (homePro != null) e.Pros.Add(homePro);
         if (homeCon != null) e.Cons.Add(homeCon);
 
+        // Equipment the company has ordered them onto. A seat that came free while they were four days
+        // out still has to be reached, and the board is what gets them there with freight on.
+        var (eqPts, eqDetail, eqPro, eqCon) = EquipmentService.ScoreLoad(s, load);
+        score += eqPts;
+        if (eqDetail != null) detail.Add(eqDetail);
+        if (eqPro != null) e.Pros.Add(eqPro);
+        if (eqCon != null) e.Cons.Add(eqCon);
+
         e.Score = Math.Round(score, 3);
         e.ScoreDetail = detail;
 

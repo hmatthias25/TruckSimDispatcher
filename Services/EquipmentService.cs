@@ -681,6 +681,150 @@ public static class EquipmentService
             $"{loadsSince} clean loads since {downgrade.Number}. Earned the better truck back.");
     }
 
+    /// <summary>
+    /// How likely operations is to put this driver in a better tractor.
+    ///
+    /// Seniority is what buys the pick of the fleet, so rank sets the odds and a clean file is the price
+    /// of entry. It is not a certainty at any rung: a company that moved every driver into every better
+    /// truck the moment one came free would have no ladder left to climb.
+    ///
+    /// Zero means never — not a low chance, an outright no.
+    /// </summary>
+    public static int UpgradeChancePct(AppState s)
+    {
+        if (s.Driver.Probation.Active || s.Driver.Rank == "probationary") return 0;
+        if (SafetyService.CountingFaults(s).Count > 0) return 0;
+
+        return s.Driver.Rank switch
+        {
+            "company" => 45,
+            "senior" => 70,
+            "lead" => 85,
+            "lease" => 95,      // Specialist Driver
+            "owner" => 95,      // Master Driver
+            _ => 0
+        };
+    }
+
+    /// <summary>
+    /// Settles whether the move happens. Seeded on the driver and the unit, so it is the same answer
+    /// however many times the page is reloaded — and a different answer for the next truck.
+    /// </summary>
+    public static bool UpgradeGranted(AppState s, string unit)
+    {
+        var chance = UpgradeChancePct(s);
+        if (chance <= 0) return false;
+        return Hash($"{s.Driver.EmployeeId}|upgrade|{unit}") % 100 < (uint)chance;
+    }
+
+    /// <summary>
+    /// A seat has been vacated. Decide whether the driver is moved into it.
+    ///
+    /// A carrier with a good tractor standing empty and a proven driver in an older one moves the driver;
+    /// that is what seniority is for. The app used to leave the truck on the Fleet tab as one of four
+    /// things the player might do, next to a note suggesting they go and hire somebody for it — which is
+    /// the company asking the driver to fill a seat it should have given them.
+    ///
+    /// Returns the order raised, or null when nothing came of it.
+    /// </summary>
+    public static EquipmentOrder? ConsiderSeatVacated(AppState s, string freedUnit)
+    {
+        if (string.IsNullOrWhiteSpace(freedUnit)) return null;
+        if (OpenOrder(s) != null) return null;                   // one equipment order at a time
+
+        var freed = s.Trucks.FirstOrDefault(t => t.Unit.Equals(freedUnit, StringComparison.OrdinalIgnoreCase));
+        if (freed == null || freed.Retired || freed.Status != "InService") return null;
+        if (freed.CabConfig != "Sleeper") return null;           // not a truck to live in
+
+        var mine = DispatchEngine.AssignedTruck(s);
+        if (mine == null || freed.Unit.Equals(mine.Unit, StringComparison.OrdinalIgnoreCase)) return null;
+
+        // Worth moving for, on the same test the Fleet tab already used to call it an upgrade.
+        var better = freed.Year > mine.Year || freed.ServiceMiles < mine.ServiceMiles * 0.6;
+        if (!better) return null;
+
+        if (!UpgradeGranted(s, freed.Unit)) return null;
+
+        var yard = Migrations.TerminalOf(s, freed.HomeTerminalId);
+        var label = yard != null ? DispatchEngine.Place(yard.City, yard.State) : "the yard it is standing at";
+
+        return Issue(s, new EquipmentOrder
+        {
+            Kind = "Upgrade",
+            Reason = $"{freed.Ref} came free and you have the seniority for it.",
+            FromTruckUnit = mine.Unit,
+            ToTruckUnit = freed.Unit,
+            TerminalId = yard?.Id ?? "",
+            TerminalLabel = label,
+            AvailableFromGameTime = s.Status.GameTime,
+            Instruction = $"{freed.Ref} — a {freed.Year} {freed.Make} {freed.Model} with {freed.ServiceMiles:N0} mi — " +
+                          $"is standing at {label} with nobody in it. It is yours: do not hire for that seat. " +
+                          "No rush and no empty running — I will work freight back that way, and you swap over " +
+                          $"when you get in. Move your gear across from {mine.Ref} and mark this order complete.",
+            Notes = $"Seat vacated; {s.Driver.RankTitle} moved up from {mine.Ref}."
+        });
+    }
+
+    /// <summary>
+    /// Weighs a load by whether it carries the driver toward equipment the company has ordered them onto.
+    ///
+    /// A seat can come free while the driver is four days out, and telling them to report to a yard on the
+    /// other side of the country without ever routing them there is not dispatching, it is a note. So the
+    /// board leans that way for as long as the order stands, exactly as it does when home time is due —
+    /// they get there with freight on rather than running empty for a truck.
+    /// </summary>
+    public static (double Points, string? Detail, string? Pro, string? Con) ScoreLoad(AppState s, BoardLoad load)
+    {
+        var order = OpenOrder(s);
+        if (order == null || string.IsNullOrWhiteSpace(order.TerminalLabel)) return (0, null, null, null);
+        if (string.IsNullOrWhiteSpace(order.ToTruckUnit) && string.IsNullOrWhiteSpace(order.ToTrailerUnit))
+            return (0, null, null, null);
+
+        var yard = Migrations.TerminalOf(s, order.TerminalId);
+        if (yard == null) return (0, null, null, null);
+
+        var here = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, yard.City, yard.State);
+        var dest = Geo.MilesBetween(load.DestCity, load.DestState, yard.City, yard.State);
+        if (here == null || dest == null) return (0, null, null, null);
+
+        var closer = here.Value - dest.Value;
+        var label = DispatchEngine.Place(yard.City, yard.State);
+
+        // Same shape as the home-time bias: worth something, never worth more than the freight itself.
+        var pts = Math.Clamp(closer / 500.0, -1.0, 1.0) * EquipmentPullWeight;
+
+        if (dest.Value <= 50)
+            return (pts, $"Finishes at {label}, where {order.Number} is waiting: {pts:+0.00;-0.00}",
+                $"Puts you at {label} for {order.Number} — pick the unit up when you drop.", null);
+
+        if (closer > 50)
+            return (pts, $"{closer:N0} mi closer to {label} for {order.Number}: {pts:+0.00;-0.00}",
+                $"Works you toward {label}, where {order.Number} is standing.", null);
+
+        if (closer < -50)
+            return (pts, $"{-closer:N0} mi further from {label} for {order.Number}: {pts:+0.00;-0.00}", null,
+                $"Takes you {-closer:N0} mi further from {label}, and {order.Number} is waiting there.");
+
+        return (0, null, null, null);
+    }
+
+    /// <summary>
+    /// How hard the board leans toward an ordered unit. Deliberately below the home-time pull — a truck
+    /// waiting is worth routing for, but it is not worth running bad freight over.
+    /// </summary>
+    private const double EquipmentPullWeight = 0.5;
+
+    /// <summary>FNV-1a, so a decision is stable and cannot be re-rolled by reloading the page.</summary>
+    private static uint Hash(string text)
+    {
+        unchecked
+        {
+            uint h = 2166136261;
+            foreach (var c in text ?? "") { h ^= c; h *= 16777619; }
+            return h;
+        }
+    }
+
     /// <summary>Yards that can actually do shop work, nearest-in-state first.</summary>
     public static List<Terminal> ShopOptions(AppState s) =>
         s.Company.Terminals

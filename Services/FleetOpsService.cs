@@ -579,8 +579,20 @@ public static class FleetOpsService
         var trailer = s.Trailers.FirstOrDefault(t => t.Unit == d.AssignedTrailerUnit);
         if (trailer != null && trailer.AssignedTruckUnit == d.AssignedTruckUnit) trailer.AssignedTruckUnit = "";
 
+        var freedUnit = d.AssignedTruckUnit;
         d.AssignedTruckUnit = "";
         d.AssignedTrailerUnit = "";
+
+        // A good tractor standing empty and a proven driver in an older one is a move a real carrier
+        // makes. Decided here rather than left on the Fleet tab beside a note telling the player to go
+        // and hire somebody for the seat.
+        if (EquipmentService.ConsiderSeatVacated(s, freedUnit) is { } moved)
+            s.Events.Insert(0, new LogEvent
+            {
+                Channel = "fleet",
+                GameTime = s.Status.GameTime,
+                Message = $"{moved.Number}: {moved.Instruction}",
+            });
     }
 
     /// <summary>Confirming a recommended termination. The player's call, not the app's.</summary>
@@ -1164,6 +1176,10 @@ public static class FleetOpsService
         var position = LedgerService.Position(s);
         var playerTruck = DispatchEngine.AssignedTruck(s);
 
+        // A unit the company has already ordered the driver into is not a seat to fill. Telling them to
+        // go and hire for it is the app arguing with itself.
+        var claimed = EquipmentService.OpenOrder(s)?.ToTruckUnit ?? "";
+
         return open.Select(t =>
         {
             var yard = Migrations.TerminalOf(s, t.HomeTerminalId);
@@ -1181,9 +1197,14 @@ public static class FleetOpsService
                 yard = yard == null ? "" : DispatchEngine.Place(yard.City, yard.State),
                 canAfford,
                 betterThanYours = better,
-                hireNote = canAfford
-                    ? $"Spendable cash is ${position.Spendable:N0}. Hire someone in ATS and add them on this tab."
-                    : $"Only ${position.Spendable:N0} spendable after earmarks and wages owed — the company cannot really carry another driver yet.",
+                orderedToYou = !string.IsNullOrWhiteSpace(claimed)
+                               && t.Unit.Equals(claimed, StringComparison.OrdinalIgnoreCase),
+                hireNote = !string.IsNullOrWhiteSpace(claimed)
+                           && t.Unit.Equals(claimed, StringComparison.OrdinalIgnoreCase)
+                    ? "Do not hire for this seat — operations has already put you in it. Report to the yard and make the swap."
+                    : canAfford
+                        ? $"Spendable cash is ${position.Spendable:N0}. Hire someone in ATS and add them on this tab."
+                        : $"Only ${position.Spendable:N0} spendable after earmarks and wages owed — the company cannot really carry another driver yet.",
                 takeNote = better
                     ? $"It is a better truck than the {playerTruck!.Year} {playerTruck.Make} you are in. Taking it is a genuine upgrade."
                     : "You could take it yourself, though it is no better than what you are in.",

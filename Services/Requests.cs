@@ -109,6 +109,15 @@ public static class Requests
                 $"You have {faults} preventable incident(s) still counting against you. Operations is not " +
                 "moving you into a better unit while that is on the record. Run it clean and ask again.");
 
+        // Rank shortens the odds; it does not settle them. A company driver asking is a coin toss and a
+        // lead driver asking usually gets it — seeded on the unit, so the answer does not change when the
+        // page is reloaded and the next truck to come free is its own question.
+        if (!EquipmentService.UpgradeGranted(s, better.Unit))
+            return Refuse(s,
+                $"Asked, and the answer is no this time. {EquipmentService.UpgradeChancePct(s)}% of the way " +
+                $"there on {s.Driver.RankTitle.ToLowerInvariant()} standing — operations is keeping " +
+                $"{better.Ref} where it is for now. Move up the ladder and it gets easier to ask.");
+
         var order = EquipmentService.IssueUpgrade(s,
             $"Requested by {s.Driver.Name} at the yard; approved on rank ({rank}) and a clean record.");
 
