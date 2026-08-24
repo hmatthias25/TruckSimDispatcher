@@ -304,7 +304,40 @@ public static class DispatchEngine
         var opensAt = now.AddHours(load.AppointmentOpensHours);
         var dueAt = now.AddHours(Math.Max(load.AppointmentOpensHours, load.DeadlineHours));
         var slot = DeliveryWindow.AppointmentIn(opensAt, dueAt, load.Id);
+
+        // A slot has to fit the clock as well as the window. The 14 runs continuously from the moment the
+        // driver comes on duty, so everything between now and the slot — loading, the drive, and sitting
+        // waiting — comes out of the same window the dock work needs. Book an 8pm slot on an 8am start
+        // and twelve of the fourteen hours are gone before the doors open.
+        //
+        // So take the latest slot that still leaves room to unload and get parked, and prefer that to
+        // whatever the seed picked. Earlier is always safe here; later is what took the driver's day.
+        var room = s.Hos.ShiftRemaining
+                   - FacilityLearning.For(s, load.TrailerType).Unloading
+                   - s.Settings.ParkingBufferHours;
+        if (room > 0)
+        {
+            var latest = DeliveryWindow.PrevHalfHour(now.AddHours(room));
+            if (slot > latest && latest > opensAt) slot = latest;
+        }
+
+        // Where even the opening does not fit what is left of the day, the slot stays at the opening and
+        // the planner rests before the dock. Nothing to gain by inventing an earlier time than the
+        // receiver will actually open their doors.
         return Math.Max(0, Math.Round((slot - now).TotalHours, 2));
+    }
+
+    /// <summary>
+    /// True when the booked slot cannot be worked on the hours the driver has now — they will be resting
+    /// before that receiver takes the load. Worth saying at dispatch rather than at the gate.
+    /// </summary>
+    public static bool SlotNeedsRestFirst(AppState s, BoardLoad load)
+    {
+        var slotHours = AppointmentHoursFor(s, load);
+        if (slotHours <= 0) return false;
+        var need = slotHours + FacilityLearning.For(s, load.TrailerType).Unloading
+                             + s.Settings.ParkingBufferHours;
+        return need > s.Hos.ShiftRemaining;
     }
 
     public static bool LiveLoaded(AppState s, string? trailerType) =>
@@ -1074,7 +1107,11 @@ public static class DispatchEngine
         if (GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opensAt
             && GameClock.TryParse(trip.DueGameTime) is { } dueAt && dueAt > opensAt)
         {
-            var slot = DeliveryWindow.AppointmentIn(opensAt, dueAt, load.Id);
+            // Straight off the same helper the plan waits on, so the stated slot and the planned slot
+            // cannot drift apart — and so the shift-clock clamp applies to both.
+            var slot = GameClock.TryParse(s.Status.GameTime) is { } slotFrom
+                ? slotFrom.AddHours(AppointmentHoursFor(s, load))
+                : opensAt;
 
             // A dock does not book you in before you can physically get there, and neither should we.
             // Where our own plan arrives later than the slot — an overnight rest at the shipper, a long
@@ -1106,6 +1143,13 @@ public static class DispatchEngine
             trip.AuthorizationRationale +=
                 $" Your slot is {GameClock.Pretty(trip.AppointmentGameTime)} — aim for it. Turning up early " +
                 "means sitting, and the dock is not expecting you before then.";
+
+            // The slot is inside the window but outside today's hours. Better said now than found out
+            // sitting on their gate with the clock gone.
+            if (SlotNeedsRestFirst(s, load))
+                trip.AuthorizationRationale +=
+                    " That slot is past what is left of your fourteen once the dock work is counted, so " +
+                    "plan on a rest before they take it — do not burn the day waiting at the gate.";
         }
 
         s.Trips.Insert(0, trip);

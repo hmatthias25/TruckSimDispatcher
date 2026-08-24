@@ -121,6 +121,14 @@ public static class DeliveryWindow
         return slot < opensAt ? opensAt : slot;
     }
 
+    /// <summary>Rounds down to the half hour. Used for a latest-possible slot, where rounding up would
+    /// push past the very limit being enforced.</summary>
+    public static DateTime PrevHalfHour(DateTime at)
+    {
+        var halves = Math.Floor((at - at.Date).TotalHours * 2) / 2;
+        return at.Date.AddHours(halves);
+    }
+
     /// <summary>Rounds up to the next half hour, because that is how docks book.</summary>
     public static DateTime NextHalfHour(DateTime at)
     {

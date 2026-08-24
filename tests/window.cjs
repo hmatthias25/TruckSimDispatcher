@@ -162,11 +162,18 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
     destCity: 'Aurora', destState: 'CO', loadedMiles: 19, deadheadMiles: 0,
     gameRevenue: 300, deadlineHours: 30, weightLbs: 20000, appointmentOpensHours: 18,
   });
-  f = overnight.evaluations[0].feasibility;
-  ok('the long wait is recognised', f.waitForAppointmentHours > 10, `${hhmm(f.waitForAppointmentHours || 0)}`);
-  ok('and sat as the reset, not spent on duty',
-    (f.warnings || []).some((w) => /reset/.test(w) && /not wasted/.test(w)),
-    (f.warnings || []).join(' | ') || '(none)');
+  const overnightEv = overnight.evaluations[0];
+  f = overnightEv.feasibility;
+  if (overnightEv.receiverTakesEarly) {
+    ok('taking it early, so there is no wait to take as a reset',
+      !f.waitForAppointmentHours,
+      (overnightEv.pros || []).find((p) => /take it whenever/.test(p)) || 'no wait planned');
+  } else {
+    ok('the long wait is recognised', f.waitForAppointmentHours > 10, `${hhmm(f.waitForAppointmentHours || 0)}`);
+    ok('and sat as the reset, not spent on duty',
+      (f.warnings || []).some((w) => /reset/.test(w) && /not wasted/.test(w)),
+      (f.warnings || []).join(' | ') || '(none)');
+  }
   ok('so the driver is not stranded out of hours', f.verdict !== 'Infeasible', f.verdict);
 
   head('13. Whether the receiver will have you overnight is per-facility and stable');

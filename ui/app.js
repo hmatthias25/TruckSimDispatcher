@@ -2376,6 +2376,24 @@ function terminalsHtml() {
       <button class="btn" data-act="settle-transfer" data-id="${esc(t.id)}">
         Check on the ${esc(t.toTerminalName)} request (${t.loadsRequired} loads asked)</button></div>`).join('')}
 
+    <h3 class="sect">What you want to be running</h3>
+    <p class="hint">Dispatch weighs the board on this. It is a real thumb on the scale &mdash; on
+      <b>medium</b> a load over 700 miles scores a fifth of what a mid-length one does, so if the boards
+      have felt short on long freight, this is why. Multi-day runs are planned properly either way:
+      breaks, ten-hour resets and 34-hour restarts all get worked into the plan.</p>
+    <div class="grid3">
+      <label>Trip length
+        <select id="tl-pref">
+          ${[['short', 'Short — day cabs and regional, under 250 mi'],
+             ['medium', 'Medium — 200 to 700 mi'],
+             ['long', 'Long — 600 mi and up'],
+             ['otr', 'OTR — 800 mi and up, out for weeks']]
+            .map(([k, label]) => `<option value="${k}" ${(S.application && S.application.preferredTripLength === k) ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+        </select></label>
+      <label style="align-self:end"><button class="btn primary wide" data-act="save-trip-length">Update preference</button></label>
+      <div><p class="hint" style="margin-top:22px">Takes effect on the next board you pull.</p></div>
+    </div>
+
     <h3 class="sect">Home-time arrangement</h3>
     <p class="hint">What you agreed to when you signed on. Dispatch routes for it: as the date gets
       close, loads finishing near your home yard start outranking better-paying freight going the other
@@ -4378,6 +4396,8 @@ async function handleAction(act, d, ev) {
       absorb(r);
       toast(r.message, 'ok');
     });
+    case 'save-trip-length': return run(async () => absorb(await api('/career/trip-length', 'POST',
+      { preference: sv('tl-pref') })), 'Trip-length preference updated.');
     case 'save-home-time': return run(async () => absorb(await api('/career/home-time', 'POST',
       { preference: sv('ht-pref') })), 'Home-time arrangement updated.');
 

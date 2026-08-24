@@ -1324,6 +1324,20 @@ app.MapPost("/api/career/endorsement", (EndorsementRequest req) => Results.Ok(st
     return new { snapshot = Snapshot(s), message };
 })));
 
+// What the driver wants to be running. Read live by load scoring, so it takes effect on the next board.
+app.MapPost("/api/career/trip-length", (TripLengthRequest req) => Results.Ok(store.Mutate(s =>
+{
+    var pref = (req.Preference ?? "").Trim().ToLowerInvariant();
+    if (pref is not ("short" or "medium" or "long" or "otr"))
+        throw new InvalidOperationException("Trip length is short, medium, long or otr.");
+
+    s.Application ??= new DriverApplication();
+    s.Application.PreferredTripLength = pref;
+    store.Log(s, "career", $"Trip-length preference changed to {pref}. Dispatch will weigh the board on it " +
+                           "from the next load.");
+    return Snapshot(s);
+})));
+
 app.MapPost("/api/career/home-time", (HomeTimeArrangementRequest req) => Results.Ok(store.Mutate(s =>
 {
     var days = HomeTime.DaysFor(req.Preference);
@@ -1780,3 +1794,4 @@ record FacilityTimeRequest(string TrailerType, double LoadingHours, double Unloa
 record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? TransmissionPreference, bool AddTrailers);
 record AdoptRequest(string Path);
 record HomeTimeArrangementRequest(string Preference);
+record TripLengthRequest(string? Preference);

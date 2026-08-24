@@ -27,6 +27,7 @@ public static class Migrations
         GiveRunningLoadsAnAppointment(s);
         ClearLateMarksFromUnreachableSlots(s);
         WipeLateIncidents(s);
+        RebookSlotsThatEatTheClock(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -144,6 +145,57 @@ public static class Migrations
     /// not from these notes, so a genuinely late delivery still reads as late where it counts. What goes
     /// is the safety-file paperwork and any discipline issued off it.
     /// </summary>
+    /// <summary>
+    /// Re-books delivery slots on loads already out that cannot be worked on the hours available.
+    ///
+    /// The slot used to be placed against the window alone, never the clock. On an eight in the morning
+    /// start an eight in the evening slot leaves two of the fourteen hours by the time the doors open —
+    /// and loading, the drive and the sitting all came out of that same window first. The driver waits
+    /// all day and then runs out at the dock.
+    ///
+    /// New loads get a slot that fits. These are the ones already accepted or rolling, which would
+    /// otherwise carry the old booking all the way to the receiver.
+    /// </summary>
+    private static void RebookSlotsThatEatTheClock(AppState s)
+    {
+        if (s.SchemaVersion >= 10) return;
+        s.SchemaVersion = 10;
+
+        if (GameClock.TryParse(s.Status.GameTime) is not { } now) return;
+
+        var moved = 0;
+        foreach (var t in s.Trips.Where(x => x.Status is "Authorized" or "InTransit"))
+        {
+            if (GameClock.TryParse(t.AppointmentGameTime) is not { } slot) continue;
+            if (GameClock.TryParse(t.AppointmentOpensGameTime) is not { } opens) continue;
+
+            var dock = t.UnloadingHours > 0
+                ? t.UnloadingHours
+                : FacilityLearning.For(s, t.TrailerType).Unloading;
+            var room = s.Hos.ShiftRemaining - dock - s.Settings.ParkingBufferHours;
+            if (room <= 0) continue;
+
+            var latest = DeliveryWindow.PrevHalfHour(now.AddHours(room));
+            if (slot <= latest) continue;         // already workable on the hours in hand
+            if (latest <= opens) continue;        // nothing in the window fits today; the rest handles it
+
+            t.AppointmentGameTime = GameClock.Format(latest);
+            moved++;
+        }
+
+        if (moved == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "dispatch",
+            GameTime = s.Status.GameTime,
+            Message = $"Moved the delivery slot on {moved} load(s) already out. They had been booked against " +
+                      "the delivery window without checking the hours left in the day, so waiting for the " +
+                      "appointment and then unloading would have run the clock out. Check the Active tab for " +
+                      "the new time.",
+        });
+    }
+
     private static void WipeLateIncidents(AppState s)
     {
         if (s.SchemaVersion >= 9) return;

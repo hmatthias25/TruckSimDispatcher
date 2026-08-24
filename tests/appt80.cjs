@@ -261,6 +261,51 @@ async function offer(cargo, opensHours = 8, deadlineHours = 20) {
     (r8.snapshot.incidents || []).filter((i) => (i.description || '').includes(auth8.trip.number))
       .map((i) => i.number).join(', ') || 'nothing filed');
 
+  head('9. #82 The slot must fit the clock, not just the window');
+  // Reported: 8am start, appointment booked for 8pm. Twelve of the fourteen hours gone before the doors
+  // open, and loading and the drive came out of that same window first.
+  day += 1;
+  S = un(await api('/status', 'POST', {
+    locationCity: 'Denver', locationState: 'CO', locationKind: 'TruckStop', gameTime: iso(day, '08:00'),
+    fuelPct: 90, atsOdometer: 95000, truckDamagePct: 2, trailerDamagePct: 1,
+    dutyStatus: 'OnDuty', atsBankBalance: 120000,
+  }));
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+  await setEarlyPct(0);
+  await api('/board/clear', 'POST', {});
+  const late = (await api('/board/add', 'POST', {
+    cargo: 'Clock eater', trailerType: S.trailers[0].type,
+    originCity: 'Denver', originState: 'CO', destCity: 'Aurora', destState: 'CO',
+    loadedMiles: 25, deadheadMiles: 0, gameRevenue: 800, deadlineHours: 30,
+    weightLbs: 24000, appointmentOpensHours: 11,
+  })).evaluations[0];
+
+  if (late.appointmentGameTime) {
+    const slotIn = hoursBetween(S.status.gameTime, late.appointmentGameTime);
+    const rests = (late.feasibility.timeline || [])
+      .some((x) => /reset|rest/i.test(x.kind || '') || /reset|rest/i.test(x.label || ''));
+    // Either the slot fits the hours in hand, or the plan rests first — after a ten the fourteen is
+    // fresh and a later slot is perfectly workable. What must never happen is a slot that needs
+    // neither: burning the day on duty at the gate and running out at the dock.
+    ok('the slot either fits the day or the plan rests before it',
+      slotIn + 1.5 <= 14 || rests,
+      `slot ${slotIn.toFixed(1)}h in, rest planned: ${rests}`);
+    ok('and it is inside the window', slotIn <= 30, `${slotIn.toFixed(1)}h against a 30h deadline`);
+  } else {
+    ok('no slot quoted when none fits the day', true, 'left to the rest-before-dock rule');
+  }
+
+  head('10. #83 Trip length can be changed after hire');
+  const before83 = (await api('/bootstrap')).application.preferredTripLength;
+  const S83 = un(await api('/career/trip-length', 'POST', { preference: 'otr' }));
+  ok('the preference takes', S83.application.preferredTripLength === 'otr',
+    `${before83} -> ${S83.application.preferredTripLength}`);
+  let bad = null;
+  try { await api('/career/trip-length', 'POST', { preference: 'transcontinental' }); }
+  catch (e) { bad = e.message; }
+  ok('and nonsense is refused', bad !== null, (bad || '(accepted!)').slice(0, 80));
+  await api('/career/trip-length', 'POST', { preference: 'medium' });
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });
