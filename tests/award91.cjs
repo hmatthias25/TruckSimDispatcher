@@ -73,21 +73,31 @@ async function report(d, balance) {
   let sc = (await api('/bootstrap')).views.showcase;
   ok('nothing on offer as a company driver', sc.offered === false, `offered=${sc.offered}`);
 
-  S = un(await api('/career/promote', 'POST', { rank: 'owner', force: true, note: 'fixture' }));
-  ok('now a Master Driver', S.driver.rankTitle === 'Master Driver', S.driver.rankTitle);
+  const ceiling = (await api('/bootstrap')).views.career.ceilingRank;
+  S = un(await api('/career/promote', 'POST', { rank: ceiling, force: true, note: 'fixture' }));
+  ok('promoted to the top of THIS carrier', S.driver.rank === ceiling,
+    `${S.driver.rankTitle} (${ceiling})`);
   sc = (await api('/bootstrap')).views.showcase;
   ok('the truck is on offer', sc.offered === true, `offered=${sc.offered}`);
+  console.log(`     employer equipment standard: ${S.company.equipmentStars} star(s)`);
 
   head('5. #92 The list is flagships and long noses, spec-ed properly');
   const names = (sc.choices || []).map((x) => `${x.make} ${x.model}`);
   ok('there is a real choice', (sc.choices || []).length >= 5, `${(sc.choices || []).length} trucks`);
-  ok('the long-nose classics are on it',
-    names.some((x) => /389/.test(x)) && names.some((x) => /W900/.test(x)), names.join(', ').slice(0, 110));
-  ok('so are the modern flagships',
-    names.some((x) => /Volvo/.test(x)) && names.some((x) => /Mack/.test(x)), '');
-  ok('and they carry the big engines',
-    (sc.choices || []).every((x) => x.hp >= 500) && (sc.choices || []).some((x) => x.hp >= 600),
-    `${Math.min(...sc.choices.map((x) => x.hp))}-${Math.max(...sc.choices.map((x) => x.hp))} hp`);
+  const stars = S.company.equipmentStars;
+  const chrome = names.some((x) => /389|W900/.test(x));
+  if (stars >= 4) {
+    ok('a good carrier hands over the long noses', chrome, names.join(', ').slice(0, 110));
+    ok('and the big engines with them',
+      (sc.choices || []).some((x) => x.hp >= 600),
+      `up to ${Math.max(...sc.choices.map((x) => x.hp))} hp`);
+  } else {
+    ok('a rookie outfit does not hand out chrome', !chrome,
+      `${stars}-star employer: ${names.join(', ').slice(0, 90)}`);
+    ok('but it is still a decent late-model truck',
+      (sc.choices || []).some((x) => x.year >= 2017), 
+      `newest ${Math.max(...sc.choices.map((x) => x.year))}`);
+  }
   ok('a gearbox against your preference is flagged, not hidden',
     (sc.choices || []).some((x) => x.matchesPreference === false),
     `${(sc.choices || []).filter((x) => !x.matchesPreference).length} flagged of ${sc.choices.length}`);

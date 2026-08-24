@@ -245,10 +245,46 @@ public static class Seed
     /// quietly handed over. Choosing it says they have changed their mind, and the app takes them at
     /// their word.
     /// </summary>
+    /// <summary>
+    /// The trucks THIS carrier would put its best driver in.
+    ///
+    /// A rookie outfit at two stars does not hand anybody a long-nose Pete, and pretending otherwise
+    /// makes the good carriers worth nothing. So the list is drawn from where the employer actually sits:
+    /// the showcase rigs only at the top of the market, a solid late-model tractor further down. Reaching
+    /// the top of a weak carrier's ladder is still an achievement — it is just a smaller truck, which is
+    /// its own argument for moving on.
+    /// </summary>
+    private static List<TruckSpec> AwardPool(AppState s)
+    {
+        var stars = Math.Clamp(s.Company.EquipmentStars <= 0 ? 3 : s.Company.EquipmentStars, 1, 5);
+
+        if (stars >= 5) return ShowcaseSpecs.ToList();
+
+        // The long noses are chrome, and chrome is not something a rookie outfit hands anybody. They live
+        // in the ordinary catalogue too, so filtering on tier alone let a three-star fleet award a W900L.
+        static bool IsChrome(TruckSpec x) =>
+            x.Model.Contains("389", StringComparison.OrdinalIgnoreCase)
+            || x.Model.Contains("W900", StringComparison.OrdinalIgnoreCase);
+
+        // Everything the catalogue has at this standard or one better, best first.
+        var pool = AmtSpecs.Concat(ManualSpecs)
+            .Where(x => x.Tier >= stars && x.Tier <= stars + 1)
+            .Where(x => stars >= 4 || !IsChrome(x))
+            .OrderByDescending(x => x.Tier).ThenByDescending(x => x.Year).ThenByDescending(x => x.Hp)
+            .Take(6)
+            .ToList();
+
+        // A four-star fleet stretches to one of the flagships, but not the chrome.
+        if (stars == 4)
+            pool.InsertRange(0, ShowcaseSpecs.Where(x => x.TransType == "automatic").Take(2));
+
+        return pool.Count > 0 ? pool : AmtSpecs.Take(3).ToList();
+    }
+
     public static List<object> ShowcaseChoices(AppState s)
     {
         var pref = (s.Application?.TransmissionPreference ?? "either").Trim().ToLowerInvariant();
-        return ShowcaseSpecs.Select((x, i) => (object)new
+        return AwardPool(s).Select((x, i) => (object)new
         {
             index = i,
             make = x.Make,
@@ -265,10 +301,11 @@ public static class Seed
     }
 
     /// <summary>The chosen unit, described the way an equipment order needs it.</summary>
-    public static (string Label, string TransType)? ShowcaseChoice(int index)
+    public static (string Label, string TransType)? ShowcaseChoice(AppState s, int index)
     {
-        if (index < 0 || index >= ShowcaseSpecs.Length) return null;
-        var x = ShowcaseSpecs[index];
+        var pool = AwardPool(s);
+        if (index < 0 || index >= pool.Count) return null;
+        var x = pool[index];
         return ($"a {x.Year} {x.Make} {x.Model} — {x.Engine} at {x.Hp} hp, {x.Trans}, {x.Cab.ToLowerInvariant()}",
                 x.TransType);
     }
@@ -649,6 +686,10 @@ public static class Seed
             Restrictions = restrictions,
             Probation = probation,
             Skills = carriedSkills,
+            // Deliberately not carried: the award is a thing THIS company does for its own best driver,
+            // and what it runs to depends on what this company is. A new employer is a new ladder.
+            ShowcaseOffered = false,
+            ShowcaseTaken = false,
             // The home-time arrangement is a commitment the company makes, so it is recorded on the
             // driver file in days and routed for — not left as a note nobody reads.
             HomeTimeIntervalDays = HomeTime.DaysFor(app.HomeTimePreference),

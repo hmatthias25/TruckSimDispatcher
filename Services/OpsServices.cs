@@ -795,9 +795,14 @@ public static class CareerService
         s.Driver.Rank = target.Key;
         s.Driver.RankTitle = target.Title;
 
-        // Top of the ladder. Every other reward here is a number on a settlement; this is the one that is
-        // visible out of the windscreen, so it is offered as a choice rather than issued.
-        if (target.Key == "owner" && !s.Driver.ShowcaseTaken) s.Driver.ShowcaseOffered = true;
+        // Top of THIS carrier's ladder, which is not the same rung everywhere — a fleet at the bottom of
+        // the market stops at senior. Every other reward here is a number on a settlement; this is the one
+        // visible out of the windscreen, so it is offered as a choice rather than issued. What is on the
+        // list depends on who you work for.
+        var ceiling = Carriers.CeilingRank(s);
+        if (!s.Driver.ShowcaseTaken
+            && (target.Key == ceiling || (string.IsNullOrWhiteSpace(ceiling) && target.Key == "owner")))
+            s.Driver.ShowcaseOffered = true;
 
         // The employer's own scale wherever we have one. Rank is the shape of the raise; the carrier is
         // the size of it, which is what makes a better carrier worth moving to.

@@ -1390,7 +1390,7 @@ app.MapPost("/api/career/showcase", (ShowcaseRequest req) => Results.Ok(store.Mu
         throw new InvalidOperationException("There is no truck on offer.");
     if (req.Index is null) throw new InvalidOperationException("Pick one.");
 
-    var pick = Seed.ShowcaseChoice(req.Index.Value)
+    var pick = Seed.ShowcaseChoice(s, req.Index.Value)
                ?? throw new InvalidOperationException("That is not one of the trucks on offer.");
 
     var yard = HomeTime.HomeTerminal(s);
