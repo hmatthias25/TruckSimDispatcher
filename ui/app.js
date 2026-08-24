@@ -4,8 +4,6 @@
 let S = null;              // latest snapshot from the server
 let TAB = 'dispatch';
 let DECISION = null;       // last board evaluation
-let PACKET = '';
-let AI_REPLY = null;
 let TRIP_AUDIT = null;
 let RECON = null;
 let SHOTS = [];            // pending screenshots {mediaType, dataBase64, thumb, name}
@@ -30,7 +28,6 @@ const TABS = [
   ['safety', 'Safety'],
   ['career', 'Career'],
   ['market', 'Job Market'],
-  ['packet', 'Dispatch Packet'],
   ['settings', 'Settings'],
 ];
 
@@ -629,7 +626,7 @@ function render() {
   const view = ({
     dispatch: viewDispatch, active: viewActive, trips: viewTrips, fleet: viewFleet,
     payroll: viewPayroll, finance: viewFinance, maint: viewMaint, safety: viewSafety,
-    career: viewCareer, market: viewJobMarket, packet: viewPacket, settings: viewSettings,
+    career: viewCareer, market: viewJobMarket, settings: viewSettings,
   }[TAB] || viewDispatch);
 
   // A bug in one tab must not blank the whole console — surface it instead.
@@ -3907,44 +3904,6 @@ function viewJobMarket() {
   </div>` : ''}`;
 }
 
-/* ============================================================ PACKET */
-function viewPacket() {
-  return `
-  <div class="panel">
-    <div class="panel-head"><h2>Dispatch Packet</h2>
-      <span class="sub">Everything Claude needs to resume the roleplay with full continuity.</span></div>
-    <div class="callout info">
-      <p>Copy this and paste it into a chat. It carries the carrier, your file, the equipment, the clocks,
-        the money, the safety record and the trip history — so nothing drifts between sessions.</p>
-    </div>
-    <div class="row-actions">
-      <button class="btn primary" data-act="packet" data-mode="full">Full packet</button>
-      <button class="btn" data-act="packet" data-mode="brief">Short dispatch request</button>
-      <button class="btn ghost" data-act="packet" data-mode="state">State only (no rules)</button>
-      ${PACKET ? `<button class="btn go" data-act="copy-packet">Copy to clipboard</button>` : ''}
-    </div>
-    ${PACKET ? `<pre class="packet" id="packet-text">${esc(PACKET)}</pre>` : ''}
-  </div>
-
-  <div class="panel">
-    <div class="panel-head"><h2>In-app dispatcher</h2>
-      ${badge(S.views.aiConfigured ? 'ok' : 'mute', S.views.aiConfigured ? 'connected' : 'not configured')}</div>
-    ${S.views.aiConfigured ? `
-      <label>Message to operations (optional — the packet is always attached)
-        <textarea id="ai-msg" placeholder="e.g. what do you want me to do with this board?"></textarea></label>
-      <div class="row-actions"><button class="btn primary" data-act="ai-send">Ask operations</button></div>
-      ${AI_REPLY ? (AI_REPLY.ok
-        ? `<h3 class="sect">Reply — ${esc(AI_REPLY.model)} (${AI_REPLY.outputTokens} output tokens)</h3>
-           <pre class="reply">${esc(AI_REPLY.text)}</pre>`
-        : `<div class="callout stop" style="margin-top:12px"><h4>Could not get a reply</h4><p>${esc(AI_REPLY.error)}</p></div>`) : ''}`
-      : `<div class="callout mute">
-        <p>The app is fully offline and every feature works without this. If you would rather it write the
-          dispatch messages itself, add an API key in <b>Settings → In-app dispatcher</b>.</p>
-        <p>Get a key at <b>console.anthropic.com → API Keys</b>. That is pay-per-token billing, separate
-          from any Claude subscription.</p></div>`}
-  </div>`;
-}
-
 /* ---- what a dock actually costs, per trailer type
    One global figure could not serve a reefer that takes four hours and a flatbed that takes one, so
    the app measures instead of assuming. These converge as loads are delivered. */
@@ -4138,12 +4097,13 @@ function viewSettings() {
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>In-app dispatcher (optional)</h2></div>
-      <label class="chk"><input type="checkbox" id="ai-enabled" ${s.aiEnabled ? 'checked' : ''}> Let the app write dispatch messages itself</label>
+      <div class="panel-head"><h2>Reading screenshots (optional)</h2></div>
+      <label class="chk"><input type="checkbox" id="ai-enabled" ${s.aiEnabled ? 'checked' : ''}> Let the app read your ATS screenshots</label>
       <label>Anthropic API key<input id="ai-key" type="password" placeholder="${s.anthropicApiKey ? 'a key is saved — leave blank to keep it' : 'sk-ant-…'}"></label>
       <label>Model<input id="ai-model" value="${esc(s.anthropicModel)}"></label>
-      <p class="hint">Leave the key blank and the app stays completely offline — it makes no network calls at all
-        and every feature still works through the Dispatch Packet. Keys come from
+      <p class="hint">This is what reads a load board or your HOS display off a screenshot. Leave the key
+        blank and the app stays completely offline — it makes no network calls at all, and every feature
+        still works by typing the numbers in yourself. Keys come from
         <b>console.anthropic.com → API Keys</b> and bill per token, separately from a Claude subscription.
         The key is stored in your local career file and is never sent to the browser.</p>
     </div>
@@ -5260,13 +5220,6 @@ async function handleAction(act, d, ev) {
       toast(r.message, 'ok');
     });
 
-    /* ---- packet & AI */
-    case 'packet': return run(async () => { PACKET = (await api('/packet?mode=' + d.mode)).text; });
-    case 'copy-packet': return copyText(PACKET, 'Dispatch packet copied — paste it into your chat.');
-    case 'ai-send': {
-      toast('Asking operations…');
-      return run(async () => { AI_REPLY = await api('/ai/dispatch', 'POST', { message: sv('ai-msg') }); });
-    }
 
     /* ---- settings & data */
     case 'facility-set': return run(async () => absorb(await api('/settings/facility-time', 'POST', {

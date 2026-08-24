@@ -249,10 +249,9 @@
     <div class="sub"><span class="n"></span><span class="t">The two empty legs, and the readings that pay them</span><span class="p">75</span></div>
     <div class="sub"><span class="n"></span><span class="t">When operations parks you and your clocks are fine</span><span class="p">76</span></div>
     <div class="grp">Reference</div>
-    <div><span class="n">22</span><span class="t">Playing with Claude: the Dispatch Packet</span><span class="p">77</span></div>
-    <div><span class="n">23</span><span class="t">Settings, backups and updating the app</span><span class="p">78</span></div>
-    <div><span class="n">24</span><span class="t">If something looks wrong</span><span class="p">79</span></div>
-    <div><span class="n">25</span><span class="t">Credits</span><span class="p">80</span></div>
+    <div><span class="n">22</span><span class="t">Settings, backups and updating the app</span><span class="p">77</span></div>
+    <div><span class="n">23</span><span class="t">If something looks wrong</span><span class="p">78</span></div>
+    <div><span class="n">24</span><span class="t">Credits</span><span class="p">79</span></div>
   </div>
 
   <div class="note" style="margin-top:10pt">
@@ -362,7 +361,7 @@
 
   <div class="warn">
     <h4>Your API key is in that file</h4>
-    <p>If you enable the optional in-app dispatcher (Section 22) the key is stored in
+    <p>If you set an API key so the app can read your screenshots, it is stored in
       <code>career.json</code> in plain text. Do not post the file publicly or commit it to a repository.</p>
   </div>
 
@@ -4116,51 +4115,6 @@
 <!-- ============================================================ 22 -->
 <div class="page">
   <div class="kicker">Section 22</div>
-  <h2>Playing with Claude: the Dispatch Packet</h2>
-
-  <div class="side">
-    <div class="txt">
-      <p>The app runs the numbers. If you want the roleplay — a dispatcher who talks to you, argues,
-        explains and remembers — the <b>Packet</b> tab gives you the whole career as text.</p>
-
-      <p>Press <i>Full packet</i>, copy it, and paste it into a chat. The conversation resumes with full
-        continuity: carrier, driver file, equipment, clocks, money, safety record, trip history and the
-        rules the company holds itself to.</p>
-
-      <h4>Nothing is required</h4>
-      <p>The app is complete without this. The packet is a convenience for people who want the
-        conversation as well as the bookkeeping.</p>
-    </div>
-    <div class="pic">
-      <img src="img/packet.png" alt="Dispatch packet tab">
-    </div>
-  </div>
-
-  <h3>The optional in-app dispatcher</h3>
-  <p>Settings → In-app dispatcher takes an Anthropic API key from
-    <span class="mono">console.anthropic.com</span>. With one set, the app writes dispatch messages
-    itself and can read freight-board screenshots straight into the board.</p>
-
-  <div class="warn">
-    <h4>What this changes about privacy</h4>
-    <p>With no key set the app makes <b>no network calls at all</b> — it is completely offline. Set a
-      key and the dispatch text and any screenshots you paste are sent to Anthropic to be processed.
-      The key is stored in plain text in your career file.</p>
-  </div>
-
-  <div class="rule">
-    <h4>Extraction always asks first</h4>
-    <p>Screenshot rows are shown for you to confirm and edit before anything is added to the board.
-      A misread payout would poison every rate and feasibility decision downstream, so it is never
-      committed silently.</p>
-  </div>
-
-  <div class="pfoot"><span>22 &middot; Playing with Claude</span><span>77</span></div>
-</div>
-
-<!-- ============================================================ 23 -->
-<div class="page">
-  <div class="kicker">Section 23</div>
   <h2>Settings, backups and updating the app</h2>
 
   <div class="side">
@@ -4203,12 +4157,12 @@
   <p>Any career it finds elsewhere on the machine is listed under <b>Settings → Data → List backups</b>
     with a button to load it — so an update never silently looks like a lost save.</p>
 
-  <div class="pfoot"><span>23 &middot; Settings and data</span><span>78</span></div>
+  <div class="pfoot"><span>22 &middot; Settings and data</span><span>77</span></div>
 </div>
 
-<!-- ============================================================ 24 -->
+<!-- ============================================================ 23 -->
 <div class="page">
-  <div class="kicker">Section 24</div>
+  <div class="kicker">Section 23</div>
   <h2>If something looks wrong</h2>
 
   <table>
@@ -4242,12 +4196,12 @@
       report it.</p>
   </div>
 
-  <div class="pfoot"><span>24 &middot; If something looks wrong</span><span>79</span></div>
+  <div class="pfoot"><span>23 &middot; If something looks wrong</span><span>78</span></div>
 </div>
 
-<!-- ============================================================ 25 -->
+<!-- ============================================================ 24 -->
 <div class="page">
-  <div class="kicker">Section 25</div>
+  <div class="kicker">Section 24</div>
   <h2>Credits</h2>
 
   <div class="rule" style="border-left-width:4pt">
@@ -4284,8 +4238,7 @@
 
   <h3>Your data</h3>
   <p>Everything stays on your machine. No telemetry, no accounts, no network calls — unless you set an
-    API key for the optional in-app dispatcher, which is off by default and clearly marked where it is
-    not.</p>
+    API key for reading screenshots, which is off by default and clearly marked where it is not.</p>
 
   <div class="note" style="margin-top:26pt">
     <h4>Alpha build</h4>
@@ -4298,7 +4251,7 @@
     Idea by SimRacerSteve.
   </p>
 
-  <div class="pfoot"><span>25 &middot; Credits</span><span>80</span></div>
+  <div class="pfoot"><span>24 &middot; Credits</span><span>79</span></div>
 </div>
 
 </body>

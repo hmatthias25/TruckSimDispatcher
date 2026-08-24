@@ -1417,26 +1417,7 @@ app.MapPost("/api/career/dedicated", (DedicatedRequest req) => Results.Ok(store.
     return new { snapshot = Snapshot(s), message };
 })));
 
-// ---------------------------------------------------------------- packet & AI
-
-app.MapGet("/api/packet", (string? mode) =>
-{
-    var text = mode == "brief"
-        ? PacketService.BuildBoardBrief(store.State)
-        : PacketService.BuildPacket(store.State, includeRules: mode != "state", includeHistory: mode != "brief");
-    return Results.Ok(new { text });
-});
-
-app.MapPost("/api/ai/dispatch", async (AiRequest req, CancellationToken ct) =>
-{
-    var s = store.State;
-    var body = string.IsNullOrWhiteSpace(req.Message)
-        ? PacketService.BuildPacket(s)
-        : PacketService.BuildPacket(s) + "\n\n---\n\nDriver message: " + req.Message;
-    var reply = await AiService.AskAsync(s, body, ct);
-    if (reply.Ok) store.Mutate(st => store.Log(st, "dispatch", $"AI dispatch reply ({reply.Model}, {reply.OutputTokens} out tokens)."));
-    return Results.Ok(reply);
-});
+// ---------------------------------------------------------------- AI
 
 app.MapGet("/api/ai/status", () => Results.Ok(new
 {

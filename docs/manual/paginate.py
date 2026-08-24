@@ -80,7 +80,7 @@ GROUPS = [
     ("Getting going", [1, 2, 3, 4]),
     ("The daily loop", [5, 6, 7, 8, 9, 10, 11, 12]),
     ("The company", [13, 14, 15, 16, 17, 18, 19, 20, 21]),
-    ("Reference", [22, 23, 24, 25]),
+    ("Reference", [22, 23, 24]),
 ]
 rows: list[str] = []
 for label, nums in GROUPS:
