@@ -805,13 +805,24 @@ public static class DispatchEngine
         if (load.IsUrgent) e.Cons.Add("Urgent freight — no room for error on the clock.");
         if (load.IsFragile) e.Cons.Add("Fragile freight — damage will show up on your record.");
 
-        // Below-floor freight is a hard reject unless it buys us out of a dead market.
+        // Below-floor freight is a hard reject unless it buys us something the rate does not measure.
         if (e.AllInRpm < floorRpm)
         {
             var currentTier = Markets.Find(s, s.Status.LocationCity, s.Status.LocationState)?.Tier ?? 2;
             var escapes = currentTier == 3 && e.DestTier <= 2;
             var resetsUs = s.Hos.CycleRemaining <= w.ResetWatchCycleHours && e.DestResetFriendly;
+
+            // Home time already broken, and this load finishes at the yard. "It loses money" is only true
+            // against a better load, and that is not the choice on the table: once home time is overdue
+            // the alternative already on offer is deadheading the driver home empty, over the same miles,
+            // for nothing. Any revenue at all beats that — which is why there is no floor under this one,
+            // the same as the other two.
+            var getsThemHome = HomeTime.IsOverdueRideHome(s, load);
+
             if (escapes) e.Pros.Add("Cheap, but it buys us out of a dead market — that is worth paying for.");
+            else if (getsThemHome) e.Pros.Add(
+                "Cheap, but it gets you home and we are already late doing it. The alternative is running " +
+                "you in empty over the same miles, so anything on the trailer is better than nothing.");
             else if (resetsUs) e.Pros.Add("Cheap, but it parks the truck where we can restart the cycle.");
             else e.HardFails.Add($"Under the ${floorRpm:0.00}/mi break-even with no positioning justification — this load loses money.");
         }

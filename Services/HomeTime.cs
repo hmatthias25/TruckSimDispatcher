@@ -494,6 +494,30 @@ public static class HomeTime
     }
 
     /// <summary>
+    /// Whether this load actually gets the driver home — finishes inside the home radius of their own
+    /// yard — with home time already <b>overdue</b>.
+    ///
+    /// Deliberately stricter than the scoring test above on both counts. Overdue rather than merely due
+    /// soon, because "due in three days" is not a promise broken yet and there is still time to find
+    /// freight that pays; and finishing at home rather than merely closing distance, because paying to
+    /// lose money to get two hundred miles nearer is not the same purchase.
+    ///
+    /// Used by load scoring to let below-break-even freight through the floor. See the break-even hard
+    /// fail in <see cref="DispatchEngine"/>.
+    /// </summary>
+    public static bool IsOverdueRideHome(AppState s, BoardLoad load)
+    {
+        var st = Status(s);
+        if (!st.Tracked || !st.Overdue) return false;
+
+        var home = HomeTerminal(s);
+        if (home == null) return false;
+
+        var miles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
+        return miles != null && miles.Value <= s.Settings.Scoring.HomeRadiusMiles;
+    }
+
+    /// <summary>
     /// Whether a load finishing at this destination is being run to get the driver home, and what they
     /// should do once it is delivered.
     ///
