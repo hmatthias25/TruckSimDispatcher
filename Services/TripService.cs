@@ -596,6 +596,8 @@ public static class TripService
             s.Hos.CarriedForwardFrom = trip.Number;
             s.Hos.Confirmed = true;   // read off the game just now — this is a fresh reading, not a stale one
             s.Hos.Projected = false;
+            ClockCheck.Rearm(s);      // clocks read at the dock come off the same capped display
+
             s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
             audit.ClocksReported = true;
             audit.CarriedForward.Add(

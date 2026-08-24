@@ -898,6 +898,13 @@ public static class Carriers
         return spec == null ? (0, 0) : (spec.PayStars, spec.HomeTimeStars);
     }
 
+    /// <summary>Where a carrier is headquartered, without having to be employed by them.</summary>
+    public static (string City, string State) HeadquartersOf(string? code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        return spec == null ? ("", "") : (spec.HqCity, spec.HqState);
+    }
+
     public static List<string> NetworkCitiesFor(string? code)
     {
         var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
@@ -906,7 +913,15 @@ public static class Carriers
 
     /// <summary>Turns a chosen carrier into the player's employer: company, terminals, pay.</summary>
 
-    public static void Employ(AppState s, string code, DriverApplication app)
+    /// <param name="markHqReached">
+    /// Whether being employed here proves the driver has been to the headquarters city.
+    ///
+    /// True on a first hire — they are standing in the yard. False when they are changing employer to a
+    /// carrier based somewhere they have never driven: they have to get themselves there first, and
+    /// marking the city reached before they have would hand them freight out of a city ATS will not
+    /// generate any for. See <see cref="Changeover"/>.
+    /// </param>
+    public static void Employ(AppState s, string code, DriverApplication app, bool markHqReached = true)
     {
         var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase))
                    ?? throw new InvalidOperationException("No such carrier.");
@@ -960,7 +975,10 @@ public static class Carriers
 
         // The yard you are based out of counts as reached — you are standing in it. Seed does this for
         // a generated carrier; without it here, hiring at a real one left the home city off the map.
-        DiscoveryService.Note(s, spec.HqCity, spec.HqState, s.Status.GameTime);
+        //
+        // Not on a changeover to a city nobody has driven to, though. There the drive is the first thing
+        // the driver owes, and saying otherwise would put freight on the board that ATS never generates.
+        if (markHqReached) DiscoveryService.Note(s, spec.HqCity, spec.HqState, s.Status.GameTime);
         DiscoveryService.SyncOwnership(s);
         s.Settings.FreightPrefix = spec.Code;
 

@@ -420,6 +420,52 @@ function setupChecklistHtml(steps) {
     </div>`).join('')}`;
 }
 
+/* ---- what a change of employer leaves to do in ATS.
+   The app's books turn over cleanly and the game does not turn over at all, so whatever was bought is
+   still sitting in a garage under the last company's colours. This is the list that squares the two,
+   and it stands until it is worked through — it is several sessions of work in the game, not something
+   to read once in a welcome modal and lose. */
+const CHG_KIND = {
+  Sell: ['warn', 'Sell in ATS'],
+  Buy: ['info', 'Buy in ATS'],
+  Reach: ['bad', 'Drive there first'],
+  Keep: ['ok', 'Keeps'],
+};
+
+function changeoverHtml(c, compact, readOnly) {
+  if (!c) return '';
+  const todo = c.steps.filter((x) => !x.done);
+  return `<div class="callout ${c.blocked ? 'stop' : 'info'}">
+      <h4>${esc(c.number)} — leaving ${esc(c.fromCarrier)} for ${esc(c.toCarrier)}</h4>
+      <p style="margin:0">Your books turned over; your garage did not. ${todo.length} thing(s) left to do
+        in ATS so the game and the company agree again.</p>
+      ${c.blocked ? `<p style="margin:6px 0 0"><b>Start with the drive.</b> There is a city on this list
+        you have never been to, and nothing can be bought there until you have.</p>` : ''}
+    </div>
+    ${c.steps.map((st) => {
+      const [cls, label] = CHG_KIND[st.kind] || ['info', st.kind];
+      return `<div class="loadcard ${st.done ? 'backup' : st.kind === 'Reach' ? 'reject' : 'backup'}"
+          style="${st.done ? 'opacity:.55' : ''}">
+        <div class="loadcard-head">
+          ${badge(st.done ? 'ok' : cls, st.done ? 'done' : label)}
+          <span class="lane">${esc(st.title)}</span></div>
+        ${compact && st.done ? '' : `
+          <p style="margin:0 0 6px;color:var(--ink2);white-space:pre-wrap">${esc(st.detail)}</p>
+          <p class="hint" style="margin:0"><b>Why:</b> ${esc(st.why)}</p>`}
+        ${st.done || readOnly ? '' : `<div class="row-actions" style="margin-top:8px">
+          <div style="flex:1"></div>
+          <button class="btn tiny primary" data-act="chg-confirm" data-step="${esc(st.id)}">
+            ${st.kind === 'Reach' ? 'I am there' : st.kind === 'Sell' ? 'Sold it' : 'Done'}</button>
+        </div>`}
+      </div>`;
+    }).join('')}
+    ${readOnly
+      ? `<p class="hint">This list stands on the <b>Career</b> tab. Tick things off there as you do them —
+         the yard you sell comes off the company's books when you do.</p>`
+      : `<div class="row-actions"><div style="flex:1"></div>
+        <button class="btn tiny ghost" data-act="chg-close">I had already done all this — put it away</button></div>`}`;
+}
+
 function renderDecision(d, extra = '') {
   const cls = d.hired ? 'go' : 'stop';
   $('hire-result').innerHTML = `
@@ -752,6 +798,7 @@ function viewDispatch() {
         : h.confirmed === false ? `<div class="callout warn">
           <p>These clocks were last read at ${gt(h.asOfGameTime)} and a load has run since. Re-read your
             HOS display before I plan anything off them.</p></div>` : ''}
+        ${clockQueryHtml(v.clockQuery, false)}
         <div class="${v.hos.breakEnforced ? 'grid4' : 'grid3'}">
           <label>Drive left<input id="h-drive" inputmode="numeric" placeholder="8:45" value="${hhmm(h.driveRemaining)}"></label>
           <label>Shift left<input id="h-shift" inputmode="numeric" placeholder="11:30" value="${hhmm(h.shiftRemaining)}"></label>
@@ -1812,6 +1859,44 @@ function clocksAtDeliveryHtml() {
     <p class="hint">Read them off your HOS display while you are stopped at the receiver and dispatch can
       plan the next load straight away. Leave blank and I will ask for them on the Dispatch tab.</p>
   </fieldset>`;
+}
+
+/* ---- the drive clock that matches the break clock.
+   An HOS mod caps the drive figure on its display at whatever stops you next, so before your first break
+   a fresh clock reads D 8:00 with eleven hours in it. Copying that across is the sensible thing to do and
+   exactly wrong, and nothing downstream would ever say so — the load would just be refused on hours. So it
+   is asked, once per reading, and never corrected behind the driver's back. */
+function clockQueryHtml(q, inModal) {
+  if (!q) return '';
+  return `<div class="callout warn">
+    <h4>Is that your drive clock, or the break clock in disguise?</h4>
+    <p>${esc(q.question)}</p>
+    <p class="hint" style="margin:6px 0 0">${hhmm(q.atStake)} of legal driving turns on the answer, and it
+      turns on it again every shift.</p>
+    ${inModal ? '' : `<div class="row-actions" style="margin-top:10px">
+      <button class="btn primary" data-act="clock-uncap">It is capped — I have ${hhmm(q.recovered)}</button>
+      <button class="btn" data-act="clock-keep">No, ${hhmm(q.reported)} is right</button>
+    </div>`}
+  </div>`;
+}
+
+function clockQueryModal(q) {
+  modal(`<div class="panel-head"><h2>Check that drive clock</h2>
+      ${badge('warn', hhmm(q.atStake) + ' at stake')}<div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Later</button></div>
+    ${clockQueryHtml(q, true)}
+    <dl class="kv">
+      <dt>If your display is capping</dt><dd>${esc(q.capped)}</dd>
+      <dt>If it is not</dt><dd>${esc(q.genuine)}</dd>
+    </dl>
+    <label class="chk"><input type="checkbox" id="cq-never"> My display never caps the drive figure — stop asking</label>
+    <p class="hint">Only tick that if you know your mod shows the real drive limit before your first break.
+      It is remembered against your HOS rule set, and you can turn it back on in Settings.</p>
+    <div class="row-actions">
+      <div style="flex:1"></div>
+      <button class="btn" data-act="clock-keep">No, ${hhmm(q.reported)} is right</button>
+      <button class="btn primary" data-act="clock-uncap">It is capped — I have ${hhmm(q.recovered)}</button>
+    </div>`);
 }
 
 /* Everything a status report can set off. Payday and arriving home both happen because the clock
@@ -3732,7 +3817,16 @@ function viewCareer() {
     <span class="pb ${r.met ? 'done' : ''}"><i style="width:${r.pct}%"></i></span>
     <span class="pv">${esc(r.current)} / ${esc(r.required)} ${r.met ? '✓' : ''}</span></div>`).join('');
 
+  const chg = S.views.changeover;
+
   return `
+  ${chg ? `<div class="panel">
+    <div class="panel-head"><h2>Squaring ATS with the move</h2>
+      ${badge(chg.blocked ? 'bad' : 'warn', `${chg.outstanding} left`)}
+      <div class="spacer"></div>
+      <span class="sub">only you can do these — the app cannot touch the game</span></div>
+    ${changeoverHtml(chg, true)}
+  </div>` : ''}
   ${dedicatedHtml()}
   <div class="panel">
     <div class="panel-head"><h2>${esc(S.driver.name)} — ${esc(c.rankTitle)}</h2>
@@ -4019,6 +4113,11 @@ function viewSettings() {
       <p class="hint">ATS runs on compressed time, which makes a short mandatory break awkward to
         actually sit. Untick this and dispatch stops planning breaks and stops tracking the break
         clock — the ${num(h.shiftLimit, 0)}-hour window becomes your binding stop.</p>
+      <label class="chk"><input type="checkbox" id="hr-capsask" ${h.driveDisplayCaps === 'no' ? '' : 'checked'}> Query a drive figure that matches the break clock</label>
+      <p class="hint">Most HOS displays cap the drive figure at whatever stops you next, so before your
+        first break they show ${hhmm(h.drivingBeforeBreak)} when you have ${hhmm(h.driveLimit)}. When both
+        clocks come in on the same figure I ask which it is rather than guessing. Untick it if your display
+        shows the real drive limit.</p>
       <label class="chk"><input type="checkbox" id="hr-breakshift" ${h.breakConsumesShift ? 'checked' : ''}> The break consumes the shift window</label>
       <label class="chk"><input type="checkbox" id="hr-split" ${h.sleeperSplitAllowed ? 'checked' : ''}> Sleeper-berth split allowed</label>
       <p class="hint">Vanilla ATS has no real HOS system, so these numbers are the roleplay layer. If your mod
@@ -4475,8 +4574,24 @@ async function handleAction(act, d, ev) {
         }));
         // A hand correction supersedes the screenshot receipt, and its undo no longer applies.
         HOSREAD = null; HOSWAS = null;
+        // Raised here rather than left on the panel, because the moment it can be acted on is the moment
+        // the number was typed — not three loads later when the board comes back short.
+        if (S.views.clockQuery) { clockQueryModal(S.views.clockQuery); return; }
       }, 'Clocks recorded.');
     }
+
+    case 'clock-uncap': return run(async () => {
+      const r = absorb(await api('/hos/clock-check', 'POST', { uncap: true }));
+      closeModal();
+      toast(r.message, 'ok');
+    });
+    case 'clock-keep': return run(async () => {
+      const r = absorb(await api('/hos/clock-check', 'POST', {
+        uncap: false, stopAsking: $('cq-never')?.checked === true,
+      }));
+      closeModal();
+      toast(r.message, 'ok');
+    });
 
     /* ---- board */
     case 'board-stage': BOARD_STAGE = d.stage; return render();
@@ -4561,6 +4676,9 @@ async function handleAction(act, d, ev) {
       } finally {
         BUSY = ''; render();
       }
+      // The reader is exactly as faithful as the driver is — it copies the capped figure off the image
+      // just as willingly — so the same question is put here.
+      if (S.views.clockQuery) clockQueryModal(S.views.clockQuery);
       return;
     }
 
@@ -4971,9 +5089,20 @@ async function handleAction(act, d, ev) {
           <div class="callout go"><h4>${esc(r.decision.decision)}</h4>
             ${r.decision.reasons.map((x) => `<p>${esc(x)}</p>`).join('')}
             ${r.decision.conditions.length ? `<ul>${r.decision.conditions.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
+          ${changeoverHtml(r.changeover, false, true)}
           ${setupChecklistHtml(r.setup)}`);
       });
     }
+
+    case 'chg-confirm': return run(async () => {
+      const r = absorb(await api('/changeover/confirm', 'POST', { stepId: d.step }));
+      toast(r.message, 'ok');
+    });
+    case 'chg-close': return run(async () => {
+      const r = absorb(await api('/changeover/close', 'POST', {}));
+      closeModal();
+      toast(r.message, 'ok');
+    });
 
     /* ---- terminals */
     case 'add-terminal': return editTerminalModal('');
@@ -5358,6 +5487,8 @@ function collectSettings() {
       cycleLimit: hv('hr-cycle'), cycleDays: fv('hr-cycledays'),
       offDutyReset: hv('hr-reset'), cycleRestartHours: hv('hr-restart'),
       requireBreak: bv('hr-requirebreak'),
+      // Ticked means keep asking; whether the display is known to cap is remembered from the answers.
+      driveDisplayCaps: bv('hr-capsask') ? (s.hos.driveDisplayCaps === 'no' ? '' : s.hos.driveDisplayCaps) : 'no',
       breakConsumesShift: bv('hr-breakshift'), sleeperSplitAllowed: bv('hr-split'),
     },
     governedMph: fv('op-gov'), speedFactor: fv('op-factor'),

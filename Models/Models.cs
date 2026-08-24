@@ -71,6 +71,14 @@ public class AppState
     public List<TrailerTypeRequest> TrailerTypeRequests { get; set; } = new();
 
     public Counters Counters { get; set; } = new();
+
+    /// <summary>
+    /// Open instruction for bringing ATS into line with a change of employer, if there is one.
+    ///
+    /// Kept on state rather than handed back once, because it is a list of things to do in the game over
+    /// the next few sessions — a reply the player closes and never sees again is not an instruction.
+    /// </summary>
+    public ChangeoverOrder? Changeover { get; set; }
     public List<LogEvent> Events { get; set; } = new();
 }
 
@@ -151,6 +159,46 @@ public class Terminal
     public double ShopLabourDiscount { get; set; }
     public decimal MonthlyCost { get; set; }
     public string Notes { get; set; } = "";
+}
+
+/// <summary>
+/// One thing the player has to do in ATS to bring the game into line with a change of employer.
+///
+/// The app cannot sell a garage or buy a tractor, so each of these is confirmed by the player once they
+/// have actually done it — the same contract as an <see cref="EquipmentOrder"/>. See
+/// <see cref="Services.Changeover"/>.
+/// </summary>
+public class ChangeoverStep
+{
+    /// <summary>Stable within the order, so ticking one off is idempotent.</summary>
+    public string Id { get; set; } = "";
+    /// <summary>Sell | Buy | Reach | Keep</summary>
+    public string Kind { get; set; } = "Buy";
+    public string Title { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string Why { get; set; } = "";
+    public string City { get; set; } = "";
+    public string State { get; set; } = "";
+    public string Unit { get; set; } = "";
+    /// <summary>Set on a yard being sold, so confirming it takes that yard off our books too.</summary>
+    public string TerminalId { get; set; } = "";
+    public bool Done { get; set; }
+    public string DoneGameTime { get; set; } = "";
+}
+
+/// <summary>
+/// The standing instruction raised when the driver changes employer: sell what belonged to the last
+/// company, buy what this one runs, and get to the cities where that has to happen.
+/// </summary>
+public class ChangeoverOrder
+{
+    public string Number { get; set; } = "";
+    public string FromCarrier { get; set; } = "";
+    public string ToCarrier { get; set; } = "";
+    public string RaisedGameTime { get; set; } = "";
+    public bool Closed { get; set; }
+    public string ClosedGameTime { get; set; } = "";
+    public List<ChangeoverStep> Steps { get; set; } = new();
 }
 
 public class Company
@@ -742,6 +790,15 @@ public class HosSnapshot
     public bool Confirmed { get; set; } = true;
     public string Notes { get; set; } = "";
     public string UpdatedUtc { get; set; } = "";
+
+    /// <summary>
+    /// True once the driver has settled the break-cap question about THIS reading.
+    ///
+    /// Cleared on every write of the clocks, because a new reading is a new chance to have copied a
+    /// capped drive figure off the display — the same four numbers typed again included.
+    /// See <see cref="Services.ClockCheck"/>.
+    /// </summary>
+    public bool CapQueryAnswered { get; set; }
 }
 
 public class RecapDay
@@ -1967,6 +2024,15 @@ public class HosRules
     public bool RequireBreak { get; set; } = true;
     /// <summary>Cumulative driving hours allowed before a break is required.</summary>
     public double DrivingBeforeBreak { get; set; } = 8;
+
+    /// <summary>
+    /// Whether this driver's HOS display caps the drive figure at whatever stops them next.
+    ///
+    /// A property of their mod, not of any one reading, so it is remembered here: "" not asked yet,
+    /// "yes" it does, "no" it does not and the app stops raising it. Never used to rewrite a clock on
+    /// its own — see <see cref="Services.ClockCheck"/>.
+    /// </summary>
+    public string DriveDisplayCaps { get; set; } = "";
     public double BreakLength { get; set; } = 0.5;
     public double CycleLimit { get; set; } = 70;
     public int CycleDays { get; set; } = 8;

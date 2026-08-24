@@ -168,11 +168,17 @@ app.MapPost("/api/hos", (HosSnapshot h) => Results.Ok(store.Mutate(s =>
     // out of date however many times they reported them.
     s.Hos.Projected = false;
     s.Hos.Confirmed = true;
+    // A fresh reading is a fresh chance to have copied a break-capped drive figure off the display.
+    ClockCheck.Rearm(s);
     s.Hos.Source = h.Source ?? "";
     s.Hos.Notes = h.Notes ?? "";
     s.Hos.AsOfGameTime = string.IsNullOrWhiteSpace(h.AsOfGameTime) ? s.Status.GameTime : h.AsOfGameTime;
     s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
     store.Log(s, "dispatch", $"HOS reported: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, break {s.Hos.BreakRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
+    if (ClockCheck.Capped(s) is { } q)
+        store.Log(s, "dispatch",
+            $"Queried the drive clock: {Hhmm.Of(s.Hos.DriveRemaining)} reported with the break clock on the " +
+            $"same figure. Either the display is capping and there is {Hhmm.Of(q.Recovered)}, or it is not.");
     return Snapshot(s);
 })));
 
@@ -261,6 +267,10 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
 
     var leaving = s.Company.Name;
 
+    // What the player actually owns in ATS, read BEFORE the hire clears our books. After this line the
+    // fleet is gone from the app and still sitting in their garage, which is the whole problem.
+    var had = Changeover.Read(s, req.Code);
+
     // New employer: new books, new fleet, new probation. The driver's record carries over.
     //
     // Settlements are deliberately NOT cleared. They are the driver's pay history, not the company's
@@ -277,7 +287,7 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     s.Status.ActiveTripId = "";
 
     var carriedApp = s.Application ?? new DriverApplication();
-    Carriers.Employ(s, req.Code, carriedApp);
+    Carriers.Employ(s, req.Code, carriedApp, markHqReached: had.NewHqAlreadyReached);
     Seed.CreateFleet(s, carriedApp);
     Carriers.ApplyPayScale(s, req.Code, carriedApp);
     var (truck, trailer) = Seed.AssignEquipment(s, carriedApp);
@@ -297,20 +307,34 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     };
     s.Driver.EmployeeId = $"{s.Company.Code}-{1000 + Math.Abs(s.Driver.Name.GetHashCode() % 9000)}";
     s.Driver.UnsettledPay = 0;
-    s.Status.LocationCity = s.Company.TerminalCity;
-    s.Status.LocationState = s.Company.TerminalState;
-    s.Status.LocationKind = "Terminal";
-    s.Status.LocationDetail = $"{s.Company.Name} yard";
+    // Starting at the new yard assumes the driver can get to it, which is only true if they have been
+    // there before. A carrier based somewhere they have never driven leaves them exactly where they
+    // resigned, with the trip to their new job still to make — see the changeover instruction below.
+    if (had.NewHqAlreadyReached)
+    {
+        s.Status.LocationCity = s.Company.TerminalCity;
+        s.Status.LocationState = s.Company.TerminalState;
+        s.Status.LocationKind = "Terminal";
+        s.Status.LocationDetail = $"{s.Company.Name} yard";
+    }
     var hqTerminal = s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters);
     if (hqTerminal != null) s.Driver.HomeTerminalId = hqTerminal.Id;
 
     store.Log(s, "career", $"Resigned from {leaving} and hired at {s.Company.Name} as {s.Driver.RankTitle}.");
+
+    // Sell what belonged to the last company, buy what this one runs, and get to the cities where that
+    // has to happen. The app cannot do any of it, so it is written down and worked through.
+    s.Changeover = Changeover.Raise(s, had);
+    store.Log(s, "career",
+        $"{s.Changeover.Number} raised — {s.Changeover.Steps.Count(x => !x.Done)} thing(s) to do in ATS " +
+        $"to bring the game into line with the move to {s.Company.Name}.");
 
     return new
     {
         hired = true, decision, truck, trailer,
         finalPay,
         setup = Carriers.SetupChecklist(s),
+        changeover = Changeover.View(s),
         snapshot = (object?)Snapshot(s)
     };
 })));
@@ -511,6 +535,8 @@ app.MapPost("/api/hos/extract", async (ExtractRequest req, CancellationToken ct)
         s.Hos.Source = "GDC Companion";
         s.Hos.AsOfGameTime = s.Status.GameTime;
         s.Hos.Confirmed = true;
+        // The reader is as faithful as the driver is: it reads the capped figure straight off the image.
+        ClockCheck.Rearm(s);
         s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
         result.Applied = true;
 
@@ -525,6 +551,41 @@ app.MapPost("/api/hos/extract", async (ExtractRequest req, CancellationToken ct)
 
     return Results.Ok(new { reading = result, previous = applied, snapshot = Snapshot(store.State) });
 });
+
+/// The driver settling the break-cap question about the clocks on file.
+///
+/// The one place in the app a reported clock is changed, and it changes because the driver just said to.
+/// "Stop asking" is a statement about their mod rather than about this reading, so it is remembered on
+/// the rules and can be undone in Settings.
+app.MapPost("/api/hos/clock-check", (ClockCheckRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var (message, drive) = ClockCheck.Answer(s, req.Uncap == true, req.StopAsking == true);
+    store.Log(s, "dispatch", req.Uncap == true
+        ? $"Drive clock corrected to {Hhmm.Of(drive)} — the display was capping it at the break clock."
+        : $"Drive clock confirmed at {Hhmm.Of(drive)} as reported.");
+    return new { message, driveRemaining = drive, snapshot = Snapshot(s) };
+})));
+
+/// Ticking off one of the things a change of employer left to do in ATS.
+///
+/// Selling a yard is the only one with a consequence for our books — the app was carrying a garage the
+/// player no longer owns. Reaching a city puts it on the map, because they just drove there.
+app.MapPost("/api/changeover/confirm", (ChangeoverRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var said = Changeover.Confirm(s, req.StepId);
+    store.Log(s, "career", said);
+    return new { message = said, changeover = Changeover.View(s), snapshot = Snapshot(s) };
+})));
+
+/// Putting the changeover instruction away. Allowed — a player who did all of it before being asked
+/// should not have to tick boxes about it.
+app.MapPost("/api/changeover/close", () => Results.Ok(store.Mutate<object>(s =>
+{
+    Changeover.Close(s);
+    store.Log(s, "career", "Changeover instruction closed off.");
+    return new { message = "Closed. It stays in your career file if you want to look back at it.",
+                 snapshot = Snapshot(s) };
+})));
 
 /// Puts back the clocks that were on file before a screenshot read. One button, because a misread that
 /// has already been saved needs an obvious way back rather than a re-typing exercise.
@@ -1744,6 +1805,15 @@ object Snapshot(AppState? given = null)
             atTerminal = Migrations.At(s),
             aiConfigured = AiService.Configured(s.Settings),
 
+            // Sell, buy and drive-to-first, left over from a change of employer. Standing, because it is
+            // work across several sessions in ATS rather than something to read once and lose.
+            changeover = Changeover.View(s),
+
+            // A drive figure that matches the break clock, which is what a break-capped HOS display looks
+            // like. Computed off state rather than off a request, so hand entry, the screenshot reader and
+            // the close-out all raise it, and so an unanswered question survives a reload.
+            clockQuery = ClockCheck.Capped(s),
+
             showcase = new
             {
                 offered = s.Driver.ShowcaseOffered && !s.Driver.ShowcaseTaken,
@@ -1893,5 +1963,7 @@ record AdoptRequest(string Path);
 record HomeTimeArrangementRequest(string Preference);
 record TripLengthRequest(string? Preference);
 record TrueUpRequest(decimal? AtsBalance);
+record ClockCheckRequest(bool? Uncap, bool? StopAsking);
+record ChangeoverRequest(string? StepId);
 record ShowcaseRequest(int? Index);
 record SkillsRequest(int? LongDistance, int? HighValue, int? Fragile, int? JustInTime);
