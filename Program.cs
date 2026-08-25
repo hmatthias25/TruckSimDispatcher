@@ -1547,6 +1547,37 @@ app.MapPost("/api/settings/facility-time", (FacilityTimeRequest req) => Results.
     return Snapshot(s);
 })));
 
+/// Mod archives we can find, so nobody has to go hunting through folders for one.
+///
+/// Steam keeps workshop mods under app 270880, and people put games on a second drive — so the Steam
+/// libraries are read out of libraryfolders.vdf rather than assumed to be under Program Files.
+app.MapGet("/api/mod/scan", () => Results.Ok(new
+{
+    candidates = ModCompanyNames.Scan(),
+    current = store.State.Settings.CompanyNameModPath,
+    known = store.State.Settings.ModCompanyNames.Count,
+}));
+
+/// Reading the company names out of one.
+///
+/// Only def/company is touched — a few hundred kilobytes of text out of a file that is mostly models.
+/// A mod that cannot be opened says so and changes nothing: the stock names still work, and failing to
+/// a wrong name silently is the one outcome worth engineering against.
+app.MapPost("/api/mod/read", (ModReadRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var reading = ModCompanyNames.Read(req.Path ?? "");
+    if (!reading.Ok) return new { reading, message = reading.Error, snapshot = Snapshot(s) };
+
+    s.Settings.ModCompanyNames = reading.Names;
+    s.Settings.CompanyNameModPath = req.Path ?? "";
+    s.Settings.RenamesCompanies = "yes";
+
+    var said = $"Read {reading.Names.Count} company name(s) out of your mod, off {reading.Definitions} " +
+               "definitions. Dedicated accounts will use what your game calls them.";
+    store.Log(s, "system", said);
+    return new { reading, message = said, snapshot = Snapshot(s) };
+})));
+
 /// The dedicated accounts this driver could be put on, and why they cannot be if they cannot.
 ///
 /// Filtered by the map they have driven and the divisions their carrier hauls. An empty list is a real
@@ -2061,5 +2092,6 @@ record ClockCheckRequest(bool? Uncap, bool? StopAsking);
 record ChangeoverRequest(string? StepId);
 record AmendEventRequest(string? GameTime, string? Detail, bool? Remove);
 record AssignAccountRequest(string? Company, string? AsTheGameCallsIt, string? RenamesCompanies);
+record ModReadRequest(string? Path);
 record ShowcaseRequest(int? Index);
 record SkillsRequest(int? LongDistance, int? HighValue, int? Fragile, int? JustInTime);

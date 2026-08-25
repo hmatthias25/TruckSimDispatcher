@@ -29,6 +29,9 @@ public static class Dedicated
         AtsCompanies.Candidates(s).Take(6).Select(f => (object)new
         {
             name = f.Name,
+            // What the player's own game calls them, where their mod has been read. The account is filed
+            // under this, because it is the string they will be reading off job listings.
+            called = ModCompanyNames.Display(s, f),
             industry = f.Industry,
             category = f.Category,
             depots = f.Depots,
@@ -52,7 +55,13 @@ public static class Dedicated
             throw new InvalidOperationException(
                 $"{firm.Name} is not somewhere we can put you. {AtsCompanies.Reach(s, firm)}.");
 
+        // Typed wins, then whatever was read out of their mod, then the stock name.
         var shown = (asTheGameCallsIt ?? "").Trim();
+        if (shown.Length == 0)
+        {
+            var read = ModCompanyNames.Display(s, firm);
+            if (!read.Equals(firm.Name, StringComparison.OrdinalIgnoreCase)) shown = read;
+        }
         s.Driver.OnDedicated = true;
         s.Driver.DedicatedAccount = shown.Length > 0 ? shown : firm.Name;
         s.Driver.DedicatedVanillaName = shown.Length > 0 ? firm.Name : "";

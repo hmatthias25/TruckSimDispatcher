@@ -1927,27 +1927,66 @@ function dedicatedOffersModal(o) {
       all in states you have never driven would never produce a load — ATS makes no cargo for a city
       nobody has been to.</p>
 
-    <label>Are you running the Real Companies mod?
-      <select id="da-mod">
-        <option value="${o.renamesCompanies === 'yes' ? 'yes' : 'no'}" selected>${
-          o.renamesCompanies === 'yes' ? 'Yes — it renames the companies' : 'No — I see the stock names'}</option>
-        <option value="${o.renamesCompanies === 'yes' ? 'no' : 'yes'}">${
-          o.renamesCompanies === 'yes' ? 'No — I see the stock names' : 'Yes — it renames the companies'}</option>
-      </select></label>
-    <label>What your game calls them<input id="da-called"
-      placeholder="only if the mod renames it — leave blank otherwise"></label>
-    <p class="hint">The mod swaps the stock company names for real brands. If you run it, type what your
-      game shows and I will file the account under that, because that is the name you will be reading off
-      job listings. It only matters here — nothing else in the app cares what a company is called.</p>
+    <div class="callout ${o.known > 0 ? 'go' : 'info'}">
+      <h4>${o.known > 0 ? `Reading names from your mod — ${o.known} known` : 'Do you run a company-renaming mod?'}</h4>
+      <p style="margin:0">${o.known > 0
+        ? `Company names below are what <em>your</em> game calls them, read out of your own mod file.
+           Re-read it if you have updated the mod.`
+        : `Mods like Real Companies rename the in-game companies to real brands, which would leave me
+           naming a place your game does not have. I can read the names straight out of your mod file
+           instead of guessing. It only matters here — nothing else in the app cares what a company is
+           called.`}</p>
+      <div class="row-actions" style="margin-top:8px"><div style="flex:1"></div>
+        <button class="btn ${o.known > 0 ? 'tiny ghost' : 'primary'}" data-act="mod-scan">
+          ${o.known > 0 ? 'Re-read my mod' : 'Find my mod'}</button>
+      </div>
+    </div>
+    <input id="da-mod" type="hidden" value="${o.known > 0 ? 'yes' : (o.renamesCompanies || 'no')}">
+    <label>Override the name, if this one is still wrong
+      <input id="da-called" placeholder="leave blank to use the name shown"></label>
 
     ${rows.map((f) => `<div class="loadcard backup">
-      <div class="loadcard-head"><span class="lane">${esc(f.name)}</span>
-        ${badge('mute', esc(f.category))}</div>
-      <p class="hint" style="margin:0 0 6px">${esc(f.industry)} — ${esc(f.reach)}.</p>
+      <div class="loadcard-head"><span class="lane">${esc(f.called || f.name)}</span>
+        ${badge('mute', esc(f.category))}
+        ${f.called && f.called !== f.name ? badge('ok', 'your game') : ''}</div>
+      <p class="hint" style="margin:0 0 6px">${esc(f.industry)} — ${esc(f.reach)}.${
+        f.called && f.called !== f.name ? ` Stock name: ${esc(f.name)}.` : ''}</p>
       <div class="row-actions"><div style="flex:1"></div>
         <button class="btn tiny primary" data-act="dedicated-assign" data-company="${esc(f.name)}">
-          Put me on ${esc(f.name)}</button></div>
+          Put me on ${esc(f.called || f.name)}</button></div>
     </div>`).join('')}`);
+}
+
+/* ---- picking the mod to read names out of.
+   The app finds its own candidates: Steam keeps workshop mods under app 270880, and libraryfolders.vdf
+   is parsed so a library on a second drive is not missed. Typing a path is the fallback, not the ask. */
+function modPickModal(r) {
+  const rows = r.candidates || [];
+  const mb = (b) => (b / 1048576).toFixed(0) + ' MB';
+  modal(`<div class="panel-head"><h2>Which mod renames the companies?</h2>
+      ${badge(rows.length ? 'ok' : 'warn', rows.length + ' found')}<div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+    ${rows.length
+      ? `<p>Mods found on this machine, biggest first — a renaming mod is usually one of the larger ones.
+         Only the company definitions are read out of it, a few hundred kilobytes of text.</p>
+         ${rows.map((c) => `<div class="loadcard ${c.format === 'zip' ? 'backup' : 'reject'}">
+           <div class="loadcard-head"><span class="lane">${esc(c.name)}</span>
+             ${badge(c.format === 'zip' ? 'ok' : 'warn', c.format === 'zip' ? 'readable' : esc(c.format))}
+             <span class="sub">${mb(c.bytes)}</span></div>
+           <p class="hint" style="margin:0 0 6px">${esc(c.path)}</p>
+           ${c.format === 'zip'
+             ? `<div class="row-actions"><div style="flex:1"></div>
+                 <button class="btn tiny primary" data-act="mod-read" data-path="${esc(c.path)}">Read this one</button></div>`
+             : `<p class="hint" style="margin:0">Packed in SCS's own format, which this build cannot open.
+                 The stock names still work.</p>`}
+         </div>`).join('')}`
+      : `<div class="callout warn"><p style="margin:0">No mod archives found. Steam keeps them under
+          <b>steamapps\\workshop\\content\\270880</b>, and anything installed by hand lives in
+          <b>Documents\\American Truck Simulator\\mod</b>. Point me at one below.</p></div>`}
+    <label style="margin-top:10px">Or type the path to a .scs
+      <input id="mod-path" placeholder="D:\\SteamLibrary\\steamapps\\workshop\\content\\270880\\...\\mod.scs"></label>
+    <div class="row-actions"><div style="flex:1"></div>
+      <button class="btn" data-act="mod-read-typed">Read that one</button></div>`);
 }
 
 /* ---- drop and hook.
@@ -4755,6 +4794,21 @@ async function handleAction(act, d, ev) {
     case 'release-arrangement': return run(async () => {
       const r = absorb(await api('/career/trailer-arrangement/release', 'POST', {}));
       toast(r.message, 'ok');
+    });
+    case 'mod-scan': return run(async () => {
+      modPickModal(await api('/mod/scan'));
+    });
+    case 'mod-read': return run(async () => {
+      const r = absorb(await api('/mod/read', 'POST', { path: d.path }));
+      toast(r.message, r.reading?.ok ? 'ok' : 'bad');
+      if (r.reading?.ok) dedicatedOffersModal(await api('/career/dedicated/offers'));
+    });
+    case 'mod-read-typed': return run(async () => {
+      const p = sv('mod-path');
+      if (!p) return toast('Type a path first.', 'bad');
+      const r = absorb(await api('/mod/read', 'POST', { path: p }));
+      toast(r.message, r.reading?.ok ? 'ok' : 'bad');
+      if (r.reading?.ok) dedicatedOffersModal(await api('/career/dedicated/offers'));
     });
     case 'dedicated-offers': return run(async () => {
       const o = await api('/career/dedicated/offers');

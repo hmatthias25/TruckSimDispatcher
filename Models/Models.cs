@@ -1904,6 +1904,18 @@ public class AppSettings
     /// freight should be asked about a mod they may not have.
     /// </summary>
     public string RenamesCompanies { get; set; } = "";
+
+    /// <summary>
+    /// Vanilla company name to what the player's renaming mod calls it, read out of their own mod file.
+    ///
+    /// Stored rather than re-read, because the mod is hundreds of megabytes and the answer does not
+    /// change until they update it. Read once, kept, re-read on request.
+    /// See <see cref="Services.ModCompanyNames"/>.
+    /// </summary>
+    public Dictionary<string, string> ModCompanyNames { get; set; } = new();
+
+    /// <summary>The mod the names were read from, so it can be re-read without hunting for it again.</summary>
+    public string CompanyNameModPath { get; set; } = "";
     public List<string> MapMods { get; set; } = new();
 
     // --- HOS rule set (editable; the driver's mod always wins)
