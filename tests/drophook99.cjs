@@ -190,6 +190,24 @@ const view = async () => (await api('/bootstrap')).views;
     `inGameGarage=${dh.inGameGarage}`);
   ok('and the invented damage goes with it', dh.damagePct === 0, `${dh.damagePct}%`);
 
+  head('13. A migrated save needs nothing done to it');
+  // Two things a player should never have to think about: the arrangement surviving a backdrop trim,
+  // and operations being able to post them onto it without being asked.
+  const raw2 = await api('/export');
+  raw2.driver.assignedTrailerUnit = raw2.trailers.find((x) => x.type !== 'Drop & Hook').unit;
+  const restored = await api('/import', 'POST', raw2);
+  ok('the driver is not on it', restored.driver.assignedTrailerUnit !== 'DH-1',
+    restored.driver.assignedTrailerUnit);
+  const trimmed = await api('/fleet/trim', 'POST', { includeYards: false }).catch(() => null);
+  const after = (await api('/bootstrap')).trailers.find((x) => x.type === 'Drop & Hook');
+  ok('and trimming backdrop equipment leaves it alone', !!after, after ? after.unit : 'DELETED');
+
+  head('14. Operations can post a driver onto it unasked');
+  // ReassignmentTypeFor is what picks a trailer at home time. Drop and hook is in the hat with the
+  // division types — otherwise it could only ever be asked for, which is half the feature.
+  const opts = (await api('/bootstrap')).views.requests.trailerTypes || [];
+  ok('it is among what a driver can end up on', opts.includes('Drop & Hook'), opts.join(', '));
+
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

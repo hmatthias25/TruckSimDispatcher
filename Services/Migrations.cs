@@ -849,15 +849,16 @@ public static class Migrations
     {
         var notes = new List<string>();
 
-        // Same again for the trimmer: never delete the arrangement.
-        bool TrailerIsArrangement(Trailer t) => DropHook.Is(t.Type);
-
         bool TruckIsReal(Truck t) => t.InGameGarage
                                      || t.Unit == s.Driver.AssignedTruckUnit
                                      || s.HiredDrivers.Any(h => h.AssignedTruckUnit == t.Unit)
                                      || s.Trips.Any(x => x.TruckUnit == t.Unit);
 
+        // The drop-and-hook slot is deliberately not in a garage, which to a check that only reads that
+        // flag looks exactly like backdrop. Trimming it would delete the arrangement itself — and unless
+        // the driver happened to be on it at the time, that is what would have happened.
         bool TrailerIsReal(Trailer t) => t.InGameGarage
+                                         || DropHook.Is(t.Type)
                                          || t.Unit == s.Driver.AssignedTrailerUnit
                                          || s.HiredDrivers.Any(h => h.AssignedTrailerUnit == t.Unit)
                                          || s.Trips.Any(x => x.TrailerUnit == t.Unit);

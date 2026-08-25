@@ -336,8 +336,14 @@ public static class HomeTime
         var pick = ReassignmentTypeFor(s, s.Driver.HomeTimesTaken);
         if (pick == null) return null;
 
-        return EquipmentService.IssueTrailerReassignment(s, pick,
-            $"Freight mix — operations wants you on {pick.ToLowerInvariant()} for the next tour.");
+        // Being put on drop and hook changes how the driver works, not just what is on the back, so the
+        // reason says what it means rather than reading like another freight-mix shuffle.
+        var reason = DropHook.Is(pick)
+            ? "Freight mix — operations wants you on drop and hook for the next tour. Freight Market jobs, " +
+              "the shipper's trailer, dropped at the other end. No trailer of your own."
+            : $"Freight mix — operations wants you on {pick.ToLowerInvariant()} for the next tour.";
+
+        return EquipmentService.IssueTrailerReassignment(s, pick, reason);
     }
 
     /// <summary>
@@ -367,6 +373,21 @@ public static class HomeTime
 
         // A division the carrier runs that is not what they are pulling now, and that they are actually
         // qualified for — no tanker without the endorsement.
+        //
+        // Drop and hook is postable too — the whole reason it was built as a trailer type is so a driver
+        // can be put on it for a tour and taken back off, the same as being moved off a reefer. Leaving
+        // it out would have meant it could only ever be asked for, which is half the feature.
+        //
+        // But it is rolled for SEPARATELY and at long odds, rather than thrown in the hat with the
+        // division types. It is a different way of working rather than a different box, so being posted
+        // to it should be an occasional thing that happens to a driver, not one-in-four of every
+        // freight-mix shuffle. Its own seed key, so the ordinary reassignment lands exactly where it
+        // always did.
+        if (!DropHook.Is(current.Type)
+            && Qualified(s, DropHook.TrailerType)
+            && Hash($"{s.Driver.Name}|drophook|{homeTimeNumber}") % 100 < 12)
+            return DropHook.TrailerType;
+
         var options = divisions
             .Select(TrailerTypeFor)
             .Where(t => !string.IsNullOrWhiteSpace(t) && !EquipmentService.TypeCovers(current.Type, t))
