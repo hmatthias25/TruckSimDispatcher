@@ -90,7 +90,11 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
         if (u.AtsOdometer.HasValue) tk.AtsOdometer = s.Status.AtsOdometer;
     }
     var tr = DispatchEngine.AssignedTrailer(s);
-    if (tr != null && u.TrailerDamagePct.HasValue) tr.DamagePct = s.Status.TrailerDamagePct;
+    // Drop and hook has nothing of ours on the back. Whatever damage the driver read belongs to the
+    // shipper's trailer, and writing it onto the arrangement would invent a repair bill for a box the
+    // company does not own.
+    if (tr != null && u.TrailerDamagePct.HasValue && !DropHook.Is(tr.Type))
+        tr.DamagePct = s.Status.TrailerDamagePct;
 
     // Arriving somewhere new grows the network — and may be worth a yard.
     var discovery = DiscoveryService.Note(s, s.Status.LocationCity, s.Status.LocationState, s.Status.GameTime);

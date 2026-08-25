@@ -170,6 +170,26 @@ const view = async () => (await api('/bootstrap')).views;
   ok('but no longer dedicated', v.dropHook.dedicated === false, `${v.dropHook.dedicated}`);
   ok('and the instruction stops naming an account',
     !/Megamart/i.test(v.dropHook.instruction || ''), (v.dropHook.instruction || '').slice(-60));
+  head('12. It never becomes a trailer in an ATS garage');
+  // The migration ticks whatever the driver is pulling into their garage, which is right for a real box
+  // and nonsense for an arrangement — and once ticked it starts turning up in utilisation, age and
+  // damage prompts for a trailer that does not exist.
+  let snap2 = await api('/bootstrap');
+  let dh = snap2.trailers.find((x) => x.type === 'Drop & Hook');
+  ok('the driver is pulling it', snap2.driver.assignedTrailerUnit === dh.unit, dh.unit);
+  ok('and it is still not in a garage', dh.inGameGarage === false, `inGameGarage=${dh.inGameGarage}`);
+  ok('with no damage to report', dh.damagePct === 0, `${dh.damagePct}%`);
+
+  // Force the old behaviour and prove a reload puts it back.
+  const raw = await api('/export');
+  raw.trailers.find((x) => x.type === 'Drop & Hook').inGameGarage = true;
+  raw.trailers.find((x) => x.type === 'Drop & Hook').damagePct = 40;
+  const back = await api('/import', 'POST', raw);
+  dh = back.trailers.find((x) => x.type === 'Drop & Hook');
+  ok('a career that already had it ticked is corrected', dh.inGameGarage === false,
+    `inGameGarage=${dh.inGameGarage}`);
+  ok('and the invented damage goes with it', dh.damagePct === 0, `${dh.damagePct}%`);
+
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

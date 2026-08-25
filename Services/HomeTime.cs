@@ -662,7 +662,8 @@ public static class HomeTime
             if (sinceService >= truck.ServiceIntervalMiles * 0.85)
                 jobs.Add($"Unit {truck.Ref} is {sinceService:N0} mi into a {truck.ServiceIntervalMiles:N0}-mile PM cycle — do the service now rather than on the road.");
         }
-        if (trailer is { InGameGarage: true } && trailer.DamagePct >= m.ReportPct)
+        // Nothing to book in for a trailer we do not own. Whatever was hooked went back to the shipper.
+        if (trailer is { InGameGarage: true } && !DropHook.Is(trailer.Type) && trailer.DamagePct >= m.ReportPct)
             jobs.Add($"Trailer {trailer.Ref} is at {trailer.DamagePct:0.#}% — get it done at the same time.");
 
         var openWork = s.WorkOrders.Count(w => w.Status == "Open");
@@ -778,13 +779,15 @@ public static class HomeTime
                 b.Shop.Add($"PM due on unit {truck.Ref} in {truck.ServiceIntervalMiles - since:N0} mi. Cheaper to do it here than on the road.");
         }
 
-        if (trailer is { InGameGarage: true })
+        if (trailer is { InGameGarage: true } && !DropHook.Is(trailer.Type))
         {
             if (trailer.DamagePct >= m.ReportPct)
                 b.Shop.Add($"Trailer {trailer.Ref} is at {trailer.DamagePct:0.#}% — get it done at the same time.");
             else
                 b.Shop.Add($"Trailer {trailer.Ref} is fine at {trailer.DamagePct:0.#}%.");
         }
+        else if (DropHook.Is(trailer?.Type))
+            b.Shop.Add("No trailer of ours to look at — you are on drop and hook, so it is the tractor only.");
 
         if (b.Shop.Any(x => x.Contains("Repair") || x.Contains("PM") || x.Contains("shop") || x.Contains("done")))
             b.Shop.Add(hasShop
@@ -795,7 +798,7 @@ public static class HomeTime
         // home time, not a detour off it. Otherwise the driver reads "run it home" as losing their days.
         var stopPct = s.Settings.Maintenance.StopDispatchPct;
         var worst = Math.Max(truck is { InGameGarage: true } ? truck.DamagePct : 0,
-                             trailer is { InGameGarage: true } ? trailer.DamagePct : 0);
+                             trailer is { InGameGarage: true } && !DropHook.Is(trailer.Type) ? trailer.DamagePct : 0);
         if (worst >= stopPct)
         {
             var quote = Shop.Quote(s, truck is { InGameGarage: true } ? truck.DamagePct : 0,

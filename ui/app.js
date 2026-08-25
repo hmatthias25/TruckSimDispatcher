@@ -2582,8 +2582,10 @@ function viewFleet() {
             ? `<div class="sub" style="font-size:10px">unit ${esc(x.unit)}</div>` : ''}</td>
           <td>${esc(x.length)} ${esc(x.type)}</td><td>${esc(x.division)}</td>
         <td>${x.year} ${esc(x.make)}</td>
-        <td>${x.inGameGarage ? badge('ok', 'in garage') : badge('mute', 'backdrop')}</td>
-        <td class="num">${x.inGameGarage ? badge(dmgBadge(x.damagePct), pct(x.damagePct)) : '<span style="color:var(--ink3)">—</span>'}</td>
+        <td>${x.type === 'Drop & Hook' ? badge('warn', 'arrangement')
+          : x.inGameGarage ? badge('ok', 'in garage') : badge('mute', 'backdrop')}</td>
+        <td class="num">${x.type === 'Drop & Hook' ? '<span style="color:var(--ink3)">n/a</span>'
+          : x.inGameGarage ? badge(dmgBadge(x.damagePct), pct(x.damagePct)) : '<span style="color:var(--ink3)">—</span>'}</td>
         <td>${badge(x.status === 'InService' ? 'ok' : 'bad', x.status)}</td>
         <td>${esc(x.currentLocation || '—')}</td>
         <td><button class="btn tiny ghost" data-act="edit-trailer" data-unit="${esc(x.unit)}">Edit</button></td></tr>`).join('')}</tbody></table></div>

@@ -1102,7 +1102,20 @@ public static class Migrations
         if (truck != null && !truck.InGameGarage) truck.InGameGarage = true;
 
         var trailer = s.Trailers.FirstOrDefault(t => t.Unit == s.Driver.AssignedTrailerUnit);
-        if (trailer != null && !trailer.InGameGarage) trailer.InGameGarage = true;
+
+        // Whatever the driver is pulling is really in their garage — except drop and hook, which is an
+        // arrangement rather than a box. Ticking that into an ATS garage claims they own a trailer they
+        // were specifically told not to take, and once ticked it starts turning up in utilisation, age
+        // and damage prompts for something that does not exist.
+        if (trailer != null && !trailer.InGameGarage && !DropHook.Is(trailer.Type))
+            trailer.InGameGarage = true;
+
+        // And put back any that were ticked before this was noticed.
+        foreach (var dh in s.Trailers.Where(t => DropHook.Is(t.Type) && t.InGameGarage))
+        {
+            dh.InGameGarage = false;
+            dh.DamagePct = 0;
+        }
     }
 
     private static void EnsureAccounts(AppState s)
