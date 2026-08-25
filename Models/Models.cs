@@ -1073,6 +1073,13 @@ public class Trip
 
 public class TripEvent
 {
+    /// <summary>
+    /// Addressable, so a mistyped stamp can be corrected instead of standing forever.
+    ///
+    /// An AM/PM swap on an End unload turned a two-hour dock into a thirteen-hour one and trained the
+    /// planner on it. Older events are given ids by migration.
+    /// </summary>
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string GameTime { get; set; } = "";
     /// <summary>
     /// BeginLoad | EndLoad | BeginUnload | EndUnload | Fuel | Break | Rest | Scale | Delay |
@@ -2406,6 +2413,16 @@ public class BoardDecision
     /// "show me the wider city board", not "reposition" — the city has not been looked at yet.
     /// </summary>
     public bool LocalOnly { get; set; }
+
+    /// <summary>
+    /// Dispatch wants the full city board before it commits: this one came off a single dock, home time
+    /// is close, and nothing on it finishes near the yard. Not a rejection — the load operations would
+    /// have taken is on <see cref="HeldLoadId"/>, and authorizing it directly is the override.
+    /// </summary>
+    public bool WantCityBoard { get; set; }
+
+    /// <summary>The load operations would have taken, on a board held for the city question.</summary>
+    public string HeldLoadId { get; set; } = "";
     /// <summary>
     /// Every load failed on the clock rather than on the freight. The driver is not looking at a bad
     /// board — they are out of hours, and the answer is a rest, not a reposition. The board is cleared

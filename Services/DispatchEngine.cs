@@ -147,6 +147,27 @@ public static class DispatchEngine
             .Where(e => e.HardFails.Count == 0 && e.Feasibility.Verdict == "Feasible")
             .ToList();
 
+        // A handful of loads at one dock is not the town. The board screen has always said "show me these
+        // first; if none of them work I will ask for the whole city" — but the asking only ever happened
+        // down the rejection path, so a merely acceptable local load got committed to and the city was
+        // never seen. Near home time that is the expensive case: acceptable is not the same as gets you
+        // home, and tying the truck up for another day and a half is how the promise gets missed.
+        //
+        // A hold, not a rejection. The board stays up, the load it would have taken is named as the
+        // backup, and authorizing that load directly is the override for when a dock really is all there
+        // is — which happens, and the driver can see their own game.
+        if (clear.Count > 0 && HomeTime.WantCityBoardFirst(s, clear) is { } ask)
+        {
+            decision.RejectAll = false;
+            decision.WantCityBoard = true;
+            decision.HeldLoadId = clear[0].Load.Id;
+            decision.Headline = "Before I commit you to this — show me the city board.";
+            decision.Rationale = ask;
+            decision.DispatchNotes.Add(ask);
+            foreach (var e in clear) e.Recommendation = "Backup";
+            return decision;
+        }
+
         if (clear.Count > 0)
         {
             var pick = clear[0];
@@ -724,9 +745,20 @@ public static class DispatchEngine
         score += dhPts;
         detail.Add($"Deadhead {load.DeadheadMiles:0} mi ({e.DeadheadRatio * 100:0}% of loaded): {dhPts:+0.00;-0.00}");
 
-        var posPts = (e.DestTier switch { 1 => 1.0, 2 => 0.0, _ => -1.0 }) * w.Positioning;
+        // A thin market costs more when home time is close. The penalty used to be flat — the same
+        // whether home was a fortnight away or two hours — but a thin market is exactly where a home-time
+        // promise dies: nothing comes out of it to get the driver back, so the load after this one is an
+        // empty run home on the company's money, or a late one.
+        var thinBite = e.DestTier >= 3 ? HomeTime.ThinMarketBite(s, load) : 1.0;
+        var posPts = (e.DestTier switch { 1 => 1.0, 2 => 0.0, _ => -1.0 }) * w.Positioning * thinBite;
         score += posPts;
-        detail.Add($"{Place(load.DestCity, load.DestState)} is a tier-{e.DestTier} market{(dest == null ? " (not in the market table)" : "")}: {posPts:+0.00;-0.00}");
+        detail.Add($"{Place(load.DestCity, load.DestState)} is a tier-{e.DestTier} market{(dest == null ? " (not in the market table)" : "")}" +
+                   (thinBite > 1.0 ? ", and home time is close — a thin market is a bad place to need a load out of" : "") +
+                   $": {posPts:+0.00;-0.00}");
+        if (thinBite > 1.0)
+            e.Cons.Add($"{Place(load.DestCity, load.DestState)} is a thin market and you are due home. " +
+                       "There may be nothing coming out of there to get you back, which makes the next one " +
+                       "an empty run home or a late one.");
 
         if (s.Hos.CycleRemaining <= w.ResetWatchCycleHours)
         {
@@ -992,7 +1024,11 @@ public static class DispatchEngine
         var privileges = CareerService.Privileges(s);
         if (s.Board.Count > 1 && !privileges.CanChooseAlternateLoad)
         {
-            var assigned = EvaluateBoard(s).AuthorizedLoadId;
+            // A board held for the city question has no authorized load, but it does name the one
+            // operations would have taken — and that is still the assignment. Without this the hold
+            // would quietly hand a probationary driver the pick of the board.
+            var board = EvaluateBoard(s);
+            var assigned = board.AuthorizedLoadId ?? (string.IsNullOrWhiteSpace(board.HeldLoadId) ? null : board.HeldLoadId);
             if (assigned != null && assigned != loadId)
                 throw new InvalidOperationException(
                     $"That is not your assignment. {privileges.Summary} " +

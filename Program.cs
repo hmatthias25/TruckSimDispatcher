@@ -695,6 +695,34 @@ app.MapPost("/api/trips/{id}/event", (string id, TripEvent ev) => Results.Ok(sto
 
 // What dispatch asks for once the trailer is on: real weight, trailer condition as hooked, odometer.
 // It used to ask with nowhere to answer, which sent players looking for a field that did not exist.
+/// Correcting a stamp already logged, or dropping the event.
+///
+/// An AM/PM swap on an End unload made a two-hour dock read as thirteen and trained the planner on it,
+/// with no way back — the log only ever appended. On a closed trip this re-derives the dock times and
+/// works the learned averages out again from every trip, because the average keeps a result rather than
+/// its samples and deriving it twice is the only honest way to un-teach one.
+app.MapPost("/api/trips/{id}/event/{eventId}", (string id, string eventId, AmendEventRequest req) =>
+    Results.Ok(store.Mutate<object>(s =>
+{
+    var (ev, message, rebuilt) = TripService.AmendEvent(
+        s, id, eventId, req.GameTime, req.Detail, req.Remove == true);
+    store.Log(s, "dispatch", message);
+    return new { message, ev, rebuilt, snapshot = Snapshot(s) };
+})));
+
+/// Working the dock averages out again from every trip log. Offered on its own because a career that
+/// already learned from a bad reading needs a way back that does not involve editing the reading.
+app.MapPost("/api/facility/rebuild", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var rebuilt = FacilityLearning.Rebuild(s);
+    var said = rebuilt.Count == 0
+        ? "Nothing to work from yet — no closed trip has a logged Begin/End pair on it. The seeds stand."
+        : "Dock times worked out again from every trip log: " +
+          string.Join(", ", rebuilt.Select(x => $"{x.Type} off {x.Samples} load(s)")) + ".";
+    store.Log(s, "system", said);
+    return new { message = said, facilityTimes = FacilityLearning.View(s), snapshot = Snapshot(s) };
+})));
+
 app.MapPost("/api/trips/{id}/loaded", (string id, LoadedReportRequest req) => Results.Ok(store.Mutate(s =>
 {
     var (trip, notes) = TripService.ReportLoaded(s, id, req.WeightLbs, req.TrailerDamagePct, req.Odometer);
@@ -1965,5 +1993,6 @@ record TripLengthRequest(string? Preference);
 record TrueUpRequest(decimal? AtsBalance);
 record ClockCheckRequest(bool? Uncap, bool? StopAsking);
 record ChangeoverRequest(string? StepId);
+record AmendEventRequest(string? GameTime, string? Detail, bool? Remove);
 record ShowcaseRequest(int? Index);
 record SkillsRequest(int? LongDistance, int? HighValue, int? Fragile, int? JustInTime);

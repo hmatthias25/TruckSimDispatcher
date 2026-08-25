@@ -29,6 +29,7 @@ public static class Migrations
         WipeLateIncidents(s);
         RebookSlotsThatEatTheClock(s);
         MeasureDeliveryFromArrivalNotRelease(s);
+        GiveTripEventsIds(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -257,6 +258,26 @@ public static class Migrations
                     : $" {cleared.Count} of them go back to on time: {string.Join(", ", cleared)}." +
                       (notes > 0 ? $" {notes} late note(s) off the safety file with them." : "")),
         });
+    }
+
+    /// <summary>
+    /// Gives every logged event an id, so a mistyped stamp can be addressed and corrected.
+    ///
+    /// Not version-gated. Ids are generated per object, so an event written by an older build has one
+    /// already the moment it deserialises — but a career part-migrated by a build between the two could
+    /// hold duplicates, and a duplicate id would let a correction land on the wrong event. Cheap to
+    /// check, and it has to be right every load rather than once.
+    /// </summary>
+    private static void GiveTripEventsIds(AppState s)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in s.Trips)
+            foreach (var e in t.Events)
+                if (string.IsNullOrWhiteSpace(e.Id) || !seen.Add(e.Id))
+                {
+                    e.Id = Guid.NewGuid().ToString("N")[..8];
+                    seen.Add(e.Id);
+                }
     }
 
     private static void WipeLateIncidents(AppState s)

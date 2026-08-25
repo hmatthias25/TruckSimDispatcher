@@ -92,15 +92,100 @@ public static class FacilityLearning
         // An override stays put until the driver clears it — they can see their own game.
         if (entry.Manual) return;
 
+        // A reading this far out is a mistyped stamp, not a slow dock, and the average keeps a result
+        // rather than its samples — so once one is folded in it cannot be taken back out. Refusing it at
+        // the door is the only place this can be stopped cheaply. The driver is told; see QuestionSpan.
+        var takeLoad = loadingHours is > 0 and < ImplausibleHours;
+        var takeUnload = unloadingHours is > 0 and < ImplausibleHours;
+        if (!takeLoad && !takeUnload) return;
+
         var weight = 1.0 / Math.Min(entry.Samples + 1, SettleAt);
-        if (loadingHours is > 0 and < 24)
-            entry.LoadingHours = Math.Round(entry.LoadingHours + (loadingHours.Value - entry.LoadingHours) * weight, 2);
-        if (unloadingHours is > 0 and < 24)
-            entry.UnloadingHours = Math.Round(entry.UnloadingHours + (unloadingHours.Value - entry.UnloadingHours) * weight, 2);
+        if (takeLoad)
+            entry.LoadingHours = Math.Round(entry.LoadingHours + (loadingHours!.Value - entry.LoadingHours) * weight, 2);
+        if (takeUnload)
+            entry.UnloadingHours = Math.Round(entry.UnloadingHours + (unloadingHours!.Value - entry.UnloadingHours) * weight, 2);
 
         entry.Samples++;
         entry.LastGameTime = s.Status.GameTime;
     }
+
+    /// <summary>
+    /// Throws the learned averages away and works them out again from the trip logs.
+    ///
+    /// The average keeps a result and a count, not the samples, so a bad reading cannot be pulled back
+    /// out of it once folded in — and one AM/PM swap on an End unload is enough to leave every future
+    /// projection hours long. The event logs are still there on every trip, though, so the whole thing
+    /// can be derived a second time from what actually happened.
+    ///
+    /// Only logged Begin/End pairs count, exactly as they do live: a typed figure is the driver's
+    /// recollection and training on it would bake a guess in. Manual overrides are left alone — the
+    /// driver set those deliberately.
+    ///
+    /// Returns the types it rebuilt and how many samples each ended up with.
+    /// </summary>
+    public static List<(string Type, int Samples)> Rebuild(AppState s)
+    {
+        var manual = s.Settings.FacilityTimes.Where(f => f.Manual).ToList();
+        s.Settings.FacilityTimes = manual;
+
+        var delivered = s.Trips
+            .Where(t => t.Status == "Delivered" && t.Events.Count > 0)
+            .OrderBy(t => GameClock.TryParse(t.DeliveredGameTime) ?? DateTime.MinValue)
+            .ToList();
+
+        foreach (var t in delivered)
+        {
+            double? Span(string beginKind, string endKind)
+            {
+                var begin = t.Events.Where(e => e.Kind == beginKind)
+                    .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Min();
+                var end = t.Events.Where(e => e.Kind == endKind)
+                    .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Max();
+                if (begin == null || end == null) return null;
+                var hours = (end.Value - begin.Value).TotalHours;
+                return hours >= 0 ? hours : null;
+            }
+
+            var loaded = t.PreLoaded ? null : Span("BeginLoad", "EndLoad");
+            var unloaded = Span("BeginUnload", "EndUnload");
+            if (loaded == null && unloaded == null) continue;
+
+            Record(s, t.TrailerType, loaded, unloaded);
+        }
+
+        return s.Settings.FacilityTimes
+            .Select(f => (f.TrailerType, f.Samples))
+            .OrderBy(x => x.TrailerType)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Whether a measured dock time is believable, and what it looks like if it is not.
+    ///
+    /// Twelve hours out is the fingerprint of an AM/PM swap on the end stamp, which is far and away the
+    /// likeliest way a dock time goes wrong — and the app questions implausible readings everywhere
+    /// else, so this one should not go quietly into the model. Nothing is corrected here; the driver is
+    /// asked, the same as they are about a break-capped drive clock.
+    /// </summary>
+    public static string? QuestionSpan(AppState s, string? trailerType, double hours, string what)
+    {
+        if (hours < ImplausibleHours) return null;
+
+        var expected = For(s, trailerType);
+        var typical = what.Equals("loading", StringComparison.OrdinalIgnoreCase)
+            ? expected.Loading : expected.Unloading;
+
+        var swapped = hours - 12;
+        return swapped > 0 && swapped < typical * 3
+            ? $"{Hhmm.Of(hours)} {what} is not a dock time — it is most likely AM and PM the wrong way " +
+              $"round on the end stamp, which would make it {Hhmm.Of(swapped)}. Correct the event on the " +
+              "trip log and I will work the average out again; I have not learned anything from this one."
+            : $"{Hhmm.Of(hours)} {what} is a long way off the {Hhmm.Of(typical)} I plan on. Check the " +
+              "stamps on the trip log — I have not learned anything from this one.";
+    }
+
+    /// <summary>Beyond this a dock time is treated as a misreading rather than a slow day.</summary>
+    public const double ImplausibleHours = 9;
 
     /// <summary>Everything learned so far, for the Settings screen.</summary>
     public static List<object> View(AppState s)

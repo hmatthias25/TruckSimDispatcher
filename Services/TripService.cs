@@ -143,6 +143,78 @@ public static class TripService
     public static Trip? Active(AppState s) =>
         s.Trips.FirstOrDefault(t => t.Id == s.Status.ActiveTripId && t.Status is "Authorized" or "InTransit");
 
+    /// <summary>
+    /// Corrects the stamp on an event already logged, or drops it entirely.
+    ///
+    /// An AM/PM swap on an End unload turned a two-hour dock into a thirteen-hour one, and there was no
+    /// way back: the log only ever appended. Where the trip is already closed the dock times are worked
+    /// out again from the corrected log, and the learned averages are rebuilt from every trip — the
+    /// average keeps a result rather than its samples, so the only honest way to un-teach one is to
+    /// derive the whole thing a second time.
+    ///
+    /// The game clock is deliberately NOT moved. Logging an event says where the driver is now;
+    /// correcting one says what they should have typed then.
+    /// </summary>
+    public static (TripEvent? Event, string Message, bool Rebuilt) AmendEvent(
+        AppState s, string tripId, string eventId, string? gameTime, string? detail, bool remove)
+    {
+        var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
+                   ?? throw new InvalidOperationException("Trip not found.");
+        var ev = trip.Events.FirstOrDefault(e => e.Id == (eventId ?? "").Trim())
+                 ?? throw new InvalidOperationException("No such event on that trip.");
+
+        var was = ev.GameTime;
+        string message;
+
+        if (remove)
+        {
+            trip.Events.Remove(ev);
+            message = $"Dropped the {Readable(ev.Kind)} logged at {GameClock.Pretty(was)}.";
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(gameTime))
+            {
+                if (GameClock.TryParse(gameTime) == null)
+                    throw new InvalidOperationException("That is not a game time I can read.");
+                ev.GameTime = gameTime;
+            }
+            if (detail != null) ev.Detail = detail;
+
+            message = string.Equals(was, ev.GameTime, StringComparison.Ordinal)
+                ? $"Updated the {Readable(ev.Kind)}."
+                : $"{Readable(ev.Kind)} moved from {GameClock.Pretty(was)} to {GameClock.Pretty(ev.GameTime)}.";
+        }
+
+        // A trip still running has nothing derived off it yet — close-out will read the corrected log.
+        if (trip.Status != "Delivered") return (remove ? null : ev, message, false);
+
+        var facility = DeriveFacilityTimes(s, trip, trip.LoadingHours, trip.UnloadingHours, trip.DetentionHours);
+        trip.LoadingHours = facility.LoadingHours;
+        trip.UnloadingHours = facility.UnloadingHours;
+        trip.DetentionHours = facility.DetentionHours;
+
+        var rebuilt = FacilityLearning.Rebuild(s);
+        var unload = FacilityLearning.For(s, trip.TrailerType);
+        message += $" {trip.Number} now reads {Hhmm.Of(trip.LoadingHours)} loading and " +
+                   $"{Hhmm.Of(trip.UnloadingHours)} unloading, and I have worked the " +
+                   $"{FacilityLearning.Normalise(trip.TrailerType).ToLowerInvariant()} average out again " +
+                   $"from every trip: {Hhmm.Of(unload.Loading)} load, {Hhmm.Of(unload.Unloading)} unload " +
+                   $"off {unload.Samples} measured load(s).";
+
+        return (remove ? null : ev, message, rebuilt.Count > 0);
+    }
+
+    /// <summary>Event kinds, as a driver would say them.</summary>
+    private static string Readable(string kind) => kind switch
+    {
+        "BeginLoad" => "begin load",
+        "EndLoad" => "end load",
+        "BeginUnload" => "begin unload",
+        "EndUnload" => "end unload",
+        _ => kind.ToLowerInvariant()
+    };
+
     public static void LogEvent(AppState s, string tripId, TripEvent ev)
     {
         var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
@@ -406,6 +478,15 @@ public static class TripService
         // zero and have the app planning real dock work as though it were instant. The UNLOAD still counts:
         // the receiver unloaded normally whatever the pickup looked like.
         var dockBefore = FacilityLearning.For(s, trip.TrailerType);
+        // A dock time that is not a dock time. Said rather than swallowed — the average keeps a result
+        // and not its samples, so one bad reading is permanent unless it is caught here.
+        if (facility.LoadDerived && !trip.PreLoaded
+            && FacilityLearning.QuestionSpan(s, trip.TrailerType, facility.LoadingHours, "loading") is { } lq)
+            audit.Warnings.Add(lq);
+        if (facility.UnloadDerived
+            && FacilityLearning.QuestionSpan(s, trip.TrailerType, facility.UnloadingHours, "unloading") is { } uq)
+            audit.Warnings.Add(uq);
+
         FacilityLearning.Record(s, trip.TrailerType,
             facility.LoadDerived && !trip.PreLoaded ? facility.LoadingHours : null,
             facility.UnloadDerived ? facility.UnloadingHours : null);

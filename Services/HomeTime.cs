@@ -494,6 +494,84 @@ public static class HomeTime
     }
 
     /// <summary>
+    /// How much harder a thin destination market should count while home time is closing in.
+    ///
+    /// The tier penalty used to be flat: the same whether home was a fortnight away or two hours. But a
+    /// thin market is exactly where a home-time promise dies. There is nothing coming out of it, so the
+    /// load after this one is an empty run home on the company's money — or a late one, which costs the
+    /// driver instead. That is a real cost and it belongs on the load that causes it.
+    ///
+    /// Returns a multiplier: 1.0 normally, rising as the arrangement runs out, and heaviest once it has
+    /// already been broken. A load that finishes inside the home radius is exempt however thin the town —
+    /// arriving home is the point, and the yard is not somewhere you need a reload out of.
+    /// </summary>
+    public static double ThinMarketBite(AppState s, BoardLoad load)
+    {
+        var st = Status(s);
+        if (!st.Tracked || !st.DueSoon) return 1.0;
+
+        var home = HomeTerminal(s);
+        if (home == null) return 1.0;
+
+        var destMiles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
+        if (destMiles != null && destMiles.Value <= s.Settings.Scoring.HomeRadiusMiles) return 1.0;
+
+        return st.Overdue ? 2.0 : 1.6;
+    }
+
+    /// <summary>
+    /// Whether dispatch should see the whole city before committing to a board pulled at one dock.
+    ///
+    /// The board screen has always promised this — "show me these first; if none of them work I will ask
+    /// for the whole city" — but the asking only ever happened when the board was rejected outright. A
+    /// load that was merely acceptable got committed to and the city was never looked at.
+    ///
+    /// Near home time that is the expensive case. A receiver with three loads on it is not the town: the
+    /// shipper down the road may have something going the right way, and nobody will ever know because
+    /// the truck is already hooked. Acceptable is not the same as gets you home.
+    ///
+    /// Three things have to be true, and the third is what keeps this quiet: if anything on the dock
+    /// board actually goes home, there is nothing to ask about.
+    ///
+    /// Returns what to say, or null when there is no question to raise.
+    /// </summary>
+    public static string? WantCityBoardFirst(AppState s, List<LoadEvaluation> clear)
+    {
+        var st = Status(s);
+        if (!st.Tracked || !st.DueSoon) return null;
+        if (clear.Count == 0) return null;
+
+        // Everything the driver showed us came off the dock they are standing on. Read off the board
+        // rather than off the runnable subset: a city board with only its local rows feasible has still
+        // been looked at, and asking for it again would be asking for something already in hand.
+        if (s.Board.Count == 0 || !s.Board.All(b => b.AtLocation)) return null;
+
+        var home = HomeTerminal(s);
+        if (home == null) return null;
+
+        // If any of them gets the driver home, take it and say nothing.
+        foreach (var e in clear)
+        {
+            var miles = Geo.MilesBetween(e.Load.DestCity, e.Load.DestState, home.City, home.State);
+            if (miles != null && miles.Value <= s.Settings.Scoring.HomeRadiusMiles) return null;
+        }
+
+        var where = DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState);
+        var pick = clear[0].Load;
+
+        return
+            $"That is {s.Board.Count} load(s) off one dock and not one of them finishes near {st.TerminalLabel}. " +
+            (st.Overdue
+                ? $"Your home time is already {st.DaysOut - st.IntervalDays:0.#} days late"
+                : $"Home time is due in {st.DaysUntilDue:0.#} days") +
+            $", so before I tie the truck up on {DispatchEngine.Place(pick.DestCity, pick.DestState)} I want to " +
+            $"see the whole board for {where}. There are usually more shippers in a town than the one you are " +
+            "standing on, and ten minutes looking beats another day and a half in the wrong direction.\n\n" +
+            $"Switch to the full city board and show me that. If a dock really is all {where} has, say so and " +
+            "I will send you on the one I have picked.";
+    }
+
+    /// <summary>
     /// Whether this load actually gets the driver home — finishes inside the home radius of their own
     /// yard — with home time already <b>overdue</b>.
     ///

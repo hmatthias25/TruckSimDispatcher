@@ -165,6 +165,34 @@ function arrivedFromLog(t) {
   return hit[0] || '';
 }
 
+/* ---- correcting a stamp already logged.
+   The log only ever appended, so an End unload typed with AM and PM the wrong way round made a two-hour
+   dock read as thirteen and trained the planner on it, permanently. */
+function amendEventModal(tripId, evId) {
+  const trip = (S.trips || []).find((x) => x.id === tripId);
+  const ev = ((trip && trip.events) || []).find((x) => x.id === evId);
+  if (!ev) return toast('That entry is not on the trip any more.', 'bad');
+  const closed = trip.status === 'Delivered';
+
+  modal(`<div class="panel-head"><h2>Correct the ${esc(ev.kind)}</h2>
+      ${badge('mute', gt(ev.gameTime))}<div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Cancel</button></div>
+    <p>Logged at <b>${gt(ev.gameTime)}</b>. Put in what it should have said.</p>
+    ${dayTimeInput('ae-time', ev.gameTime, 'Game day and time')}
+    <label>Note<input id="ae-detail" value="${esc(ev.detail || '')}" placeholder="optional"></label>
+    ${closed ? `<div class="callout info"><p>${esc(trip.number)} is closed out, so I will work its
+      loading and unloading out again from the corrected log &mdash; and derive the learned dock averages
+      a second time from every trip, since the average keeps a figure rather than its samples and there is
+      no other way to un-teach a bad one.</p></div>` : ''}
+    <div class="row-actions">
+      <button class="btn danger" data-act="amend-event-save" data-trip="${esc(tripId)}"
+        data-ev="${esc(evId)}" data-remove="1">Drop this entry</button>
+      <div style="flex:1"></div>
+      <button class="btn primary" data-act="amend-event-save" data-trip="${esc(tripId)}"
+        data-ev="${esc(evId)}">Correct it</button>
+    </div>`);
+}
+
 /** Pretty game time — what the player sees everywhere. */
 function gt(v) {
   if (!v) return '—';
@@ -1326,6 +1354,8 @@ function decisionHtml() {
   if (!DECISION) return '';
   const d = DECISION;
   const cls = d.authorizedLoadId ? 'go' : d.rejectAll ? 'stop' : 'warn';
+  // A board held for the city question is not rejected — the reposition offers below are for a board
+  // with nothing on it, and offering to run empty from a dock we have not finished looking at is wrong.
   return `<div class="panel">
     <div class="panel-head"><h2>Operations decision</h2>
       <div class="spacer"></div>
@@ -1367,6 +1397,16 @@ function decisionHtml() {
         <span class="hint" style="margin:0">${esc(o.reason)}</span>
       </div>`).join('')}
     </div>` : ''}
+    ${d.wantCityBoard ? `<div class="callout warn">
+      <h4>Pull the city board before I commit this</h4>
+      <p>That was what is on offer at this dock, and none of it finishes near your yard with home time
+        this close. Open the full freight board for <b>${esc(S.status.locationCity)}</b> in ATS and enter
+        it &mdash; usually a longer list than the handful going out from where you are parked.</p>
+      <div class="row-actions">
+        <button class="btn primary" data-act="board-stage" data-stage="city">Show the city board</button>
+        ${d.heldLoadId ? `<button class="btn ghost" data-act="authorize" data-id="${esc(d.heldLoadId)}">
+          A dock is all there is &mdash; send me</button>` : ''}
+      </div></div>` : ''}
     ${d.localOnly ? `<div class="callout info">
       <h4>Next step: the wider board</h4>
       <p>Nothing at this dock is worth running. Open the full freight board for
@@ -1550,7 +1590,11 @@ function viewActive() {
       ${t.events.length ? `<div class="log" style="margin-top:12px">${t.events.slice().reverse().map((e) =>
         `<div><span class="ch">${esc(e.kind)}</span><span>${gt(e.gameTime)} — ${esc(e.detail)}${
           e.gallons ? ` <b>${num(e.gallons, 1)} gal</b>${e.pricePerGal ? ` @ $${num(e.pricePerGal, 3)}` : ''}` : ''
-        }</span></div>`).join('')}</div>` : ''}
+        } <button class="btn tiny ghost" data-act="amend-event" data-trip="${esc(t.id)}"
+            data-ev="${esc(e.id)}" title="Correct or drop this entry">fix</button></span></div>`).join('')}</div>
+        <p class="hint">Typed a stamp wrong? <b>fix</b> it here. On a load already closed out I work the
+          dock times out again from the corrected log, and re-derive the learned averages from every trip
+          &mdash; one AM/PM slip is otherwise permanent.</p>` : ''}
     </div>
 
     ${t.windowWarning ? `<div class="panel">
@@ -4087,6 +4131,11 @@ function facilityTimesHtml() {
           : `<button class="btn tiny ghost" data-act="facility-set" data-type="${esc(f.trailerType)}" data-i="${i}"
                title="Fix these figures">Set</button>`}</td>
       </tr>`).join('')}</tbody></table></div>
+    <div class="row-actions" style="margin-top:8px">
+      <span class="hint" style="flex:1;margin:0">Learned a bad figure off a mistyped stamp? Correct the
+        entry on the trip log, then work these out again from every trip.</span>
+      <button class="btn tiny" data-act="facility-rebuild">Recompute from my trip logs</button>
+    </div>
   </details>`;
 }
 
@@ -4608,6 +4657,21 @@ async function handleAction(act, d, ev) {
     case 'clock-keep': return run(async () => {
       const r = absorb(await api('/hos/clock-check', 'POST', {
         uncap: false, stopAsking: $('cq-never')?.checked === true,
+      }));
+      closeModal();
+      toast(r.message, 'ok');
+    });
+
+    case 'facility-rebuild': return run(async () => {
+      const r = absorb(await api('/facility/rebuild', 'POST', {}));
+      toast(r.message, 'ok');
+    });
+    case 'amend-event': return amendEventModal(d.trip, d.ev);
+    case 'amend-event-save': return run(async () => {
+      const r = absorb(await api(`/trips/${d.trip}/event/${d.ev}`, 'POST', {
+        gameTime: d.remove === '1' ? null : readDayTime('ae-time'),
+        detail: d.remove === '1' ? null : sv('ae-detail'),
+        remove: d.remove === '1',
       }));
       closeModal();
       toast(r.message, 'ok');
