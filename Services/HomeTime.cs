@@ -368,25 +368,25 @@ public static class HomeTime
         var current = DispatchEngine.AssignedTrailer(s);
         if (current == null) return null;
 
+        // Drop and hook is postable too — the whole reason it was built as a trailer type is so a driver
+        // can be put on it for a tour and taken back off, the same as being moved off a reefer. Leaving
+        // it out would have meant it could only ever be asked for, which is half the feature.
+        //
+        // Rolled for on its own, ABOVE the freight-mix gate, because it is its own decision. Behind that
+        // gate it was 34% of 12% — about one home time in twenty-five, a game-year of biweekly runs, which
+        // is not "occasionally" but "practically never". On its own it is one in eight.
+        //
+        // Its own seed key, so an ordinary reassignment still lands exactly where it always did.
+        if (!DropHook.Is(current.Type)
+            && Qualified(s, DropHook.TrailerType)
+            && Hash($"{s.Driver.Name}|drophook|{homeTimeNumber}") % 100 < 12)
+            return DropHook.TrailerType;
+
         // Roughly one home time in three. Seeded, so refreshing does not re-roll it.
         if (Hash($"{s.Driver.Name}|reassign|{homeTimeNumber}") % 100 >= 34) return null;
 
         // A division the carrier runs that is not what they are pulling now, and that they are actually
         // qualified for — no tanker without the endorsement.
-        //
-        // Drop and hook is postable too — the whole reason it was built as a trailer type is so a driver
-        // can be put on it for a tour and taken back off, the same as being moved off a reefer. Leaving
-        // it out would have meant it could only ever be asked for, which is half the feature.
-        //
-        // But it is rolled for SEPARATELY and at long odds, rather than thrown in the hat with the
-        // division types. It is a different way of working rather than a different box, so being posted
-        // to it should be an occasional thing that happens to a driver, not one-in-four of every
-        // freight-mix shuffle. Its own seed key, so the ordinary reassignment lands exactly where it
-        // always did.
-        if (!DropHook.Is(current.Type)
-            && Qualified(s, DropHook.TrailerType)
-            && Hash($"{s.Driver.Name}|drophook|{homeTimeNumber}") % 100 < 12)
-            return DropHook.TrailerType;
 
         var options = divisions
             .Select(TrailerTypeFor)
