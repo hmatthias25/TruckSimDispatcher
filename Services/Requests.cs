@@ -271,9 +271,14 @@ public static class Requests
         if (home == null) return new List<string>();
 
         var current = DispatchEngine.AssignedTrailer(s)?.Type ?? "";
-        return s.Trailers
+
+        // Drop and hook is not kept at a yard — there is nothing to keep — so it would never show up in
+        // a list built from what is parked at the house. It is on offer wherever the driver is based.
+        var arrangement = s.Trailers.Where(t => !t.Retired && DropHook.Is(t.Type)).Select(t => t.Type);
+
+        return arrangement.Concat(s.Trailers
             .Where(t => !t.Retired && t.HomeTerminalId == home.Id)
-            .Select(t => t.Type)
+            .Select(t => t.Type))
             .Where(t => !string.IsNullOrWhiteSpace(t) && !t.Equals(current, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(t => t)
@@ -286,6 +291,25 @@ public static class Requests
     /// A probationary driver cannot. You take what you are given until you have shown you can do the
     /// job, and that is not a punishment — it is what probation is.
     /// </summary>
+    /// <summary>
+    /// Giving up an arrangement and going back on the roster.
+    ///
+    /// The other half of asking for something: a driver who asked to be put on a trailer is left on it
+    /// until they say otherwise, so there has to be an otherwise. Clearing the flag puts them back in
+    /// the pool and operations starts moving them with the freight mix again at home time.
+    /// </summary>
+    public static string ReleaseTrailerArrangement(AppState s)
+    {
+        if (!s.Driver.TrailerByRequest)
+            return "You are already on whatever operations puts you on — nothing to give up.";
+
+        s.Driver.TrailerByRequest = false;
+        var have = DispatchEngine.AssignedTrailer(s);
+        return $"Noted. You stay on {TrailerSpec.Describe(have?.Type, have?.Subtype)} for now, but you are " +
+               "back in the pool — operations will move you with the freight mix at your next home time " +
+               "like anybody else.";
+    }
+
     public static TrailerTypeRequest SubmitTrailerRequest(AppState s, string type)
     {
         if (s.Driver.Rank == "probationary")
@@ -352,8 +376,11 @@ public static class Requests
         var loadWeight = (int)Math.Min(30, loads / 4.0);
 
         // Does the company actually run this freight? A division we do not haul is a flat no.
-        var runsIt = s.Company.Divisions.Any(d =>
-            d.Equals(TrailerSpec.DivisionFor(req.RequestedType), StringComparison.OrdinalIgnoreCase));
+        // Drop and hook is the exception: it is an arrangement rather than a division, and every carrier
+        // has freight-market work to put somebody on.
+        var runsIt = DropHook.Is(req.RequestedType)
+                     || s.Company.Divisions.Any(d =>
+                            d.Equals(TrailerSpec.DivisionFor(req.RequestedType), StringComparison.OrdinalIgnoreCase));
         var spare = s.Trailers.Count(t => !t.Retired
                                           && t.Type.Equals(req.RequestedType, StringComparison.OrdinalIgnoreCase)
                                           && string.IsNullOrWhiteSpace(t.AssignedTruckUnit));
@@ -374,7 +401,12 @@ public static class Requests
         if (roll < chance)
         {
             req.Status = "Granted";
-            req.Answer = $"Approved on your record — {why}. I will get you re-rigged at the house on your next home time.";
+            // Asked for and given, so it is theirs until they say otherwise. Operations stops moving them
+            // with the freight mix — see HomeTime.ConsiderTrailerReassignment.
+            s.Driver.TrailerByRequest = true;
+            req.Answer = $"Approved on your record — {why}. I will get you re-rigged at the house on your " +
+                         "next home time. And it stays yours: you asked for it, so you are on it until you " +
+                         "ask to come off. Say the word any time and I will put you back in the pool.";
             // Reuses the ordinary reassignment path: report to the yard and swap, same as any other.
             var order = EquipmentService.IssueTrailerReassignment(s, req.RequestedType,
                 $"{req.Number}: driver requested {req.RequestedType.ToLowerInvariant()}.");

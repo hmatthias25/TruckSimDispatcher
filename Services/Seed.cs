@@ -434,6 +434,10 @@ public static class Seed
             CurrentLocation = yard == null ? "" : $"{yard.City}, {yard.State}",
             Notes = "Match this to the trailer you actually buy in game."
         });
+
+        // Every carrier has freight-market work as well. It is not equipment and nothing is bought for
+        // it — it is the arrangement a driver gets put on or asks for. See DropHook.
+        s.Trailers.Add(DropHook.Build(s, yard?.Id ?? ""));
     }
 
     /// <summary>What stocking a yard produced, so the UI can report it rather than guess.</summary>

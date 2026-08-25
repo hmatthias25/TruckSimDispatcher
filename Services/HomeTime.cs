@@ -313,6 +313,15 @@ public static class HomeTime
         // A dedicated driver is not re-rigged: the account decides the trailer, not the freight mix.
         if (Dedicated.Active(s)) return null;
 
+        // Nor is a driver pulling something they asked for. A posting gets moved around with the freight
+        // mix; an arrangement does not, or asking for it would have meant nothing. They come off it by
+        // asking to come off it — see Requests.ReleaseTrailerArrangement.
+        if (s.Driver.TrailerByRequest) return null;
+
+        // Drop and hook is an arrangement whatever route it arrived by. Re-rigging somebody off it at a
+        // home time they did not ask for would end their freight-market work without warning.
+        if (DropHook.Active(s)) return null;
+
         var divisions = s.Company.Divisions?.Where(d => !string.IsNullOrWhiteSpace(d)).ToList() ?? new List<string>();
         if (divisions.Count < 2) return null;    // a one-division carrier has nothing to move you to
 

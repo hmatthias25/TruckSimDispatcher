@@ -38,7 +38,12 @@ function head(t) { console.log(`\n=== ${t} ===`); }
   check('HQ is Small tier (1 truck)', S.company.terminals[0].level === 'Small' && S.company.terminals[0].truckCapacity === 1,
     `${S.company.terminals[0].level} cap ${S.company.terminals[0].truckCapacity}`);
   check('exactly 1 truck', S.trucks.length === 1, `${S.trucks.length}: ${S.trucks.map((t) => t.unit).join(',')}`);
-  check('exactly 1 trailer', S.trailers.length === 1, `${S.trailers.length}: ${S.trailers.map((t) => t.unit).join(',')}`);
+  // The drop-and-hook slot sits alongside the real trailers on every carrier's books. It is an
+  // arrangement rather than a box — nothing is bought for it — so it does not count as fleet equipment.
+  const owned = S.trailers.filter((t) => t.type !== 'Drop & Hook');
+  check('exactly 1 trailer', owned.length === 1, `${owned.length}: ${owned.map((t) => t.unit).join(',')}`);
+  check('and the drop-and-hook arrangement beside it',
+    S.trailers.some((t) => t.type === 'Drop & Hook'), 'DH-1');
   check('truck matches manual preference', S.trucks[0].transmissionType === 'manual', S.trucks[0].transmission);
   check('assigned truck is in-game', S.trucks[0].inGameGarage === true);
   check('home city discovered', (S.discovered || []).some((d) => d.city === S.company.terminalCity),

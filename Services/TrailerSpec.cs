@@ -37,6 +37,14 @@ public static class TrailerSpec
         (type ?? "").Trim().Equals("Tanker", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Drop and hook is an arrangement rather than a box, so it is described as one.
+    ///
+    /// Nothing is bought for it, nothing is loaded on it and nothing about it can be damaged — see
+    /// <see cref="DropHook"/>.
+    /// </summary>
+    public static bool IsDropHook(string? type) => DropHook.Is(type);
+
+    /// <summary>
     /// What to tell a driver to buy. Where the subtype is known, name it; where it genuinely is not,
     /// name the options rather than saying "tanker" and leaving them to guess.
     /// </summary>

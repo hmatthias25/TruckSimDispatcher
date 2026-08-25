@@ -590,6 +590,16 @@ public static class CareerService
         },
     };
 
+    /// <summary>
+    /// Where a rung sits on the ladder, or -1. Public so other services can say "top two rungs" without
+    /// hard-coding key names that differ between carriers.
+    /// </summary>
+    public static int RankIndex(string? key) =>
+        Array.FindIndex(Ladder, r => r.Key.Equals((key ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>How many rungs this ladder has.</summary>
+    public static int LadderLength => Ladder.Length;
+
     private static readonly Rank[] Ladder =
     {
         new("probationary", "Probationary Company Driver", 0, 0, 0, 100, 99, 0.54m, 0.44m,

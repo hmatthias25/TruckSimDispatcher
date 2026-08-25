@@ -694,6 +694,7 @@ public static class FleetOpsService
             });
         }
 
+        // The drop-and-hook slot is an arrangement, not a box. Nothing to utilise, age or replace.
         AssessTrailers(s, report);
     }
 

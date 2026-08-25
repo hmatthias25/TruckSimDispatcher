@@ -54,6 +54,15 @@ public static class FacilityLearning
     /// <summary>The figures the planner should use for this trailer type.</summary>
     public static (double Loading, double Unloading, int Samples, bool Learned) For(AppState s, string? trailerType)
     {
+        // Drop and hook has no dock time to learn. You back under what is there and pull the pin at the
+        // other end — the hook time is the whole of it, and it never moves, so there is nothing to
+        // measure and nothing that should be measured into it.
+        if (DropHook.Is(trailerType))
+        {
+            var hook = Math.Max(0.1, s.Settings.HookHours);
+            return (hook, hook, 0, false);
+        }
+
         var type = Normalise(trailerType);
         var hit = s.Settings.FacilityTimes
             .FirstOrDefault(f => f.TrailerType.Equals(type, StringComparison.OrdinalIgnoreCase));
@@ -77,6 +86,9 @@ public static class FacilityLearning
     public static void Record(AppState s, string? trailerType, double? loadingHours, double? unloadingHours)
     {
         if (loadingHours is null && unloadingHours is null) return;
+        // Nothing was loaded, so there is nothing to learn. Folding a hook time into a dock average would
+        // drag every future projection toward zero and start authorising loads that cannot be worked.
+        if (DropHook.Is(trailerType)) return;
 
         var type = Normalise(trailerType);
         var entry = s.Settings.FacilityTimes

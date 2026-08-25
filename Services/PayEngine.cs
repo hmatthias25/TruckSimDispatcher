@@ -20,18 +20,20 @@ public static class PayEngine
         var dh = PayMiles(s.Settings, load.DeadheadMiles);
 
         var total = loaded * p.LoadedCpm + dh * p.DeadheadCpm;
-        total += loaded * PremiumCpm(p, division, load.IsHazmat, load.IsOversize);
+        total += loaded * PremiumCpm(s, p, division, load.IsHazmat, load.IsOversize);
         if (load.ExtraStops > 0) total += p.ExtraStopPay * load.ExtraStops;
         if (load.RequiresTarp) total += p.TarpPay;
         return Math.Round(total, 2);
     }
 
-    private static decimal PremiumCpm(PayPlan p, string division, bool hazmat, bool oversize)
+    private static decimal PremiumCpm(AppState s, PayPlan p, string division, bool hazmat, bool oversize)
     {
         var cpm = 0m;
         if (division.Equals("Reefer", StringComparison.OrdinalIgnoreCase)) cpm += p.ReeferCpm;
         if (hazmat) cpm += p.HazmatCpm;
         if (oversize || division.Equals("Heavy Haul", StringComparison.OrdinalIgnoreCase)) cpm += p.OversizeCpm;
+        // The seat that is competed for rather than the freight that is awkward.
+        if (DropHook.DedicatedActive(s)) cpm += p.DedicatedDropHookCpm;
         return cpm;
     }
 
@@ -63,7 +65,7 @@ public static class PayEngine
             b.Lines.Add($"Repositioning: {trip.RepositionMiles:N0} empty mi before this load, " +
                         $"paid at the empty rate. {trip.RepositionNote}");
 
-        var premium = PremiumCpm(p, trip.Division, trip.IsHazmat, trip.IsOversize);
+        var premium = PremiumCpm(s, p, trip.Division, trip.IsHazmat, trip.IsOversize);
         b.DivisionPremium = Math.Round(payLoaded * premium, 2);
 
         b.StopPay = p.ExtraStopPay * trip.ExtraStops;

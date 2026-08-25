@@ -882,6 +882,7 @@ function viewDispatch() {
           <div class="spacer"></div>
           <span class="sub">One row per job you can see in ATS.</span></div>
 
+        ${dropHookHtml()}
         ${noWindowToWork() ? `<div class="callout stop">
           <h4>Do not pull the board</h4>
           <p style="margin:0">${esc(noWindowToWork())}</p>
@@ -1905,6 +1906,65 @@ function facilityHtml(t) {
   </fieldset>`;
 }
 
+/* ---- picking a dedicated account.
+   The company list ships with the app, but which of them can be offered depends on the map the driver
+   has actually driven: ATS generates no cargo for a city nobody has reached, so an account with a
+   company whose depots are all in unvisited states produces no freight at all. */
+function dedicatedOffersModal(o) {
+  if (o.blocked) {
+    return modal(`<div class="panel-head"><h2>Dedicated</h2><div class="spacer"></div>
+        <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+      <div class="callout warn"><p style="margin:0">${esc(o.blocked)}</p></div>
+      ${(o.reachedStates || []).length ? `<p class="hint">States you have driven:
+        ${o.reachedStates.map(esc).join(', ')}.</p>` : ''}`);
+  }
+
+  const rows = o.offers || [];
+  modal(`<div class="panel-head"><h2>Pick a dedicated account</h2>
+      ${badge('ok', rows.length + ' on offer')}<div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+    <p>These are companies you can actually reach. A dedicated account with an outfit whose depots are
+      all in states you have never driven would never produce a load — ATS makes no cargo for a city
+      nobody has been to.</p>
+
+    <label>Are you running the Real Companies mod?
+      <select id="da-mod">
+        <option value="${o.renamesCompanies === 'yes' ? 'yes' : 'no'}" selected>${
+          o.renamesCompanies === 'yes' ? 'Yes — it renames the companies' : 'No — I see the stock names'}</option>
+        <option value="${o.renamesCompanies === 'yes' ? 'no' : 'yes'}">${
+          o.renamesCompanies === 'yes' ? 'No — I see the stock names' : 'Yes — it renames the companies'}</option>
+      </select></label>
+    <label>What your game calls them<input id="da-called"
+      placeholder="only if the mod renames it — leave blank otherwise"></label>
+    <p class="hint">The mod swaps the stock company names for real brands. If you run it, type what your
+      game shows and I will file the account under that, because that is the name you will be reading off
+      job listings. It only matters here — nothing else in the app cares what a company is called.</p>
+
+    ${rows.map((f) => `<div class="loadcard backup">
+      <div class="loadcard-head"><span class="lane">${esc(f.name)}</span>
+        ${badge('mute', esc(f.category))}</div>
+      <p class="hint" style="margin:0 0 6px">${esc(f.industry)} — ${esc(f.reach)}.</p>
+      <div class="row-actions"><div style="flex:1"></div>
+        <button class="btn tiny primary" data-act="dedicated-assign" data-company="${esc(f.name)}">
+          Put me on ${esc(f.name)}</button></div>
+    </div>`).join('')}`);
+}
+
+/* ---- drop and hook.
+   No trailer of your own: Freight Market jobs, the shipper's trailer, dropped at the other end. The one
+   thing a driver on it must not do is take a trailer, and ATS puts the two markets side by side — so it
+   is said on the Dispatch tab every time rather than once at assignment. */
+function dropHookHtml() {
+  const dh = S.views.dropHook;
+  if (!dh || !dh.on) return '';
+  return `<div class="callout warn" style="margin-bottom:12px">
+    <h4>Drop and hook${dh.dedicated ? ` — ${esc(S.driver.dedicatedAccount)} only` : ''}</h4>
+    <p style="margin:0">${dh.instruction}</p>
+    ${dh.dedicated ? `<p class="hint" style="margin:6px 0 0">Paying
+      <b>$${(+dh.premiumCpm).toFixed(3)}</b> a loaded mile over your scale while you are on it.</p>` : ''}
+  </div>`;
+}
+
 /* ---- clocks at delivery
    Reporting them here is what stops the Dispatch tab asking for the same four numbers again. */
 function clocksAtDeliveryHtml() {
@@ -2652,6 +2712,7 @@ function askHomeHtml() {
 /* ---- asking for a different trailer ---- */
 function askTrailerHtml() {
   const rq = S.views.requests || {};
+  const arr = S.views.trailerArrangement || {};
   const types = rq.trailerTypes || [];
   const open = rq.trailer;
   const recent = (rq.recentTrailer || []).filter((r) => r.status !== 'Open');
@@ -2662,6 +2723,19 @@ function askTrailerHtml() {
     : `<p class="hint">You can ask to be re-rigged onto anything the company keeps at your yard. It can be
         turned down — the freight out of your terminal decides it, and the more you have behind you the
         better a hearing it gets. Granted, you swap at the house on your next home time.</p>
+      <div class="callout ${arr.byRequest ? 'go' : 'mute'}" style="margin:8px 0">
+        <h4>${arr.byRequest ? 'This one is yours until you say otherwise' : 'Ask and it stays yours'}</h4>
+        <p style="margin:0">${arr.byRequest
+          ? `You asked to be put on ${esc(arr.type || 'this')} and it was approved, so operations leaves you
+             on it. Nobody re-rigs you with the freight mix while that stands.`
+          : `A trailer we put you on is a posting and gets moved around with the freight. One you
+             <em>ask</em> for is an arrangement — if it is approved you stay on it until you ask to come
+             off, and only another request changes it.`}</p>
+        ${arr.byRequest ? `<div class="row-actions" style="margin-top:8px">
+          <div style="flex:1"></div>
+          <button class="btn tiny ghost" data-act="release-arrangement">Put me back in the pool</button>
+        </div>` : ''}
+      </div>
       ${open ? `<div class="callout info">
           <h4>${esc(open.number)} — asked for ${esc(open.requestedType)}</h4>
           <p class="hint" style="margin:0">Answer comes with your next close-out.</p></div>`
@@ -3836,6 +3910,7 @@ function viewSafety() {
 function dedicatedHtml() {
   const d = S.views.dedicated;
   if (!d || !d.carrierRuns) return '';
+  const dh = S.views.dropHook || {};
 
   return `<div class="panel">
     <div class="panel-head"><h2>Dedicated</h2>
@@ -3867,6 +3942,21 @@ function dedicatedHtml() {
     <p class="hint">I cannot see your game, so I do not know which companies your board offers —
       especially with map mods. Type the customer's name and I will match it against the shipper,
       receiver or market on each load.</p>
+
+    <h3 class="sect">Dedicated drop and hook</h3>
+    <div class="callout ${dh.dedicatedBlocked ? 'mute' : 'go'}">
+      <p><b>The best seat we have.</b> One account, no trailer of your own, and no dock work at either
+        end — you pull what the shipper has and drop it at the other. It makes deadhead unavoidable, so
+        it pays <b>$${(+(dh.premiumCpm || 0)).toFixed(3)}</b> a loaded mile over your scale.</p>
+      ${dh.dedicatedBlocked
+        ? `<p style="margin:6px 0 0">${esc(dh.dedicatedBlocked)}</p>`
+        : `<p style="margin:6px 0 0">You are eligible. I will pick from companies you can actually reach
+           — an account with an outfit whose depots are all in states you have never driven would never
+           produce a load.</p>
+           <div class="row-actions" style="margin-top:8px"><div style="flex:1"></div>
+             <button class="btn primary" data-act="dedicated-offers">Show me what is on offer</button>
+           </div>`}
+    </div>
     ${d.offAccountLoads > 0 ? `<p class="hint"><b>${d.offAccountLoads}</b> load(s) run off-account by
       exception. That only happens when your account has nothing on the board.</p>` : ''}
   </div>`;
@@ -4662,6 +4752,24 @@ async function handleAction(act, d, ev) {
       toast(r.message, 'ok');
     });
 
+    case 'release-arrangement': return run(async () => {
+      const r = absorb(await api('/career/trailer-arrangement/release', 'POST', {}));
+      toast(r.message, 'ok');
+    });
+    case 'dedicated-offers': return run(async () => {
+      const o = await api('/career/dedicated/offers');
+      dedicatedOffersModal(o);
+    });
+    case 'dedicated-assign': return run(async () => {
+      const mod = $('da-mod')?.value || '';
+      const r = absorb(await api('/career/dedicated/assign', 'POST', {
+        company: d.company,
+        asTheGameCallsIt: mod === 'yes' ? sv('da-called') : '',
+        renamesCompanies: mod,
+      }));
+      closeModal();
+      toast(r.message, 'ok');
+    });
     case 'facility-rebuild': return run(async () => {
       const r = absorb(await api('/facility/rebuild', 'POST', {}));
       toast(r.message, 'ok');

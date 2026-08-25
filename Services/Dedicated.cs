@@ -18,6 +18,54 @@ namespace TruckSimDispatcher.Services;
 /// </summary>
 public static class Dedicated
 {
+    /// <summary>
+    /// Accounts this driver could be put on, best first.
+    ///
+    /// Filtered by the map they have actually driven and the divisions their carrier hauls — see
+    /// <see cref="AtsCompanies.Candidates"/>. An empty list is a real answer and gets said out loud
+    /// rather than producing an account nobody can reach.
+    /// </summary>
+    public static List<object> Offers(AppState s) =>
+        AtsCompanies.Candidates(s).Take(6).Select(f => (object)new
+        {
+            name = f.Name,
+            industry = f.Industry,
+            category = f.Category,
+            depots = f.Depots,
+            reach = AtsCompanies.Reach(s, f),
+        }).ToList();
+
+    /// <summary>
+    /// Puts the driver on an account.
+    ///
+    /// <paramref name="asTheGameCallsIt"/> is what their own install shows, when a renaming mod means it
+    /// is not what the base game calls it. The app files the account under that name, because that is
+    /// the string the player will be reading off job listings — the vanilla name is kept beside it so
+    /// the record still says which company it is.
+    /// </summary>
+    public static string AssignAccount(AppState s, string? company, string? asTheGameCallsIt)
+    {
+        var firm = AtsCompanies.Find(company)
+                   ?? throw new InvalidOperationException("That is not a company this game ships freight for.");
+
+        if (!AtsCompanies.Candidates(s).Any(f => f.Name.Equals(firm.Name, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException(
+                $"{firm.Name} is not somewhere we can put you. {AtsCompanies.Reach(s, firm)}.");
+
+        var shown = (asTheGameCallsIt ?? "").Trim();
+        s.Driver.OnDedicated = true;
+        s.Driver.DedicatedAccount = shown.Length > 0 ? shown : firm.Name;
+        s.Driver.DedicatedVanillaName = shown.Length > 0 ? firm.Name : "";
+        s.Driver.OffAccountLoads = 0;
+
+        var called = shown.Length > 0 && !shown.Equals(firm.Name, StringComparison.OrdinalIgnoreCase)
+            ? $" Your game calls them {shown}; unmodded it is {firm.Name}."
+            : "";
+
+        return $"You are dedicated to {s.Driver.DedicatedAccount} — {firm.Industry.ToLowerInvariant()}, " +
+               $"{AtsCompanies.Reach(s, firm)}.{called} Their freight only from here.";
+    }
+
     /// <summary>Whether the carrier the driver works for runs dedicated freight at all.</summary>
     public static bool CarrierRunsDedicated(AppState s) =>
         s.Company.Divisions.Any(d => d.Equals("Dedicated", StringComparison.OrdinalIgnoreCase));

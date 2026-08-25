@@ -461,7 +461,8 @@ public static class TripService
         trip.OtherExpense = req.OtherExpense;
         trip.OtherExpenseMemo = req.OtherExpenseMemo;
         trip.TruckDamageAfter = req.TruckDamageAfter;
-        trip.TrailerDamageAfter = req.TrailerDamageAfter;
+        // A trailer we do not own cannot come back damaged. Whatever was hooked went back to the shipper.
+        trip.TrailerDamageAfter = DropHook.Is(trip.TrailerType) ? 0 : req.TrailerDamageAfter;
         trip.CargoDamagePct = req.CargoDamagePct;
         // Facility time comes from the Begin/End pairs in the log where they exist. Detention is pay,
         // so it is derived from clock times rather than taken on trust.

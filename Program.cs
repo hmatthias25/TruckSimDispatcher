@@ -1547,6 +1547,53 @@ app.MapPost("/api/settings/facility-time", (FacilityTimeRequest req) => Results.
     return Snapshot(s);
 })));
 
+/// The dedicated accounts this driver could be put on, and why they cannot be if they cannot.
+///
+/// Filtered by the map they have driven and the divisions their carrier hauls. An empty list is a real
+/// answer — an account with a company they can never reach would produce no freight at all.
+app.MapGet("/api/career/dedicated/offers", () => Results.Ok(new
+{
+    blocked = DropHook.DedicatedBlockedBecause(store.State),
+    offers = Dedicated.Offers(store.State),
+    renamesCompanies = store.State.Settings.RenamesCompanies,
+    reachedStates = AtsCompanies.ReachedStates(store.State).OrderBy(x => x).ToList(),
+}));
+
+/// Putting the driver on one of those accounts.
+///
+/// `AsTheGameCallsIt` is what a renaming mod shows for the company. Asked at exactly this moment and
+/// nowhere else — it is the only time a company name has to match what the player is reading off job
+/// listings, and nobody running ordinary freight should be asked about a mod.
+app.MapPost("/api/career/dedicated/assign", (AssignAccountRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    if (DropHook.DedicatedBlockedBecause(s) is { } no) throw new InvalidOperationException(no);
+
+    if (req.RenamesCompanies is "yes" or "no") s.Settings.RenamesCompanies = req.RenamesCompanies;
+
+    var message = Dedicated.AssignAccount(s, req.Company, req.AsTheGameCallsIt);
+
+    // Putting somebody on the account also puts them on the arrangement — through an equipment order,
+    // like every other change of trailer. The app cannot hook anything in ATS, so the driver reports to
+    // the yard and swaps, and nothing on the books moves until they say it happened.
+    DropHook.Ensure(s);
+    var order = EquipmentService.IssueTrailerReassignment(s, DropHook.TrailerType,
+        $"Dedicated drop and hook — {s.Driver.DedicatedAccount}.");
+    if (order != null)
+        message += $" {order.Number} raised: report to the yard, drop what you are pulling and go " +
+                   "freight-market from there.";
+
+    store.Log(s, "career", message);
+    return new { message, order, snapshot = Snapshot(s) };
+})));
+
+/// Giving up a trailer the driver asked for and going back on the roster.
+app.MapPost("/api/career/trailer-arrangement/release", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var message = Requests.ReleaseTrailerArrangement(s);
+    store.Log(s, "career", message);
+    return new { message, snapshot = Snapshot(s) };
+})));
+
 app.MapPost("/api/career/dedicated", (DedicatedRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
     var message = Dedicated.SetAccount(s, req.OnDedicated, req.Account ?? "");
@@ -1706,6 +1753,25 @@ object Snapshot(AppState? given = null)
                 stateRate = PayrollTax.StateRate(HomeTime.HomeTerminal(s)?.State ?? s.Company.TerminalState),
                 ytdGross = PayrollTax.YtdGross(s)
             },
+            // The arrangement, when the driver is on it: which ATS market to pull from, and whether it
+            // is tied to one account.
+            dropHook = new
+            {
+                on = DropHook.Active(s),
+                dedicated = DropHook.DedicatedActive(s),
+                instruction = DropHook.Active(s) ? DropHook.Instruction(s) : "",
+                premiumCpm = s.Driver.Pay.DedicatedDropHookCpm,
+                dedicatedBlocked = DropHook.DedicatedBlockedBecause(s),
+                rankAllows = DropHook.RankAllowsDedicated(s),
+            },
+
+            // A trailer the driver asked for is theirs until they ask to come off it.
+            trailerArrangement = new
+            {
+                byRequest = s.Driver.TrailerByRequest,
+                type = DispatchEngine.AssignedTrailer(s)?.Type ?? "",
+            },
+
             dedicated = new
             {
                 carrierRuns = Dedicated.CarrierRunsDedicated(s),
@@ -1994,5 +2060,6 @@ record TrueUpRequest(decimal? AtsBalance);
 record ClockCheckRequest(bool? Uncap, bool? StopAsking);
 record ChangeoverRequest(string? StepId);
 record AmendEventRequest(string? GameTime, string? Detail, bool? Remove);
+record AssignAccountRequest(string? Company, string? AsTheGameCallsIt, string? RenamesCompanies);
 record ShowcaseRequest(int? Index);
 record SkillsRequest(int? LongDistance, int? HighValue, int? Fragile, int? JustInTime);

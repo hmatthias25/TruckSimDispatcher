@@ -31,6 +31,7 @@ public static class Migrations
         MeasureDeliveryFromArrivalNotRelease(s);
         GiveTripEventsIds(s);
         KeyDockTimesToTheTrailerPulled(s);
+        EnsureDropHookIsOnOffer(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -332,6 +333,33 @@ public static class Migrations
                 "They had been filed against the trailer the job listing asked for rather than the one on " +
                 "the back of the truck, so dock times were being learned for trailers you have never " +
                 "pulled. The averages have been worked out again from the corrected history.",
+        });
+    }
+
+    /// <summary>
+    /// Puts the drop-and-hook arrangement on every carrier's books.
+    ///
+    /// Not version-gated, because it has to be true of a career that changes employer as much as one
+    /// that was created before the arrangement existed. Every carrier runs freight-market work; the slot
+    /// is what a driver gets assigned to or asks for when they want it.
+    ///
+    /// It is not equipment and nothing is bought for it — see <see cref="DropHook"/>.
+    /// </summary>
+    private static void EnsureDropHookIsOnOffer(AppState s)
+    {
+        if (s.Company.Terminals.Count == 0) return;
+        if (s.Trailers.Any(t => DropHook.Is(t.Type))) return;
+
+        DropHook.Ensure(s);
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "career",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"{s.Company.Name} runs drop-and-hook work as well. It is on the board as a trailer you can " +
+                "be put on or ask for: Freight Market jobs, the shipper's trailer, dropped at the other end " +
+                "— no loading, no unloading, and nothing of ours to damage.",
         });
     }
 
@@ -801,7 +829,11 @@ public static class Migrations
     {
         var trucks = s.Trucks.Count(t => !t.InGameGarage && t.Unit != s.Driver.AssignedTruckUnit
                                          && !s.HiredDrivers.Any(h => h.AssignedTruckUnit == t.Unit));
-        var trailers = s.Trailers.Count(t => !t.InGameGarage && t.Unit != s.Driver.AssignedTrailerUnit
+        // The drop-and-hook slot is deliberately not in an ATS garage — there is nothing to buy — so it
+        // looks exactly like backdrop equipment to a count that only reads that flag. Offering to trim it
+        // would take away the arrangement itself.
+        var trailers = s.Trailers.Count(t => !t.InGameGarage && !DropHook.Is(t.Type)
+                                             && t.Unit != s.Driver.AssignedTrailerUnit
                                              && !s.HiredDrivers.Any(h => h.AssignedTrailerUnit == t.Unit));
         var yards = s.Company.Terminals.Count(t => !t.IsHeadquarters
                                                    && !DiscoveryService.IsDiscovered(s, t.City, t.State));
@@ -816,6 +848,9 @@ public static class Migrations
     public static List<string> TrimBackdropEquipment(AppState s, bool includeYards)
     {
         var notes = new List<string>();
+
+        // Same again for the trimmer: never delete the arrangement.
+        bool TrailerIsArrangement(Trailer t) => DropHook.Is(t.Type);
 
         bool TruckIsReal(Truck t) => t.InGameGarage
                                      || t.Unit == s.Driver.AssignedTruckUnit

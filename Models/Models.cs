@@ -408,6 +408,22 @@ public class Driver
     /// NOT invented — the app cannot see which shippers exist in the player's game or their mods, so
     /// the player names it from what they actually see on the board, and dispatch filters to it.
     /// </summary>
+    /// <summary>
+    /// The driver asked for what they are pulling, and got it.
+    ///
+    /// A trailer handed out by operations is a posting and gets moved around with the freight mix. One
+    /// the driver asked for is an arrangement, and moving them off it would make the asking pointless.
+    /// So while this is set they are left alone, and only another request changes it — including a
+    /// request to go back to whatever operations wants, which clears it.
+    /// </summary>
+    public bool TrailerByRequest { get; set; }
+
+    /// <summary>
+    /// What the driver's own game calls their dedicated customer, when a renaming mod means it is not
+    /// what the base game calls it. Empty means the two agree.
+    /// </summary>
+    public string DedicatedVanillaName { get; set; } = "";
+
     public bool OnDedicated { get; set; }
     /// <summary>The customer, as they appear in ATS. Blank while the driver has not named them yet.</summary>
     public string DedicatedAccount { get; set; } = "";
@@ -508,6 +524,14 @@ public class PayPlan
     public decimal ReeferCpm { get; set; } = 0.03m;
     public decimal HazmatCpm { get; set; } = 0.04m;
     public decimal OversizeCpm { get; set; } = 0.06m;
+
+    /// <summary>
+    /// Extra per loaded mile for a dedicated drop-and-hook arrangement.
+    ///
+    /// Above every other premium here on purpose. The others are paid because the freight is awkward;
+    /// this one is paid because the seat is competed for.
+    /// </summary>
+    public decimal DedicatedDropHookCpm { get; set; } = 0.08m;
     public decimal TarpPay { get; set; } = 50m;
     public decimal ExtraStopPay { get; set; } = 25m;
     /// <summary>Paid per hour after DetentionFreeHours at a shipper/receiver.</summary>
@@ -1871,6 +1895,15 @@ public class AppSettings
     public string HosModName { get; set; } = "";
     public bool UsesHosMod { get; set; }
     public bool UsesEconomyMod { get; set; }
+
+    /// <summary>
+    /// Whether the player runs a mod that renames the in-game companies to real brands.
+    ///
+    /// "" not asked, "yes", "no". Only ever asked at the moment a dedicated account is assigned, because
+    /// that is the only time a company name has to match what their game shows. Nobody running ordinary
+    /// freight should be asked about a mod they may not have.
+    /// </summary>
+    public string RenamesCompanies { get; set; } = "";
     public List<string> MapMods { get; set; } = new();
 
     // --- HOS rule set (editable; the driver's mod always wins)

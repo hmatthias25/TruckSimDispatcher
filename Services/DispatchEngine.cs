@@ -97,6 +97,11 @@ public static class DispatchEngine
         var homeNote = HomeTime.BoardNote(HomeTime.Status(s));
         if (homeNote != null) decision.DispatchNotes.Add(homeNote);
 
+        // Which ATS market these jobs should have come off. Said on every board rather than once at
+        // assignment, because the game puts the two side by side and picking the wrong one hands the
+        // driver a trailer they are not supposed to have.
+        if (DropHook.BoardNote(s) is { } dhNote) decision.DispatchNotes.Add(dhNote);
+
         // Empty miles are worked out once, at authorisation, from the reading on file. If the driver has
         // plainly moved since their last close-out without reporting a new one, say so now — after the
         // load is booked the figure is fixed and the warning is useless.
@@ -916,6 +921,9 @@ public static class DispatchEngine
 
     private static bool TrailerMatches(string have, string need)
     {
+        // On drop and hook the driver has no trailer of their own — they pull whatever the job comes
+        // with. There is nothing for the listing to fail to match, so everything fits.
+        if (DropHook.Is(have)) return true;
         if (string.IsNullOrWhiteSpace(have) || string.IsNullOrWhiteSpace(need)) return true;
         have = have.Trim(); need = need.Trim();
         if (have.Equals(need, StringComparison.OrdinalIgnoreCase)) return true;
@@ -942,6 +950,12 @@ public static class DispatchEngine
     /// </summary>
     public static string DivisionFor(BoardLoad load, Trailer? trailer)
     {
+        // The one case where the listing wins: a drop-and-hook driver is pulling the shipper's trailer,
+        // so the listed type IS what is hooked. Reading the arrangement as a division would put every
+        // load under "Drop & Hook" and fail the company-divisions check on all of them.
+        if (DropHook.Is(trailer?.Type))
+            return string.IsNullOrWhiteSpace(load.TrailerType) ? "Dry Van" : DivisionForTrailer(load.TrailerType);
+
         if (trailer != null && !string.IsNullOrWhiteSpace(trailer.Type)) return DivisionForTrailer(trailer.Type);
         if (!string.IsNullOrWhiteSpace(load.TrailerType)) return DivisionForTrailer(load.TrailerType);
         return "Dry Van";
