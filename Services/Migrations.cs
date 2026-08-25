@@ -28,6 +28,7 @@ public static class Migrations
         ClearLateMarksFromUnreachableSlots(s);
         WipeLateIncidents(s);
         RebookSlotsThatEatTheClock(s);
+        MeasureDeliveryFromArrivalNotRelease(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -193,6 +194,68 @@ public static class Migrations
                       "the delivery window without checking the hours left in the day, so waiting for the " +
                       "appointment and then unloading would have run the clock out. Check the Active tab for " +
                       "the new time.",
+        });
+    }
+
+    /// <summary>
+    /// Puts delivery times back to the arrival, and takes back the Late marks that came of not doing so.
+    ///
+    /// <c>DeliveredGameTime</c> has always meant arrival — it is what the appointment is judged against
+    /// and what dock time is measured from. But the close-out form prefills it with the clock as it
+    /// stands, and for anybody who logs Begin and End unload that is the clock <b>after</b> the unload.
+    /// Two hours on a dock then read as two hours of lateness: the receiver's time charged to the driver,
+    /// who was there on time and could not make the dock go any faster.
+    ///
+    /// So any delivered load carrying a <c>BeginUnload</c> stamp earlier than its recorded delivery time
+    /// has that time moved back to the stamp, and its service result judged again — by
+    /// <see cref="TripService.LateByTheClock"/>, the same rule the live path runs, because a second copy
+    /// of the appointment comparison would drift and the one nobody looks at would be the one rewriting
+    /// history.
+    ///
+    /// A load that is still late on the corrected time stays late. That one is real, and clearing it
+    /// would be falsifying the record in the other direction.
+    /// </summary>
+    private static void MeasureDeliveryFromArrivalNotRelease(AppState s)
+    {
+        if (s.SchemaVersion >= 11) return;
+        s.SchemaVersion = 11;
+
+        var moved = 0;
+        var cleared = new List<string>();
+
+        foreach (var t in s.Trips.Where(x => x.Status == "Delivered" && x.Kind == "Freight"))
+        {
+            var arrival = TripService.ArrivalFromLog(t, t.DeliveredGameTime, out _);
+            if (string.Equals(arrival, t.DeliveredGameTime, StringComparison.Ordinal)) continue;
+
+            t.DeliveredGameTime = arrival;
+            moved++;
+
+            if (t.ServiceResult != "Late") continue;
+            if (TripService.LateByTheClock(s, t, out _) is not false) continue;
+
+            t.ServiceResult = "OnTime";
+            cleared.Add(t.Number);
+        }
+
+        if (moved == 0) return;
+
+        var numbers = cleared.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var notes = numbers.Count == 0 ? 0
+            : RemoveLateNotes(s, i => numbers.Contains(i.TripNumber ?? ""));
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "dispatch",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"Corrected the delivery time on {moved} closed load(s). They had been recorded at the time " +
+                "the close-out was filed rather than the time you got to the receiver, so however long the " +
+                "dock took was being counted as lateness. Arrival now comes off your Begin unload log." +
+                (cleared.Count == 0
+                    ? " No service results changed."
+                    : $" {cleared.Count} of them go back to on time: {string.Join(", ", cleared)}." +
+                      (notes > 0 ? $" {notes} late note(s) off the safety file with them." : "")),
         });
     }
 

@@ -359,7 +359,17 @@ public static class TripService
         var audit = new TripAudit { Trip = trip };
 
         // ---- record what the driver reported
-        trip.DeliveredGameTime = string.IsNullOrWhiteSpace(req.DeliveredGameTime) ? req.GameTime : req.DeliveredGameTime;
+        //
+        // DeliveredGameTime means ARRIVAL — it is what the appointment is judged against, and what the
+        // dock time is measured from further down. The close-out form prefills it with the clock as it
+        // stands, which for anybody who logs Begin/End unload is the clock AFTER the unload. Two hours on
+        // a dock then read as two hours of lateness, which is the receiver's time being charged to the
+        // driver: they were there on time and could not make the dock go faster.
+        //
+        // So the log wins where there is one. See ArrivalFromLog.
+        var reportedArrival = string.IsNullOrWhiteSpace(req.DeliveredGameTime) ? req.GameTime : req.DeliveredGameTime;
+        trip.DeliveredGameTime = ArrivalFromLog(trip, reportedArrival, out var arrivalNote);
+        if (arrivalNote != null) audit.ServiceFindings.Add(arrivalNote);
         // Miles come off the odometer, because that is the number ATS shows. The typed figure is only
         // an override for a reading that was missed or fat-fingered.
         var mileage = DeriveMiles(s, trip, req.ActualMiles, req.EndOdometer);
@@ -1171,10 +1181,51 @@ public static class TripService
         string.IsNullOrWhiteSpace(f.City) ? (string.IsNullOrWhiteSpace(f.Vendor) ? "an unnamed stop" : f.Vendor)
                                           : DispatchEngine.Place(f.City, f.State);
 
-    private static bool DetermineLate(AppState s, Trip trip, CompleteTripRequest req, out string note)
+    /// <summary>
+    /// When the driver actually got to the receiver.
+    ///
+    /// A <c>BeginUnload</c> event is the arrival, logged at the dock rather than typed at close-out, and
+    /// it beats what was typed — the same principle the app already applies to facility time, where a
+    /// logged pair beats any duration entered by hand.
+    ///
+    /// The exception runs one way only: a reported time <b>earlier</b> than the log is kept, because
+    /// sitting in a queue from noon and backing in at half past is a real thing and the arrival was noon.
+    /// A reported time later than the log is not credible — unloading cannot start before arriving — so
+    /// it is the close-out clock leaking in, and it is exactly the bug.
+    /// </summary>
+    public static string ArrivalFromLog(Trip trip, string reported, out string? note)
     {
+        note = null;
+
+        var logged = trip.Events.Where(e => e.Kind == "BeginUnload")
+            .Select(e => GameClock.TryParse(e.GameTime))
+            .Where(d => d != null).Min();
+        if (logged == null) return reported;
+
+        var said = GameClock.TryParse(reported);
+        if (said != null && said.Value <= logged.Value) return reported;
+
+        var moved = GameClock.Format(logged.Value);
+        if (said != null)
+            note = $"Taking {GameClock.Pretty(moved)} as your arrival — that is when you logged Begin unload. " +
+                   $"You closed the load out at {GameClock.Pretty(said.Value)}, which is after the dock had you, " +
+                   "and time on a dock is the receiver's, not yours.";
+        return moved;
+    }
+
+    /// <summary>
+    /// Late measured against the clock alone: no request, no reported flag, just what is on the trip.
+    ///
+    /// Split out so the migration that reverses this bug judges by exactly the rule the live path uses.
+    /// Two implementations of the appointment-and-grace comparison would drift, and the one nobody looks
+    /// at would be the one rewriting history.
+    ///
+    /// Null when there are no timestamps to measure by, which is the caller's cue to fall back.
+    /// </summary>
+    public static bool? LateByTheClock(AppState s, Trip trip, out string note)
+    {
+        note = "";
         var grace = Math.Max(0, s.Settings.AppointmentGraceHours);
-        if (trip.Kind != "Freight") { note = "Non-revenue move — no service window."; return false; }
 
         var due = GameClock.TryParse(trip.DueGameTime);
         var del = GameClock.TryParse(trip.DeliveredGameTime);
@@ -1190,45 +1241,51 @@ public static class TripService
                 $"{GameClock.Pretty(opens)}. They would not have taken it yet — check the delivery time, " +
                 "or correct the window if that is what is wrong.";
 
-        if (due != null && del != null)
+        if (due == null || del == null) return null;
+
+        var margin = (due.Value - del.Value).TotalHours;
+
+        // Missing the booked slot is not instantly a service failure — traffic happens and a
+        // receiver with the doors still open is not writing you up over ninety minutes. Past the
+        // grace it counts, even though the window is still open. Where the receiver took the load
+        // whenever it arrived, there was no slot to miss.
+        // Never fail a driver against a slot our own plan did not reach. Placement keeps that from
+        // happening at dispatch, but a plan can change underneath a load — a reroute, a breakdown,
+        // an operational 34 — and leave an old slot behind it. This produced a false strike on a
+        // real career once; it does not get to happen twice.
+        var plannedArrival = GameClock.TryParse(trip.FeasibilityAtDispatch?.ProjectedArrivalGameTime ?? "");
+
+        if (margin >= 0 && !trip.ReceiverTakesEarly
+            && GameClock.TryParse(trip.AppointmentGameTime) is { } slot
+            && (plannedArrival == null || plannedArrival.Value <= slot.AddHours(grace)))
         {
-            var margin = (due.Value - del.Value).TotalHours;
-
-            // Missing the booked slot is not instantly a service failure — traffic happens and a
-            // receiver with the doors still open is not writing you up over ninety minutes. Past the
-            // grace it counts, even though the window is still open. Where the receiver took the load
-            // whenever it arrived, there was no slot to miss.
-            // Never fail a driver against a slot our own plan did not reach. Placement keeps that from
-            // happening at dispatch, but a plan can change underneath a load — a reroute, a breakdown,
-            // an operational 34 — and leave an old slot behind it. This produced a false strike on a
-            // real career once; it does not get to happen twice.
-            var plannedArrival = GameClock.TryParse(trip.FeasibilityAtDispatch?.ProjectedArrivalGameTime ?? "");
-
-            if (margin >= 0 && !trip.ReceiverTakesEarly
-                && GameClock.TryParse(trip.AppointmentGameTime) is { } slot
-                && (plannedArrival == null || plannedArrival.Value <= slot.AddHours(grace)))
+            var pastSlot = (del.Value - slot).TotalHours;
+            if (pastSlot > grace)
             {
-                var pastSlot = (del.Value - slot).TotalHours;
-                if (pastSlot > grace)
-                {
-                    note = $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(slot)} " +
-                           $"appointment — {Hhmm.Of(pastSlot)} past the slot, beyond the {Hhmm.Of(grace)} " +
-                           "grace. Inside the window, but the dock was expecting you earlier.";
-                    return true;
-                }
-                if (pastSlot > 0)
-                {
-                    note = $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(slot)} " +
-                           $"appointment — {Hhmm.Of(pastSlot)} past the slot, inside the {Hhmm.Of(grace)} grace.";
-                    return false;
-                }
+                note = $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(slot)} " +
+                       $"appointment — {Hhmm.Of(pastSlot)} past the slot, beyond the {Hhmm.Of(grace)} " +
+                       "grace. Inside the window, but the dock was expecting you earlier.";
+                return true;
             }
-
-            note = margin >= 0
-                ? $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Hhmm.Of(margin)} early."
-                : $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Hhmm.Of(Math.Abs(margin))} LATE.";
-            return margin < 0;
+            if (pastSlot > 0)
+            {
+                note = $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(slot)} " +
+                       $"appointment — {Hhmm.Of(pastSlot)} past the slot, inside the {Hhmm.Of(grace)} grace.";
+                return false;
+            }
         }
+
+        note = margin >= 0
+            ? $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Hhmm.Of(margin)} early."
+            : $"Delivered {GameClock.Pretty(del.Value)} against a {GameClock.Pretty(due.Value)} appointment — {Hhmm.Of(Math.Abs(margin))} LATE.";
+        return margin < 0;
+    }
+
+    private static bool DetermineLate(AppState s, Trip trip, CompleteTripRequest req, out string note)
+    {
+        if (trip.Kind != "Freight") { note = "Non-revenue move — no service window."; return false; }
+
+        if (LateByTheClock(s, trip, out note) is { } byClock) return byClock;
 
         if (req.DeliveredLate.HasValue)
         {

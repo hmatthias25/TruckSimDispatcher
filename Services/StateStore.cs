@@ -266,6 +266,8 @@ public class StateStore
         if (!File.Exists(path)) throw new FileNotFoundException("Backup not found.", name);
         var loaded = JsonSerializer.Deserialize<AppState>(File.ReadAllText(path), Json)
                      ?? throw new InvalidDataException("Backup is not a valid career file.");
+        // Same reason as ImportJson: a backup is as old as the build that wrote it.
+        Migrations.Apply(loaded);
         lock (_gate)
         {
             Snapshot("pre-restore");
@@ -311,6 +313,10 @@ public class StateStore
     {
         var loaded = JsonSerializer.Deserialize<AppState>(json, Json)
                      ?? throw new InvalidDataException("Not a valid career file.");
+        // A file coming in this way is exactly as old as one found on disk at startup, and until now only
+        // startup migrated. Import, adopt and restore all landed an un-migrated career in memory and then
+        // saved it — so the fixes ran late or, if the version had already been stamped forward, never.
+        Migrations.Apply(loaded);
         lock (_gate)
         {
             if (File.Exists(_file)) Snapshot("pre-import");

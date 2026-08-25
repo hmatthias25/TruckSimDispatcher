@@ -151,6 +151,20 @@ function releasedIso() {
     : toIso(day + 1, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
 }
 
+/**
+ * When the driver got to the receiver, off the trip log.
+ *
+ * This is what the appointment is judged against, so it is arrival — not the moment the load is being
+ * closed out. Those are the same thing only if you close out the second you back in. Log Begin unload
+ * and sit on a dock for two hours and they are two hours apart, and counting that as lateness charges
+ * the receiver's time to the driver.
+ */
+function arrivedFromLog(t) {
+  const hit = ((t && t.events) || []).filter((e) => e.kind === 'BeginUnload')
+    .map((e) => e.gameTime).filter(Boolean).sort();
+  return hit[0] || '';
+}
+
 /** Pretty game time — what the player sees everywhere. */
 function gt(v) {
   if (!v) return '—';
@@ -1559,7 +1573,7 @@ function viewActive() {
     <div class="panel">
       <div class="panel-head"><h2>Close the load out</h2><span class="sub">Operations audits the trip from these numbers.</span></div>
       <div class="grid2">
-        ${dayTimeInput('c-time', S.status.gameTime, 'Delivered at (game)')}
+        ${dayTimeInput('c-time', arrivedFromLog(t) || S.status.gameTime, 'Arrived at the receiver (game)')}
         <label>Ending odometer<input id="c-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
         <label>Miles run — override<input id="c-miles" type="number" step="1" placeholder="from odometer"></label>
         <label>Actual payout $<input id="c-rev" type="number" step="1" value="${Math.round(t.gameRevenue)}"></label>
@@ -1572,6 +1586,12 @@ function viewActive() {
         <label>Cargo damage %<input id="c-cargo" type="number" step="0.1" min="0" max="100" value="0"></label>
         <label>Fuel % now<input id="c-fuelpct" type="number" step="1" min="0" max="100" value="${S.status.fuelPct}"></label>
       </div>
+      ${arrivedFromLog(t) ? `<p class="hint">Arrival is off your <b>Begin unload</b> log, not the clock as it
+        stands now — the appointment is judged against when you got there, and however long the dock then
+        took is the receiver's time, not yours. Change it only if you were on the property earlier than you
+        logged.</p>` : `<p class="hint">This is when you <em>arrived</em>, which is what the appointment is
+        judged against — not when you are filling this in. Log <b>Begin unload</b> when you back in and it
+        fills itself.</p>`}
       <p class="hint" id="c-milehint"></p>
       ${fuelStopsHtml(t)}
       ${clocksAtDeliveryHtml()}

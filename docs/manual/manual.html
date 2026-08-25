@@ -135,7 +135,7 @@
 
 <!-- ============================================================ COVER -->
 <div class="page cover">
-  <div class="kicker">User manual &middot; v0.20 alpha</div>
+  <div class="kicker">User manual &middot; v0.21 alpha</div>
   <h1>TruckSim<br>Dispatcher</h1>
   <div class="rulebar"></div>
   <div class="sub">A dispatch office for American&nbsp;Truck&nbsp;Simulator.<br>
@@ -146,13 +146,13 @@
     <div><span>Runs on</span> Windows &middot; one portable .exe &middot; no install</div>
     <div><span>Needs</span> Nothing. No internet, no account, no runtime</div>
     <div><span>Your game</span> ATS, any DLC, mods welcome</div>
-    <div><span>This manual</span> Covers v0.20 alpha &middot; the build is shown in the app header</div>
+    <div><span>This manual</span> Covers v0.21 alpha &middot; the build is shown in the app header</div>
   </div>
 
   <div class="alphabox">
     <div class="ab-tag">Alpha</div>
     <div>
-      <b>This is v0.20 alpha and is not ready for release.</b>
+      <b>This is v0.21 alpha and is not ready for release.</b>
       It is being play-tested. Expect rough edges, expect things to change, and expect the occasional
       bug. Keep backups of your career file — Settings → Data will take one for you.
       Please report anything that looks wrong.
@@ -1371,8 +1371,7 @@
     physically be there, and neither will the app. Where even that is past the deadline, no slot is quoted
     at all and the window closing governs on its own.</p>
 
-  <p>Turning up before your slot is sitting on their gate, not slack &mdash; the card says so on any load
-    whose plan lands early. Aim for the slot.</p>
+  <p>Turning up before your slot is sitting on their gate, not slack. Aim for the slot.</p>
 
   <div class="rule">
     <h4>Grace, then it counts</h4>
@@ -1385,6 +1384,9 @@
     <p style="margin-top:6pt">It can only ever count against you for a slot the plan actually reached. If
       dispatch's own projected arrival was later than the appointment, the appointment was never yours to
       make and it is not held against you.</p>
+    <p style="margin-top:6pt"><b>Measured from when you arrive, not when you leave.</b> Dock time is the
+      receiver's, so a two-hour unload is never two hours of lateness. Log <b>Begin unload</b> when you
+      back in and the close-out takes its delivery time from that.</p>
   </div>
 
   <h3>Sometimes they will just take it</h3>
@@ -1626,9 +1628,9 @@
 
   <table>
     <tr><th style="width:1.6in">Field</th><th>Notes</th></tr>
-    <tr><td>Delivered at</td><td>Game day and time. This is what decides on-time versus late against the appointment.</td></tr>
+    <tr><td>Arrived at the receiver</td><td>When you <em>got there</em> — what decides on-time versus late. Log <b>Begin unload</b> and it fills itself; change it only if you were on the property earlier.</td></tr>
     <tr><td>Ending odometer</td><td>The number ATS shows. Miles run are worked out from it — end minus start, less the deadhead already on the dispatch.</td></tr>
-    <tr><td>Miles run — override</td><td>Leave blank and the odometer decides. Fill it in only when the reading was missed or mistyped; what you type wins.</td></tr>
+    <tr><td>Miles run — override</td><td>Leave blank and the odometer decides. Fill it in only when the reading was missed or mistyped.</td></tr>
     <tr><td>Actual payout</td><td>What ATS actually paid, which may differ from the board listing.</td></tr>
     <tr><td>Fuel stops</td><td>Add any you did not log. Each row is gallons, price, city.</td></tr>
     <tr><td>Damage after</td><td>Read off the truck browser. A jump of 10 points or more opens an incident.</td></tr>
@@ -4391,7 +4393,7 @@
       if that is genuinely what you want.</p>
   </div>
 
-  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.20 alpha</b>.</p>
+  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.21 alpha</b>.</p>
 
   <h3>Updating without losing your career</h3>
   <p>Replace <code>TruckSimDispatcher.exe</code> in the folder you are already using and leave the
