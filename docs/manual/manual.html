@@ -135,7 +135,7 @@
 
 <!-- ============================================================ COVER -->
 <div class="page cover">
-  <div class="kicker">User manual &middot; v0.22 alpha</div>
+  <div class="kicker">User manual &middot; v0.23 alpha</div>
   <h1>TruckSim<br>Dispatcher</h1>
   <div class="rulebar"></div>
   <div class="sub">A dispatch office for American&nbsp;Truck&nbsp;Simulator.<br>
@@ -146,13 +146,13 @@
     <div><span>Runs on</span> Windows &middot; one portable .exe &middot; no install</div>
     <div><span>Needs</span> Nothing. No internet, no account, no runtime</div>
     <div><span>Your game</span> ATS, any DLC, mods welcome</div>
-    <div><span>This manual</span> Covers v0.22 alpha &middot; the build is shown in the app header</div>
+    <div><span>This manual</span> Covers v0.23 alpha &middot; the build is shown in the app header</div>
   </div>
 
   <div class="alphabox">
     <div class="ab-tag">Alpha</div>
     <div>
-      <b>This is v0.22 alpha and is not ready for release.</b>
+      <b>This is v0.23 alpha and is not ready for release.</b>
       It is being play-tested. Expect rough edges, expect things to change, and expect the occasional
       bug. Keep backups of your career file — Settings → Data will take one for you.
       Please report anything that looks wrong.
@@ -1768,6 +1768,12 @@
   <p>So it measures instead. Every Begin/End pair you log trains the average <b>for that trailer
     type</b>, and the planner uses the figure for whatever is hooked.</p>
 
+  <p>The type it files a load under is <b>the trailer on the back of your truck</b>, not the one the job
+    listing asked for. This app only runs cargo-market work &mdash; your own trailer, every time &mdash;
+    so there is one trailer involved and it is yours. The listing's trailer type is a gate (can what I
+    have haul this), never the thing being loaded. Filing loads the other way round grew learned figures
+    for trailers a career had never pulled.</p>
+
   <figure class="shot-sm" style="max-width:54%">
     <img src="img/facility-times.png" alt="Dock time by trailer, in Settings">
     <figcaption>Four measured reefer loads have moved it off the 3.0-hour estimate to a real 3.5.</figcaption>
@@ -1811,9 +1817,10 @@
     correcting one says what you should have typed then.</p>
 
   <div class="rule">
-    <h4>Recompute from my trip logs</h4>
-    <p>If a bad figure is already baked in, the button under the dock-time table in <b>Settings</b> does
-      the same thing on demand.</p>
+    <h4>Recompute dock times from my trip logs</h4>
+    <p>If a bad figure is already baked in, that button does the same thing on demand. It is in
+      <b>Settings &rarr; Operational assumptions</b>, directly under the <i>Dock time by trailer</i>
+      disclosure &mdash; you do not have to expand the table to reach it.</p>
     <p style="margin-top:6pt">It has to work this way round. The average keeps a <em>figure</em> and a
       count, not the readings behind it, so there is no bad sample sitting there to be deleted &mdash;
       deriving the whole thing a second time from the logs is the only honest way to un-teach one.</p>
@@ -4476,7 +4483,7 @@
       if that is genuinely what you want.</p>
   </div>
 
-  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.22 alpha</b>.</p>
+  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.23 alpha</b>.</p>
 
   <h3>Updating without losing your career</h3>
   <p>Replace <code>TruckSimDispatcher.exe</code> in the folder you are already using and leave the

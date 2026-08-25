@@ -4131,12 +4131,12 @@ function facilityTimesHtml() {
           : `<button class="btn tiny ghost" data-act="facility-set" data-type="${esc(f.trailerType)}" data-i="${i}"
                title="Fix these figures">Set</button>`}</td>
       </tr>`).join('')}</tbody></table></div>
-    <div class="row-actions" style="margin-top:8px">
-      <span class="hint" style="flex:1;margin:0">Learned a bad figure off a mistyped stamp? Correct the
-        entry on the trip log, then work these out again from every trip.</span>
-      <button class="btn tiny" data-act="facility-rebuild">Recompute from my trip logs</button>
-    </div>
-  </details>`;
+  </details>
+  <div class="row-actions" style="margin-top:8px">
+    <span class="hint" style="flex:1;margin:0">Learned a bad figure off a mistyped stamp? Correct the
+      entry on the trip log, then work these out again from every trip.</span>
+    <button class="btn tiny" data-act="facility-rebuild">Recompute dock times from my trip logs</button>
+  </div>`;
 }
 
 /* ============================================================ SETTINGS */

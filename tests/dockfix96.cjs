@@ -160,6 +160,50 @@ const dock = async () => ((await api('/bootstrap')).views.facilityTimes || [])
   await api(`/trips/${anyTrip.id}/event/${anyEv.id}`, 'POST', { detail: 'noted after the fact' });
   ok('the clock is where it was', (await api('/bootstrap')).status.gameTime === clockBefore, clockBefore);
 
+  head('10. #98 The dock average is keyed to the trailer on the truck, not the listing');
+  // This app only runs cargo-market loads — your own trailer, every time — so the listing's trailer type
+  // is a gate ("can what I have haul this"), never the thing being loaded.
+  const hooked = (await api('/bootstrap')).views.trailer;
+  ok('the driver is pulling one trailer', !!hooked?.type, hooked?.type || 'none');
+
+  await place('06:00');
+  await api('/board/clear', 'POST', {});
+  const listed = await api('/board/add', 'POST', {
+    cargo: 'Excavator', trailerType: hooked.type,       // gated on what we can pull
+    originCity: 'Denver', originState: 'CO', destCity: 'Aurora', destState: 'CO',
+    loadedMiles: 22, deadheadMiles: 0, gameRevenue: 1200, deadlineHours: 20,
+    weightLbs: 40000, appointmentOpensHours: 2,
+  });
+  const auth = await api('/dispatch/authorize', 'POST', { loadId: listed.evaluations[0].load.id, overrideTight: true });
+  ok('the trip is filed against the trailer that went out',
+    auth.trip.trailerType === hooked.type, `${auth.trip.trailerType} (hooked ${hooked.type})`);
+  ok('and it names the unit that was pulled', !!auth.trip.trailerUnit, auth.trip.trailerUnit || 'none');
+  await api(`/trips/${auth.trip.id}/cancel`, 'POST', { reason: 'fixture' });
+
+  head('11. #98 The migration re-keys a career that learned against a listing');
+  const raw = await api('/export');
+  const victims = raw.trips.filter((x) => x.status === 'Delivered' && x.trailerUnit);
+  ok('there are closed loads to re-key', victims.length > 0, `${victims.length} trip(s)`);
+  const trueType = victims[0].trailerType;
+  for (const v of victims) v.trailerType = 'Lowboy';       // what a misread listing produced
+  raw.settings.facilityTimes = [
+    { trailerType: 'Lowboy', loadingHours: 6, unloadingHours: 7, samples: 4, manual: false }];
+  raw.schemaVersion = 11;
+
+  const back = await api('/import', 'POST', raw);
+  const rekeyed = (back.trips || []).filter((x) => x.status === 'Delivered' && x.trailerUnit);
+  ok('every closed load is back on the trailer that pulled it',
+    rekeyed.every((x) => x.trailerType === trueType), rekeyed.map((x) => x.trailerType).join(', '));
+  const rows = back.views.facilityTimes || [];
+  const phantom = rows.find((f) => f.trailerType === 'Lowboy');
+  ok('the phantom Lowboy row has no learned loads behind it any more',
+    !phantom || phantom.samples === 0, `Lowboy samples=${phantom ? phantom.samples : 'gone'}`);
+  const real = rows.find((f) => f.trailerType === trueType);
+  ok(`the ${trueType} row carries them instead`, real && real.samples > 0, `${real?.samples} sample(s)`);
+  ok('and the career log says what moved',
+    (back.events || []).some((e) => /Corrected the trailer on/i.test(e.message || '')),
+    (back.events || []).find((e) => /Corrected the trailer on/i.test(e.message || ''))?.message?.slice(0, 150) || '(none)');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });

@@ -1056,7 +1056,17 @@ public static class DispatchEngine
             Status = "Authorized",
             Cargo = load.Cargo,
             Division = division,
-            TrailerType = string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type ?? "" : load.TrailerType,
+            // The trailer on the back of the truck, not the one the listing asked for.
+            //
+            // This app does not do freight-market work — every load is pulled with the company's own
+            // trailer — so there is exactly one trailer involved and it is the assigned one. Recording
+            // the listing's type instead trained the dock average against a category off a job screen:
+            // a load read as "Lowboy" taught the Lowboy average while a flatbed was what actually got
+            // loaded, and the career grew rows for trailers it had never pulled.
+            //
+            // The listing's own TrailerType keeps its real job as the GATE — can what I have haul this —
+            // which is what QualificationFails and the fit check read. That is unchanged.
+            TrailerType = string.IsNullOrWhiteSpace(trailer?.Type) ? load.TrailerType ?? "" : trailer!.Type,
             Shipper = load.Shipper,
             OriginCity = string.IsNullOrWhiteSpace(load.OriginCity) ? s.Status.LocationCity : load.OriginCity,
             OriginState = string.IsNullOrWhiteSpace(load.OriginState) ? s.Status.LocationState : load.OriginState,

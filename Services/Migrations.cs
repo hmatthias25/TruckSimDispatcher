@@ -30,6 +30,7 @@ public static class Migrations
         RebookSlotsThatEatTheClock(s);
         MeasureDeliveryFromArrivalNotRelease(s);
         GiveTripEventsIds(s);
+        KeyDockTimesToTheTrailerPulled(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
         EnsureAssignedEquipmentIsInGarage(s);
@@ -278,6 +279,60 @@ public static class Migrations
                     e.Id = Guid.NewGuid().ToString("N")[..8];
                     seen.Add(e.Id);
                 }
+    }
+
+    /// <summary>
+    /// Puts every trip's trailer type back to the trailer that was actually pulled, and rebuilds the
+    /// dock averages off the corrected history.
+    ///
+    /// A trip used to record the trailer the JOB asked for. Since this app only ever runs cargo-market
+    /// loads — the driver's own trailer, every time — that was a category off a job screen standing in
+    /// for the thing being loaded. A listing read as "Lowboy" trained the Lowboy average while a flatbed
+    /// was on the back of the truck, and careers grew learned figures for trailers they had never pulled.
+    ///
+    /// <see cref="Trip.TrailerUnit"/> has always recorded which trailer went out, so the history is
+    /// recoverable. Rebuilding afterwards is the point of doing it here: the rebuild reads
+    /// <c>Trip.TrailerType</c>, so re-keying without it would faithfully reconstruct the same wrong rows.
+    /// </summary>
+    private static void KeyDockTimesToTheTrailerPulled(AppState s)
+    {
+        if (s.SchemaVersion >= 12) return;
+        s.SchemaVersion = 12;
+
+        var moved = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var t in s.Trips)
+        {
+            if (string.IsNullOrWhiteSpace(t.TrailerUnit)) continue;
+
+            var pulled = s.Trailers.FirstOrDefault(x =>
+                x.Unit.Equals(t.TrailerUnit, StringComparison.OrdinalIgnoreCase)
+                || (!string.IsNullOrWhiteSpace(x.GameId)
+                    && x.GameId.Equals(t.TrailerUnit, StringComparison.OrdinalIgnoreCase)));
+            if (pulled == null || string.IsNullOrWhiteSpace(pulled.Type)) continue;
+            if (pulled.Type.Equals(t.TrailerType, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var key = $"{t.TrailerType} → {pulled.Type}";
+            moved[key] = moved.TryGetValue(key, out var c) ? c + 1 : 1;
+            t.TrailerType = pulled.Type;
+        }
+
+        if (moved.Count == 0) return;
+
+        // Re-key first, rebuild second. The rebuild reads the field we have just corrected.
+        FacilityLearning.Rebuild(s);
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "system",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"Corrected the trailer on {moved.Values.Sum()} closed load(s): " +
+                string.Join(", ", moved.Select(x => $"{x.Value} × {x.Key}")) + ". " +
+                "They had been filed against the trailer the job listing asked for rather than the one on " +
+                "the back of the truck, so dock times were being learned for trailers you have never " +
+                "pulled. The averages have been worked out again from the corrected history.",
+        });
     }
 
     private static void WipeLateIncidents(AppState s)
