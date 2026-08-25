@@ -208,6 +208,34 @@ const view = async () => (await api('/bootstrap')).views;
   const opts = (await api('/bootstrap')).views.requests.trailerTypes || [];
   ok('it is among what a driver can end up on', opts.includes('Drop & Hook'), opts.join(', '));
 
+  head('15. It dispatches with the garage flag off — nothing to tick in ATS');
+  // The question this answers: do I have to tell the app the arrangement is in my ATS garage before I
+  // get jobs? No. Nothing gates on that flag, and here is the proof rather than the assurance.
+  // Section 13 moved the driver off it to test the trimmer, so put them back on first.
+  const putBack = await api('/export');
+  putBack.driver.assignedTrailerUnit = 'DH-1';
+  await api('/import', 'POST', putBack);
+  await place('Omaha', 'NE', 12);
+  const slotNow = (await api('/bootstrap')).trailers.find((x) => x.type === 'Drop & Hook');
+  ok('still not in a garage', slotNow.inGameGarage === false, `inGameGarage=${slotNow.inGameGarage}`);
+  ok('and the driver is on it', (await view()).dropHook.on === true, 'on');
+
+  const blockers = (await view()).dispatchBlockers || [];
+  ok('nothing is blocking dispatch', blockers.length === 0, blockers.join(' | ') || 'clear');
+  ok('and nothing mentions a garage', !blockers.some((x) => /garage/i.test(x)), 'no garage talk');
+
+  await api('/board/clear', 'POST', {});
+  const runnable = await api('/board/add', 'POST', {
+    cargo: 'Palletised goods', trailerType: 'Dry Van',
+    originCity: 'Omaha', originState: 'NE', destCity: 'Des Moines', destState: 'IA',
+    loadedMiles: 135, deadheadMiles: 0, gameRevenue: 950, deadlineHours: 24, weightLbs: 30000,
+  });
+  ok('a load is authorized off it', !!runnable.authorizedLoadId,
+    runnable.authorizedLoadId ? runnable.headline.slice(0, 70) : runnable.headline.slice(0, 70));
+  ok('with no hard fail about equipment',
+    !((runnable.evaluations || [])[0]?.hardFails || []).some((x) => /garage|trailer/i.test(x)),
+    ((runnable.evaluations || [])[0]?.hardFails || []).join(' | ') || 'none');
+
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
