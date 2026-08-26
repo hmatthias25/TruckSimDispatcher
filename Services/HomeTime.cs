@@ -492,6 +492,15 @@ public static class HomeTime
         var nowMiles = st.MilesFromHome ?? destMiles.Value;
         var closes = nowMiles - destMiles.Value;   // positive = ends up nearer home
 
+        // How far a move has to be before it counts either way.
+        //
+        // A hundred and fifty miles is right while home time is merely coming due — freight does not run
+        // in straight lines and penalising every wobble would make the board unusable. Once the company
+        // is actually LATE it is far too generous: a load 150 miles further out scored a flat zero and
+        // won on rate, which is how a driver overdue by weeks got sent from Rock Springs to Salt Lake
+        // City and told it was "roughly neutral on home time".
+        var deadBand = st.Overdue ? 50.0 : 150.0;
+
         if (destMiles.Value <= radius)
         {
             var pts = 1.0 * w * urgency;
@@ -501,7 +510,7 @@ public static class HomeTime
                 $"Gets you home — {destMiles.Value:N0} mi from {st.TerminalLabel}.", null);
         }
 
-        if (closes > 150)
+        if (closes > deadBand)
         {
             var pts = 0.5 * w * urgency;
             return (pts,
@@ -509,7 +518,7 @@ public static class HomeTime
                 $"Works you back toward {st.TerminalLabel}.", null);
         }
 
-        if (closes < -150)
+        if (closes < -deadBand)
         {
             var pts = -1.0 * w * urgency;
             return (pts,
@@ -623,6 +632,31 @@ public static class HomeTime
 
         var miles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
         return miles != null && miles.Value <= s.Settings.Scoring.HomeRadiusMiles;
+    }
+
+    /// <summary>
+    /// Overdue for home time, and this load genuinely heads there.
+    ///
+    /// Wider than <see cref="IsOverdueRideHome"/> on purpose: that one asks whether the load ARRIVES
+    /// home, which is what justifies paying below break-even. This asks whether it makes real progress
+    /// — inside the home radius, or closing more than the scoring dead band. A thousand miles from
+    /// Rock Springs to Tulsa does not reach Springfield, but it closes most of the gap, and on an overdue
+    /// arrangement that is the load worth having.
+    /// </summary>
+    public static bool OverdueAndHeadsHome(AppState s, BoardLoad load)
+    {
+        var st = Status(s);
+        if (!st.Tracked || !st.Overdue) return false;
+
+        var home = HomeTerminal(s);
+        if (home == null) return false;
+
+        var destMiles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
+        if (destMiles == null) return false;
+        if (destMiles.Value <= s.Settings.Scoring.HomeRadiusMiles) return true;
+
+        var nowMiles = st.MilesFromHome;
+        return nowMiles != null && nowMiles.Value - destMiles.Value > 150;
     }
 
     /// <summary>

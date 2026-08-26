@@ -148,8 +148,23 @@ public static class DispatchEngine
             return decision;
         }
 
+        // A tight window is normally not something the app commits the truck to on its own — the driver
+        // is asked first, and that is deliberate. One exception: home time already broken, and the load
+        // that heads home is the one scoring highest.
+        //
+        // Reported from a real board. Overdue by weeks at Rock Springs, and the thousand miles to Tulsa
+        // that closed most of the way to Springfield scored top of the board — but came out Tight on the
+        // safety buffer, so it was demoted to Backup and a comfortable hundred-and-eighty-mile run the
+        // other way was authorized instead. The driver was never told the load home had been available.
+        //
+        // Same reasoning as the break-even floor: once the company is late, "tight" is measured against
+        // a promise already missed rather than against an ordinary day.
+        bool TightButHeadsHome(LoadEvaluation e) =>
+            e.Feasibility.Verdict == "Tight" && HomeTime.OverdueAndHeadsHome(s, e.Load);
+
         var clear = decision.Evaluations
-            .Where(e => e.HardFails.Count == 0 && e.Feasibility.Verdict == "Feasible")
+            .Where(e => e.HardFails.Count == 0
+                        && (e.Feasibility.Verdict == "Feasible" || TightButHeadsHome(e)))
             .ToList();
 
         // A handful of loads at one dock is not the town. The board screen has always said "show me these
@@ -183,6 +198,15 @@ public static class DispatchEngine
                 $"{decision.NextTripNumberPreview} authorized: {Place(pick.Load.OriginCity, pick.Load.OriginState)} → " +
                 $"{Place(pick.Load.DestCity, pick.Load.DestState)}, {pick.Load.Cargo}.";
             decision.Rationale = BuildRationale(s, pick, clear.Skip(1).FirstOrDefault(), decision.ResetWatch);
+
+            // Never quietly. A tight window taken because home time is late is a judgement call, and the
+            // driver is told it was made and why.
+            if (pick.Feasibility.Verdict == "Tight")
+                decision.DispatchNotes.Add(
+                    $"This one is tight — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack against our " +
+                    $"{Hhmm.Of(s.Settings.SafetyBufferHours)} buffer, and on an ordinary day I would not " +
+                    "book it. You are overdue home and this is the load that heads there, so I am taking " +
+                    "it and owning the call. Do not lose time you do not have.");
             decision.DispatchNotes.Add($"Run it at ${pick.AllInRpm:0.00}/mi all-in on {pick.Load.LoadedMiles + pick.Load.DeadheadMiles:0} total miles.");
             decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
             if (pick.Feasibility.RestsRequired > 0)
@@ -346,6 +370,23 @@ public static class DispatchEngine
             var latest = DeliveryWindow.PrevHalfHour(now.AddHours(room));
             if (slot > latest && latest > opensAt) slot = latest;
         }
+
+        // And a slot has to leave room to finish inside the window, not just to start inside it.
+        //
+        // The dock booking a truck a couple of hours into its window is ordinary, and the seed models
+        // that. On a wide window it costs nothing. On a narrow one it is the difference between a load
+        // and a refusal: a Rock Springs to Tulsa run with a 6:40 window had the slot placed 2:26 in,
+        // which left four minutes over the safety buffer and came out Tight — for want of booking the
+        // same load at the front of the same window.
+        //
+        // So the slot never sits later than leaves the dock work, the parking allowance and the buffer
+        // before the doors shut. The opening always wins over that, because inventing a time earlier
+        // than the receiver opens helps nobody.
+        var tail = FacilityLearning.For(s, load.TrailerType).Unloading
+                   + Math.Max(0, s.Settings.ParkingBufferHours)
+                   + Math.Max(0, s.Settings.SafetyBufferHours);
+        var latestForSlack = DeliveryWindow.PrevHalfHour(dueAt.AddHours(-tail));
+        if (slot > latestForSlack && latestForSlack >= opensAt) slot = latestForSlack;
 
         // Where even the opening does not fit what is left of the day, the slot stays at the opening and
         // the planner rests before the dock. Nothing to gain by inventing an earlier time than the

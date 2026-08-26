@@ -341,7 +341,19 @@ public static class HosEngine
                 if (waiting > Eps)
                 {
                     result.WaitForAppointmentHours = Math.Round(waiting, 2);
-                    if (waiting >= rules.OffDutyReset)
+
+                    // Waiting on duty is only free if there is still a window left to work the dock
+                    // afterwards. On a long run there often is not, and the app used to burn the wait at
+                    // the gate, discover it had nothing left, and take the ten anyway — arriving a full
+                    // reset later than it needed to and calling a perfectly runnable load infeasible.
+                    // Reported on a 1,004-mile Rock Springs to Tulsa: 9:01 of waiting spent the window,
+                    // then it wanted 1:49 it no longer had, so delivery landed 9:20 past the close.
+                    //
+                    // Sitting the reset DURING the wait costs nothing — the truck is parked either way.
+                    var windowAfterWaiting = shift - waiting;
+                    var restBeatsWaiting = windowAfterWaiting < task.Hours;
+
+                    if (waiting >= rules.OffDutyReset || restBeatsWaiting)
                     {
                         // Long enough to be worth sleeping — but only if they will have you. Plenty of
                         // receivers will not, and then the reset is sat at a truck stop with a run
@@ -349,6 +361,8 @@ public static class HosEngine
                         if (!req.ReceiverAllowsOvernight)
                         {
                             var hop = Facilities.RepositionHoursEachWay;
+                            // At least a full ten. Subtracting the running either side can only shorten
+                            // the sit, never the reset it has to be.
                             var rest = Math.Max(rules.OffDutyReset, waiting - hop * 2);
 
                             drive = Math.Max(0, drive - hop); shift = Math.Max(0, shift - hop);
@@ -368,7 +382,7 @@ public static class HosEngine
                                 $"parking. Sit the reset at a truck stop and come back — about {Hhmm.Of(hop * 2)} " +
                                 "of running either side, and it comes off your clocks.");
                         }
-                        else
+                        else if (waiting >= rules.OffDutyReset)
                         {
                             drive = rules.DriveLimit;
                             shift = rules.ShiftLimit;
@@ -378,6 +392,27 @@ public static class HosEngine
                             result.Warnings.Add(
                                 $"You arrive {Hhmm.Of(waiting)} before they open, and they will let you sit on their " +
                                 $"property. Take your {rules.OffDutyReset:0.#}-hour reset there — the wait is not wasted.");
+                        }
+                        else
+                        {
+                            // Arriving early with a window too thin to unload, and a wait shorter than a
+                            // reset. Sitting a full ten AT the receiver would be ten hours on top of a wait
+                            // that was already going to happen — which is how a load with five hours of
+                            // room came out with four minutes of it.
+                            //
+                            // The driver does not have to arrive early. Sleeping longer at the last stop
+                            // costs exactly the same wall-clock time and puts them on the dock at opening
+                            // with a fresh fourteen. The rest before this leg is already in the plan, so
+                            // this is that rest running longer, not a second one.
+                            drive = rules.DriveLimit;
+                            shift = rules.ShiftLimit;
+                            brk = rules.DrivingBeforeBreak;
+                            Step($"Rest timed to the opening — {Hhmm.Of(waiting)} rather than arriving early", "Rest", waiting, 0);
+                            result.Warnings.Add(
+                                $"You would get there {Hhmm.Of(waiting)} before they open with only " +
+                                $"{Hhmm.Of(Math.Max(0, windowAfterWaiting))} of window left, and the dock needs " +
+                                $"{Hhmm.Of(task.Hours)}. Sleep in at your last stop instead and roll up on the " +
+                                "opening with a full clock — same arrival, and the window is yours.");
                         }
                     }
                     else

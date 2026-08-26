@@ -379,6 +379,60 @@ const gday = (day, hm) => {
   ok('a same-day window is not rolled forward', sameDay.deadlineHours < 24,
     `${sameDay.deadlineHours}h`);
 
+  head('THE TULSA CASE: waiting on duty must not spend the window the dock needs');
+  // Reported off a real card. Thursday day 38, 13:44, Rock Springs with a full clock and home time
+  // overdue in Springfield MO. 1,004 miles to Tulsa, window Sat 02:04 - 08:44, and INFEASIBLE: the plan
+  // arrived 9:01 before the doors opened, sat that out ON DUTY, then found it needed 1:49 of window it
+  // no longer had — so it took a ten anyway and landed 9:20 past the close.
+  //
+  // The truck is parked either way. Sitting the reset DURING the wait costs nothing and starts the
+  // unload on a full window, which is what the app's own blocker text was already advising.
+  await api('/status', 'POST', {
+    locationCity: 'Rock Springs', locationState: 'WY', locationKind: 'Shipper',
+    gameTime: gday(38, '13:44'), fuelPct: 100, atsOdometer: 52000, dutyStatus: 'OnDuty',
+  });
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+
+  await api('/board/clear', 'POST', {});
+  const tulsa = await api('/board/add', 'POST', {
+    cargo: 'Pumpjack', trailerType: 'Flatbed',
+    originCity: 'Rock Springs', originState: 'WY', destCity: 'Tulsa', destState: 'OK',
+    loadedMiles: 1004, deadheadMiles: 0, gameRevenue: 2199,
+    windowText: 'Sat 2:04 AM - Sat 8:44 AM', weightLbs: 6600,
+  });
+  const tEval = (tulsa.evaluations || [])[0];
+  ok('the window is the Saturday off the listing',
+    Math.abs(tEval.load.deadlineHours - 43.0) < 1.5, `due in ${tEval.load.deadlineHours}h`);
+  ok('it is no longer refused', tEval.feasibility.verdict !== 'Infeasible',
+    tEval.feasibility.verdict);
+  ok('and nothing says it arrives past the window closing',
+    !(tEval.feasibility.blockers || []).some((x) => /past the .* window closing/i.test(x)),
+    (tEval.feasibility.blockers || []).join(' | ') || 'no blockers');
+
+  const timeline = (tEval.feasibility.timeline || []).map((x) => x.label || x).join(' | ');
+  ok('the pre-dock wait is rested, not idled on duty',
+    /taken as the reset|Rest timed to the opening/i.test(timeline), timeline.slice(-130) || '(none)');
+  ok('and it does not sit a whole ten on top of a shorter wait',
+    !/Rest timed to the opening — 10:00/.test(timeline), 'sleeps in instead');
+  ok('the driver is told why',
+    (tEval.feasibility.warnings || []).some((x) => /Sleep in at your last stop|reset there|unload fresh/i.test(x)),
+    (tEval.feasibility.warnings || []).find((x) => /Sleep in|reset/i.test(x))?.slice(0, 120) || '(none)');
+
+  head('A short wait with plenty of window left is still spent on duty');
+  // The fix must not turn every early arrival into a ten-hour sit. Where the window survives the wait,
+  // waiting at the gate is right — it is quicker and the driver keeps their day.
+  await api('/board/clear', 'POST', {});
+  const quick = await api('/board/add', 'POST', {
+    cargo: 'Palletised goods', trailerType: 'Dry Van',
+    originCity: 'Rock Springs', originState: 'WY', destCity: 'Salt Lake City', destState: 'UT',
+    loadedMiles: 180, deadheadMiles: 0, gameRevenue: 700,
+    appointmentOpensHours: 6, deadlineHours: 14, weightLbs: 20000,
+  });
+  const qTimeline = ((quick.evaluations || [])[0].feasibility.timeline || []).map((x) => x.label || x).join(' | ');
+  ok('a short wait with window to spare stays on duty at the gate',
+    /Waiting for the receiver to open/i.test(qTimeline) && !/taken as the reset/i.test(qTimeline),
+    qTimeline.slice(-110));
+
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
