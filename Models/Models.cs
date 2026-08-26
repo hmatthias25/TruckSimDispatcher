@@ -1890,10 +1890,24 @@ public class LogEvent
 public class AppSettings
 {
     // --- game environment
+    //
+    // Read by nothing, and no longer asked for. These sat on a Settings panel looking like configuration
+    // and configuring nothing — "I use an HOS mod" in particular reads exactly like the switch that would
+    // make the planner respect a mod's rules, and a player could reasonably tick it and expect something
+    // to change. Nothing did: the clocks come from the HOS rule set typed in below it, and the money from
+    // the revenue factor and pay multiplier under Economics.
+    //
+    // Kept on the model rather than deleted so an existing career file loads unchanged and whatever
+    // somebody wrote in them is still there. Do not wire these up — put the setting where its effect is.
+    [Obsolete("Never read. Removed from the Settings screen; the HOS rule set and Economics are what drive the planner.")]
     public string AtsVersion { get; set; } = "";
+    [Obsolete("Never read. See AtsVersion.")]
     public List<string> Mods { get; set; } = new();
+    [Obsolete("Never read. See AtsVersion.")]
     public string HosModName { get; set; } = "";
+    [Obsolete("Never read. See AtsVersion.")]
     public bool UsesHosMod { get; set; }
+    [Obsolete("Never read. See AtsVersion.")]
     public bool UsesEconomyMod { get; set; }
 
     /// <summary>
@@ -1916,6 +1930,7 @@ public class AppSettings
 
     /// <summary>The mod the names were read from, so it can be re-read without hunting for it again.</summary>
     public string CompanyNameModPath { get; set; } = "";
+    [Obsolete("Never read. See AtsVersion.")]
     public List<string> MapMods { get; set; } = new();
 
     // --- HOS rule set (editable; the driver's mod always wins)

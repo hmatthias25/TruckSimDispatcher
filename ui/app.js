@@ -4277,15 +4277,7 @@ function viewSettings() {
   return `
   <div class="cols">
     <div class="panel">
-      <div class="panel-head"><h2>Game environment</h2></div>
-      <label>ATS version<input id="se-ver" value="${esc(s.atsVersion)}" placeholder="e.g. 1.57"></label>
-      <label>Map mods (comma separated)<input id="se-mapmods" value="${esc(s.mapMods.join(', '))}"></label>
-      <label>Other mods<input id="se-mods" value="${esc(s.mods.join(', '))}"></label>
-      <label class="chk"><input type="checkbox" id="se-hosmod" ${s.usesHosMod ? 'checked' : ''}> I use an HOS mod</label>
-      <label>HOS mod name<input id="se-hosmodname" value="${esc(s.hosModName)}"></label>
-      <label class="chk"><input type="checkbox" id="se-econmod" ${s.usesEconomyMod ? 'checked' : ''}> I use an economy / realistic-jobs mod</label>
-
-      <h3 class="sect">Carrier roster</h3>
+      <div class="panel-head"><h2>Carrier roster</h2></div>
       <label>Which carriers appear in the job market
         <select id="se-roster">
           <option value="Real" ${s.carrierRoster !== 'Fictional' ? 'selected' : ''}>Real US carriers</option>
@@ -4295,6 +4287,10 @@ function viewSettings() {
         those parts are factual. Their <b>pay rates and hiring standards here are made up for the
         game</b> and are not real terms of employment. Switch to invented carriers if you would rather
         not work for a real name. Changing this does not affect who you already work for.</p>
+      <p class="hint">This panel used to ask for your ATS version, your map mods, your other mods and
+        whether you ran an HOS or economy mod. None of it was ever read. The numbers that actually drive
+        the planner are the ones you type yourself: <b>HOS rule set</b> below for your mod's clocks, and
+        <b>Economics</b> for the revenue factor and pay multiplier.</p>
     </div>
 
     <div class="panel">
@@ -5725,9 +5721,11 @@ function collectSettings() {
   const s = S.settings;
   return {
     ...s,
-    atsVersion: sv('se-ver'),
-    mapMods: list('se-mapmods'), mods: list('se-mods'),
-    usesHosMod: bv('se-hosmod'), hosModName: sv('se-hosmodname'), usesEconomyMod: bv('se-econmod'),
+    // The six that used to live here read as settings and configured nothing — see the note on the
+    // Carrier roster panel. Whatever a career already had is carried through untouched rather than
+    // blanked, because deleting somebody's notes to tidy up our own screen is not our call.
+    atsVersion: s.atsVersion, mapMods: s.mapMods, mods: s.mods,
+    usesHosMod: s.usesHosMod, hosModName: s.hosModName, usesEconomyMod: s.usesEconomyMod,
     carrierRoster: sv('se-roster') || s.carrierRoster,
     hos: {
       ...s.hos,

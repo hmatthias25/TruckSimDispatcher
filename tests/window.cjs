@@ -428,10 +428,19 @@ const gday = (day, hm) => {
     loadedMiles: 180, deadheadMiles: 0, gameRevenue: 700,
     appointmentOpensHours: 6, deadlineHours: 14, weightLbs: 20000,
   });
-  const qTimeline = ((quick.evaluations || [])[0].feasibility.timeline || []).map((x) => x.label || x).join(' | ');
-  ok('a short wait with window to spare stays on duty at the gate',
-    /Waiting for the receiver to open/i.test(qTimeline) && !/taken as the reset/i.test(qTimeline),
-    qTimeline.slice(-110));
+  const qEval = (quick.evaluations || [])[0];
+  const qTimeline = (qEval.feasibility.timeline || []).map((x) => x.label || x).join(' | ');
+  // Whether a receiver takes a load early is seeded on the load id, and /board/add mints a fresh GUID
+  // every time — so this is genuinely a different answer per run rather than a stable property of the
+  // load. When they take it early there is no wait to spend at all, which is a pass of a different kind.
+  if (qEval.receiverTakesEarly) {
+    ok('this receiver takes it early, so there is no wait to spend', !/Waiting for the receiver/i.test(qTimeline),
+      'taken on arrival');
+  } else {
+    ok('a short wait with window to spare stays on duty at the gate',
+      /Waiting for the receiver to open/i.test(qTimeline) && !/taken as the reset|Rest timed/i.test(qTimeline),
+      qTimeline.slice(-110));
+  }
 
 
   console.log(`\n${pass} passed, ${fail} failed`);
