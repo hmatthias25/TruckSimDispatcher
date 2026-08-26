@@ -133,6 +133,64 @@ async function at(city, state, day, hm = '13:44', kind = 'Shipper') {
   ok('and the board note leads with home time being overdue',
     (decision.dispatchNotes || []).some((x) => /Home time is overdue/i.test(x)),
     (decision.dispatchNotes || []).find((x) => /Home time/i.test(x))?.slice(0, 90) || '(none)');
+  head('4. At Tulsa: a load that finishes at Springfield is the ride home');
+  // The other half of what was expected — get to Tulsa, look for something going to Springfield, and be
+  // told plainly that it is the run home. Tulsa is ~250 mi out, outside the 200 mi home radius, so it
+  // closes the gap without arriving: the load from HERE is the one that finishes it.
+  const open = (await api('/bootstrap')).views.activeTrip;
+  if (open) await api(`/trips/${open.id}/cancel`, 'POST', { reason: 'fixture — jump to Tulsa' });
+  await at('Tulsa', 'OK', 40, '09:00');
+
+  await api('/board/clear', 'POST', {});
+  await api('/board/add', 'POST', {
+    cargo: 'Steel', trailerType: 'Flatbed',
+    originCity: 'Tulsa', originState: 'OK', destCity: 'Springfield', destState: 'MO',
+    loadedMiles: 250, deadheadMiles: 0, gameRevenue: 900, deadlineHours: 20, weightLbs: 30000,
+  });
+  await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: 'Flatbed',
+    originCity: 'Tulsa', originState: 'OK', destCity: 'Houston', destState: 'TX',
+    loadedMiles: 480, deadheadMiles: 0, gameRevenue: 1700, deadlineHours: 26, weightLbs: 35000,
+  });
+  const home = await api('/board/evaluate');
+  const picked = (home.evaluations || []).find((e) => e.load.id === home.authorizedLoadId);
+  ok('the Springfield load is the one taken', picked?.load.destCity === 'Springfield',
+    picked?.load.destCity || 'none');
+  ok('and it is dispatched AS the run home',
+    (home.dispatchNotes || []).some((x) => /ride home|being run to get you home/i.test(x)),
+    (home.dispatchNotes || []).find((x) => /home/i.test(x))?.slice(0, 110) || '(none)');
+  ok('with what to do once empty',
+    (home.dispatchNotes || []).some((x) => /park it at the yard|deadhead to the|report in/i.test(x)),
+    (home.dispatchNotes || []).find((x) => /yard|deadhead/i.test(x))?.slice(0, 110) || '(none)');
+
+  head('5. At Tulsa with nothing going home: told where to look, then offered the empty run');
+  await api('/board/clear', 'POST', {});
+  // Only freight running away from Springfield, and thin money at that.
+  for (const [city, st, mi] of [['Amarillo', 'TX', 360], ['Albuquerque', 'NM', 650]]) {
+    await api('/board/add', 'POST', {
+      cargo: 'Machinery', trailerType: 'Flatbed',
+      originCity: 'Tulsa', originState: 'OK', destCity: city, destState: st,
+      loadedMiles: mi, deadheadMiles: 0, gameRevenue: 260, deadlineHours: 18, weightLbs: 30000,
+    });
+  }
+  const nothing = await api('/board/evaluate');
+  ok('the board is rejected', nothing.rejectAll === true, `${nothing.rejectAll}`);
+  const advice = (nothing.dispatchNotes || []).join(' | ');
+  ok('and it says where to go looking rather than "reposition"',
+    /check what is loading out of|Look at the board in|run you home empty/i.test(advice),
+    advice.slice(-190) || '(none)');
+  ok('tied to home time being overdue',
+    /home time is overdue/i.test(advice), 'said');
+
+  const offers = (await api('/bootstrap')).views.repositionOffers || [];
+  console.log(`     offers: ${offers.map((o) => `${o.city || o.label} ${o.miles}mi`).join(' | ') || '(none)'}`);
+  ok('an empty run home is on the table',
+    offers.some((o) => /Springfield/i.test(`${o.city} ${o.label} ${o.headline}`)),
+    offers.map((o) => o.city || o.label).join(', ') || '(none)');
+  ok('with the miles worked out rather than asked for',
+    offers.every((o) => typeof o.miles === 'number' && o.miles > 0),
+    offers.map((o) => `${o.miles}mi`).join(', ') || '(none)');
+
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
