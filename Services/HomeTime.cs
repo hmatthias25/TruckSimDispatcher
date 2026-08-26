@@ -1045,13 +1045,20 @@ public static class HomeTime
                                             s.Hos.CycleRemaining));
         var reach = drivable * mph;
 
-        // Home itself, if a load could plausibly finish there. Worth saying first — the driver can look
-        // at the board in their own yard's city and stop hunting.
+        // Home is within reach on the clock in hand. Then the answer is to GO, not to hunt.
+        //
+        // This used to say "look at the board in Springfield itself, or anything running that way, and
+        // show me what is there" — which is nonsense from Tulsa. You cannot see Springfield's board from
+        // Tulsa, and the driver is not looking for freight OUT of home; they are trying to reach it. They
+        // had also just shown a board with nothing going that way, so asking to see one again is asking
+        // for what they have already given.
         if (toHome is { } miles && miles <= reach)
-            return $"Nothing here works and home time is {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}. " +
-                   $"{DispatchEngine.Place(home.City, home.State)} is only {miles:N0} mi out, inside what you can drive " +
-                   $"on {Hhmm.Of(drivable)}. Look at the board in {home.City} itself, or anything running that way, and " +
-                   "show me what is there.";
+            return $"Nothing on this board goes home and your home time is " +
+                   $"{(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}. " +
+                   $"{DispatchEngine.Place(home.City, home.State)} is {miles:N0} mi — inside what you can drive on " +
+                   $"{Hhmm.Of(drivable)}. Run it in empty and take your home time; the empty miles are on the " +
+                   "Dispatch tab and they are paid. If something going that way turns up before you roll, show me " +
+                   "and I will put you under it instead.";
 
         // Otherwise, markets that are both reachable and genuinely closer to home than we are.
         var options = Markets.Effective(s)

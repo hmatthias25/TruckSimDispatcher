@@ -77,7 +77,9 @@ async function badBoard(fromCity, fromState) {
   ok('the board is rejected', bd.rejectAll === true, `${bd.rejectAll}`);
   const notes = (bd.dispatchNotes || []).join(' | ');
   if (hs?.dueSoon) {
-    ok('it names somewhere to go looking', /check what is loading out of|Look at the board in/i.test(notes),
+    // Home within reach reads as "go", not "go looking"; further out it names a market to pull a board in.
+    ok('it names somewhere to go, or somewhere to look',
+      /Run it in empty and take your home time|check what is loading out of|Look at the board in/i.test(notes),
       notes.slice(-260));
     ok('and ties it to home time', /home time is (overdue|due)/i.test(notes), '');
     ok('it does not just say reposition and pull a board',

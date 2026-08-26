@@ -176,9 +176,14 @@ async function at(city, state, day, hm = '13:44', kind = 'Shipper') {
   const nothing = await api('/board/evaluate');
   ok('the board is rejected', nothing.rejectAll === true, `${nothing.rejectAll}`);
   const advice = (nothing.dispatchNotes || []).join(' | ');
-  ok('and it says where to go looking rather than "reposition"',
-    /check what is loading out of|Look at the board in|run you home empty/i.test(advice),
-    advice.slice(-190) || '(none)');
+  ok('it says to run it in empty rather than to go hunting for a board',
+    /Run it in empty and take your home time/i.test(advice), advice.slice(-210) || '(none)');
+  ok('and does not ask to see a board the driver cannot see from here',
+    !/Look at the board in Springfield/i.test(advice), 'no impossible instruction');
+  ok('naming the distance home',
+    /Springfield, MO is \d+ mi/i.test(advice), advice.match(/Springfield, MO is \d+ mi/i)?.[0] || '(none)');
+  ok('and leaving the door open for a load going that way',
+    /turns up before you roll/i.test(advice), 'noted');
   ok('tied to home time being overdue',
     /home time is overdue/i.test(advice), 'said');
 
