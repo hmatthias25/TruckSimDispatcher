@@ -14,6 +14,12 @@ const head = (t) => console.log(`\n=== ${t} ===`);
 
 let S;
 const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math.round((h - w) * 60)).padStart(2, '0')}`; };
+// Game day 0 is the epoch, a Monday. Day 38 is therefore a Thursday, 39 a Friday, 40 a Saturday.
+const gday = (day, hm) => {
+  const d = new Date(Date.UTC(2000, 0, 1) + day * 86400000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-`
+    + `${String(d.getUTCDate()).padStart(2, '0')}T${hm}`;
+};
 
 (async () => {
   head('1. Hire and set the clock to 06:01, as reported');
@@ -282,6 +288,97 @@ const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math
       !(bf.timeline || []).some((x) => /truck stop/i.test(x.label)),
       (bf.timeline || []).map((x) => x.label).join(' | '));
   }
+  head('THE ROCK SPRINGS CASE: every weekday name contains the letters "day"');
+  // Reported off a real card. Now THURSDAY day 38, 13:44, at Rock Springs — full clock, nothing loaded.
+  // The ATS window read "Friday 9:26PM - Sat 4:06AM", and the app booked it Thursday night into Friday
+  // morning: one day early. A 770-mile run that had a day and a half to reach the window came back
+  // INFEASIBLE, missing by 14:25.
+  //
+  // The day-number scan did IndexOf("day"), which lands at index 3 of "Friday", then read the digits
+  // after it and got 9 from "9:26PM".
+  await api('/status', 'POST', {
+    locationCity: 'Rock Springs', locationState: 'WY', locationKind: 'Shipper',
+    gameTime: gday(38, '13:44'), fuelPct: 95, atsOdometer: 41000, dutyStatus: 'OnDuty',
+  });
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+  const dow = (d) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d % 7];
+  ok('day 38 is a Thursday, 39 a Friday, 40 a Saturday',
+    dow(38) === 'Thu' && dow(39) === 'Fri' && dow(40) === 'Sat',
+    `${dow(38)} ${dow(39)} ${dow(40)}`);
+
+  await api('/board/clear', 'POST', {});
+  const wk = await api('/board/add', 'POST', {
+    cargo: 'Fertilizer', trailerType: 'Flatbed',
+    originCity: 'Rock Springs', originState: 'WY', destCity: 'Omaha', destState: 'NE',
+    loadedMiles: 770, deadheadMiles: 0, gameRevenue: 2418,
+    windowText: 'Friday 9:26PM - Sat 4:06AM', weightLbs: 40000,
+  });
+  const wkLoad = (wk.evaluations || [])[0].load;
+  // Thursday 13:44 -> Friday 21:26 is 31.7 h; -> Saturday 04:06 is 38.4 h.
+  ok('the window opens on the Friday, not tonight',
+    Math.abs(wkLoad.appointmentOpensHours - 31.7) < 1.5, `opens in ${wkLoad.appointmentOpensHours}h`);
+  ok('and closes on the Saturday',
+    Math.abs(wkLoad.deadlineHours - 38.4) < 1.5, `due in ${wkLoad.deadlineHours}h`);
+  ok('so the load is not refused for a window it can easily make',
+    (wk.evaluations || [])[0].feasibility.verdict !== 'Infeasible',
+    (wk.evaluations || [])[0].feasibility.verdict);
+
+  head('Short weekday forms too');
+  await api('/board/clear', 'POST', {});
+  const abbr = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: 'Flatbed',
+    originCity: 'Rock Springs', originState: 'WY', destCity: 'Omaha', destState: 'NE',
+    loadedMiles: 770, deadheadMiles: 0, gameRevenue: 2400,
+    windowText: 'Fri 21:26 - Sat 04:06', weightLbs: 40000,
+  });
+  ok('"Fri" reads the same as "Friday"',
+    Math.abs((abbr.evaluations || [])[0].load.appointmentOpensHours - 31.7) < 1.5,
+    `opens in ${(abbr.evaluations || [])[0].load.appointmentOpensHours}h`);
+
+  head('An explicit day number still wins');
+  await api('/board/clear', 'POST', {});
+  const explicit = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: 'Flatbed',
+    originCity: 'Rock Springs', originState: 'WY', destCity: 'Omaha', destState: 'NE',
+    loadedMiles: 200, deadheadMiles: 0, gameRevenue: 800,
+    windowText: 'Day 40 08:00 - 18:00', weightLbs: 30000,
+  });
+  ok('an explicit day number is two days out, not read off a weekday',
+    Math.abs((explicit.evaluations || [])[0].load.appointmentOpensHours - 42.3) < 1.5,
+    `opens in ${(explicit.evaluations || [])[0].load.appointmentOpensHours}h`);
+
+  head('A bare clock range with no day in it');
+  // Reported off a real card. 770 mi Rock Springs -> Omaha, full clock, sitting at the shipper, and the
+  // app called it INFEASIBLE against a window closing twelve hours out. The listing's window was a bare
+  // clock range, which resolves to the soonest future occurrence — tonight — and that mis-dated window
+  // then overwrote the time-to-deliver the driver had typed off the listing.
+  await api('/board/clear', 'POST', {});
+  const long = await api('/board/add', 'POST', {
+    cargo: 'Fertilizer', trailerType: 'Flatbed',
+    originCity: 'Rock Springs', originState: 'WY', destCity: 'Omaha', destState: 'NE',
+    loadedMiles: 770, deadheadMiles: 0, gameRevenue: 2418,
+    deadlineHours: 36,                       // straight off the listing's countdown
+    windowText: '21:26 - 04:06',             // and the window, which carries no day
+    weightLbs: 40000,
+  });
+  const row = (long.evaluations || [])[0].load;
+  ok('the typed time-to-deliver is not thrown away', row.deadlineHours >= 30,
+    `${row.deadlineHours}h against the 36h typed`);
+  ok('and the window moved with it rather than staying on tonight',
+    row.appointmentOpensHours > 24, `opens in ${row.appointmentOpensHours}h`);
+
+  head('A window that agrees with the countdown is left alone');
+  await api('/board/clear', 'POST', {});
+  const nearWin = await api('/board/add', 'POST', {
+    cargo: 'Palletised goods', trailerType: 'Dry Van',
+    originCity: 'Rock Springs', originState: 'WY', destCity: 'Salt Lake City', destState: 'UT',
+    loadedMiles: 180, deadheadMiles: 0, gameRevenue: 700,
+    deadlineHours: 11, windowText: '18:00 - 23:00', weightLbs: 20000,
+  });
+  const sameDay = (nearWin.evaluations || [])[0].load;
+  ok('a same-day window is not rolled forward', sameDay.deadlineHours < 24,
+    `${sameDay.deadlineHours}h`);
+
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

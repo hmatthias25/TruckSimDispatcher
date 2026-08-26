@@ -446,10 +446,16 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
     // A window typed straight off the listing beats two figures the driver had to work out. Parsed here,
     // against the app's own game clock, which is the only place that knows what "tomorrow" means.
     if (!string.IsNullOrWhiteSpace(l.WindowText)
-        && DeliveryWindow.Read(s, l.WindowText) is { } win)
+        && DeliveryWindow.Read(s, l.WindowText) is { } win
+        && GameClock.TryParse(s.Status.GameTime) is { } nowAt)
     {
+        // A clock range has no day in it, so it resolves to the soonest future occurrence — tonight.
+        // Where the driver also typed the listing's time-to-deliver, that countdown says which day was
+        // meant, and the window moves to match rather than replacing a correct deadline with a wrong one.
+        win = DeliveryWindow.RollToDeadline(win, nowAt, l.DeadlineHours);
+
         l.DeadlineHours = Math.Round(win.HoursUntilDue, 2);
-        if (win.OpensAt != null && GameClock.TryParse(s.Status.GameTime) is { } nowAt)
+        if (win.OpensAt != null)
             l.AppointmentOpensHours = Math.Max(0, Math.Round((win.OpensAt.Value - nowAt).TotalHours, 2));
     }
 

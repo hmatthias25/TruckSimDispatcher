@@ -37,12 +37,20 @@ public static class DeliveryWindow
         var now = GameClock.TryParse(s.Status.GameTime);
         if (now == null) return null;
 
-        // An explicit day number wins, since it removes the ambiguity entirely.
-        var dayIdx = raw.IndexOf("day", StringComparison.OrdinalIgnoreCase);
+        // Weekday names first, because every one of them contains the letters "day" and the day-number
+        // scan below used to match inside them. "Friday 9:26PM" put "day" at index 3, read the digits
+        // after it, and booked the load for day 9 — which is how a Friday-into-Saturday window ended up
+        // a day early and a 770-mile run came back INFEASIBLE against a window it had plenty of time for.
+        var weekdays = WeekdaysIn(raw);
+
+        // An explicit day number wins, since it removes the ambiguity entirely. Searched only outside the
+        // weekday names, so "Friday" can never be read as a day number again.
         int? day = null;
+        var scan = StripWeekdays(raw);
+        var dayIdx = scan.IndexOf("day", StringComparison.OrdinalIgnoreCase);
         if (dayIdx >= 0)
         {
-            var rest = raw[(dayIdx + 3)..].TrimStart(' ', ':', ',');
+            var rest = scan[(dayIdx + 3)..].TrimStart(' ', ':', ',');
             var digits = new string(rest.TakeWhile(char.IsDigit).ToArray());
             if (int.TryParse(digits, out var d)) day = d;
         }
@@ -55,17 +63,41 @@ public static class DeliveryWindow
         var openSpec = hadRange ? times[0] : (TimeSpan?)null;
         var dueSpec = times[^1];
 
-        DateTime Resolve(TimeSpan tod, DateTime notBefore)
+        DateTime Resolve(TimeSpan tod, DateTime notBefore, int? weekday)
         {
             if (day is { } dd) return GameClock.FromDay(dd, tod.Hours, tod.Minutes);
+
+            // A named weekday is as good as a day number: take the next one at or after the anchor.
+            if (weekday is { } wd)
+            {
+                var from = GameClock.DayOf(notBefore);
+                for (var ahead = 0; ahead < 7; ahead++)
+                {
+                    var candidateDay = from + ahead;
+                    if (candidateDay % 7 != wd) continue;
+                    var at = GameClock.FromDay(candidateDay, tod.Hours, tod.Minutes);
+                    if (at >= notBefore.AddMinutes(-1)) return at;
+                }
+                // Every slot this week is behind us; take the one a week out.
+                for (var ahead = 7; ahead < 14; ahead++)
+                {
+                    var candidateDay = from + ahead;
+                    if (candidateDay % 7 == wd) return GameClock.FromDay(candidateDay, tod.Hours, tod.Minutes);
+                }
+            }
+
             var candidate = notBefore.Date.Add(tod);
             // A window that has already passed today is tomorrow's.
             if (candidate < notBefore.AddMinutes(-1)) candidate = candidate.AddDays(1);
             return candidate;
         }
 
-        var opens = openSpec is { } o ? Resolve(o, now.Value) : (DateTime?)null;
-        var due = Resolve(dueSpec, opens ?? now.Value);
+        // ElementAtOrDefault would hand back 0 for an empty list, and 0 is Monday — so every window with
+        // no weekday in it would resolve to the next Monday. Nulls have to be nulls here.
+        int? nth(int i) => weekdays.Count > i ? weekdays[i] : null;
+
+        var opens = openSpec is { } o ? Resolve(o, now.Value, nth(0)) : (DateTime?)null;
+        var due = Resolve(dueSpec, opens ?? now.Value, weekdays.Count >= 2 ? nth(1) : (hadRange ? null : nth(0)));
         // A range that wrapped midnight: the end must not land before the start.
         if (opens is { } op && due < op) due = due.AddDays(1);
 
@@ -73,6 +105,98 @@ public static class DeliveryWindow
         if (hours <= 0) return null;
 
         return new Parsed(opens, due, Math.Round(hours, 2), hadRange);
+    }
+
+    /// <summary>
+    /// Weekday names as the game counts them: day 0 is a Monday, so Monday is 0 and Sunday is 6.
+    ///
+    /// Longest first, so "Sat" inside "Saturday" cannot match before the full word does.
+    /// </summary>
+    private static readonly (string Word, int Index)[] Weekdays =
+    {
+        ("monday", 0), ("tuesday", 1), ("wednesday", 2), ("thursday", 3),
+        ("friday", 4), ("saturday", 5), ("sunday", 6),
+        ("mon", 0), ("tue", 1), ("tues", 1), ("wed", 2), ("thu", 3), ("thur", 3), ("thurs", 3),
+        ("fri", 4), ("sat", 5), ("sun", 6),
+    };
+
+    /// <summary>Which weekdays the text names, in the order they appear.</summary>
+    private static List<int> WeekdaysIn(string raw)
+    {
+        var hits = new List<(int At, int Index)>();
+        var lower = raw.ToLowerInvariant();
+
+        // Longest words first so a prefix never claims a position the full name should have.
+        foreach (var (word, index) in Weekdays.OrderByDescending(w => w.Word.Length))
+        {
+            var from = 0;
+            while (true)
+            {
+                var at = lower.IndexOf(word, from, StringComparison.Ordinal);
+                if (at < 0) break;
+                from = at + word.Length;
+
+                // A whole word, not a fragment of a longer one, and not one already claimed.
+                var beforeOk = at == 0 || !char.IsLetter(lower[at - 1]);
+                var afterOk = from >= lower.Length || !char.IsLetter(lower[from]);
+                if (!beforeOk || !afterOk) continue;
+                if (hits.Any(h => at >= h.At && at < h.At + 3)) continue;
+                hits.Add((at, index));
+            }
+        }
+
+        return hits.OrderBy(h => h.At).Select(h => h.Index).ToList();
+    }
+
+    /// <summary>The text with weekday names blanked, so a day-number scan cannot match inside one.</summary>
+    private static string StripWeekdays(string raw)
+    {
+        var chars = raw.ToCharArray();
+        var lower = raw.ToLowerInvariant();
+        foreach (var (word, _) in Weekdays.OrderByDescending(w => w.Word.Length))
+        {
+            var from = 0;
+            while (true)
+            {
+                var at = lower.IndexOf(word, from, StringComparison.Ordinal);
+                if (at < 0) break;
+                var end = at + word.Length;
+                var beforeOk = at == 0 || !char.IsLetter(lower[at - 1]);
+                var afterOk = end >= lower.Length || !char.IsLetter(lower[end]);
+                if (beforeOk && afterOk)
+                    for (var i = at; i < end; i++) chars[i] = ' ';
+                from = end;
+            }
+        }
+        return new string(chars);
+    }
+
+    /// <summary>
+    /// Puts a parsed window on the right DAY, using the time-to-deliver the driver typed as the authority.
+    ///
+    /// A clock range off a listing carries no day. "21:26 - 04:06" resolves to the soonest future
+    /// occurrence, which is tonight — and on a long run that is simply wrong: ATS meant a later day. The
+    /// old behaviour then overwrote the driver's typed time-to-deliver with the mis-dated window's much
+    /// shorter one, and a perfectly runnable load came back INFEASIBLE. Seven hundred and seventy miles
+    /// against a window closing in twelve hours is not a hard call, and it was the wrong one.
+    ///
+    /// The countdown is unambiguous and the clock range is not, so the range moves. Whole days only —
+    /// the times of day are what the listing actually said and they are kept exactly.
+    /// </summary>
+    public static Parsed RollToDeadline(Parsed win, DateTime now, double typedHours)
+    {
+        if (typedHours <= 0) return win;
+
+        // Within a few hours the two agree well enough; a small gap is rounding, not a wrong day.
+        var gap = typedHours - win.HoursUntilDue;
+        if (gap < 6) return win;
+
+        var days = (int)Math.Round(gap / 24.0, MidpointRounding.AwayFromZero);
+        if (days <= 0) return win;
+
+        var due = win.DueAt.AddDays(days);
+        var opens = win.OpensAt?.AddDays(days);
+        return new Parsed(opens, due, Math.Round((due - now).TotalHours, 2), win.HadRange);
     }
 
     /// <summary>Hours until the load is due, or null when the text cannot be read.</summary>

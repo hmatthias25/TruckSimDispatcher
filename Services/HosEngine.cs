@@ -495,7 +495,14 @@ public static class HosEngine
         }
         else if (result.SlackHours < 0)
         {
-            result.Blockers.Add($"Projected arrival {GameClock.Pretty(clock)} misses the {GameClock.Pretty(due)} appointment by {Hhmm.Of(Math.Abs(result.SlackHours))} after parking allowance. Not deliverable legally.");
+            // `due` is when the WINDOW SHUTS, not an appointment. Calling it one put a card on screen
+            // reading "window 21:26 -> 04:06" beside "misses the 04:06 appointment", which reads as the
+            // app booking a slot at the closing edge — and invited exactly the question of why the
+            // appointment sits where it does. It is the deadline; say deadline.
+            result.Blockers.Add(
+                $"Projected arrival {GameClock.Pretty(clock)} is past the {GameClock.Pretty(due)} window " +
+                $"closing by {Hhmm.Of(Math.Abs(result.SlackHours))} after parking allowance. " +
+                "Not deliverable legally.");
         }
         else if (result.SlackHours < result.RequiredBufferHours)
         {
