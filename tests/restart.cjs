@@ -1,4 +1,4 @@
-/* Issues #41 and #42: the 34-hour restart is ordered, routed and verified; empty miles between loads
+﻿/* Issues #41 and #42: the 34-hour restart is ordered, routed and verified; empty miles between loads
    are paid from the odometer readings. */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5700}/api`;
 async function api(p, m = 'GET', b) {
@@ -71,7 +71,7 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
 
   head('4b. A cycle that comes back on its own stands the order down');
   // The driver's HOS display is authoritative. If they re-read it and the cycle is fine, there is
-  // nothing to sit — holding them to a restart they do not need would be the app being stubborn.
+  // nothing to sit â€” holding them to a restart they do not need would be the app being stubborn.
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
   S = un(await api('/bootstrap'));
   ok('the order stood down', !S.views.restart, JSON.stringify(S.views.restart));
@@ -126,7 +126,7 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
 
   head('9. Home beats the road when home time is close');
   await api('/career/home-time', 'POST', { preference: 'weekly' });
-  // Near home, not AT it — standing at the yard counts as taking home time, so it would no longer
+  // Near home, not AT it â€” standing at the yard counts as taking home time, so it would no longer
   // be due and there would be nothing for the restart to combine with.
   S = un(await api('/status', 'POST', {
     locationCity: 'Colorado Springs', locationState: 'CO', locationKind: 'TruckStop', gameTime: at(40),
@@ -234,7 +234,7 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
     ok('dispatch is blocked without quoting a date',
       /still has trailer/i.test(blockers) && !/due back around/i.test(blockers), blockers || '(none)');
   } else {
-    console.log('  (no held-trailer re-rig came up — seeded, so a legitimate outcome)');
+    console.log('  (no held-trailer re-rig came up â€” seeded, so a legitimate outcome)');
     ok('the no-guess path is wired even when quiet', true, 'nothing due');
   }
 
@@ -349,6 +349,48 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
     ok('and nothing is left on order',
       !((await api('/bootstrap')).restartOrders || []).some((o) => o.status === 'Ordered'), 'clear');
   }
+  head('THE EMPTY RUN TO THE RESTART: one press, mileage measured');
+  // Asked for after the same thing was built for home time. A driver low on the 70 is not going anywhere
+  // on freight, and the app already knows WHERE it wants them to sit the 34. Without an offer they either
+  // drive there without telling it — losing the empty miles off their settlement — or raise the move by
+  // hand and type a distance the app could have measured.
+  await api('/status', 'POST', {
+    // Los Angeles: the same fixture section 10 uses, where the restart is routed up the road to
+    // Barstow rather than sat where the driver stands. That is the case an offer is FOR.
+    locationCity: 'Los Angeles', locationState: 'CA', locationKind: 'TruckStop',
+    gameTime: at(52, '09:00'), fuelPct: 80, atsOdometer: 210000, dutyStatus: 'OnDuty',
+  });
+  await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 12, breakRemaining: 8, cycleRemaining: 4 });
+  await api('/board/clear', 'POST', {});
+  await api('/board/evaluate');            // raises the order, which is what names the city
+
+  let rs = (await api('/bootstrap')).views.restart;
+  const wants = rs?.order?.targetCity || '';
+  const wantsState = rs?.order?.targetState || '';
+  console.log(`     restart wants: ${wants || '(none)'}, ${wantsState}`);
+  ok('the order names a city to sit it in', !!wants, wants || '(none)');
+
+  const findRestartOffer = async () =>
+    ((await api('/bootstrap')).views.repositionOffers || []).find((o) => /sit the/i.test(o.reason || ''));
+
+  const away = await findRestartOffer();
+  console.log(`     offer: ${away ? `${away.city},${away.state} ${away.miles}mi` : '(none)'}`);
+  ok('an empty run to it is offered, with the miles measured',
+    !!away && away.miles > 0, away ? `${away.city} ${away.miles} mi` : 'none offered');
+  ok('and the reason names the cycle rather than the freight',
+    !!away && /left on the 70/i.test(away.reason), away?.reason?.slice(0, 95) || '(none)');
+
+  head('Nothing is offered for a nought-mile move');
+  // Stand the driver in the city the restart wants. A button offering to drive nowhere is noise at
+  // exactly the moment they want to stop reading and go to bed.
+  await api('/status', 'POST', {
+    locationCity: wants, locationState: wantsState, locationKind: 'TruckStop',
+    gameTime: at(20, '12:00'), fuelPct: 80, atsOdometer: 61200, dutyStatus: 'OnDuty',
+  });
+  await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 12, breakRemaining: 8, cycleRemaining: 4 });
+  const standing = await findRestartOffer();
+  ok('standing in the restart city, no empty run is offered', !standing,
+    standing ? `${standing.city} ${standing.miles}mi OFFERED` : 'none offered');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

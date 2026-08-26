@@ -962,6 +962,13 @@ public static class HomeTime
     public static List<RepositionOffer> RepositionOffers(AppState s)
     {
         var offers = new List<RepositionOffer>();
+
+        // The 34 comes first, because a driver out of cycle is not going anywhere on freight and the
+        // empty run to sit it is the same shape of decision as the run home: the app already knows
+        // WHERE it wants them, so making them work out the mileage — or drive it unpaid and unrecorded —
+        // is asking them to do the app's arithmetic.
+        offers.AddRange(RestartOffers(s));
+
         var st = Status(s);
         if (!st.Tracked || !st.DueSoon) return offers;
 
@@ -1027,6 +1034,50 @@ public static class HomeTime
     /// Only called once a board has actually been rejected. If something on offer is worth running,
     /// there is nothing to suggest and this never fires.
     /// </summary>
+    /// <summary>
+    /// The empty run to wherever the 34 is being sat, when that is not where the driver is standing.
+    ///
+    /// <see cref="Restart.Where"/> already decides the city — home if the two stops merge sensibly, a
+    /// restart-friendly market otherwise. What was missing was any way to ACT on it: the driver either
+    /// drove there without telling the app, losing the empty miles off their settlement, or raised the
+    /// move by hand and typed a distance the app could have measured.
+    ///
+    /// Nothing is offered when the restart city is the one they are already in. A nought-mile
+    /// reposition is not a job, and putting a button on it would be noise at exactly the moment the
+    /// driver wants to stop reading and go to bed.
+    /// </summary>
+    public static List<RepositionOffer> RestartOffers(AppState s)
+    {
+        var offers = new List<RepositionOffer>();
+        if (!Restart.Needed(s) && Restart.Open(s) == null) return offers;
+
+        var (city, state, isHome, why) = Restart.Where(s);
+        if (string.IsNullOrWhiteSpace(city)) return offers;
+
+        // Already standing in it — nothing to drive, nothing to offer.
+        if (city.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)
+            && (string.IsNullOrWhiteSpace(state)
+                || state.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase)))
+            return offers;
+
+        var miles = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, city, state);
+        if (miles is not { } mi || mi < 1) return offers;
+
+        offers.Add(new RepositionOffer
+        {
+            City = city,
+            State = state,
+            Miles = Math.Round(mi, 0),
+            IsHomeRun = isHome,
+            Reason = $"Empty to sit the {s.Settings.Hos.CycleRestartHours:0.#} — " +
+                     $"{Hhmm.Of(s.Hos.CycleRemaining)} left on the {s.Settings.Hos.CycleLimit:0}. " +
+                     (string.IsNullOrWhiteSpace(why) ? "" : why + " ") +
+                     "The miles are measured, so they are paid rather than lost.",
+        });
+
+        return offers;
+    }
+
     public static string? WhereToLookForHome(AppState s)
     {
         var st = Status(s);

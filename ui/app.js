@@ -1388,8 +1388,9 @@ function decisionHtml() {
     ${d.evaluations.map((e) => loadCardHtml(e, d)).join('')}
     ${d.rejectAll && (S.views.repositionOffers || []).length ? `<div class="callout info">
       <h4>Running empty from here</h4>
-      <p>Nothing on this board is worth the truck and home time is close. These are the empty moves I
-        would raise — the mileage is worked out, so it goes on your pay properly instead of vanishing.</p>
+      <p>Nothing on this board is worth the truck. These are the empty moves I would raise — to the yard
+        for home time, or to wherever the ${num(S.settings.hos.cycleRestartHours, 0)} is being sat. The
+        mileage is worked out, so it goes on your pay properly instead of vanishing.</p>
       ${S.views.repositionOffers.map((o) => `<div class="row-actions" style="margin:6px 0">
         <button class="btn ${o.isHomeRun ? 'primary' : ''}" data-act="reposition"
           data-city="${esc(o.city)}" data-state="${esc(o.state)}" data-miles="${o.miles}"
