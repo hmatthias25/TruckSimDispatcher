@@ -100,30 +100,29 @@ const pros = (bd) => (evalOf(bd).pros || []).join(' ');
   ok('on the floor, as before', /break-even/i.test(fails(bd)), fails(bd).slice(0, 90));
 
   head('5. It is the home radius that decides, not the yard itself');
-  // Tulsa is 208 mi from Springfield, so it lands on either side of the configured 200 — which makes it
-  // the honest way to prove the radius is what is being read.
+  // The driver is standing in Kansas City, 165 mi from the yard. Joplin at 81 mi is not the yard, but it
+  // is inside the home area and it genuinely closes the distance — which is the case the escape from the
+  // break-even floor exists for.
   //
-  // Changed by #101: the radius WIDENS as the company runs late, so by this point in the fixture the
-  // driver is far enough past due that Tulsa is already inside it. The setting is still what is being
-  // read; it is simply no longer the whole answer. Proved here by narrowing it until Tulsa falls back
-  // outside, which is the same demonstration from the other end.
-  const dist = (await api('/geo/distance?cityA=Tulsa&stateA=OK&cityB=Springfield&stateB=MO'))?.miles;
+  // Tulsa used to play this part and no longer can: at 208 mi it is FURTHER from Springfield than Kansas
+  // City is, so #114 refuses it. The old assertion here called that "the ride home", which was the app
+  // describing a load taking the driver away from home.
+  const dist = (await api('/geo/distance?cityA=Joplin&stateA=MO&cityB=Springfield&stateB=MO'))?.miles;
   let st = (await api('/bootstrap')).settings;
   let hsNow = (await api('/bootstrap')).views.homeTime;
-  ok('Tulsa is outside the CONFIGURED 200 mi radius', dist > st.scoring.homeRadiusMiles,
-    `${Math.round(dist)} mi vs ${st.scoring.homeRadiusMiles}`);
-  ok('but the effective radius has widened with the lateness',
-    hsNow.homeRadius > st.scoring.homeRadiusMiles,
-    `${Math.round(hsNow.homeRadius)} mi at ${hsNow.daysLate?.toFixed?.(1)} days late`);
-  bd = await only('Tulsa', 'OK', 180, 130);
+  ok('Joplin is inside the home area but is not the yard', dist > 1 && dist < hsNow.homeRadius,
+    `${Math.round(dist)} mi against a ${Math.round(hsNow.homeRadius)} mi area`);
+  ok('and it is nearer than where the driver is standing', dist < hsNow.milesFromHome,
+    `${Math.round(dist)} mi against ${Math.round(hsNow.milesFromHome)} mi out`);
+  bd = await only('Joplin', 'MO', 95, 70);
   ok('so a cheap load there gets through as the ride home',
     bd.rejectAll !== true, `rejectAll=${bd.rejectAll}`);
   ok('for that reason and no other', /gets you home/i.test(pros(bd)), 'ride home');
 
-  st.scoring.homeRadiusMiles = 90;   // widened it is still only 2x, so 180 keeps Tulsa outside
+  st.scoring.homeRadiusMiles = 40;   // widened it is still only 2x, so 80 puts Joplin outside
   await api('/settings', 'POST', st);
-  bd = await only('Tulsa', 'OK', 180, 130);
-  ok('narrow it until Tulsa is outside again and the same load is rejected',
+  bd = await only('Joplin', 'MO', 95, 70);
+  ok('narrow the radius past it and the same load is rejected',
     bd.rejectAll === true, `rejectAll=${bd.rejectAll}`);
   ok('on the break-even floor, as it was before', /break-even/i.test(fails(bd)), fails(bd).slice(0, 90));
   st = (await api('/bootstrap')).settings;

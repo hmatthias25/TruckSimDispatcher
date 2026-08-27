@@ -24,7 +24,7 @@ const un = (r) => r.snapshot || r;
 const at = (d, hm = '08:00') =>
   `2000-${String(Math.floor((d - 1) / 28) + 1).padStart(2, '0')}-${String(((d - 1) % 28) + 1).padStart(2, '0')}T${hm}`;
 
-let S, day = 1;
+let S, day = 1, HOME = ['Springfield', 'MO'];
 const career = () => S.views.career;
 const progressRow = (label) =>
   (career().probationProgress || []).find((r) => (r.label || '').toLowerCase().includes(label));
@@ -37,6 +37,13 @@ async function report(city, state, d, kind = 'TruckStop') {
   });
   S = un(r);
   return r;
+}
+
+/** Report in at the home yard. Resets the home-time clock, which a probationary driver on a fortnightly
+    review cycle would be doing anyway — and without it the long batch below runs them overdue. */
+async function goYard() {
+  day += 1;
+  await report(HOME[0], HOME[1], day, 'Terminal');
 }
 
 /** One clean, on-time load. Long enough that a dozen of them clear the mileage threshold. */
@@ -67,11 +74,19 @@ async function runLoad(destCity, destState) {
 (async () => {
   const app = { driverName: 'P. Bation', preferredDivision: 'Dry Van', transmissionPreference: 'either',
     experienceYears: 7, homeCity: 'Springfield', homeState: 'MO', acceptsProbation: true,
+    // The arrangement on the file barely matters here: a PROBATIONARY driver is held to a fortnightly
+    // cycle whatever they asked for — Probation.EffectiveIntervalDays — because coming in for review is
+    // the point of probation. So this fixture has to bring the driver home, or fifteen loads run them
+    // weeks past their date and #109 and #114 correctly start refusing freight that takes them no nearer
+    // the yard. See goYard() below.
     homeTimePreference: 'biweekly' };
   await api('/onboarding/market', 'POST', app);
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: at(1), code: 'PRI' }));
-  const label = S.views.homeTime.terminalLabel || '';
-  const [hCity, hState] = label.split(',').map((x) => x.trim());
+  const yard = (S.company.terminals || []).find((x) => x.id === S.driver.homeTerminalId)
+               || S.company.terminals[0];
+  const label = `${yard.city}, ${yard.state}`;
+  const [hCity, hState] = [yard.city, yard.state];
+  HOME = [hCity, hState];
   const startLoaded = S.driver.pay.loadedCpm;
   ok('starts probationary', S.driver.rank === 'probationary', S.driver.rank);
   console.log(`     home yard ${label} · starting rate $${startLoaded}/loaded mi`);
@@ -91,7 +106,10 @@ async function runLoad(destCity, destState) {
 
   head('2. #72 Numbers alone do not clear it');
   // Enough loads and miles to satisfy every threshold except the reviews.
-  for (let i = 0; i < 11; i++) await runLoad(i % 2 ? 'Tulsa' : 'Oklahoma City', 'OK');
+  for (let i = 0; i < 11; i++) {
+    await runLoad(i % 2 ? 'Tulsa' : 'Oklahoma City', 'OK');
+    if (i === 3 || i === 7) await goYard();     // in for review, and the clock starts over
+  }
   S = un(await api('/bootstrap'));
   const thresholdRows = (career().probationProgress || []).filter((r) => !/review/i.test(r.label));
   ok('every other threshold is met', thresholdRows.every((r) => r.met),

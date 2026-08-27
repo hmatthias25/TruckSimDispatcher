@@ -134,18 +134,22 @@ const miles = async (a, b, c, d) =>
 
   head('3c. A load that was fine early is refused once we are late enough');
   // The same load, the same board, judged at two different depths of lateness.
-  await place('Tulsa', 'OK', 15);                       // a day over
-  let early = await board([['Memphis', 'TN', 460, 1400]]);
-  const earlyRefused = !!refusal(byCity(early, 'Memphis'));
-  await place('Tulsa', 'OK', 28);                       // a fortnight over
-  let late = await board([['Memphis', 'TN', 460, 1400]]);
-  const lateRefused = !!refusal(byCity(late, 'Memphis'));
+  //
+  // Judged from Denver rather than Tulsa: at a fortnight late the home area reaches 400 mi, and Tulsa is
+  // inside it — which is #114's territory, a different rule with its own message. Denver is 800 mi out
+  // and stays outside however late the driver gets, so what is being measured here is the narrowing.
+  await place('Denver', 'CO', 15);                      // a day over
+  let early = await board([['Albuquerque', 'NM', 460, 1400]]);
+  const earlyRefused = !!refusal(byCity(early, 'Albuquerque'));
+  await place('Denver', 'CO', 28);                      // a fortnight over
+  let late = await board([['Albuquerque', 'NM', 460, 1400]]);
+  const lateRefused = !!refusal(byCity(late, 'Albuquerque'));
   ok('taken a day late, refused a fortnight late', !earlyRefused && lateRefused,
     `day one ${earlyRefused ? 'refused' : 'taken'}, fortnight ${lateRefused ? 'refused' : 'taken'}`);
   if (lateRefused)
     ok('and the refusal says the room is still shrinking',
-      /shrinks every day we keep you/i.test(refusal(byCity(late, 'Memphis'))),
-      refusal(byCity(late, 'Memphis')).slice(-90));
+      /shrinks every day we keep you/i.test(refusal(byCity(late, 'Albuquerque'))),
+      refusal(byCity(late, 'Albuquerque')).slice(-90));
 
   await place('Tulsa', 'OK', 17);                       // back to the reported case for what follows
 
@@ -225,7 +229,9 @@ const miles = async (a, b, c, d) =>
     refusal(byCity(bd, 'Amarillo')).slice(0, 80) || 'both permitted');
 
   head('9. #109 Disqualified means disqualified — there is no override');
-  for (let d = 14; d <= 20; d += 3) await place('Kansas City', 'MO', d);
+  // From Denver, which stays outside the home area however late the driver runs — so the refusal here is
+  // the outbound ceiling rather than #114's "you are already near the yard" rule.
+  for (let d = 14; d <= 20; d += 3) await place('Denver', 'CO', d);
   hs = (await api('/bootstrap')).views.homeTime;
   ok('overdue for this one', hs.overdue === true, `${hs.daysOut?.toFixed?.(1)} days out`);
 
@@ -233,8 +239,10 @@ const miles = async (a, b, c, d) =>
   // directly and it went on the trip as their call. Nobody asked for that middle ground — it existed
   // because disqualifying the load left the city-board hold with no backup to name, which is a problem
   // with the hold rather than with this. A load taking an overdue driver further out is off the table.
-  bd = await board([['Amarillo', 'TX', 620, 2200]]);
-  const refused = byCity(bd, 'Amarillo');
+  // Salt Lake City is 1,232 mi from Springfield against Denver's 790 — 442 mi further out, well past any
+  // tolerance. Amarillo used to play this part and cannot: from Denver it is 195 mi NEARER the yard.
+  bd = await board([['Salt Lake City', 'UT', 520, 1900]]);
+  const refused = byCity(bd, 'Salt Lake City');
   ok('dispatch will not pick it', !bd.authorizedLoadId && !!refusal(refused),
     refusal(refused).slice(0, 110));
   ok('it is marked Reject, not held as a backup', refused.recommendation === 'Reject',
@@ -248,7 +256,7 @@ const miles = async (a, b, c, d) =>
     /FURTHER from Springfield/i.test(denied || ''), denied?.slice(0, 80) || '');
   const booked = (await api('/trips')) || [];
   ok('no trip was raised for it',
-    !booked.some((x) => x.destCity === 'Amarillo' && x.status === 'Authorized'), 'nothing booked');
+    !booked.some((x) => x.destCity === 'Salt Lake City' && x.status === 'Authorized'), 'nothing booked');
 
   head('9b. #113 The tight load home can actually be accepted');
   // Decide() authorizes a Tight load in one case: the company is overdue and this is the load that heads
@@ -304,6 +312,43 @@ const miles = async (a, b, c, d) =>
         (trip.notes || '').slice(0, 100) || '(no note)');
     if (trip) await api(`/trips/${trip.id}/cancel`, 'POST', { reason: 'fixture' });
   }
+
+  head('9c. #114 Already near the yard and late: only freight that closes the distance');
+  // Found in the Los Angeles simulation. The driver landed in Kansas City, 182 mi from Springfield and
+  // overdue, and the app booked a load to Tulsa — 208 mi from Springfield, so 26 mi FURTHER out — and
+  // told them it was "being run to get you home". It was 250 loaded miles to end up further away, with a
+  // 182-mile deadhead sitting on the Dispatch tab the whole time.
+  await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+  const app5 = { ...app, driverName: 'K. Cee' };
+  await api('/onboarding/market', 'POST', app5);
+  S = un(await api('/onboarding/hire', 'POST', { application: app5, force: true, gameTime: iso(1), code: 'PRI' }));
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+  for (const d of [8, 12, 16]) await place('Kansas City', 'MO', d);
+  hs = (await api('/bootstrap')).views.homeTime;
+  const kcOut = hs.milesFromHome;
+  ok('standing inside the home area and late', hs.atHome === true && hs.overdue === true,
+    `${Math.round(kcOut)} mi out, ${hs.daysLate?.toFixed?.(1)} days late`);
+
+  bd = await board([['Tulsa', 'OK', 250, 800], ['Wichita', 'KS', 210, 700], ['Little Rock', 'AR', 400, 1300]]);
+  ok('nothing lateral is taken', !bd.authorizedLoadId, bd.authorizedLoadId || 'none');
+  ok('Tulsa is refused even though it is only 26 mi further out',
+    !!refusal(byCity(bd, 'Tulsa')), refusal(byCity(bd, 'Tulsa')).slice(0, 110));
+  ok('and the reason is that it gets him no nearer, not that it is far',
+    /which is no nearer/i.test(refusal(byCity(bd, 'Tulsa'))), 'no nearer');
+  ok('nothing is described as the ride home',
+    !/being run to get you home/i.test((bd.dispatchNotes || []).join(' ')), 'not claimed');
+  ok('the board says to run it in empty instead',
+    /Run it in empty and take your home time/i.test((bd.dispatchNotes || []).join(' ')), 'said');
+
+  head('9d. #114 But freight that DOES close the distance is still taken');
+  // The rule is about direction, not about refusing to work. A paid load ending nearer the yard beats a
+  // deadhead on every count, and it should still win.
+  bd = await board([['Tulsa', 'OK', 250, 800], ['Joplin', 'MO', 170, 560]]);
+  const took = (bd.evaluations || []).find((e) => e.load.id === bd.authorizedLoadId);
+  ok('the one that closes the distance is authorized', took?.load?.destCity === 'Joplin',
+    took?.load?.destCity || 'none');
+  ok('and it IS called the ride home, because this time it is',
+    /being run to get you home|your ride home/i.test((bd.dispatchNotes || []).join(' ')), 'said');
 
   head('10. A driver on no arrangement is untouched by any of it');
   await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });

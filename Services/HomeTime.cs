@@ -801,6 +801,27 @@ public static class HomeTime
         // The exemption was never needed. A load finishing nearer the yard than the driver already is has
         // a negative gap and passes here on its own.
         var further = destMiles.Value - nowMiles;
+
+        // Already inside the home area and late: the only freight worth taking is freight that gets the
+        // driver meaningfully NEARER the yard. Anything else loses to the empty run in, which is sitting
+        // right there on the Dispatch tab and is shorter than the load.
+        //
+        // This is what turned run 8 of the Los Angeles simulation into a tour. The driver landed in
+        // Kansas City 182 mi from Springfield, overdue, and every lateral load on the board was inside
+        // the ordinary tolerance — so it took one, and then another, and came home three days later than
+        // a 182-mile deadhead would have.
+        //
+        // The floor is the same measurement noise the tolerance uses: a load ending twenty miles nearer
+        // is not closing anything the geography can actually resolve.
+        if (st.Overdue && st.AtHome && further > -MinOutboundWhenOverdueMiles)
+        {
+            var where0 = DispatchEngine.Place(load.DestCity, load.DestState);
+            return $"You are already {nowMiles:N0} mi from {st.TerminalLabel} and {st.DaysLate:0.#} days late. " +
+                   $"{where0} leaves you {destMiles.Value:N0} mi out, which is no nearer — so it is another day " +
+                   "on the road to end up where you are. Run it in empty and take your home time; if something " +
+                   "turns up that actually finishes near the yard, show me and I will put you under it.";
+        }
+
         if (further <= allowance) return null;
 
         var where = DispatchEngine.Place(load.DestCity, load.DestState);
@@ -913,7 +934,13 @@ public static class HomeTime
         if (home == null) return false;
 
         var miles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
-        return miles != null && miles.Value <= st.HomeRadius;
+        if (miles == null || miles.Value > st.HomeRadius) return false;
+
+        // And it has to actually get them nearer. The home area widens with lateness — 400 mi at six days
+        // over — so "inside the home area" stopped meaning much: standing in Kansas City 182 mi out, a
+        // load to Tulsa finishing 208 mi out qualified, and the driver was told it was being run to get
+        // them home. It was 250 loaded miles to end up further from the yard than they started.
+        return st.MilesFromHome is not { } nowMiles || miles.Value <= nowMiles;
     }
 
     /// <summary>
@@ -961,6 +988,11 @@ public static class HomeTime
 
         var destMiles = Geo.MilesBetween(destCity, destState, home.City, home.State);
         if (destMiles == null || destMiles.Value > st.HomeRadius) return lines;
+
+        // Never call a load the ride home when it ends further out than the driver already is. Inside a
+        // home area that widens to 400 miles, that was a sentence the app said about journeys in the
+        // wrong direction.
+        if (st.MilesFromHome is { } atNow && destMiles.Value > atNow) return lines;
 
         lines.Add(destMiles.Value <= 1
             ? $"This load is your ride home — it delivers at {st.TerminalLabel}. Once you are empty, park it at the yard and take your home time."
