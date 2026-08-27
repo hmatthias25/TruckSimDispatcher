@@ -37,30 +37,56 @@ public static class HomeTime
         return hit.Label ?? "No arrangement";
     }
 
-    /// <summary>
-    /// How much the home area widens for every day the company runs late, in miles.
-    ///
-    /// A fixed radius is right while the arrangement is being kept. It is wrong the moment it is broken:
-    /// a driver 2.5 days late standing 200 miles from the yard is, in every sense that matters,
-    /// home — but measured against the same 200 miles used for a driver with a week in hand he reads as
-    /// "still out", and the board goes looking for freight instead of saying run it in and take your days.
-    ///
-    /// Forty a day is about half a shift of empty running per day late. It says the longer we have kept
-    /// somebody out past their word, the further we should be willing to eat empty miles to end it.
-    /// </summary>
-    public const double RadiusGrowthPerLateDayMiles = 40;
-
-    /// <summary>Ceiling on that growth, as a multiple of the configured radius.</summary>
+    /// <summary>Ceiling on the home area's growth, as a multiple of the configured radius.</summary>
     public const double MaxRadiusMultiple = 2.0;
 
     /// <summary>
-    /// The most a load may run AWAY from the yard while home time is merely approaching, in miles.
+    /// How many shifts of empty running the app will offer to get a driver home, when nothing on the
+    /// board will do it for them.
     ///
-    /// Freight does not run in straight lines and some outbound movement on the way to a home-time date
-    /// is ordinary — a load two states out that comes back through home is a normal week. Seven hundred
-    /// miles is not: that is a different week, and no promise survives it.
+    /// Going to a market to pull a fresh board is a today problem: if it cannot be reached on the clock
+    /// in hand there is no point offering it. Going HOME is not — a driver heading for the house takes
+    /// their ten hours on the way and carries on, and nobody refuses to drive home because it is a day
+    /// and a bit.
+    ///
+    /// Judged on one shift for both, the app would not offer a 615-mile run home from Houston — ten miles
+    /// past a single shift — but happily offered a 497-mile empty leg to a market instead. The driver ran
+    /// 713 empty miles and lost two days avoiding one 615-mile run.
+    /// </summary>
+    public const double HomeRunShifts = 2;
+
+    /// <summary>
+    /// How far a driver can drive in a day, for turning days into miles and back.
+    ///
+    /// A shift's driving at the app's own default speed. Deliberately coarse — it is used to ask "could
+    /// they get there and back before the date", which is a question about days, not about minutes.
+    /// </summary>
+    public const double MilesPerDrivingDay = 11 * 55;
+
+    /// <summary>
+    /// How late the company is, as a share of what it promised.
+    ///
+    /// This is the number that should drive everything, and for a long time none of it did. Every
+    /// distance in this file was an absolute tuned against a fortnight, so a weekly driver seven days
+    /// late — a driver who has blown their entire arrangement — was treated exactly like a six-week
+    /// driver seven days late, who has blown a sixth of it.
+    ///
+    /// 0 while the date is being kept; 1 when the driver is a full arrangement past it.
+    /// </summary>
+    public static double Overrun(HomeStatus st) =>
+        st.IntervalDays <= 0 ? 0 : Math.Clamp(st.DaysLate / st.IntervalDays, 0, 1);
+
+    /// <summary>
+    /// The furthest outward leg the app will ever permit while home time is approaching, in miles.
+    ///
+    /// A cap on the arithmetic below rather than the answer itself. Past about this the driver is
+    /// crossing the country and the date is at real risk however many days the sum says are left —
+    /// "he can send you further away but not like 700 miles further away" is where the number came from.
     /// </summary>
     public const double MaxOutboundWhenDueSoonMiles = 500;
+
+    /// <summary>The least it will ever shrink to while the date is still being kept.</summary>
+    public const double MinOutboundWhenDueSoonMiles = 150;
 
     /// <summary>
     /// The most a load may run away from the yard on the <b>first</b> day the company is late, in miles.
@@ -75,16 +101,6 @@ public static class HomeTime
     public const double MaxOutboundWhenOverdueMiles = 150;
 
     /// <summary>
-    /// How much narrower that tolerance gets for every further day the company runs late, in miles.
-    ///
-    /// A hundred and fifty miles of sideways room is reasonable on the day a date slips and unreasonable
-    /// a week after it. The promise does not get less broken with time, so the room should not stay the
-    /// same size — a driver three days late can still be worked laterally into a better market, and one
-    /// ten days late should be going home and nowhere else.
-    /// </summary>
-    public const double OutboundNarrowingPerLateDayMiles = 15;
-
-    /// <summary>
     /// Where that narrowing stops, in miles.
     ///
     /// Not zero, because the geography here is state-centroid distance with a same-state fallback and is
@@ -95,18 +111,24 @@ public static class HomeTime
     public const double MinOutboundWhenOverdueMiles = 40;
 
     /// <summary>
-    /// How near the yard counts as home, given how late the company is.
+    /// How near the yard counts as home, given how far past its word the company is.
     ///
-    /// Widens with lateness and stops at <see cref="MaxRadiusMultiple"/>. There has to be a stop: past
-    /// some distance "close enough to run in empty" becomes a day of unpaid driving, and calling that
-    /// home would be the app solving its own scoring problem with the driver's time.
+    /// Widens on the SHARE of the arrangement overrun rather than on absolute days, so every driver
+    /// reaches the same point at the same point in their own story: a weekly driver a week late and a
+    /// six-week driver six weeks late are both a full arrangement past it, and both get the widest area.
+    /// It used to grow forty miles a day for everybody, which meant the identical treatment for a driver
+    /// who had broken their whole promise and one who had barely dented it.
+    ///
+    /// There has to be a stop: past some distance "close enough to run in empty" becomes a day of unpaid
+    /// driving, and calling that home would be the app solving its own scoring problem with the driver's
+    /// time.
     /// </summary>
-    public static double EffectiveHomeRadius(AppState s, double daysLate)
+    public static double EffectiveHomeRadius(AppState s, HomeStatus st)
     {
         var configured = s.Settings.Scoring.HomeRadiusMiles;
-        if (daysLate <= 0) return configured;
-        return Math.Min(configured * MaxRadiusMultiple,
-                        configured + daysLate * RadiusGrowthPerLateDayMiles);
+        var overrun = Overrun(st);
+        if (overrun <= 0) return configured;
+        return configured * (1 + overrun * (MaxRadiusMultiple - 1));
     }
 
     /// <summary>
@@ -116,16 +138,15 @@ public static class HomeTime
     /// Null while home time is not in play at all — a driver with most of their arrangement left goes
     /// where the freight is, and that is the whole point of an arrangement with a date on it.
     ///
-    /// Flat while the arrangement is merely APPROACHING, because nothing has been broken yet and a
-    /// sliding scale there produced a nasty edge: with two days left on a fortnight, a perfectly ordinary
-    /// 274-mile leg out to Amarillo came out refused, which is not a promise being protected, it is a
-    /// truck being stopped from working.
+    /// While the date is still being KEPT, it is whatever the driver could actually come back from: the
+    /// days they have left, at a day's driving, halved because they have to return. That is a real
+    /// question with a real answer, and it replaces a flat 500 miles for everybody — which spent every
+    /// hour a weekly driver had left while giving a six-week driver with ten days in hand the same leash.
     ///
-    /// Once the date has passed it narrows, a day at a time. The promise does not get less broken as the
-    /// weeks go by, so the room to work sideways should not stay the same size — 150 miles is fair on the
-    /// day it slips and indefensible a week later. It stops at
-    /// <see cref="MinOutboundWhenOverdueMiles"/> rather than at nothing, because the geography is rough
-    /// enough that the last few tens of miles are measurement noise.
+    /// Once the date has PASSED it narrows on the share of the arrangement overrun, so every driver
+    /// reaches the floor when they are one full arrangement late: a weekly driver at seven days, a
+    /// six-week driver at forty-two. It stops at <see cref="MinOutboundWhenOverdueMiles"/> rather than at
+    /// nothing, because the geography is rough enough that the last few tens of miles are noise.
     ///
     /// Rounded to the nearest five so the figure quoted back to the driver reads like a policy rather
     /// than like arithmetic.
@@ -133,9 +154,18 @@ public static class HomeTime
     public static double? OutboundAllowance(HomeStatus st)
     {
         if (!st.Tracked || !st.DueSoon) return null;
-        if (!st.Overdue) return MaxOutboundWhenDueSoonMiles;
 
-        var narrowed = MaxOutboundWhenOverdueMiles - Math.Max(0, st.DaysLate) * OutboundNarrowingPerLateDayMiles;
+        if (!st.Overdue)
+        {
+            // The round trip has to fit in HALF the days left, not all of them. The other half is the
+            // freight itself: the load out, the docks at both ends, the hours the run actually eats. A
+            // detour sized to consume every remaining day is a detour that arrives home late.
+            var recoverable = Math.Max(0, st.DaysUntilDue) * MilesPerDrivingDay / 4;
+            return Math.Round(Math.Clamp(recoverable, MinOutboundWhenDueSoonMiles,
+                                         MaxOutboundWhenDueSoonMiles) / 5) * 5;
+        }
+
+        var narrowed = MaxOutboundWhenOverdueMiles * (1 - Overrun(st));
         return Math.Round(Math.Max(MinOutboundWhenOverdueMiles, narrowed) / 5) * 5;
     }
 
@@ -288,7 +318,7 @@ public static class HomeTime
         // How late we are, and therefore how near counts as home. Worked out once here so the scorer,
         // the board notes and the empty-run offer cannot disagree about where home ends.
         st.DaysLate = st.Overdue ? Math.Max(0, st.DaysOut - st.IntervalDays) : 0;
-        st.HomeRadius = EffectiveHomeRadius(s, st.DaysLate);
+        st.HomeRadius = EffectiveHomeRadius(s, st);
         st.OutboundAllowance = OutboundAllowance(st);
 
         st.MilesFromHome = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
@@ -1300,14 +1330,24 @@ public static class HomeTime
                           && here.LocationState.Equals(home.State, StringComparison.OrdinalIgnoreCase);
         var toHome = Geo.MilesBetween(here.LocationCity, here.LocationState, home.City, home.State);
 
-        // The run home, when the yard is reachable and we are not standing in it.
-        if (!alreadyHome && toHome is { } hm && hm <= reach)
+        // The run home. Allowed to span a rest, unlike the market legs below — see HomeRunShifts.
+        var homeReach = reach * HomeRunShifts;
+        var offeredHome = false;
+        if (!alreadyHome && toHome is { } hm && hm <= homeReach)
+        {
+            offeredHome = true;
+            var overnight = hm > reach;
             offers.Add(new RepositionOffer
             {
                 City = home.City, State = home.State, Miles = Math.Round(hm, 0), IsHomeRun = true,
                 Reason = $"Empty to the yard for home time — {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}, " +
-                         "and nothing on the board is worth staying out for."
+                         "and nothing on the board is worth staying out for." +
+                         (overnight
+                             ? $" That is further than one shift, so take your {s.Settings.Hos.OffDutyReset:0.#} on the way — " +
+                               "it is still the shortest way to end this."
+                             : "")
             });
+        }
 
         // Markets on the way, for pulling a fresh board from somewhere better placed.
         foreach (var c in Markets.Effective(s)
@@ -1323,6 +1363,10 @@ public static class HomeTime
                      })
                      .Where(x => x.out_ <= reach && x.home_ < double.MaxValue)
                      .Where(x => toHome == null || x.home_ < toHome.Value - 25)
+                     // Never an empty leg to a market that is not meaningfully shorter than the empty leg
+                     // home. Running 497 mi unpaid to pull a board, when 615 mi unpaid ends the trip, is
+                     // not a saving — it is the same driving with the job still to do at the end of it.
+                     .Where(x => !offeredHome || toHome == null || x.out_ < toHome.Value * 0.6)
                      .OrderBy(x => x.c.Tier)
                      .ThenBy(x => x.home_)
                      .Take(3))
@@ -1417,11 +1461,18 @@ public static class HomeTime
         // Tulsa, and the driver is not looking for freight OUT of home; they are trying to reach it. They
         // had also just shown a board with nothing going that way, so asking to see one again is asking
         // for what they have already given.
-        if (toHome is { } miles && miles <= reach)
+        // Reachable across a rest, not just on the clock in hand — the same allowance the offer itself
+        // gets. Judged on one shift, this went quiet at 615 miles and started naming markets instead,
+        // which is how a driver ends up running further empty than the trip home would have been.
+        if (toHome is { } miles && miles <= reach * HomeRunShifts)
             return $"Nothing on this board goes home and your home time is " +
                    $"{(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}. " +
-                   $"{DispatchEngine.Place(home.City, home.State)} is {miles:N0} mi — inside what you can drive on " +
-                   $"{Hhmm.Of(drivable)}. Run it in empty and take your home time; the empty miles are on the " +
+                   $"{DispatchEngine.Place(home.City, home.State)} is {miles:N0} mi — " +
+                   (miles <= reach
+                       ? $"inside what you can drive on {Hhmm.Of(drivable)}. "
+                       : $"further than the {Hhmm.Of(drivable)} you have, so take your " +
+                         $"{s.Settings.Hos.OffDutyReset:0.#} on the way. ") +
+                   "Run it in empty and take your home time; the empty miles are on the " +
                    "Dispatch tab and they are paid. If something going that way turns up before you roll, show me " +
                    "and I will put you under it instead.";
 

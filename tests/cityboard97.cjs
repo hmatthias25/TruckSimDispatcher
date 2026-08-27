@@ -90,10 +90,12 @@ async function cityBoard(rows) {
   // about: loads that are merely argued with, so there is still something to hold and name as a backup.
   // Once the arrangement is actually broken, #101/#109 disqualify a wrong-way load outright and there is
   // no backup to offer — that case has its own suite.
-  for (const d of [10, 13]) await place('Oklahoma City', 'OK', d);
+  for (const d of [10, 12]) await place('Oklahoma City', 'OK', d);
   hs = (await api('/bootstrap')).views.homeTime;
   ok('home time is due but not yet broken', hs.dueSoon === true && hs.overdue === false,
     `due in ${hs.daysUntilDue?.toFixed?.(1)} days, overdue ${hs.overdue}`);
+  ok('and at least one of these is still takeable, which is what the hold is for',
+    hs.outboundAllowance > 400, `${hs.outboundAllowance} mi of room with ${hs.daysUntilDue?.toFixed?.(1)} days left`);
 
   head('3. The reported case — three loads at one dock, none of them going home');
   bd = await dockBoard([['San Francisco', 'CA', 1650, 4200],
@@ -118,6 +120,23 @@ async function cityBoard(rows) {
   const auth = await api('/dispatch/authorize', 'POST', { loadId: bd.heldLoadId });
   ok('authorizing the held load works', !!auth.trip?.number, auth.trip?.number || 'refused');
   await api(`/trips/${auth.trip.id}/cancel`, 'POST', { reason: 'fixture' });
+
+  head('4b. #115 Closer to the date, nothing here is takeable — and it still says to show the city');
+  // With two days left rather than three, the outbound room drops to 300 mi and none of these three
+  // qualifies. There is no backup to name, so the hold cannot fire — but the advice it exists to give
+  // must survive: this is one dock, go and look at the town.
+  await place('Oklahoma City', 'OK', 13);
+  const tight = await dockBoard([['San Francisco', 'CA', 1650, 4200],
+                                 ['Sonora', 'TX', 480, 1500],
+                                 ['Cody', 'WY', 980, 2900]]);
+  ok('nothing is authorized', !tight.authorizedLoadId, tight.authorizedLoadId || 'none');
+  ok('every one of them is refused on home time',
+    (tight.evaluations || []).every((e) => (e.homeTimeFails || []).length > 0),
+    (tight.evaluations || []).filter((e) => !(e.homeTimeFails || []).length).length + ' unrefused');
+  ok('and the driver is still told to open the city board',
+    /open the full freight board for/i.test((tight.dispatchNotes || []).join(' ')),
+    'said');
+  await place('Oklahoma City', 'OK', 12);      // back to where the rest of the suite expects him
 
   head('5. Pull the city board and it commits');
   bd = await cityBoard([['San Francisco', 'CA', 1650, 4200],

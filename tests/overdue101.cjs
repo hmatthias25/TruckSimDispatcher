@@ -350,6 +350,89 @@ const miles = async (a, b, c, d) =>
   ok('and it IS called the ride home, because this time it is',
     /being run to get you home|your ride home/i.test((bd.dispatchNotes || []).join(' ')), 'said');
 
+  head('11. #115 The rules are measured against the promise, not in absolute days');
+  // Every distance in the home-time file used to be an absolute tuned against a fortnight. So a weekly
+  // driver seven days late — a driver who has blown their entire arrangement — got exactly the treatment
+  // of a six-week driver seven days late, who has blown a sixth of it.
+  const shape = {};
+  for (const [key, interval] of [['weekly', 7], ['biweekly', 14], ['sixweeks', 42]]) {
+    await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+    const a = { ...app, driverName: `S. ${key}`, homeTimePreference: key };
+    await api('/onboarding/market', 'POST', a);
+    S = un(await api('/onboarding/hire', 'POST', { application: a, force: true, gameTime: iso(1), code: 'PRI' }));
+    await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+
+    // Three days late, whatever the arrangement.
+    await place('Tulsa', 'OK', 1 + interval + 3);
+    const h = (await api('/bootstrap')).views.homeTime;
+    shape[key] = { late: h.daysLate, ceiling: h.outboundAllowance, radius: h.homeRadius };
+
+    // And on the due-soon line, where the room to work outward should reflect the days left.
+    await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+    await api('/onboarding/market', 'POST', a);
+    S = un(await api('/onboarding/hire', 'POST', { application: a, force: true, gameTime: iso(1), code: 'PRI' }));
+    await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+    // Well inside the due-soon window, not on its edge: at 0.78 a weekly driver lands just SHORT of
+    // the 0.75 threshold once the day is rounded, and the ceiling comes back null.
+    await place('Tulsa', 'OK', Math.round(1 + interval * 0.85));
+    const d = (await api('/bootstrap')).views.homeTime;
+    shape[key].left = d.daysUntilDue;
+    shape[key].dueCeiling = d.outboundAllowance;
+  }
+  console.log(`     3 days late   weekly ${shape.weekly.ceiling}mi/${Math.round(shape.weekly.radius)}mi  ` +
+              `biweekly ${shape.biweekly.ceiling}mi/${Math.round(shape.biweekly.radius)}mi  ` +
+              `sixweeks ${shape.sixweeks.ceiling}mi/${Math.round(shape.sixweeks.radius)}mi`);
+
+  ok('three days late is tighter for a weekly driver than a fortnightly one',
+    shape.weekly.ceiling < shape.biweekly.ceiling,
+    `${shape.weekly.ceiling} mi against ${shape.biweekly.ceiling} mi`);
+  ok('and tighter again than for a six-week driver',
+    shape.biweekly.ceiling < shape.sixweeks.ceiling,
+    `${shape.biweekly.ceiling} mi against ${shape.sixweeks.ceiling} mi`);
+  ok('the home area widens fastest for the driver furthest past their word',
+    shape.weekly.radius > shape.biweekly.radius && shape.biweekly.radius > shape.sixweeks.radius,
+    `${Math.round(shape.weekly.radius)} > ${Math.round(shape.biweekly.radius)} > ${Math.round(shape.sixweeks.radius)}`);
+
+  console.log(`     on the due-soon line   weekly ${shape.weekly.dueCeiling}mi with ` +
+              `${shape.weekly.left?.toFixed(1)}d left  ·  sixweeks ${shape.sixweeks.dueCeiling}mi with ` +
+              `${shape.sixweeks.left?.toFixed(1)}d left`);
+  ok('both are genuinely in the due-soon window, so the numbers are comparable',
+    shape.weekly.dueCeiling > 0 && shape.sixweeks.dueCeiling > 0,
+    `weekly ${shape.weekly.dueCeiling}, sixweeks ${shape.sixweeks.dueCeiling}`);
+  ok('a weekly driver with a day left is not offered the same room as one with six',
+    shape.weekly.dueCeiling > 0 && shape.weekly.dueCeiling < shape.sixweeks.dueCeiling,
+    `${shape.weekly.dueCeiling} mi with ${shape.weekly.left?.toFixed(1)}d against ` +
+    `${shape.sixweeks.dueCeiling} mi with ${shape.sixweeks.left?.toFixed(1)}d`);
+
+  head('12. #116 It will offer to run you home further than one shift');
+  // Found in the weekly journey: delivered in Houston, 615 mi from the yard, and the app offered a
+  // 497-mile empty leg to a market instead — because the run home was gated on a single shift and 615 is
+  // ten miles past one. The driver ran 713 empty miles to avoid one 615-mile run.
+  await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+  const app6 = { ...app, driverName: 'F. Aroff' };
+  await api('/onboarding/market', 'POST', app6);
+  S = un(await api('/onboarding/hire', 'POST', { application: app6, force: true, gameTime: iso(1), code: 'PRI' }));
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+  for (const d of [8, 12, 16]) await place('Houston', 'TX', d);
+
+  const away = (await api('/bootstrap')).views.homeTime;
+  const oneShift = 11 * 55;
+  ok('Houston is further from the yard than a single shift', away.milesFromHome > oneShift,
+    `${Math.round(away.milesFromHome)} mi against ${oneShift} mi of driving`);
+
+  await board([['San Antonio', 'TX', 200, 620], ['El Paso', 'TX', 750, 2300]]);
+  const runs = (await api('/bootstrap')).views.repositionOffers || [];
+  const goHome = runs.find((o) => o.isHomeRun);
+  ok('the run home is offered anyway', !!goHome,
+    goHome ? `${Math.round(goHome.miles)} mi` : runs.map((o) => o.city).join(', ') || '(nothing offered)');
+  if (goHome) {
+    ok('and it says a rest is needed on the way rather than pretending otherwise',
+      /take your .* on the way/i.test(goHome.reason), goHome.reason.slice(-100));
+    ok('no empty leg to a market is offered that is not meaningfully shorter',
+      runs.filter((o) => !o.isHomeRun).every((o) => o.miles < goHome.miles * 0.6),
+      runs.filter((o) => !o.isHomeRun).map((o) => `${o.city} ${Math.round(o.miles)}mi`).join(', ') || 'none offered');
+  }
+
   head('10. A driver on no arrangement is untouched by any of it');
   await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
   const app3 = { ...app, driverName: 'N. Oarrangement', homeTimePreference: 'none' };
