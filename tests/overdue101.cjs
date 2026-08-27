@@ -250,6 +250,61 @@ const miles = async (a, b, c, d) =>
   ok('no trip was raised for it',
     !booked.some((x) => x.destCity === 'Amarillo' && x.status === 'Authorized'), 'nothing booked');
 
+  head('9b. #113 The tight load home can actually be accepted');
+  // Decide() authorizes a Tight load in one case: the company is overdue and this is the load that heads
+  // to the yard. It says out loud that it is taking it and owning the call. Authorize then refused it
+  // unless the caller passed an override, so the green Accept button errored — and the rank gate on top
+  // told a company driver "this is not your call to make" about a load operations had picked for them.
+  //
+  // Found simulating the Los Angeles run home: dispatch chose the load and then would not book it.
+  await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+  const app4 = { ...app, driverName: 'T. Ight' };
+  await api('/onboarding/market', 'POST', app4);
+  S = un(await api('/onboarding/hire', 'POST', { application: app4, force: true, gameTime: iso(1), code: 'PRI' }));
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+  for (const d of [6, 11, 16, 19]) await place('Tulsa', 'OK', d);
+  hs = (await api('/bootstrap')).views.homeTime;
+  ok('overdue, and standing away from the yard', hs.overdue === true && hs.atHome !== undefined,
+    `${hs.daysLate?.toFixed?.(1)} days late`);
+
+  // A load home whose window leaves less than the safety buffer. Deadline tuned to land it on Tight.
+  let tight = null;
+  for (const hrs of [7, 8, 9, 10, 11, 12, 13, 14]) {
+    await api('/board/clear', 'POST', {});
+    const one = await api('/board/add', 'POST', {
+      cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
+      originCity: 'Tulsa', originState: 'OK', receiver: 'Springfield Distribution',
+      destCity: 'Springfield', destState: 'MO', loadedMiles: 210, deadheadMiles: 0,
+      gameRevenue: 700, deadlineHours: hrs, weightLbs: 34000,
+    });
+    const e0 = (one.evaluations || [])[0];
+    if (e0?.feasibility?.verdict === 'Tight' && one.authorizedLoadId === e0.load.id) { tight = { one, e0 }; break; }
+  }
+
+  if (!tight) {
+    ok('could not tune a Tight-but-heads-home load in this fixture — skipped', true, 'skipped');
+  } else {
+    ok('dispatch authorizes it despite the tight window',
+      tight.one.authorizedLoadId === tight.e0.load.id, tight.e0.feasibility.verdict);
+    ok('and says it is owning the call',
+      /I am taking it and owning the call/i.test((tight.one.dispatchNotes || []).join(' ')), 'said');
+
+    let err = null, trip = null;
+    try {
+      const r = await api('/dispatch/authorize', 'POST',
+        { loadId: tight.e0.load.id, rationale: null, overrideTight: false });
+      trip = r.trip;
+    } catch (e) { err = e.message; }
+
+    ok('accepting it works without any override', !err && !!trip?.number,
+      err ? err.slice(0, 110) : trip.number);
+    if (trip)
+      ok('and the trip records that operations made the call, not the driver',
+        /Operations made this call, not the driver/i.test(trip.notes || ''),
+        (trip.notes || '').slice(0, 100) || '(no note)');
+    if (trip) await api(`/trips/${trip.id}/cancel`, 'POST', { reason: 'fixture' });
+  }
+
   head('10. A driver on no arrangement is untouched by any of it');
   await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
   const app3 = { ...app, driverName: 'N. Oarrangement', homeTimePreference: 'none' };

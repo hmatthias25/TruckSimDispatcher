@@ -1447,7 +1447,11 @@ function loadCardHtml(e, d) {
   const cls = rec === 'Authorize' ? 'auth' : rec === 'Backup' ? 'backup' : 'reject';
   const fb = { Feasible: 'ok', Tight: 'warn', Infeasible: 'bad' }[e.feasibility.verdict] || 'mute';
   const isAuth = d.authorizedLoadId === e.load.id;
-  const canForce = rec !== 'Reject' && e.feasibility.verdict === 'Tight' && !e.hardFails.length;
+  // A tight load the driver may choose to force. NOT one dispatch has already authorized — that is a
+  // decision the app made and owns, so Accept just works and a second "as exception" button beside it
+  // would read as though the driver were overruling something.
+  const canForce = rec !== 'Reject' && e.feasibility.verdict === 'Tight'
+    && !e.hardFails.length && d.authorizedLoadId !== e.load.id;
   return `<div class="loadcard ${cls}">
     <div class="loadcard-head">
       ${badge(rec === 'Authorize' ? 'ok' : rec === 'Backup' ? 'info' : 'bad', rec)}

@@ -1142,10 +1142,25 @@ public static class DispatchEngine
 
         if (eval.Feasibility.Verdict == "Tight")
         {
-            if (!overrideTight)
+            // The one tight load dispatch picks for itself: the company is already overdue and this is
+            // the load that heads to the yard. Decide() authorizes it on exactly this condition and says
+            // out loud that it owns the call — see TightButHeadsHome.
+            //
+            // Without this, it said that and then refused to let anybody accept it. The green Accept
+            // button posts overrideTight:false, so a driver without the override privilege had one
+            // button that errored and no way forward, and a driver with it had two buttons on the same
+            // load, one broken and one labelled as though they were overruling a decision the app had
+            // already made for them.
+            var dispatchOwnsIt = HomeTime.OverdueAndHeadsHome(s, load);
+
+            if (!overrideTight && !dispatchOwnsIt)
                 throw new InvalidOperationException(
                     $"Cannot authorize: only {Hhmm.Of(eval.Feasibility.SlackHours)} of slack against the required {Hhmm.Of(eval.Feasibility.RequiredBufferHours)} buffer.");
-            if (!privileges.CanOverrideTightLoad)
+            // The rank gate is about the DRIVER overruling dispatch on a tight window. It has nothing to
+            // say when dispatch made the call itself — telling a company driver "this is not your call to
+            // make" about a load operations picked for them is precisely backwards, and it left the one
+            // load the app had told them to run as the one load they could not accept.
+            if (!privileges.CanOverrideTightLoad && !dispatchOwnsIt)
                 throw new InvalidOperationException(
                     $"Only {Hhmm.Of(eval.Feasibility.SlackHours)} of slack against a {Hhmm.Of(eval.Feasibility.RequiredBufferHours)} buffer, and this is not your call to make. " +
                     privileges.Summary);
@@ -1235,7 +1250,10 @@ public static class DispatchEngine
         }
 
         if (eval.Feasibility.Verdict == "Tight")
-            trip.Notes = "Authorized as an exception with sub-buffer slack. Dispatcher owns any service failure on this load.";
+            trip.Notes = HomeTime.OverdueAndHeadsHome(s, load)
+                ? "Sub-buffer slack, taken because home time is already overdue and this load heads to the yard. " +
+                  "Operations made this call, not the driver."
+                : "Authorized as an exception with sub-buffer slack. Dispatcher owns any service failure on this load.";
 
 
         // Off-account freight is allowed when the account is dry, but it is recorded as the exception
