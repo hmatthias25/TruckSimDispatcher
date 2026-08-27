@@ -80,7 +80,8 @@ public static class TotalLoss
             : "Buy the replacement in ATS: " + Seed.RecommendedTruck(s));
 
         steps.Add($"Then write {truck.Ref} off on the Maintenance tab — fault, scrap value, and it settles the " +
-                  "insurance. Once the new unit is on the books I will put you back in service.");
+                  "insurance. If the replacement is already on the books when you do that, I put you " +
+                  "straight into it; if not, add it on the Fleet tab and I will pick it up from there.");
 
         return steps;
     }

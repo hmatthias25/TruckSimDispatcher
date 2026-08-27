@@ -130,6 +130,92 @@ async function place(day, damage = 3) {
   ok('no write-off is pending any more', !after.writeOff, `${after.writeOff?.unit}`);
   ok('and the seat is empty until the new unit is reported',
     !(await api('/bootstrap')).driver.assignedTruckUnit, 'no truck assigned');
+  head('#117 A default career can come back from its first wreck');
+  // Every new company starts with a Small yard: one tractor slot, one tractor. Wreck it and the recovery
+  // the app prints was impossible to follow — the wreck held the only slot, so the replacement could not
+  // be added; and writing the wreck off first did not give the slot back either, because a Retired
+  // tractor still counted against capacity. Both orders dead-ended with no truck and no dispatch.
+  await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+  const wApp = { driverName: 'W. Reck', preferredDivision: 'Dry Van', transmissionPreference: 'either',
+    experienceYears: 9, homeCity: 'Springfield', homeState: 'MO', acceptsProbation: true,
+    homeTimePreference: 'biweekly' };
+  await api('/onboarding/market', 'POST', wApp);
+  let W = un(await api('/onboarding/hire', 'POST',
+    { application: wApp, force: true, gameTime: iso(2), code: 'PRI' }));
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+
+  const wYard = W.company.terminals[0];
+  ok('a new career starts with one tractor slot', wYard.truckCapacity === 1, `${wYard.truckCapacity}`);
+  ok('and one tractor in it', W.trucks.length === 1, `${W.trucks.length}`);
+
+  // Past the write-off line.
+  W = un(await api('/status', 'POST', {
+    locationCity: 'Barstow', locationState: 'CA', locationKind: 'TruckStop', gameTime: iso(6),
+    fuelPct: 40, atsOdometer: 480000, truckDamagePct: 62, trailerDamagePct: 4,
+    dutyStatus: 'OnDuty', atsBankBalance: null,
+  }));
+  const wreck = (await api('/bootstrap')).views.writeOff;
+  ok('the truck is a write-off', !!wreck, wreck ? `${wreck.unit} at ${wreck.damagePct}%` : '(none)');
+  ok('and the way out is on the screen', (wreck?.steps || []).length >= 3, `${(wreck?.steps || []).length} steps`);
+
+  // Step 4 as printed: add the replacement BEFORE writing the wreck off.
+  let addErr = null;
+  try {
+    await api('/fleet/truck', 'POST', {
+      unit: 'T900', year: 2022, make: 'Freightliner', model: 'Cascadia', inGameGarage: true,
+      status: 'InService', damagePct: 2, atsOdometer: 900,
+      homeTerminalId: wYard.id, purchasePrice: 135000,
+    });
+  } catch (e) { addErr = e.message; }
+  ok('the replacement goes on the books while the wreck is still there', !addErr,
+    addErr ? addErr.slice(0, 110) : 'added');
+
+  // Step 5: write the wreck off.
+  const wOff = await api('/maintenance/writeoff', 'POST',
+    { unit: wreck.unit, driverFault: false, scrapRecovery: 9000, notes: 'fixture' });
+  ok('the write-off settles', !!wOff.writeOff, `${wOff.writeOff?.unit}`);
+  ok('and it puts the driver into the replacement, as step five says it will',
+    wOff.writeOff?.replacementUnit === 'T900', wOff.writeOff?.replacementUnit || '(left with none)');
+
+  const wEnd = await api('/bootstrap');
+  ok('the driver is in a tractor again', wEnd.driver.assignedTruckUnit === 'T900',
+    wEnd.driver.assignedTruckUnit || '(none)');
+  ok('and clear to run', !(wEnd.views.dispatchBlockers || []).some((b) => /write-off|No truck assigned/i.test(b)),
+    (wEnd.views.dispatchBlockers || [])[0] || 'clear');
+
+  head('#117 And the other order works too — write off first, then buy');
+  await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+  await api('/onboarding/market', 'POST', wApp);
+  W = un(await api('/onboarding/hire', 'POST',
+    { application: wApp, force: true, gameTime: iso(2), code: 'PRI' }));
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+  const wYard2 = W.company.terminals[0];
+  await api('/status', 'POST', {
+    locationCity: 'Barstow', locationState: 'CA', locationKind: 'TruckStop', gameTime: iso(6),
+    fuelPct: 40, atsOdometer: 480000, truckDamagePct: 62, trailerDamagePct: 4,
+    dutyStatus: 'OnDuty', atsBankBalance: null,
+  });
+  const w2 = (await api('/bootstrap')).views.writeOff;
+  await api('/maintenance/writeoff', 'POST',
+    { unit: w2.unit, driverFault: false, scrapRecovery: 9000, notes: 'fixture' });
+
+  let addErr2 = null;
+  try {
+    await api('/fleet/truck', 'POST', {
+      unit: 'T901', year: 2022, make: 'Freightliner', model: 'Cascadia', inGameGarage: true,
+      status: 'InService', damagePct: 2, atsOdometer: 900,
+      homeTerminalId: wYard2.id, purchasePrice: 135000,
+    });
+  } catch (e) { addErr2 = e.message; }
+  ok('a retired tractor does not keep the slot', !addErr2, addErr2 ? addErr2.slice(0, 110) : 'added');
+
+  const wEnd2 = await api('/bootstrap');
+  ok('and a driver with no tractor is put in the one just added',
+    wEnd2.driver.assignedTruckUnit === 'T901', wEnd2.driver.assignedTruckUnit || '(none)');
+  ok('clear to run either way',
+    !(wEnd2.views.dispatchBlockers || []).some((b) => /write-off|No truck assigned/i.test(b)),
+    (wEnd2.views.dispatchBlockers || [])[0] || 'clear');
+
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

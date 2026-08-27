@@ -795,6 +795,30 @@ app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
         s.Trucks.Add(t);
     }
     else s.Trucks[s.Trucks.IndexOf(existing)] = t;
+
+    // A driver with no tractor gets put in this one.
+    //
+    // The write-off steps end "add it on the Fleet tab and I will pick it up from there", and until now
+    // nothing did: the truck went on the books and the driver stayed grounded with "No truck assigned",
+    // one self-assignment guard away from the tractor they had just been told to buy. There is nothing
+    // to decide here — they have no truck and this is one.
+    if (string.IsNullOrWhiteSpace(s.Driver.AssignedTruckUnit)
+        && t.Status == "InService"
+        && !s.HiredDrivers.Any(h => h.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase)))
+    {
+        t.AssignedDriver = s.Driver.Name;
+        s.Driver.AssignedTruckUnit = t.Unit;
+        s.Settings.GovernedMph = t.GovernedMph;
+        s.Status.TruckDamagePct = t.DamagePct;
+        s.Status.AtsOdometer = t.AtsOdometer;
+
+        var box = s.Trailers.FirstOrDefault(x =>
+            x.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase));
+        if (box != null) box.AssignedTruckUnit = t.Unit;
+
+        store.Log(s, "career", $"Unit {t.Ref} added and assigned — you had no tractor.");
+    }
+
     CareerService.Recalculate(s);
     return Snapshot(s);
 })));

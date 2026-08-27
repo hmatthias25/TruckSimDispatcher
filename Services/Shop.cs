@@ -293,6 +293,14 @@ public static class Shop
     public class WriteOffResult
     {
         public string Unit { get; set; } = "";
+
+        /// <summary>
+        /// The tractor the driver was put into, when one was already on the books.
+        ///
+        /// Empty when there was nothing to move them to — then the seat really is empty and the steps
+        /// say to go and buy one.
+        /// </summary>
+        public string ReplacementUnit { get; set; } = "";
         public decimal InsurancePayout { get; set; }
         public decimal Deductible { get; set; }
         public decimal ScrapRecovery { get; set; }
@@ -337,6 +345,29 @@ public static class Shop
         {
             s.Driver.AssignedTruckUnit = "";
             s.Status.TruckDamagePct = 0;
+
+            // And if the replacement is already on the books, put them in it.
+            //
+            // The steps end "once the new unit is on the books I will put you back in service", and it
+            // did not. The driver was left with no tractor, and the self-assignment guard — right for a
+            // driver swapping out of a perfectly good truck — stood between them and the one they had
+            // just been told to buy. Following the printed order exactly, the recovery stopped here.
+            var replacement = EquipmentService.BestAvailableTruck(s);
+            if (replacement != null)
+            {
+                foreach (var t in s.Trucks.Where(t => t.AssignedDriver == s.Driver.Name)) t.AssignedDriver = "";
+                replacement.AssignedDriver = s.Driver.Name;
+                s.Driver.AssignedTruckUnit = replacement.Unit;
+                s.Settings.GovernedMph = replacement.GovernedMph;
+                s.Status.TruckDamagePct = replacement.DamagePct;
+                s.Status.AtsOdometer = replacement.AtsOdometer;
+                r.ReplacementUnit = replacement.Unit;
+
+                // The trailer follows the tractor, or it is left pointing at a unit that is gone.
+                var box = s.Trailers.FirstOrDefault(t =>
+                    t.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase));
+                if (box != null) box.AssignedTruckUnit = replacement.Unit;
+            }
         }
         foreach (var d in s.HiredDrivers.Where(d => string.Equals(d.AssignedTruckUnit, truck.Unit, StringComparison.OrdinalIgnoreCase)))
             d.AssignedTruckUnit = "";

@@ -1166,8 +1166,29 @@ public static class Migrations
     }
 
     /// <summary>Tractors based at a yard, which is what its capacity limits.</summary>
+    /// <summary>
+    /// Tractors actually taking up room at a yard.
+    ///
+    /// A RETIRED tractor is not one of them. It is off the fleet — the model says as much, it is kept
+    /// only so its trip history still resolves — and counting it held the slot forever. Every new
+    /// company starts with a Small yard: one slot, one truck. Wreck that truck and the career ended
+    /// there: the replacement could not be added before the write-off because the wreck was in the way,
+    /// and could not be added after it because the retirement did not give the slot back.
+    ///
+    /// Nor does a tractor already past its write-off line. It cannot be run and it is leaving, and
+    /// keeping it in the count made the app's own recovery steps impossible to follow in the order they
+    /// are printed.
+    /// </summary>
     public static int TrucksBasedAt(AppState s, string terminalId) =>
-        s.Trucks.Count(t => t.HomeTerminalId == terminalId && t.Status != "OutOfService");
+        s.Trucks.Count(t => t.HomeTerminalId == terminalId && HoldsASlot(s, t));
+
+    /// <summary>Whether this tractor is part of the working fleet at its yard.</summary>
+    private static bool HoldsASlot(AppState s, Truck t)
+    {
+        if (t.Status is "OutOfService" or "Retired") return false;
+        if (t.Retired) return false;
+        return t.DamagePct < Shop.TotalLossPctFor(s, t);
+    }
 
     /// <summary>Remaining tractor slots at a yard. Negative means it is over capacity.</summary>
     public static int RoomAt(AppState s, Terminal t) => t.TruckCapacity - TrucksBasedAt(s, t.Id);
