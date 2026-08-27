@@ -2159,12 +2159,25 @@
     <tr><th style="width:1.9in">Where you stand</th><th>How far a load may take you further from the yard</th></tr>
     <tr><td>Arrangement not close yet</td><td>No limit. Go where the freight is &mdash; that is the point
       of an arrangement with a date on it rather than a leash.</td></tr>
-    <tr><td>Due soon</td><td>About <b>500 miles</b>. Freight does not run in straight lines and a leg out
-      that comes back through home is a normal week. Seven hundred miles is a different week.</td></tr>
-    <tr><td>Overdue</td><td>About <b>150 miles on the day it slips</b>, and <b>15 miles less for every
-      further day</b> down to a floor of 40. At that point you are not trading distance against a rate;
-      the company has already broken its word and no rate buys that back.</td></tr>
+    <tr><td>Due soon</td><td>Whatever you could still come back from &mdash; the days you have left, at a
+      day's driving, with the round trip fitting inside half of them. Capped at <b>500 miles</b>: past
+      that it is a different week whatever the sum says.</td></tr>
+    <tr><td>Overdue</td><td>About <b>150 miles on the day it slips</b>, narrowing on how much of your own
+      arrangement you are past, down to a floor of 40. At that point you are not trading distance against
+      a rate; the company has already broken its word and no rate buys that back.</td></tr>
   </table>
+
+  <div class="rule">
+    <h4>All of it is measured against YOUR arrangement, not against a fortnight</h4>
+    <p>These numbers used to be absolutes, tuned against the two-week arrangement most drivers take. That
+      made them nonsense at both ends. A weekly driver seven days late has blown their <em>entire</em>
+      arrangement; a six-week driver seven days late has blown a sixth of it. They were treated
+      identically, and the six-week driver with ten days in hand got the same leash as the weekly driver
+      with a day and a half.</p>
+    <p style="margin-top:6pt">Now the room to work outward and the speed the home area widens both key off
+      how much of your own arrangement you are past. Everybody reaches the tightest setting when they are
+      one full arrangement late &mdash; a weekly driver at seven days, a six-week driver at forty-two.</p>
+  </div>
 
   <p>A load past the line is refused with the reason on its card, and the score still shows how far wrong
     it goes &mdash; and unlike the old flat penalty, a load seven hundred miles the wrong way now costs
@@ -2181,26 +2194,6 @@
       than that.</p>
   </div>
 
-  <div class="note">
-    <h4>The home area widens the later we run</h4>
-    <p>The 200-mile radius is right while the arrangement is being kept and wrong the moment it is broken.
-      A driver two days late standing 200 miles from the yard is, in every sense that matters, home &mdash;
-      but measured against the same radius as somebody with a week in hand he reads as still out, and the
-      board keeps looking for freight instead of saying run it in.</p>
-    <p style="margin-top:6pt">So it grows by about <b>40 miles for every day you are late</b>, stopping at
-      twice the setting. Past that, "close enough to run in empty" is a day of unpaid driving, and calling
-      that home would be the app solving its own problem with your time.</p>
-  </div>
-
-  <div class="rule">
-    <h4>When every load on the board runs the wrong way</h4>
-    <p>That is not a bad board &mdash; it may be perfectly good freight. What it cannot do is end the thing
-      the company is failing at. So instead of "reposition and pull a fresh board", you get the yard's
-      distance, whether it is inside the clock you have in hand, and the markets between here and there
-      that are worth pulling a board in. If it is reachable, run it in empty; those miles are paid.</p>
-  </div>
-
-
   <div class="pfoot"><span>13 &middot; Home time</span><span>37</span></div>
 </div>
 
@@ -2216,13 +2209,18 @@
     you can still be routed laterally into a better market; a week late you should be going home and
     nowhere else.</p>
 
+  <p>Read down a column for one driver getting later; read across a row to see the same number of days
+    meaning very different things depending on what was promised.</p>
+
   <table>
-    <tr><th style="width:1.6in">Days past your date</th><th style="width:1.1in">Room outward</th><th>&nbsp;</th></tr>
-    <tr><td>1</td><td class="mono">135 mi</td><td>Lateral moves are still on the table.</td></tr>
-    <tr><td>3</td><td class="mono">105 mi</td><td>&nbsp;</td></tr>
-    <tr><td>5</td><td class="mono">75 mi</td><td>&nbsp;</td></tr>
-    <tr><td>7</td><td class="mono">45 mi</td><td>Effectively only freight that goes your way.</td></tr>
-    <tr><td>8 or more</td><td class="mono">40 mi</td><td>The floor. Below this it would be arguing with its own map.</td></tr>
+    <tr><th style="width:1.5in">Days past your date</th>
+        <th class="num">weekly</th><th class="num">fortnightly</th><th class="num">3 weeks</th>
+        <th class="num">monthly</th><th class="num">6 weeks</th></tr>
+    <tr><td>1</td><td class="mono">130 mi</td><td class="mono">140 mi</td><td class="mono">145 mi</td><td class="mono">145 mi</td><td class="mono">145 mi</td></tr>
+    <tr><td>3</td><td class="mono">85 mi</td><td class="mono">120 mi</td><td class="mono">130 mi</td><td class="mono">135 mi</td><td class="mono">140 mi</td></tr>
+    <tr><td>7</td><td class="mono">40 mi</td><td class="mono">75 mi</td><td class="mono">100 mi</td><td class="mono">115 mi</td><td class="mono">125 mi</td></tr>
+    <tr><td>14</td><td class="mono">40 mi</td><td class="mono">40 mi</td><td class="mono">50 mi</td><td class="mono">80 mi</td><td class="mono">100 mi</td></tr>
+    <tr><td>a full arrangement</td><td class="mono">40 mi</td><td class="mono">40 mi</td><td class="mono">40 mi</td><td class="mono">40 mi</td><td class="mono">40 mi</td></tr>
   </table>
 
   <div class="note">
@@ -2232,6 +2230,34 @@
       error bars of the measurement. Refusing freight on a number the app has already told you it cannot
       compute precisely would be pretending to a precision it does not have.</p>
   </div>
+
+  <div class="note">
+    <h4>The home area widens the later we run</h4>
+    <p>The 200-mile radius is right while the arrangement is being kept and wrong the moment it is broken.
+      A driver two days late standing 200 miles from the yard is, in every sense that matters, home &mdash;
+      but measured against the same radius as somebody with a week in hand he reads as still out, and the
+      board keeps looking for freight instead of saying run it in.</p>
+    <p style="margin-top:6pt">So it grows with <b>how much of your arrangement you are past</b>, reaching
+      twice the setting when you are a full arrangement late. Past that, "close enough to run in empty" is
+      a day of unpaid driving, and calling that home would be the app solving its own problem with your
+      time.</p>
+  </div>
+
+  <div class="rule">
+    <h4>When every load on the board runs the wrong way</h4>
+    <p>That is not a bad board &mdash; it may be perfectly good freight. What it cannot do is end the thing
+      the company is failing at. So instead of "reposition and pull a fresh board", you get the yard's
+      distance, whether it is inside the clock you have in hand, and the markets between here and there
+      that are worth pulling a board in. If it is reachable, run it in empty; those miles are paid.</p>
+    <p style="margin-top:6pt">The trip home is the one empty run allowed to <b>span a rest</b>. A
+      repositioning leg has to fit the clock you are holding, because a leg you cannot finish is a guess
+      about tomorrow&rsquo;s board. The yard is not a guess &mdash; it is where the arrangement ends. So if
+      home is further than one shift, you are told the distance, told to take your ten on the way, and sent
+      anyway. Judged on one shift it would go quiet somewhere around six hundred miles and start naming
+      markets instead, which is how a driver ends up running further empty than the trip home would have
+      been.</p>
+  </div>
+
 
   <div class="pfoot"><span>13 &middot; Home time</span><span>38</span></div>
 </div>
@@ -3336,8 +3362,11 @@
     <h4>Nothing dispatches on a wreck</h4>
     <p>The board is refused until the unit is off the fleet and you are in something else, and the refusal
       names the load that has to be cancelled first. It clears itself the moment the write-off goes
-      through &mdash; the seat then sits empty until you report the new unit, which is the app waiting for
-      you rather than assuming.</p>
+      through.</p>
+    <p style="margin-top:6pt">You do not have to put yourself back in a truck. Write the wreck off with
+      the replacement already on the fleet and you are moved into it; report the replacement afterwards and
+      it comes to you on arrival, because a driver with no tractor is the only one it can be for. Either
+      order works and neither leaves you sitting in nothing.</p>
   </div>
 
   <div class="note">
@@ -3792,8 +3821,8 @@
       <h4>You name the customer</h4>
       <p>The app cannot see which shippers exist in your install — map mods change them completely — so
         it does not invent one. Look at your board, see who the freight belongs to, and type that name.
-        It matches loosely against the shipper, receiver or market on each load, so "Walmart" catches
-        "Walmart DC" and "Walmart RDC".</p>
+        It matches on <b>whole words</b> against the shipper, receiver or market on each load, so
+        "Walmart" catches "Walmart DC 6094" and "WALMART" &mdash; and does not catch "Art Supplies".</p>
 
       <p>Until you name it, dispatch will not commit freight: it cannot tell your loads from anyone
         else's, and guessing would be worse than asking.</p>
@@ -3822,8 +3851,17 @@
     <h4>Unless the account runs dry</h4>
     <p>An account genuinely having nothing in a region is a real situation, and stranding the truck
       would be worse than the exception. When there is nothing on the board for your customer, dispatch
-      will authorize other freight — and record it as off-account on the trip and on your file, so the
+      will authorize other freight &mdash; and record it as off-account on the trip and on your file, so the
       pattern is visible rather than quietly normalised.</p>
+  </div>
+
+  <div class="note">
+    <h4>Why the match is on words and not on letters</h4>
+    <p>A name matching when it should not costs more than a wrong label. If the app thinks a
+      stranger&rsquo;s freight is yours then the board is not dry, the escape above never lifts, and every
+      load that genuinely <em>is</em> takeable gets refused for not being your account &mdash; pushed at the
+      wrong load and refused the right one at once. Depot numbers and punctuation are ignored; short real
+      accounts like BP or JBS match as words, never as fragments of somebody else&rsquo;s name.</p>
   </div>
 
   <div class="pfoot"><span>20 &middot; Career</span><span>70</span></div>
