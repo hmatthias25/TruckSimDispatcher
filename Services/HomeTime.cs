@@ -63,14 +63,36 @@ public static class HomeTime
     public const double MaxOutboundWhenDueSoonMiles = 500;
 
     /// <summary>
-    /// The most a load may run away from the yard once the company is actually late, in miles.
+    /// The most a load may run away from the yard on the <b>first</b> day the company is late, in miles.
     ///
     /// Not zero, and deliberately not the fifty the scorer starts arguing at. Arguing and refusing are
     /// different jobs: a load a hundred miles the wrong way into a market full of freight home may well
-    /// be the right call, and it should lose points rather than be taken off the table. Five hundred
-    /// miles into Texas from Tulsa is not that, and no rate makes it that.
+    /// be the right call on the day the date slips, and it should lose points rather than be taken off
+    /// the table. Five hundred miles into Texas from Tulsa is not that, and no rate makes it that.
+    ///
+    /// It does not stay at a hundred and fifty. See <see cref="OutboundNarrowingPerLateDayMiles"/>.
     /// </summary>
     public const double MaxOutboundWhenOverdueMiles = 150;
+
+    /// <summary>
+    /// How much narrower that tolerance gets for every further day the company runs late, in miles.
+    ///
+    /// A hundred and fifty miles of sideways room is reasonable on the day a date slips and unreasonable
+    /// a week after it. The promise does not get less broken with time, so the room should not stay the
+    /// same size — a driver three days late can still be worked laterally into a better market, and one
+    /// ten days late should be going home and nowhere else.
+    /// </summary>
+    public const double OutboundNarrowingPerLateDayMiles = 15;
+
+    /// <summary>
+    /// Where that narrowing stops, in miles.
+    ///
+    /// Not zero, because the geography here is state-centroid distance with a same-state fallback and is
+    /// rough by design — see the manual. A load measuring twenty miles further out is inside the error
+    /// bars of the measurement, and refusing freight on a number the app has already said it cannot
+    /// compute precisely would be the app pretending to a precision it does not have.
+    /// </summary>
+    public const double MinOutboundWhenOverdueMiles = 40;
 
     /// <summary>
     /// How near the yard counts as home, given how late the company is.
@@ -94,16 +116,27 @@ public static class HomeTime
     /// Null while home time is not in play at all — a driver with most of their arrangement left goes
     /// where the freight is, and that is the whole point of an arrangement with a date on it.
     ///
-    /// Two numbers rather than a taper, because the thing that changes is categorical: either the
-    /// company is still keeping its word or it has broken it. A sliding scale down to nothing also
-    /// produced a nasty edge — with two days left on a fortnight, a perfectly ordinary 274-mile leg out
-    /// to Amarillo came out refused, which is not a promise being protected, it is a truck being
-    /// stopped from working.
+    /// Flat while the arrangement is merely APPROACHING, because nothing has been broken yet and a
+    /// sliding scale there produced a nasty edge: with two days left on a fortnight, a perfectly ordinary
+    /// 274-mile leg out to Amarillo came out refused, which is not a promise being protected, it is a
+    /// truck being stopped from working.
+    ///
+    /// Once the date has passed it narrows, a day at a time. The promise does not get less broken as the
+    /// weeks go by, so the room to work sideways should not stay the same size — 150 miles is fair on the
+    /// day it slips and indefensible a week later. It stops at
+    /// <see cref="MinOutboundWhenOverdueMiles"/> rather than at nothing, because the geography is rough
+    /// enough that the last few tens of miles are measurement noise.
+    ///
+    /// Rounded to the nearest five so the figure quoted back to the driver reads like a policy rather
+    /// than like arithmetic.
     /// </summary>
     public static double? OutboundAllowance(HomeStatus st)
     {
         if (!st.Tracked || !st.DueSoon) return null;
-        return st.Overdue ? MaxOutboundWhenOverdueMiles : MaxOutboundWhenDueSoonMiles;
+        if (!st.Overdue) return MaxOutboundWhenDueSoonMiles;
+
+        var narrowed = MaxOutboundWhenOverdueMiles - Math.Max(0, st.DaysLate) * OutboundNarrowingPerLateDayMiles;
+        return Math.Round(Math.Max(MinOutboundWhenOverdueMiles, narrowed) / 5) * 5;
     }
 
     /// <summary>Where home time stands right now.</summary>
@@ -773,8 +806,9 @@ public static class HomeTime
         var where = DispatchEngine.Place(load.DestCity, load.DestState);
         return st.Overdue
             ? $"{where} is {further:N0} mi FURTHER from {st.TerminalLabel} and your home time is already " +
-              $"{st.DaysLate:0.#} days late. Past about {allowance:N0} mi I am not taking you further out to fix " +
-              "that — no rate on this board buys back a promise we have already broken."
+              $"{st.DaysLate:0.#} days late. At that point I will not take you more than about {allowance:N0} mi " +
+              "further out, and that shrinks every day we keep you — no rate on this board buys back a promise " +
+              "we have already broken."
             : $"{where} runs {further:N0} mi further from {st.TerminalLabel} with home time due in " +
               $"{st.DaysUntilDue:0.#} days. I will take you out of the way to keep the truck earning, but not by " +
               $"more than about {allowance:N0} mi this close to your date — that is a different week, not a detour.";

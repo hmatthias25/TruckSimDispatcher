@@ -131,6 +131,12 @@ async function badBoard(fromCity, fromState) {
     hosDriveRemaining: 8, hosShiftRemaining: 10, hosBreakRemaining: 6, hosCycleRemaining: 45,
   });
 
+  // The empty run in section 4 was raised to get this driver home, so take the home time — report in at
+  // the yard rather than just standing in the city. Without it the driver stays weeks overdue for the
+  // rest of the suite, and the outbound tolerance narrows far enough that Joplin -> Tulsa (127 mi
+  // further from the yard) is disqualified before section 5 can ask its own question.
+  await place('Springfield', 'MO', 47, '13:00', 39000, 'Terminal');
+
   head('5. Empty miles between loads: the reported case');
   // #61. Close out at a receiver, drive empty to a terminal, take a load from there. The odometer has to
   // move for the app to pay it -- and if it has NOT moved while the location has, that is a missing

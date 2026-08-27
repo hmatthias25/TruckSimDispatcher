@@ -111,8 +111,43 @@ const miles = async (a, b, c, d) =>
     `${hs.daysOut?.toFixed?.(1)} days out on ${hs.intervalDays}`);
   ok('by about two and a half days, as reported', Math.abs(hs.daysLate - 2.5) < 1.0,
     `${hs.daysLate?.toFixed?.(1)} days late`);
-  ok('the ceiling drops to the overdue tolerance', hs.outboundAllowance === 150,
-    `${hs.outboundAllowance} mi`);
+  ok('the ceiling drops to the overdue tolerance', hs.outboundAllowance <= 150 && hs.outboundAllowance >= 40,
+    `${hs.outboundAllowance} mi at ${hs.daysLate?.toFixed?.(1)} days late`);
+
+  head('3b. And it keeps narrowing the longer we keep him out');
+  // 150 mi of sideways room is fair on the day a date slips and indefensible a week later. The promise
+  // does not get less broken with time, so the room to work laterally should not stay the same size.
+  const curve = [];
+  for (const d of [15, 17, 19, 21, 24, 28]) {
+    await place('Tulsa', 'OK', d);
+    const st2 = (await api('/bootstrap')).views.homeTime;
+    curve.push({ late: +st2.daysLate.toFixed(1), mi: st2.outboundAllowance });
+  }
+  console.log('     ' + curve.map((c) => `${c.late}d:${c.mi}mi`).join('  '));
+  ok('it never widens as the driver gets later',
+    curve.every((c, i) => i === 0 || c.mi <= curve[i - 1].mi), curve.map((c) => c.mi).join(' → '));
+  ok('and it is genuinely narrower a week in than on day one',
+    curve[curve.length - 1].mi < curve[0].mi,
+    `${curve[0].mi} mi at ${curve[0].late}d down to ${curve[curve.length - 1].mi} mi at ${curve[curve.length - 1].late}d`);
+  ok('but it stops rather than reaching zero — the geography is rougher than that',
+    curve.every((c) => c.mi >= 40), `floor ${Math.min(...curve.map((c) => c.mi))} mi`);
+
+  head('3c. A load that was fine early is refused once we are late enough');
+  // The same load, the same board, judged at two different depths of lateness.
+  await place('Tulsa', 'OK', 15);                       // a day over
+  let early = await board([['Memphis', 'TN', 460, 1400]]);
+  const earlyRefused = !!refusal(byCity(early, 'Memphis'));
+  await place('Tulsa', 'OK', 28);                       // a fortnight over
+  let late = await board([['Memphis', 'TN', 460, 1400]]);
+  const lateRefused = !!refusal(byCity(late, 'Memphis'));
+  ok('taken a day late, refused a fortnight late', !earlyRefused && lateRefused,
+    `day one ${earlyRefused ? 'refused' : 'taken'}, fortnight ${lateRefused ? 'refused' : 'taken'}`);
+  if (lateRefused)
+    ok('and the refusal says the room is still shrinking',
+      /shrinks every day we keep you/i.test(refusal(byCity(late, 'Memphis'))),
+      refusal(byCity(late, 'Memphis')).slice(-90));
+
+  await place('Tulsa', 'OK', 17);                       // back to the reported case for what follows
 
   head('4. The reported case: Tulsa, overdue, and a load 500 mi into Texas');
   bd = await board([['Dallas', 'TX', 260, 900], ['Springfield', 'MO', 205, 640]]);
