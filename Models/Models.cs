@@ -2485,18 +2485,17 @@ public class LoadEvaluation
     public List<string> HardFails { get; set; } = new();
 
     /// <summary>
-    /// Refused because it runs too far from home while the arrangement is in play.
+    /// Disqualified for running too far from home while the arrangement is in play.
     ///
-    /// Kept apart from <see cref="HardFails"/> because it is a different KIND of no. A hard fail is
-    /// something the driver cannot do — no hazmat endorsement, a truck that is not clear to run. This is
-    /// something dispatch will not CHOOSE. The distinction matters twice over:
+    /// Bars the load exactly as hard as <see cref="HardFails"/> does. It is a separate list only so the
+    /// reason reads as what it is — a promise the company made about a date — rather than being filed
+    /// beside a missing endorsement or a truck that is out of service.
     ///
-    ///   * dispatch never authorises one of these on its own, which is the whole point of the rule;
-    ///   * but the driver can see their own game, and if a dock really is all there is, they can take it
-    ///     with one click and the app records that they insisted rather than pretending it never offered.
-    ///
-    /// Treating it as an ordinary hard fail made every load on a small dock board unauthorizable, which
-    /// turned "show me the city board first" into a flat rejection with nothing to fall back on.
+    /// It was briefly overridable: dispatch would not choose one, but the driver could authorize it
+    /// directly and it went on the trip as their call. That was the wrong shape. A load that takes an
+    /// overdue driver further from the yard should not be on the table at all, and the only reason it
+    /// was is that disqualifying it left the city-board hold with no backup to name — a problem with the
+    /// hold, which now names one from the loads that are genuinely takeable.
     /// </summary>
     public List<string> HomeTimeFails { get; set; } = new();
     public List<string> Pros { get; set; } = new();

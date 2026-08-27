@@ -101,15 +101,22 @@ const trailerOf = (snap, unit) => (snap.trailers || []).find((t) => t.unit === u
   ok('it is a known position, not a shrug', est.known === true, `${est.known}`);
   ok('parked at the yard means a straight swap',
     /straight swap/i.test(est.text), est.text.slice(0, 120));
-  ok('and it is worth waiting for, because there is no wait', est.worthWaiting === true, `${est.days} day(s)`);
+  ok('and it costs nothing, because nobody is out with it', est.days === 0, `${est.days} day(s)`);
 
-  head('3. #102 Parked a long way off is a trip somebody has to make');
+  head('3. #102 and #108 Parked is free wherever it is');
+  // Distance does not come into it. What the game charges for a swap is the days the CURRENT DRIVER is
+  // out, and a parked trailer has no current driver — so there is no prompt and nothing to skip. This
+  // used to say "order an equipment move and go and collect it", which ATS has no way of doing.
   est = (await api('/fleetops/whereabouts', 'POST',
     { trailerUnit: 'T801', direction: 'Parked', city: 'Seattle', state: 'WA' })).estimate;
   ok('still parked, still known', est.known === true && est.direction === 'Parked', est.direction);
-  ok('but now it is days away', est.days >= 1, `${est.days} day(s)`);
-  ok('and it says a special trip is not worth it',
-    /too far to be worth a special trip|re-rig you another way/i.test(est.text), est.text.slice(0, 150));
+  ok('and still costs nothing, two thousand miles out', est.days === 0, `${est.days} day(s)`);
+  ok('because there is no driver to be days out',
+    /will not charge you days|not charge you anything/i.test(est.text), est.text.slice(0, 140));
+  ok('it says to just take it in the trailer manager',
+    /straight swap in the trailer manager/i.test(est.text), 'trailer manager');
+  ok('and nobody is told to go and fetch it',
+    !/equipment move|go and collect/i.test(est.text), 'no impossible instruction');
 
   head('4. #102 The answer belongs to the box, so a driver moving off it changes nothing');
   // The whole failure. An AI driver swaps trailers in game; the app never hears. Under the old model
@@ -210,6 +217,57 @@ const trailerOf = (snap, unit) => (snap.trailers || []).find((t) => t.unit === u
   ok('and the driver is told the odds rather than left to guess',
     /more likely|leave you on it|tour\(s\) on this one/i.test(snap.views.trailerTenure.note || ''),
     (snap.views.trailerTenure.note || '').slice(0, 110));
+
+  head('10. #103 A career that predates the counter does not read as freshly assigned');
+  // The counter is new. Left at its default every existing career would come back as tour one — which
+  // is exactly backwards for the driver it was added for: somebody six tours into the same box would be
+  // handed the LOWEST chance of being moved off it, and the feature would take another six tours to
+  // start meaning anything. The migration works it out from what the file already knows.
+  let raw = await api('/export');
+  const before = raw.driver.homeTimesTaken;
+  ok('this career has home times behind it', before >= 1, `${before} taken`);
+
+  raw.schemaVersion = 12;                 // pretend it was written before the counter existed
+  raw.driver.homeTimesOnTrailer = 0;
+  // A career that has never recorded a trailer swap has been on the same box since it was hired, so
+  // every home time it has taken was a tour on that trailer. This is the case the migration is for.
+  raw.equipmentOrders = (raw.equipmentOrders || []).filter((o) => o.kind !== 'TrailerSwap');
+  await api('/import', 'POST', raw);
+
+  const after = (await api('/bootstrap')).driver.homeTimesOnTrailer;
+  ok('the migration back-fills it rather than starting from scratch', after >= 1,
+    `${after} tour(s) recovered from ${before} home time(s)`);
+  ok('every home time counts when the box has never been changed', after === before,
+    `${after} against ${before}`);
+  ok('so the driver is not handed the lowest re-rig chance by accident',
+    (await api('/bootstrap')).views.trailerTenure.chancePercent > 34,
+    `${(await api('/bootstrap')).views.trailerTenure.chancePercent}%`);
+
+  head('10b. #103 A recent swap is a recent swap, and reads as one');
+  // The other half of it. Working out tenure from the last completed swap has to give a small number
+  // when that swap really was last week, or the estimate would be as wrong as the default in the other
+  // direction — handing somebody freshly re-rigged the chance of a driver four tours in.
+  raw = await api('/export');
+  raw.schemaVersion = 12;
+  raw.driver.homeTimesOnTrailer = 0;
+  raw.equipmentOrders = [{
+    number: 'PRI-EQ-900', kind: 'TrailerSwap', status: 'Complete',
+    completedGameTime: raw.status.gameTime, toTrailerUnit: raw.driver.assignedTrailerUnit,
+  }];
+  await api('/import', 'POST', raw);
+  ok('a swap completed today recovers no tours', (await api('/bootstrap')).driver.homeTimesOnTrailer === 0,
+    `${(await api('/bootstrap')).driver.homeTimesOnTrailer}`);
+
+  head('11. #103 A career with no home times behind it stays at zero');
+  // Nothing to recover, and inventing one would be worse than the default.
+  raw = await api('/export');
+  raw.schemaVersion = 12;
+  raw.driver.homeTimesOnTrailer = 0;
+  raw.driver.homeTimesTaken = 0;
+  await api('/import', 'POST', raw);
+  ok('nothing invented for a driver who has never been home',
+    (await api('/bootstrap')).driver.homeTimesOnTrailer === 0,
+    `${(await api('/bootstrap')).driver.homeTimesOnTrailer}`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

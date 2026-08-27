@@ -2283,9 +2283,9 @@ function reviewHtml(b) {
  * about; the trailer was.
  *
  * Only asked here, because this is the one moment the player is standing at the yard with the game's
- * trailer screen available — and the answer decides exactly one thing: whether a trailer they might be
- * re-rigged onto is worth waiting for. A direction is all anybody can honestly give, so a direction is
- * all it asks for; the city is optional and only sharpens the estimate.
+ * trailer screen available — and the answer decides exactly one thing: how many days ATS will skip to
+ * hand a trailer over, and whether that is worth paying. A direction is all anybody can honestly give,
+ * so a direction is all it asks for; the city is optional and only sharpens the estimate.
  */
 function whereaboutsHtml(b) {
   const ask = b.askWhereabouts || [];
@@ -2298,9 +2298,9 @@ function whereaboutsHtml(b) {
   ];
   return `<div class="callout info">
     <h4>Where are the trailers?</h4>
-    <p>Have a look at the trailer screen while you are here. I only need a direction — it decides whether
-      a box is worth sitting at the yard for. If one is parked up and nobody is on it, say so; that is
-      the one I can send you straight to.</p>
+    <p>Have a look at the trailer screen while you are here. I only need a direction — it tells me what a
+      swap onto that box will cost you. Take a trailer somebody is out with and the game skips the days
+      they are away, off your home time. One parked with nobody on it costs nothing, so say so.</p>
     ${ask.map((a) => `<div style="margin:8px 0;padding-top:6px;border-top:1px solid var(--line)">
       <p style="margin:0 0 4px"><b>${esc(a.trailer)}</b>${a.trailerType ? ` — ${esc(a.trailerType)}` : ''}</p>
       <p class="hint" style="margin:0 0 6px">${esc(a.known)}</p>

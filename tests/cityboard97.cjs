@@ -86,9 +86,14 @@ async function cityBoard(rows) {
   ok('nothing asks for the city', bd.wantCityBoard !== true, `wantCityBoard=${bd.wantCityBoard}`);
 
   head('2. Wind home time on until it is close');
-  for (let d = 10; d <= 26; d += 4) await place('Oklahoma City', 'OK', d);
+  // Close, not broken. Issue #97 was reported at 0.2 days to go, and that is the case this suite is
+  // about: loads that are merely argued with, so there is still something to hold and name as a backup.
+  // Once the arrangement is actually broken, #101/#109 disqualify a wrong-way load outright and there is
+  // no backup to offer — that case has its own suite.
+  for (const d of [10, 13]) await place('Oklahoma City', 'OK', d);
   hs = (await api('/bootstrap')).views.homeTime;
-  ok('home time is due', hs.dueSoon === true, `due in ${hs.daysUntilDue?.toFixed?.(1)} days, overdue ${hs.overdue}`);
+  ok('home time is due but not yet broken', hs.dueSoon === true && hs.overdue === false,
+    `due in ${hs.daysUntilDue?.toFixed?.(1)} days, overdue ${hs.overdue}`);
 
   head('3. The reported case — three loads at one dock, none of them going home');
   bd = await dockBoard([['San Francisco', 'CA', 1650, 4200],
@@ -102,6 +107,9 @@ async function cityBoard(rows) {
   ok('naming the yard none of them reaches', /Springfield/i.test(bd.rationale || ''), 'named');
   ok('it names the one it would have taken, so the override is one click',
     !!bd.heldLoadId, bd.heldLoadId || 'none');
+  ok('and the one it names is genuinely takeable, not one it would refuse',
+    ((bd.evaluations || []).find((e) => e.load.id === bd.heldLoadId)?.homeTimeFails || []).length === 0,
+    'no home-time disqualification on the backup');
   ok('and that load is marked as the backup, not a reject',
     (bd.evaluations || []).find((e) => e.load.id === bd.heldLoadId)?.recommendation === 'Backup',
     (bd.evaluations || []).find((e) => e.load.id === bd.heldLoadId)?.recommendation || '?');
@@ -111,27 +119,22 @@ async function cityBoard(rows) {
   ok('authorizing the held load works', !!auth.trip?.number, auth.trip?.number || 'refused');
   await api(`/trips/${auth.trip.id}/cancel`, 'POST', { reason: 'fixture' });
 
-  head('5. Pull the city board and the ask is over — but so is taking one of these');
-  // Changed by #101. This used to commit to one of the three, which is the reported bug in the other
-  // direction: eleven days late for home, and every load on the board runs further from it. Seeing the
-  // city is what settles the question; it does not oblige us to take what the city had.
+  head('5. Pull the city board and it commits');
   bd = await cityBoard([['San Francisco', 'CA', 1650, 4200],
                         ['Sonora', 'TX', 480, 1500],
                         ['Cody', 'WY', 980, 2900]]);
   ok('a wider board is not held', bd.wantCityBoard !== true, `wantCityBoard=${bd.wantCityBoard}`);
-  ok('and none of it is taken, because they all run further out',
-    !bd.authorizedLoadId, bd.authorizedLoadId || 'none');
-  ok('the headline says so rather than blaming the freight',
-    /runs further from/i.test(bd.headline || ''), bd.headline);
-  ok('and it points at the yard instead',
-    /Springfield/i.test((bd.dispatchNotes || []).join(' ')), 'home named');
+  ok('and something is authorized', !!bd.authorizedLoadId, bd.authorizedLoadId || 'none');
+  ok('but not one of the two that run a different week away — #101 disqualifies those',
+    !['San Francisco', 'Cody'].includes(
+      ((bd.evaluations || []).find((e) => e.load.id === bd.authorizedLoadId) || {}).load?.destCity || ''),
+    ((bd.evaluations || []).find((e) => e.load.id === bd.authorizedLoadId) || {}).load?.destCity || 'none');
 
-  head('5b. A city board with one load home takes it');
+  head('5b. A city board with one load home prefers it');
   bd = await cityBoard([['San Francisco', 'CA', 1650, 4200],
                         ['Springfield', 'MO', 330, 1050],
                         ['Cody', 'WY', 980, 2900]]);
-  ok('something is authorized once there is something worth taking',
-    !!bd.authorizedLoadId, bd.authorizedLoadId || 'none');
+  ok('something is authorized', !!bd.authorizedLoadId, bd.authorizedLoadId || 'none');
   ok('and it is the one going home',
     /Springfield/i.test(((bd.evaluations || []).find((e) => e.load.id === bd.authorizedLoadId)
       || {}).load?.destCity || ''), 'home');

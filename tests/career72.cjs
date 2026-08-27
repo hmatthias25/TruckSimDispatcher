@@ -78,7 +78,11 @@ async function runLoad(destCity, destState) {
 
   head('1. #72 The reviews are a listed requirement, not an unwritten one');
   day = 4;
-  await report('Amarillo', 'TX', day);
+  // Tulsa and Oklahoma City rather than Amarillo. This suite runs fifteen loads back and forth to build
+  // review history, which drifts the driver past their fortnight — and #109 disqualifies a load that
+  // takes an overdue driver materially further from the yard. Amarillo is 274 mi further out than OKC
+  // and stopped being bookable halfway through; Tulsa is inside the tolerance in both directions.
+  await report('Tulsa', 'OK', day);
   const row = progressRow('review');
   ok('probation progress counts the reviews', !!row,
     row ? `${row.label}: ${row.current} of ${row.required}` : '(no such row)');
@@ -87,7 +91,7 @@ async function runLoad(destCity, destState) {
 
   head('2. #72 Numbers alone do not clear it');
   // Enough loads and miles to satisfy every threshold except the reviews.
-  for (let i = 0; i < 11; i++) await runLoad(i % 2 ? 'Amarillo' : 'Oklahoma City', i % 2 ? 'TX' : 'OK');
+  for (let i = 0; i < 11; i++) await runLoad(i % 2 ? 'Tulsa' : 'Oklahoma City', 'OK');
   S = un(await api('/bootstrap'));
   const thresholdRows = (career().probationProgress || []).filter((r) => !/review/i.test(r.label));
   ok('every other threshold is met', thresholdRows.every((r) => r.met),
@@ -122,7 +126,7 @@ async function runLoad(destCity, destState) {
   head('6. #73 Three good reviews, and it clears itself');
   let cleared = null;
   for (let period = 1; period <= 3 && !cleared; period++) {
-    for (let i = 0; i < 4; i++) await runLoad(i % 2 ? 'Amarillo' : 'Oklahoma City', i % 2 ? 'TX' : 'OK');
+    for (let i = 0; i < 4; i++) await runLoad(i % 2 ? 'Tulsa' : 'Oklahoma City', 'OK');
     day += 8;                                   // a review needs a period to review
     const r = await report(hCity, hState, day, 'Terminal');
     const revs = (S.views.probation?.reviews) || [];
@@ -131,7 +135,7 @@ async function runLoad(destCity, destState) {
     if (revs[0]?.verdict === 'Fail') console.log(`       concerns: ${(revs[0].concerns || []).join(' | ')}`);
     if (r.advance) cleared = r.advance;
     day += 2;
-    await report('Amarillo', 'TX', day);        // leave, so the next arrival is an arrival
+    await report('Tulsa', 'OK', day);           // leave, so the next arrival is an arrival
   }
 
   ok('probation cleared on its own', !!cleared, cleared ? cleared.headline : '(never cleared)');

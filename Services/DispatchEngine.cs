@@ -163,19 +163,13 @@ public static class DispatchEngine
         bool TightButHeadsHome(LoadEvaluation e) =>
             e.Feasibility.Verdict == "Tight" && HomeTime.OverdueAndHeadsHome(s, e.Load);
 
-        // Two lists, and the difference is the whole of issue #101 living beside issue #97.
-        //
-        // `runnable` is what the truck could legally and physically do. `clear` is what dispatch is
-        // willing to CHOOSE, which excludes anything running too far from home while the arrangement is
-        // in play. Asking for the city board is a question about the first: a dock board whose loads all
-        // run the wrong way is exactly when the city is worth seeing, and if the refusal counted as a
-        // hard fail there would be nothing left to hold or to fall back on.
-        var runnable = decision.Evaluations
-            .Where(e => e.HardFails.Count == 0
+        // Home-time disqualification sits in its own list so the reason can be told apart from a
+        // licence or an out-of-service truck, but it bars a load exactly as hard. Nothing here is a
+        // load dispatch will take, and nothing here is a load the driver can overrule it on.
+        var clear = decision.Evaluations
+            .Where(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
                         && (e.Feasibility.Verdict == "Feasible" || TightButHeadsHome(e)))
             .ToList();
-
-        var clear = runnable.Where(e => e.HomeTimeFails.Count == 0).ToList();
 
         // A handful of loads at one dock is not the town. The board screen has always said "show me these
         // first; if none of them work I will ask for the whole city" — but the asking only ever happened
@@ -186,15 +180,15 @@ public static class DispatchEngine
         // A hold, not a rejection. The board stays up, the load it would have taken is named as the
         // backup, and authorizing that load directly is the override for when a dock really is all there
         // is — which happens, and the driver can see their own game.
-        if (runnable.Count > 0 && HomeTime.WantCityBoardFirst(s, runnable) is { } ask)
+        if (clear.Count > 0 && HomeTime.WantCityBoardFirst(s, clear) is { } ask)
         {
             decision.RejectAll = false;
             decision.WantCityBoard = true;
-            decision.HeldLoadId = runnable[0].Load.Id;
+            decision.HeldLoadId = clear[0].Load.Id;
             decision.Headline = "Before I commit you to this — show me the city board.";
             decision.Rationale = ask;
             decision.DispatchNotes.Add(ask);
-            foreach (var e in runnable) e.Recommendation = "Backup";
+            foreach (var e in clear) e.Recommendation = "Backup";
             return decision;
         }
 
@@ -655,21 +649,16 @@ public static class DispatchEngine
                 stops.Add($"Trailer {trailer.Ref} is at {tdmg:0.#}% damage — out of service until repaired.");
         }
 
-        // Re-rigged at home and the trailer is still out under one of our own drivers. Sending the
-        // driver out on the wrong equipment would defeat the reassignment, so they wait — at home.
+        // Re-rigged at home and the swap has not been done yet. Sending the driver out on the wrong
+        // equipment would defeat the reassignment, so freight waits on the swap.
+        //
+        // Not on an ARRIVAL, which is what this used to say. ATS does the waiting: assign the trailer in
+        // the trailer manager, the game says how far out the driver is, and accepting skips that time and
+        // hands it over. There was never an arrival for the player to report in.
         if (EquipmentService.PendingTrailerWait(s) is { } wait)
-            stops.Add(string.IsNullOrWhiteSpace(wait.HeldByDriverName)
-                ? $"{wait.Number}: waiting on trailer {wait.ToTrailerUnit}" +
-                  (string.IsNullOrWhiteSpace(wait.AvailableFromGameTime)
-                      ? " — report in when it is on the property."
-                      : $" — available {GameClock.Pretty(wait.AvailableFromGameTime)}.")
-                : $"{wait.Number}: {wait.HeldByDriverName} still has trailer {wait.ToTrailerUnit}" +
-                  (string.IsNullOrWhiteSpace(wait.AvailableFromGameTime)
-                      // No date because nobody reported one, and the app is not about to invent it.
-                      ? ". I cannot see where they are — report in when the trailer is back. The wait is home " +
-                        "time, not hours."
-                      : $", due back around {GameClock.Pretty(wait.AvailableFromGameTime)}. Stay home until it is " +
-                        "in — the wait is home time, not hours."));
+            stops.Add($"{wait.Number}: you are not on trailer {wait.ToTrailerUnit} yet. Assign it in the ATS " +
+                      "trailer manager — the game will say how many days it costs and skip them for you when you " +
+                      "accept. Those days are home time, not hours. Report your new clock and close the order.");
 
         // A restart on order stops everything until it has actually been sat. Raised before the cycle
         // runs out, so the driver reaches a decent truck stop rather than parking wherever they stopped.
@@ -789,7 +778,7 @@ public static class DispatchEngine
 
             // What the plan actually waits for: the booked slot, or nothing where they will take it
             // whenever it turns up.
-            WaitUntilHours = DeliveryWindow.TakesEarly(s, load.Id) ? 0 : AppointmentHoursFor(s, load),
+            WaitUntilHours = DeliveryWindow.TakesEarly(s, load) ? 0 : AppointmentHoursFor(s, load),
             ReceiverAllowsOvernight = Facilities.AllowsOvernightParking(
                 s, load.DestCity, load.DestState, load.Receiver),
             UsableFuelRangeMiles = fuelRange,
@@ -800,7 +789,7 @@ public static class DispatchEngine
         // ---- economics
         // Said on the card, before the load is picked. A receiver taking it early is worth hours, and
         // hours are only worth planning around if you know about them in time to plan.
-        e.ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load.Id) && load.AppointmentOpensHours > 0;
+        e.ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load) && load.AppointmentOpensHours > 0;
         if (!e.ReceiverTakesEarly && load.AppointmentOpensHours > 0
             && GameClock.TryParse(s.Status.GameTime) is { } evalNow)
         {
@@ -1124,6 +1113,13 @@ public static class DispatchEngine
         if (eval.HardFails.Count > 0)
             throw new InvalidOperationException("Cannot authorize: " + string.Join(" ", eval.HardFails));
 
+        // A load that runs an overdue driver further from home is disqualified, not merely argued with.
+        // It was briefly overridable — dispatch would not choose it but the driver could take it and own
+        // the call. Nobody asked for that middle ground; it existed because disqualifying everything left
+        // the city-board hold with no backup to name, which is a problem with the hold and not with this.
+        if (eval.HomeTimeFails.Count > 0)
+            throw new InvalidOperationException("Cannot authorize: " + string.Join(" ", eval.HomeTimeFails));
+
         if (eval.Feasibility.Verdict == "Infeasible")
             throw new InvalidOperationException("Cannot authorize: " + string.Join(" ", eval.Feasibility.Blockers));
 
@@ -1210,7 +1206,7 @@ public static class DispatchEngine
                 && GameClock.TryParse(s.Status.GameTime) is { } opensFrom
                 ? GameClock.Format(opensFrom.AddHours(load.AppointmentOpensHours))
                 : "",
-            ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load.Id),
+            ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load),
             IsOversize = load.IsOversize,
             TarpsUsed = load.RequiresTarp ? 1 : 0,
             FeasibilityAtDispatch = eval.Feasibility,
@@ -1241,20 +1237,6 @@ public static class DispatchEngine
         if (eval.Feasibility.Verdict == "Tight")
             trip.Notes = "Authorized as an exception with sub-buffer slack. Dispatcher owns any service failure on this load.";
 
-        // A home-time refusal is not a bar, it is a load dispatch will not CHOOSE. The driver can see
-        // their own game, and if a dock really is all there is they can take it anyway — recorded as the
-        // exception it is, the same as sub-buffer slack or off-account freight, rather than quietly
-        // counted as a normal run against a promise the company is already failing to keep.
-        if (eval.HomeTimeFails.Count > 0)
-        {
-            trip.Notes = $"Taken against dispatch advice on home time. {string.Join(" ", eval.HomeTimeFails)} {trip.Notes}".Trim();
-            trip.Events.Add(new TripEvent
-            {
-                GameTime = s.Status.GameTime,
-                Kind = "Note",
-                Detail = "Driver's call. Dispatch would not have booked this one with home time where it is."
-            });
-        }
 
         // Off-account freight is allowed when the account is dry, but it is recorded as the exception
         // it is rather than quietly counted as a normal dedicated run.

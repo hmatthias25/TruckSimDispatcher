@@ -8,7 +8,7 @@ namespace TruckSimDispatcher.Services;
 /// The app cannot see the game, and nothing the fortnightly report collects says where anything is. What
 /// the player CAN tell, glancing at the ATS trailer screen, is a direction and somewhere it appears to be
 /// heading — or that it is sitting still. That is imprecise and it is enough: the only decision it feeds
-/// is whether a trailer is worth sitting at the yard for.
+/// is how many days ATS will skip to hand that trailer over, and whether it is worth them.
 ///
 /// <b>Asked about the trailer, not the driver holding it.</b> It used to be filed against a
 /// <c>HiredDriver</c> and keyed on <c>AssignedTrailerUnit</c>, which assumed a driver stays on the box the
@@ -19,7 +19,7 @@ namespace TruckSimDispatcher.Services;
 /// </summary>
 public static class Whereabouts
 {
-    /// <summary>Below this, waiting at the yard is the sensible play.</summary>
+    /// <summary>Above this many days of skipped time, the trailer is not worth what it costs.</summary>
     public const double WorthWaitingDays = 2;
 
     /// <summary>How rough an estimate is allowed to get before it is treated as no answer at all.</summary>
@@ -52,11 +52,16 @@ public static class Whereabouts
     }
 
     /// <summary>
-    /// Turns what the player reported into a wait and a recommendation.
+    /// Turns what the player reported into a forecast of what the swap will cost, and a recommendation.
+    ///
+    /// <b>What it forecasts is the game's own time skip.</b> Assigning a trailer somebody else is on
+    /// makes ATS ask "driver is N days out, is this ok?", and accepting advances the clock by N. So the
+    /// question worth answering is not "how long do I wait" — nobody waits — but "how many days is this
+    /// trailer going to cost me", which comes out of home time rather than hours.
     ///
     /// Deliberately coarse. An inbound trailer a state away is a day or so; an outbound one is days
-    /// whatever the distance, because it is going the wrong way and has to come back. A parked one is
-    /// however long it takes somebody to go and fetch it, which may be no time at all.
+    /// whatever the distance, because it is going the wrong way and has to come back. A parked one has
+    /// no driver to be out at all, so it is free.
     /// </summary>
     public static Estimate Assess(AppState s, Trailer t)
     {
@@ -73,7 +78,7 @@ public static class Whereabouts
                 ? $"What you told me about {label} is a fortnight old, so I am treating it as nothing. " +
                   "Have another look at the trailer screen next time you are in."
                 : $"I have nothing on where {label} is. Next time you report in, tell me whether it is rolling " +
-                  "toward a yard, rolling away from one, or parked, and I can say whether it is worth waiting for.";
+                  "toward a yard, rolling away from one, or parked, and I can tell you what it will cost to take.";
             return e;
         }
 
@@ -87,24 +92,22 @@ public static class Whereabouts
 
         if (e.Direction == "Parked")
         {
-            // Nothing is moving it, so the only question is how far somebody has to go and get it. A
-            // parked trailer had no answer at all before — the choices were inbound, outbound or no
-            // idea, and none of those is true of a box sitting on the yard doing nothing.
+            // Nobody is on it, so the game has no driver to be days out. Taking it costs nothing.
+            //
+            // This used to say "order an equipment move and go and collect it", which is not something
+            // ATS lets anybody do. What the game actually does is ask how many days the current driver is
+            // out and skip them — and a parked trailer has no current driver, so there is no prompt and
+            // no skip. That is the whole value of the answer.
             e.Known = true;
-            e.Days = miles is { } pm ? Math.Max(0, Math.Round(pm / milesPerDay, 1)) : 0.5;
-            e.WorthWaiting = e.Days <= WorthWaitingDays;
+            e.Days = 0;
+            e.WorthWaiting = true;
 
-            var atYard = miles is { } ym && ym <= HomeTime.AtYardMiles;
-            e.Text = atYard
-                ? $"{label} is parked at the yard and nobody is on it. Straight swap whenever you want it."
-                : miles is { } pmi
-                    ? $"{label} is parked at {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} with nobody " +
-                      $"on it — {pmi:N0} mi from the yard. " +
-                      (e.WorthWaiting
-                          ? "Nothing is going to move it, so it is there whenever we want it. Order an equipment move and go and collect it."
-                          : "Too far to be worth a special trip. I will re-rig you another way and we will pick it up when something is going that way.")
-                    : $"{label} is parked and nobody is on it, but I do not know where. Tell me the city and I " +
-                      "can say whether it is worth going for.";
+            e.Text = miles is { } pmi
+                ? $"{label} is parked at {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} with nobody " +
+                  $"on it — {pmi:N0} mi from the yard. Nobody is out with it, so the game will not charge you " +
+                  "days for it: straight swap in the trailer manager."
+                : $"{label} is parked and nobody is on it. No driver to be days out, so the game will not " +
+                  "charge you anything for taking it — straight swap in the trailer manager.";
             return e;
         }
 
@@ -115,12 +118,12 @@ public static class Whereabouts
             e.WorthWaiting = e.Days <= WorthWaitingDays;
             e.Text = miles is { } mi
                 ? $"{label} is heading in, last seen making for {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} " +
-                  $"— about {mi:N0} mi from the yard, so call it {e.Days:0.#} day(s). " +
+                  $"— about {mi:N0} mi from the yard, so the game will likely charge about {e.Days:0.#} day(s) to take it. " +
                   (e.WorthWaiting
-                      ? "Worth sitting on: take your home time and hook it when it lands."
-                      : "Longer than I would hold you for. I will find you something else and we will re-rig later.")
-                : $"{label} is heading in, but I do not know where from — call it a day or two. " +
-                  "Worth waiting on if your home time covers it.";
+                      ? "Worth it: those days come off your home time rather than your hours."
+                      : "More than I would spend on a trailer. I will find you another one.")
+                : $"{label} is heading in, but I do not know where from — call it a day or two off your home time. " +
+                  "Worth it if your home time covers it.";
             return e;
         }
 
@@ -130,10 +133,10 @@ public static class Whereabouts
         e.WorthWaiting = false;
         e.Text = miles is { } omi
             ? $"{label} is running the other way, out toward {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} " +
-              $"— {omi:N0} mi from the yard and still going. That is {e.Days:0.#} day(s) before it is back " +
-              "here at best. Not worth anybody's time; I will re-rig you another way."
-            : $"{label} is heading away from the yard. Days rather than hours, and not worth waiting on — " +
-              "I will sort the trailer another way.";
+              $"— {omi:N0} mi from the yard and still going. Reckon the game charges {e.Days:0.#} day(s) to take it " +
+              "off them. Not worth that; I will re-rig you another way."
+            : $"{label} is heading away from the yard. Days rather than hours off your home time, and not worth " +
+              "it — I will sort the trailer another way.";
         return e;
     }
 

@@ -104,7 +104,9 @@ const goHome = async (day) => { await report('Amarillo', 'TX', day - 1); return 
   ok('the estimate is known now', est.known === true, `${est.known}`);
   ok('it is measured in days', est.days > 0, `${est.days} day(s)`);
   ok('close in means worth waiting', est.worthWaiting === true, `${est.worthWaiting}`);
-  ok('and it says so plainly', /worth sitting on|hook it when it lands/i.test(est.text), est.text.slice(0, 150));
+  ok('and it says so plainly', /worth it|come off your home time/i.test(est.text), est.text.slice(0, 150));
+  ok('#108 it is priced as the game\'s time skip, not as a wait',
+    /charge about|day\(s\) to take it/i.test(est.text), est.text.slice(0, 120));
 
   head('63e. An outbound one is not');
   est = (await api('/fleetops/whereabouts', 'POST',
@@ -122,9 +124,10 @@ const goHome = async (day) => { await report('Amarillo', 'TX', day - 1); return 
     { trailerUnit: 'U100', direction: 'Parked', city: 'Denver', state: 'CO' })).estimate;
   ok('parked is accepted as a status', est.direction === 'Parked', est.direction);
   ok('it is known rather than a shrug', est.known === true, `${est.known}`);
-  ok('and it is treated as available', est.worthWaiting === true, `${est.days} day(s)`);
-  ok('the answer says nobody is on it', /nobody is on it|parked at the yard/i.test(est.text),
-    est.text.slice(0, 140));
+  ok('and it is free', est.days === 0, `${est.days} day(s)`);
+  ok('the answer says nobody is on it', /nobody on it/i.test(est.text), est.text.slice(0, 140));
+  ok('#108 and that the game will not charge for it',
+    /will not charge you/i.test(est.text), est.text.slice(0, 140));
 
   head('63e3. #102 An answer against one trailer does not follow the driver');
   // The whole point. The answer belongs to the box, so it survives the driver moving to another one.

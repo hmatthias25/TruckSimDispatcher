@@ -189,26 +189,31 @@ const miles = async (a, b, c, d) =>
     !refusal(byCity(bd, 'Des Moines')) && !refusal(byCity(bd, 'Amarillo')),
     refusal(byCity(bd, 'Amarillo')).slice(0, 80) || 'both permitted');
 
-  head('9. The driver can overrule it, and it goes down as their call');
+  head('9. #109 Disqualified means disqualified — there is no override');
   for (let d = 14; d <= 20; d += 3) await place('Kansas City', 'MO', d);
   hs = (await api('/bootstrap')).views.homeTime;
   ok('overdue for this one', hs.overdue === true, `${hs.daysOut?.toFixed?.(1)} days out`);
-  // Dispatch will not CHOOSE a wrong-way load. But the driver can see their own game, and if a dock
-  // really is all there is they can take it — recorded as the exception it is, the same as sub-buffer
-  // slack or off-account freight, rather than quietly counted as a normal run.
+
+  // It was briefly overridable: dispatch would not choose one, but the driver could authorize it
+  // directly and it went on the trip as their call. Nobody asked for that middle ground — it existed
+  // because disqualifying the load left the city-board hold with no backup to name, which is a problem
+  // with the hold rather than with this. A load taking an overdue driver further out is off the table.
   bd = await board([['Amarillo', 'TX', 620, 2200]]);
   const refused = byCity(bd, 'Amarillo');
-  ok('dispatch refuses to pick it', !bd.authorizedLoadId && !!refusal(refused),
+  ok('dispatch will not pick it', !bd.authorizedLoadId && !!refusal(refused),
     refusal(refused).slice(0, 110));
-  const auth = await api('/dispatch/authorize', 'POST', { loadId: refused.load.id });
-  ok('but authorizing it directly works', !!auth.trip?.number, auth.trip?.number || 'refused');
-  ok('and the trip records that it was against advice',
-    /against dispatch advice on home time/i.test(auth.trip?.notes || ''),
-    (auth.trip?.notes || '').slice(0, 100) || '(no note)');
-  ok('with a line in the trip log saying whose call it was',
-    (auth.trip?.events || []).some((e) => /Driver's call/i.test(e.detail || '')),
-    (auth.trip?.events || []).find((e) => /Driver/i.test(e.detail || ''))?.detail || '(none)');
-  await api(`/trips/${auth.trip.id}/cancel`, 'POST', { reason: 'fixture' });
+  ok('it is marked Reject, not held as a backup', refused.recommendation === 'Reject',
+    refused.recommendation);
+
+  let denied = null;
+  try { await api('/dispatch/authorize', 'POST', { loadId: refused.load.id }); }
+  catch (e) { denied = e.message; }
+  ok('and authorizing it directly is refused too', !!denied, denied?.slice(0, 90) || '(it went through)');
+  ok('with the same reason rather than a different one',
+    /FURTHER from Springfield/i.test(denied || ''), denied?.slice(0, 80) || '');
+  const booked = (await api('/trips')) || [];
+  ok('no trip was raised for it',
+    !booked.some((x) => x.destCity === 'Amarillo' && x.status === 'Authorized'), 'nothing booked');
 
   head('10. A driver on no arrangement is untouched by any of it');
   await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });

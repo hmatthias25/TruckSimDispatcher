@@ -32,6 +32,7 @@ public static class Migrations
         GiveTripEventsIds(s);
         KeyDockTimesToTheTrailerPulled(s);
         MoveWhereaboutsOntoTheTrailer(s);
+        BackfillTrailerTenure(s);
         SettlementsAlreadyBankedAreNotNews(s);
         EnsureDropHookIsOnOffer(s);
         EnsureTerminals(s);
@@ -333,6 +334,61 @@ public static class Migrations
             box.WhereaboutsGameTime = d.TrailerWhereaboutsGameTime;
         }
 #pragma warning restore CS0618
+    }
+
+    /// <summary>
+    /// v13 — how many tours the driver has already done on the trailer they are pulling.
+    ///
+    /// <see cref="Driver.HomeTimesOnTrailer"/> is new, and left at its default every existing career
+    /// would read as freshly assigned — which is exactly wrong for the case the counter was added for.
+    /// A driver who has been on the same box for six tours would be handed the LOWEST chance of being
+    /// moved off it, and the feature would take another six tours to start meaning anything.
+    ///
+    /// So it is worked out from what the file already knows. The last completed trailer swap is the
+    /// moment the current assignment began; the time since, over the arrangement they are on, is roughly
+    /// how many home times they have had on it. Where there has never been a swap, they have been on it
+    /// since they were hired, so every home time they have taken counts.
+    ///
+    /// An estimate, and it says so — but a wrong estimate here is off by a tour, where the default is
+    /// wrong by the entire history.
+    /// </summary>
+    private static void BackfillTrailerTenure(AppState s)
+    {
+        if (s.SchemaVersion >= 13) return;
+        if (s.Driver.HomeTimesOnTrailer > 0) return;          // already counted; nothing to work out
+
+        var taken = Math.Max(0, s.Driver.HomeTimesTaken);
+        if (taken == 0) return;                                // never been home, so no tours to count
+
+        // When the current trailer was picked up, as best the file records it.
+        var swap = s.EquipmentOrders
+            .Where(o => o.Kind == "TrailerSwap" && o.Status != "Open"
+                        && !string.IsNullOrWhiteSpace(o.CompletedGameTime))
+            .Select(o => GameClock.TryParse(o.CompletedGameTime))
+            .Where(x => x != null)
+            .OrderByDescending(x => x!.Value)
+            .FirstOrDefault();
+
+        if (swap == null)
+        {
+            // No swap on record: they have had this one since day one, so every home time was on it.
+            s.Driver.HomeTimesOnTrailer = taken;
+            return;
+        }
+
+        var now = GameClock.TryParse(s.Status.GameTime);
+        var interval = s.Driver.HomeTimeIntervalDays;
+        if (now == null || interval <= 0)
+        {
+            // No arrangement to divide by, or no clock to measure from. One tour is the honest floor —
+            // they have been home at least once since the swap or the swap would still be open.
+            s.Driver.HomeTimesOnTrailer = 1;
+            return;
+        }
+
+        var days = Math.Max(0, (now.Value - swap.Value).TotalDays);
+        var tours = (int)Math.Floor(days / interval);
+        s.Driver.HomeTimesOnTrailer = Math.Clamp(tours, 0, taken);
     }
 
     /// <summary>

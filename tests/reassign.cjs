@@ -99,8 +99,11 @@ async function goHome(S, dayNum) {
     // No date, and that is the point: the app cannot see where a hired driver is, so it does not
     // pretend to. It used to invent a seeded one-to-four days and print it as fact.
     ok('NO return date is invented', !order.availableFromGameTime, `"${order.availableFromGameTime}"`);
-    ok('and it says why it cannot tell', /no way of knowing where they are/i.test(order.instruction),
-      order.instruction);
+    ok('and it says why it cannot forecast the cost',
+      /nothing current on where it is/i.test(order.instruction), order.instruction);
+    ok('#108 it says what ATS actually does about it',
+      /the game will tell you how far out the driver is and skip that time/i.test(order.instruction),
+      'the real mechanic');
     ok('targets the reefer', order.toTrailerUnit === 'T900', order.toTrailerUnit);
     ok('instruction says the wait is home time', /home time, not your hours/.test(order.instruction));
 

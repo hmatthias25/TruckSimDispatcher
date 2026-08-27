@@ -214,7 +214,7 @@
     <div class="sub"><span class="n"></span><span class="t">Choosing and changing your arrangement</span><span class="p">38</span></div>
     <div class="sub"><span class="n"></span><span class="t">Re-rigged at home, and waiting on a trailer</span><span class="p">39</span></div>
     <div class="sub"><span class="n"></span><span class="t">How long you stay on one trailer</span><span class="p">40</span></div>
-    <div class="sub"><span class="n"></span><span class="t">Waiting on a trailer somebody else has</span><span class="p">41</span></div>
+    <div class="sub"><span class="n"></span><span class="t">What a trailer somebody else has will cost you</span><span class="p">41</span></div>
     <div class="sub"><span class="n"></span><span class="t">Drop and hook</span><span class="p">42</span></div>
     <div class="sub"><span class="n"></span><span class="t">If your companies are renamed</span><span class="p">43</span></div>
     <div class="sub"><span class="n"></span><span class="t">Asked for, and therefore yours</span><span class="p">44</span></div>
@@ -2169,10 +2169,13 @@
     considerably more than one sixty miles out.</p>
 
   <div class="rule">
-    <h4>Refused is not forbidden</h4>
-    <p>Dispatch will not <em>choose</em> one of these. You can. If a dock really is all there is, authorize
-      it directly and it goes through &mdash; recorded on the trip as taken against advice, the same way
-      sub-buffer slack and off-account freight are. You can see your own game; the app cannot.</p>
+    <h4>Past the line it is not offered at all</h4>
+    <p>This is a disqualification, not an argument. The load is marked Reject with the reason on it and
+      authorizing it directly is refused too &mdash; there is no override, because a load that takes an
+      overdue driver further from the yard is not a judgement call the rate can win.</p>
+    <p style="margin-top:6pt">The tolerance is what keeps that workable: 150 miles while overdue is a
+      wide sideways step, so ordinary freight that happens to finish a little further out is unaffected.
+      What is stopped is the next state over.</p>
   </div>
 
   <div class="note">
@@ -2250,7 +2253,7 @@
   <h2>Re-rigged at home, and waiting on a trailer</h2>
 
   <p class="lede">Sometimes you come home and the company wants you on different equipment for the
-    next tour. Getting that trailer is not always instant, and the waiting is the interesting part.</p>
+    next tour. Getting that trailer is not always free, and what it costs is the interesting part.</p>
 
   <p>Home time is the only realistic moment to re-rig a driver: the truck is standing at its own yard
     with nothing hooked to it. So from time to time — never on your first trip home — operations
@@ -2259,41 +2262,43 @@
   <p>It only ever offers a trailer type the carrier actually runs and you are qualified for. No tanker
     without the endorsement, nothing on your will-not-haul list, nothing Safety has restricted you from.</p>
 
-  <h3>Where the trailer comes from decides how long you sit</h3>
+  <h3>Where the trailer comes from decides what it costs</h3>
 
   <table>
     <tr><th style="width:1.85in">Situation</th><th>What happens</th></tr>
     <tr><td><b>One free at your yard</b></td>
-        <td>Ready when you are. Drop what you are on, hook the new one, mark the order complete.</td></tr>
+        <td>Free. Drop what you are on, hook the new one, mark the order complete.</td></tr>
+    <tr><td><b>Parked somewhere</b></td>
+        <td>Also free. Nobody is out with it, so the game has no days to charge you for it.</td></tr>
     <tr><td><b>Out on the road</b></td>
-        <td>You wait for it to come in. The order names the trailer. It does <b>not</b> say when &mdash;
-            the app cannot see that; overleaf. <b>That wait is home time, not hours.</b></td></tr>
-    <tr><td><b>Parked somewhere else</b></td>
-        <td>Nothing is going to move it, so it is there whenever you want it. Order an equipment move
-            and go and collect it &mdash; unless it is far enough out not to be worth the trip.</td></tr>
+        <td>Assign it in the ATS trailer manager and the game asks <i>"driver is N days out, is this
+            ok?"</i>. Accept and it skips those days and hands the trailer over.
+            <b>Those days are home time, not hours.</b></td></tr>
     <tr><td><b>The company owns none</b></td>
         <td>You buy one in ATS while you are home, add it on the Fleet tab, then close the order.</td></tr>
   </table>
 
   <div class="note">
-    <h4>Why you are made to wait</h4>
-    <p>Because that is what actually happens. A driver whose next tour needs a reefer does not get one
-      conjured out of nowhere — they sit at the house until the reefer is back on the property, and
-      those days are days at home rather than days on the clock. The app holds dispatch while you wait
-      and says exactly what it is waiting on:</p>
-    <p style="margin-top:6pt"><i>"Trailer T900 is still out. I cannot see where it is &mdash; report in
-      when it is back on the property. The wait is home time, not hours."</i></p>
+    <h4>The game does the waiting, and charges you for it</h4>
+    <p>You do not sit at the house watching for a trailer. ATS handles it: pick the trailer in the trailer
+      manager, it tells you how far out the driver is, and accepting advances the clock by that much. A
+      driver whose next tour needs a reefer pays days for it, which is what would really happen &mdash;
+      and those days come out of home time rather than off your hours.</p>
+    <p style="margin-top:6pt">So freight is held until the swap is done, and the order tells you what it
+      is likely to cost before you accept it:</p>
+    <p style="margin-top:6pt"><i>"Our reefer T900 is out on the road. Going on where you last had it,
+      reckon on about 1.5 days. Assign T900 in the ATS trailer manager: the game will tell you how far out
+      the driver is and skip that time for you. Report your new clock afterwards."</i></p>
   </div>
 
   <h3>What you will see</h3>
   <ul>
     <li>An <b>equipment order</b> with the full instruction: which trailer, from where, and by when.</li>
-    <li><b>Dispatch held</b> — the board will not authorize anything while you are waiting, so you
+    <li><b>Dispatch held</b> — the board will not authorize anything until the swap is done, so you
       cannot accidentally leave on the wrong equipment.</li>
-    <li>The <b>home time panel</b> changes to say what is being waited on and until when.</li>
-    <li>The order <b>closes when you say the trailer is in</b>. Closing it <i>is</i> how you report the
-      arrival &mdash; it is the only signal the app has. Put a due-back date on the driver's record and it
-      will hold you to that instead, and refuse to close before it.</li>
+    <li>The <b>home time panel</b> changes to say which trailer is still outstanding.</li>
+    <li>The order <b>closes when you have done the swap</b>. Report the clock the game gave you back
+      afterwards; the days it skipped land on your home time.</li>
   </ul>
 
   <div class="rule">
@@ -2340,10 +2345,12 @@
     <p>When you report in at the yard it asks where the company's other boxes are &mdash; rolling toward a
       yard, rolling away from one, <b>parked and nobody on it</b>, or no idea. A city sharpens the estimate
       and is optional.</p>
+    <p style="margin-top:6pt">What it does with the answer is forecast <em>the game's own time skip</em>.
+      A box heading in is a day or so; one running the other way is several; one parked with nobody on it
+      is free. That is the whole question &mdash; is this trailer worth the days it will cost?</p>
     <p style="margin-top:6pt">It used to ask this about your hired drivers, which was the wrong question:
       AI drivers in ATS change trailers whenever the game feels like it and never tell anybody, so an
-      answer given about one driver ended up filed against a trailer they were no longer on. The trailer
-      is the thing being asked about, so that is what it is filed against.</p>
+      answer given about one driver ended up filed against a trailer they were no longer on.</p>
   </div>
 
   <div class="pfoot"><span>13 &middot; Home time</span><span>40</span></div>
@@ -2352,44 +2359,49 @@
 <!-- ============================================================ 13c - waiting on somebody else's trailer -->
 <div class="page">
   <div class="kicker">Section 13, continued</div>
-  <h2>Waiting on a trailer somebody else has</h2>
+  <h2>What a trailer somebody else has will cost you</h2>
 
-  <p class="lede">The app knows <i>who</i> has the trailer. It does not know where they are, and it will
-    not pretend otherwise.</p>
+  <p class="lede">The app cannot see where a trailer is, and it will not pretend otherwise. What it can
+    do is tell you roughly what taking it will cost, before the game charges you.</p>
 
-  <p>The driver-to-trailer assignment is something you entered, so that part is solid. Everything else
-    about a hired driver reaches the app through the fortnightly report &mdash; level, rating, dollars a
-    mile, dollars a day, stars, the odometer, wages and repairs. Read that list again: <b>nothing on it
-    says where anybody is</b>, or when they are next at a yard.</p>
+  <p>Everything the app knows about a hired driver reaches it through the fortnightly report &mdash; level,
+    rating, dollars a mile, dollars a day, stars, the odometer, wages and repairs. Read that list again:
+    <b>nothing on it says where anything is</b>. That is why it asks you, and why the answer is a
+    direction rather than a date.</p>
 
   <div class="rule">
     <h4>This used to be a guess, and the guess is gone</h4>
     <p>Earlier versions printed a return date &mdash; "due back around Day 12 &middot; 08:00" &mdash; and
       held you at the house until it passed. That number was invented: a seeded one-to-four days dressed
       up as a fact and used to spend four days of your home time. Telling you something it cannot know is
-      the one thing this app is built not to do, so it no longer does it here.</p>
+      the one thing this app is built not to do.</p>
+    <p style="margin-top:6pt">Nor does it ask you for a date any more. The game owns that number, states
+      it in the prompt, and charges it the moment you accept &mdash; there is nothing for the app to
+      police.</p>
   </div>
 
-  <h3>What you can do about it</h3>
+  <h3>What the estimate is for</h3>
   <table>
-    <tr><th style="width:1.85in">If you</th><th>Then</th></tr>
-    <tr><td><b>Check your company screen in ATS</b></td>
-        <td>If the game gives you a date, put it on that driver's record on the Fleet tab. Dispatch will
-            plan around it, quote it back to you, and refuse to close the order before it.</td></tr>
-    <tr><td><b>Have no date to give it</b></td>
-        <td>Sit at the house and get on with your home time. When the trailer turns up, hook it and close
-            the order &mdash; that is you telling the app it arrived.</td></tr>
-    <tr><td><b>Would rather not sit on it</b></td>
-        <td>Ask operations for a different trailer. The order says so itself. You are not trapped waiting
-            on a date nobody has.</td></tr>
+    <tr><th style="width:1.85in">What you told it</th><th>What that means for the swap</th></tr>
+    <tr><td><b>Parked, nobody on it</b></td>
+        <td>Free. No driver to be out, so no prompt and no days skipped.</td></tr>
+    <tr><td><b>Rolling toward a yard</b></td>
+        <td>A day or so, depending how far out. Usually worth paying.</td></tr>
+    <tr><td><b>Rolling away from the yard</b></td>
+        <td>Days &mdash; it has to turn round first. Usually worth asking for a different trailer.</td></tr>
+    <tr><td><b>No idea</b></td>
+        <td>No forecast. You will find out what it costs when the game asks you.</td></tr>
   </table>
+
+  <p>Either way it is your call: accept the days, or ask operations for a different trailer. The order
+    says so itself.</p>
 
   <div class="note">
     <h4>You are told on the way in, not after you get back</h4>
-    <p>The notice comes with the arrival briefing as you come in off the road, so the waiting overlaps
-      your home time instead of being bolted on to the end of it. Finding out about a re-rig <em>after</em>
-      reporting back off home time is what cost a day of out-time in earlier versions &mdash; the clock
-      had already restarted before the trailer was mentioned.</p>
+    <p>The notice comes with the arrival briefing as you come in off the road, so the days the swap costs
+      fall inside your home time instead of being bolted on to the end of it. Finding out about a re-rig
+      <em>after</em> reporting back off home time is what cost a day of out-time in earlier versions
+      &mdash; the clock had already restarted before the trailer was mentioned.</p>
   </div>
 
   <div class="pfoot"><span>13 &middot; Home time</span><span>41</span></div>
@@ -4224,9 +4236,9 @@
     <p style="margin-top:6pt">Both feed the decision to keep it. Stars at the line are reason enough alone;
       idleness is a quiet fortnight, so it pairs with age or with what the driver pulling it earns. It is
       never decided on mileage the trailer does not report.</p>
-    <p style="margin-top:6pt">A due-back date used to be asked for here and is gone. Where a driver is
-      gets asked when you report in at the yard &mdash; inbound and close is worth sitting for, outbound is
-      days whatever the distance.</p>
+    <p style="margin-top:6pt">A due-back date used to be asked for here and is gone. Where a TRAILER is
+      gets asked when you report in at the yard &mdash; parked is free, inbound and close is a day or so,
+      outbound is days whatever the distance.</p>
   </div>
 
   <h3>Your own line</h3>

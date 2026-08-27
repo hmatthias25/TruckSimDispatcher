@@ -285,6 +285,32 @@ public static class DeliveryWindow
         Hash("early|" + seedKey) % 100 < Math.Clamp(s.Settings.ReceiverTakesEarlyPct, 0, 100);
 
     /// <summary>
+    /// The same question asked of a load rather than of an opaque key.
+    ///
+    /// This used to be seeded on <c>load.Id</c>, which <c>/board/add</c> mints as a fresh GUID for every
+    /// entry — so deleting a load and typing it in again could change the receiver's mind. Every other
+    /// seeded decision here is built so a reload cannot re-roll it; this one was the exception by
+    /// accident. It also made the test suite non-deterministic, which reads as a flake and is not one.
+    ///
+    /// Keyed the same way <see cref="Facilities.AllowsOvernightParking"/> is — career, customer, city —
+    /// plus the run itself, so two different loads to the same dock still get their own answer while the
+    /// same load typed twice gets the same one.
+    /// </summary>
+    public static bool TakesEarly(AppState s, BoardLoad load) =>
+        TakesEarly(s, StableKey(s, load));
+
+    /// <summary>What identifies a load for seeding: everything about it except the id we minted.</summary>
+    private static string StableKey(AppState s, BoardLoad load) =>
+        string.Join("|",
+            s.Driver.EmployeeId,
+            (load.Receiver ?? "").Trim().ToLowerInvariant(),
+            (load.DestCity ?? "").Trim().ToLowerInvariant(),
+            (load.DestState ?? "").Trim().ToLowerInvariant(),
+            (load.Cargo ?? "").Trim().ToLowerInvariant(),
+            load.LoadedMiles.ToString("0"),
+            load.DeadlineHours.ToString("0.#"));
+
+    /// <summary>
     /// Every clock time in a string, in order, resolved through any AM/PM marker that follows it.
     ///
     /// "6:15 AM - 12:55 PM" gives 06:15 and 12:55. Without the AM/PM handling a 2:55 PM appointment

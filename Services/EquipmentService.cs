@@ -216,9 +216,14 @@ public static class EquipmentService
     ///   * one out under a hired driver       — you wait for them to bring it in, at home
     ///   * none on the property               — you buy one in ATS before you leave
     ///
-    /// The wait is the point rather than an inconvenience to design away. A real driver whose next
-    /// tour needs a reefer does not get one conjured up; they sit at the house until the reefer is
-    /// back, and those days are days at home.
+    /// The cost is the point rather than an inconvenience to design away. A trailer out under one of our
+    /// own drivers is not free: taking it costs days, and those days are days at home.
+    ///
+    /// <b>ATS charges those days itself.</b> Select the trailer in the game's trailer manager and it asks
+    /// "driver is N days out, is this ok?" — accept, and the game advances the clock by N and hands the
+    /// trailer over. There is nothing for the player to wait through and no arrival to report. This app
+    /// used to say "stay home until it is in" and hold dispatch pending a report that could never come,
+    /// which is an instruction the game has no way of accepting.
     /// </summary>
     public static EquipmentOrder? IssueTrailerReassignment(AppState s, string requiredType, string reason)
     {
@@ -277,13 +282,14 @@ public static class EquipmentService
 
         if (taken != null)
         {
-            // A date only if the player gave us one. Nothing here guesses.
-            var back = ReportedReturn(taken.Driver!);
-            var when = back != null
-                ? $"You have them down as due back around {GameClock.Pretty(back)}. "
-                : "I have no way of knowing where they are — nothing you report on the fleet tab tells me that. " +
-                  "Check your company screen in game; if it gives you a date, put it on their record and I will " +
-                  "plan around it. ";
+            // What the swap is likely to cost in days. The game decides the real number and says it in
+            // the prompt; this is a forecast off what the player last told us about where the box is, so
+            // they can weigh the days BEFORE they accept.
+            var est = Whereabouts.Assess(s, taken.Trailer);
+            var when = est.Known && est.Days is { } cost
+                ? $"Going on where you last had it, reckon on about {cost:0.#} day(s). "
+                : "I have nothing current on where it is, so I cannot tell you what it will cost. Have a look at " +
+                  "the trailer screen and tell me, and I can forecast it next time. ";
 
             return Issue(s, new EquipmentOrder
             {
@@ -293,15 +299,18 @@ public static class EquipmentService
                 ToTrailerUnit = taken.Trailer.Unit,
                 TerminalId = homeYard?.Id ?? "",
                 TerminalLabel = homeLabel,
-                AvailableFromGameTime = back ?? "",
+                // No date. The game decides what the swap costs and charges it when the player accepts,
+                // so there is nothing here to be available FROM — only a forecast, which is in the text.
+                AvailableFromGameTime = "",
                 HeldByDriverName = taken.Driver!.Name,
                 Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, taken.Trailer.Subtype)} freight, and our " +
                               $"{TrailerSpec.Describe(taken.Trailer.Type, taken.Trailer.Subtype)} " +
-                              $"({taken.Trailer.Ref}) is out with {taken.Driver!.Name}. " + when +
-                              "Stay home until it is in; the wait comes out of your home time, not your hours. " +
-                              $"When the trailer turns up, hook {taken.Trailer.Ref} and mark this order complete — " +
-                              "or ask me for a different trailer if you would rather not sit on it.",
-                Notes = $"Waiting on {taken.Driver!.Name} to return {taken.Trailer.Ref}."
+                              $"({taken.Trailer.Ref}) is out on the road. " + when +
+                              $"Assign {taken.Trailer.Ref} in the ATS trailer manager: the game will tell you how far " +
+                              "out the driver is and skip that time for you when you accept. Those days come out of " +
+                              "your home time, not your hours. Report your new clock afterwards and mark this order " +
+                              "complete — or ask me for a different trailer if the days are not worth it.",
+                Notes = $"{taken.Trailer.Ref} is out; the game skips the days when you take it."
             });
         }
 
@@ -379,7 +388,7 @@ public static class EquipmentService
     /// screen and given a date, that date is real and gets used. Otherwise the wait is on the event: they
     /// report in when the trailer turns up.
     /// </summary>
-    private static string? ReportedReturn(HiredDriver d) => null;
+
 
     private static uint StableHash(string text)
     {
@@ -398,22 +407,21 @@ public static class EquipmentService
     /// <summary>
     /// An open trailer swap the driver is still waiting on.
     ///
-    /// Where a due-back date has been reported, the wait ends when that date passes — the trailer should
-    /// be in. Where there is <b>no date</b>, the wait ends when the driver says it is in by closing the
-    /// order. It used to require a date and return null without one, which meant removing the invented
-    /// date silently stopped the wait being recognised at all: dispatch unblocked and the driver could
-    /// roll away from a trailer they had been told to collect.
+    /// The wait ends when the driver closes the order, because closing it is what says the swap has been
+    /// done in game. There is no date to pass: ATS charges the days at the moment the trailer is taken,
+    /// so any date here would be describing something that has already happened.
     ///
-    /// Only a swap held by one of our own drivers waits on anything. A straight swap off the property is
+    /// Only a swap onto a trailer that is out holds anything up. A straight swap off the property is
     /// something the driver can do the moment they read it.
     /// </summary>
     public static EquipmentOrder? PendingTrailerWait(AppState s)
     {
         var o = s.EquipmentOrders.FirstOrDefault(x => x.Status == "Open" && x.Kind == "TrailerSwap");
         if (o == null) return null;
-        if (string.IsNullOrWhiteSpace(o.HeldByDriverName)) return null;   // nothing to wait for
+        if (string.IsNullOrWhiteSpace(o.HeldByDriverName)) return null;   // nothing held up
 
-        // No date on file: waiting on the event, so it stays pending until the order is closed.
+        // Older careers may carry a date from when the app policed one. It no longer decides anything;
+        // the open order does.
         if (string.IsNullOrWhiteSpace(o.AvailableFromGameTime)) return o;
 
         var ready = GameClock.TryParse(o.AvailableFromGameTime);
@@ -617,15 +625,12 @@ public static class EquipmentService
 
         if (o.Kind == "TrailerSwap")
         {
-            // You cannot hook a trailer that is still three states away under another driver.
-            var ready = GameClock.TryParse(o.AvailableFromGameTime);
-            var now = GameClock.TryParse(s.Status.GameTime);
-            if (ready != null && now != null && now.Value < ready.Value)
-                throw new InvalidOperationException(
-                    string.IsNullOrWhiteSpace(o.HeldByDriverName)
-                        ? $"Trailer {o.ToTrailerUnit} is not available until {GameClock.Pretty(ready.Value)}."
-                        : $"{o.HeldByDriverName} still has trailer {o.ToTrailerUnit} — due back around " +
-                          $"{GameClock.Pretty(ready.Value)}. Report the game clock when they are in and close this then.");
+            // No date is policed here any more.
+            //
+            // This used to refuse the close until the game clock passed a due-back date the player had
+            // typed onto a driver's record — holding them to a deadline the app invented a use for and
+            // the game does not have. ATS decides what a swap costs and charges it at the moment they
+            // accept it, so by the time somebody is closing this order the days are already spent.
 
             if (o.MustPurchase && string.IsNullOrWhiteSpace(o.ToTrailerUnit))
             {
