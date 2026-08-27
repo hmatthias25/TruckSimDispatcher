@@ -588,8 +588,11 @@ document.addEventListener('input', (ev) => {
   if (ev.target.id === 'c-odo' || ev.target.id === 'c-miles') paintOdometerHint();
 });
 
-document.addEventListener('click', (ev) => { if (ev.target.id === 'modal') closeModal(); });
-document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeModal(); });
+/* Clicking away or pressing Escape dismisses the WHOLE queue, not just the top of it — otherwise the
+   next unrelated modal would be followed by something the driver waved off ten minutes ago. Nothing is
+   lost that matters: an unannounced payday is held on the server and comes back on the next render. */
+document.addEventListener('click', (ev) => { if (ev.target.id === 'modal') { PENDING = []; closeModal(); } });
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { PENDING = []; closeModal(); } });
 
 /* ---- screenshot capture: paste, drop, browse ---------------------------- */
 
@@ -733,6 +736,22 @@ function render() {
 
   $('foot-data').textContent = `Career file saved on every change · trip numbers ${S.views.nextNumbers.freight} next`
     + ` · TruckSim Dispatcher ${S.views.versionDisplay || ''}`;
+
+  announceAnyPay();
+}
+
+/* Getting paid should not depend on which endpoint happened to move the clock over a Friday.
+   Four of them settle the week; two used to show the result and two threw it away, so a payday landed
+   on a fuel-stop log and the driver was never told. The money was right and nothing said so.
+
+   So the announcement is driven off state instead: anything the server still has down as unannounced
+   comes up on the next render, whatever caused it. Skipped while something else is already in front of
+   the driver — it will still be unannounced next time round. */
+function announceAnyPay() {
+  const box = $('modal');
+  if (box && !box.classList.contains('hidden')) return;
+  const paid = unannouncedPay();
+  if (paid.length) paydayModal(paid);
 }
 
 const stat = (k, v, cls = '') => `<div class="stat ${cls}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`;
@@ -1521,6 +1540,10 @@ function viewActive() {
       <button class="btn ghost" data-act="show-move">Log an empty / maintenance move</button></div></div>`;
 
   const f = t.feasibilityAtDispatch;
+  // Whether the receiver will have you on their property overnight. Told once in the briefing and then
+  // gone with the board — but it is what decides where the last few hours before the window are spent,
+  // and that call is made a long way down the road from where it was answered.
+  const pk = S.views.receiverParking;
   return `
   <div class="panel">
     <div class="panel-head"><h2>${esc(t.number)} — ${esc(t.cargo)}</h2>
@@ -1546,6 +1569,8 @@ function viewActive() {
                  of grace before it counts against you, even with the window open.</div></dd>`
           : ''}
       ${t.weightLbs ? `<dt>Weight</dt><dd>${num(t.weightLbs)} lb</dd>` : ''}
+      ${pk ? `<dt>Parking</dt><dd>${badge(pk.allowed ? 'ok' : 'warn', pk.headline)}
+             <div class="sub">${esc(pk.detail)}</div></dd>` : ''}
       <dt>Rationale</dt><dd style="font-family:inherit">${esc(t.authorizationRationale)}</dd>
     </dl>
     ${f ? `<h3 class="sect">Plan captured at authorization</h3>
@@ -2063,25 +2088,58 @@ function clockQueryModal(q) {
     </div>`);
 }
 
-/* Everything a status report can set off. Payday and arriving home both happen because the clock
-   moved, so they surface here rather than being something the driver has to go looking for. */
-function afterStatus(r, fallback = 'Status updated.') {
-  const paid = r.paid || [];
-  // Moving up the ladder outranks everything else a report-in can turn up, so it goes first — and
-  // carries whatever else was waiting so nothing is lost behind it.
-  if (r.advance) return advanceModal(r.advance, r.homeBrief || null, paid);
-  if (paid.length) return paydayModal(paid);
-  if (r.homeBrief) return homeBriefModal(r.homeBrief);
-  // Monday, and the books have not been squared against the game this week. Behind anything with money
-  // or a career move in it, because those are the ones the driver came here for.
+/* Everything a status report can set off, in the order it should be read.
+   ...
+   A QUEUE, not a chain of early returns. It used to be five `if (x) return`s, which meant whichever
+   thing came first silently ate the rest: take a 34 over a Monday, arrive home, and the home brief
+   returned before the true-up was ever reached. Reported from play, and the two bugs lined up exactly —
+   the Monday was skipped by the clock AND hidden by the brief.
+
+   Now everything outstanding is queued and each modal hands on to the next as it closes. */
+let PENDING = [];        // modals still to show, in order
+
+function queueModals(list) {
+  PENDING = list.filter(Boolean);
+  return showNextModal();
+}
+
+/* Shows the next thing waiting, or nothing if the queue is empty. Every modal's close routes here. */
+function showNextModal() {
+  const next = PENDING.shift();
+  if (!next) { closeModal(); return false; }
+  next();
+  return true;
+}
+
+/* Whether anything is still waiting behind the modal on screen — decides the wording of its button. */
+function morePending() { return PENDING.length > 0; }
+
+/* Paydays nobody has shown the driver yet. Read off state rather than off whatever the last call
+   returned: settling happens on whichever endpoint crossed the Friday, and two of the four had no UI
+   for it, so a payday landed on a fuel-stop log and was never mentioned. */
+function unannouncedPay() { return (S.views && S.views.unannouncedPay) || []; }
+
+function pendingTrueUp() {
   const tu = S.views && S.views.trueUp;
-  if (tu && tu.due) return trueUpModal(tu);
-  toast(DISCOVERY ? DISCOVERY.headline : fallback, 'ok');
+  return tu && tu.due ? tu : null;
+}
+
+function afterStatus(r, fallback = 'Status updated.') {
+  const paid = unannouncedPay();
+  const tu = pendingTrueUp();
+  const shown = queueModals([
+    // Moving up the ladder outranks everything a report-in can turn up, so it goes first.
+    r.advance ? () => advanceModal(r.advance) : null,
+    paid.length ? () => paydayModal(paid) : null,
+    r.homeBrief ? () => homeBriefModal(r.homeBrief) : null,
+    // The books, behind anything with money or a career move in it — those are what the driver came for.
+    tu ? () => trueUpModal(tu) : null,
+  ]);
+  if (!shown) toast(DISCOVERY ? DISCOVERY.headline : fallback, 'ok');
 }
 
 /* What a promotion looks like when the company hands it to you rather than you taking it.
    The rates are the point — a rank with no number attached is a job title, not a raise. */
-let ADVANCE_NEXT = null;      // a home brief or payday waiting behind the promotion
 
 function advanceHtml(n) {
   if (!n) return '';
@@ -2098,9 +2156,7 @@ function advanceHtml(n) {
   </div>`;
 }
 
-function advanceModal(n, brief, paid) {
-  ADVANCE_NEXT = { brief: brief || null, paid: paid && paid.length ? paid : null };
-  const more = ADVANCE_NEXT.brief || ADVANCE_NEXT.paid;
+function advanceModal(n) {
   const title = n.kind === 'probation' ? 'Probation cleared'
     : n.kind === 'ceiling' ? 'Top of their scale' : 'Promotion';
   modal(`<div class="panel-head"><h2>${title}</h2>
@@ -2110,9 +2166,8 @@ function advanceModal(n, brief, paid) {
     ${advanceHtml(n)}
     <div class="row-actions">
       <div style="flex:1"></div>
-      ${more ? `<button class="btn primary" data-act="advance-next">${
-        ADVANCE_NEXT.paid ? 'And you have been paid' : 'Now, your home brief'}</button>`
-        : '<button class="btn primary" data-act="close-modal">Got it</button>'}
+      <button class="btn primary" data-act="close-modal">${
+        morePending() ? 'Next' : 'Got it'}</button>
     </div>`);
 }
 
@@ -2121,9 +2176,19 @@ function advanceModal(n, brief, paid) {
    Prompted rather than left on a tab, because the two drift the moment anything is bought in game the app
    never posted — a garage, a tractor — and nobody goes looking for a discrepancy they cannot see. */
 function trueUpModal(t) {
-  modal(`<div class="panel-head"><h2>Monday — true up the books</h2>
-      ${badge('info', 'weekly')}<div class="spacer"></div>
+  // Name the Monday. It is not necessarily today's — the clock moves in whatever jumps the player's
+  // driving took, and a week stepped over is now deferred rather than skipped. "Monday — true up the
+  // books" on a Wednesday reads like the app has lost the date; it has not.
+  const late = t.daysAgo > 0;
+  modal(`<div class="panel-head"><h2>${late
+      ? `Monday day ${t.forDay} — still to square`
+      : 'Monday — true up the books'}</h2>
+      ${badge(late ? 'warn' : 'info', late
+        ? `${num(t.daysAgo, 0)} day${t.daysAgo === 1 ? '' : 's'} ago` : 'weekly')}<div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Later</button></div>
+    ${late ? `<div class="callout info"><p style="margin:0">You went past this one — a rest, a long run or
+      your home time carried the clock over it. It is still the week that needs squaring, so we do it now
+      rather than pretending it did not happen.</p></div>` : ''}
     <p>The company reckons it is holding <b>${money(t.expected)}</b> all in — operating cash plus the
       maintenance and payroll earmarks. Open ATS and tell me what the bank actually shows.</p>
     ${t.shortfall > 0 ? `<div class="callout warn"><p>Last time it was short by
@@ -2136,7 +2201,17 @@ function trueUpModal(t) {
       off. If the game is level or over, the game wins and the books come up to it.</p>`);
 }
 
+/* Marks these settlements as actually seen, so nothing chases the driver about them again. Fire and
+   forget on purpose: if it fails the worst case is being shown a payday twice, which beats the bug it
+   replaces — being paid and never told. */
+function acknowledgePay(paid) {
+  const numbers = (paid || []).map((p) => p.number).filter(Boolean);
+  if (!numbers.length) return;
+  api('/pay/acknowledge', 'POST', { numbers }).then((r) => { if (r && r.snapshot) S = r.snapshot; }, () => {});
+}
+
 function paydayModal(paid) {
+  acknowledgePay(paid);
   const total = paid.reduce((a, p) => a + (p.stub ? p.stub.net : p.gross), 0);
   modal(`<div class="panel-head"><h2>${paid.length > 1 ? 'You have been paid' : 'Payday'}</h2>
       ${badge('ok', money(total) + ' net')}
@@ -2200,35 +2275,46 @@ function reviewHtml(b) {
 }
 
 /**
- * Asks where the hired drivers are with the company's trailers.
+ * Asks where the company's trailers are.
  *
- * Only asked here, because this is the one moment the player is standing at the yard with the ATS company
- * screen available — and the answer decides exactly one thing: whether a trailer they might be re-rigged
- * onto is worth waiting for. A direction is all anybody can honestly give, so a direction is all it asks
- * for; the city is optional and only sharpens the estimate.
+ * Asked per TRAILER, not per driver. It used to name whoever the app had down as pulling each box — but
+ * AI drivers in ATS change trailers on their own and never tell the app, so the question named the wrong
+ * person and the answer was filed against the wrong trailer. The driver was never what was being asked
+ * about; the trailer was.
+ *
+ * Only asked here, because this is the one moment the player is standing at the yard with the game's
+ * trailer screen available — and the answer decides exactly one thing: whether a trailer they might be
+ * re-rigged onto is worth waiting for. A direction is all anybody can honestly give, so a direction is
+ * all it asks for; the city is optional and only sharpens the estimate.
  */
 function whereaboutsHtml(b) {
   const ask = b.askWhereabouts || [];
   if (!ask.length) return '';
+  const opts = [
+    ['Unknown', 'No idea'],
+    ['Inbound', 'Rolling toward a yard'],
+    ['Outbound', 'Rolling away from the yard'],
+    ['Parked', 'Parked — nobody is using it'],
+  ];
   return `<div class="callout info">
     <h4>Where are the trailers?</h4>
-    <p>Have a look at the company screen while you are here. I only need a direction — it decides whether
-      a trailer is worth sitting at the yard for.</p>
+    <p>Have a look at the trailer screen while you are here. I only need a direction — it decides whether
+      a box is worth sitting at the yard for. If one is parked up and nobody is on it, say so; that is
+      the one I can send you straight to.</p>
     ${ask.map((a) => `<div style="margin:8px 0;padding-top:6px;border-top:1px solid var(--line)">
-      <p style="margin:0 0 4px"><b>${esc(a.driver)}</b> has ${esc(a.trailer)}
-        ${a.trailerType ? `(${esc(a.trailerType)})` : ''}</p>
+      <p style="margin:0 0 4px"><b>${esc(a.trailer)}</b>${a.trailerType ? ` — ${esc(a.trailerType)}` : ''}</p>
       <p class="hint" style="margin:0 0 6px">${esc(a.known)}</p>
       <div class="grid3">
-        <label>Heading<select id="wa-dir-${esc(a.driverId)}">
-          <option value="Unknown">No idea</option>
-          <option value="Inbound">Toward a yard</option>
-          <option value="Outbound">Away from the yard</option>
+        <label>Status<select id="wa-dir-${esc(a.unit)}">
+          ${opts.map(([v, l]) => `<option value="${v}"${a.current === v ? ' selected' : ''}>${l}</option>`).join('')}
         </select></label>
-        <label>City (optional)<input id="wa-city-${esc(a.driverId)}" placeholder="e.g. Denver"></label>
-        <label>State<input id="wa-state-${esc(a.driverId)}" class="up" maxlength="2" placeholder="CO"></label>
+        <label>City (optional)<input id="wa-city-${esc(a.unit)}" value="${esc(a.city || '')}"
+          placeholder="e.g. Denver"></label>
+        <label>State<input id="wa-state-${esc(a.unit)}" class="up" maxlength="2"
+          value="${esc(a.state || '')}" placeholder="CO"></label>
       </div>
       <div class="row-actions"><button class="btn tiny" data-act="whereabouts"
-        data-id="${esc(a.driverId)}">Tell dispatch</button></div>
+        data-id="${esc(a.unit)}">Tell dispatch</button></div>
     </div>`).join('')}
   </div>`;
 }
@@ -2751,6 +2837,26 @@ function askHomeHtml() {
       <p style="margin:0">${esc(r.answer)}</p></div>`).join('')}`;
 }
 
+/* How long the driver has been on this box, and what that does to the odds of being moved off it.
+   The chance used to be a flat one-in-three every time home, and invisible with it — which meant a run
+   of bad luck left somebody on one trailer indefinitely with no sense of anything building. It now
+   climbs with the tenure, and a rising chance nobody can see is the same as a flat one, so it is said. */
+function tenureHtml() {
+  const t = S.views.trailerTenure;
+  if (!t || t.byRequest || !t.eligible) return '';
+  const bar = (t.curve || []).map((c) =>
+    `<span class="${c.tenure === Math.max(1, t.tours + 1) ? 'ch' : 'sub'}">${c.tenure}: ${c.percent}%</span>`
+  ).join(' · ');
+  return `<div class="callout ${t.tours >= 3 ? 'warn' : 'mute'}" style="margin:8px 0">
+    <h4>${t.tours <= 1 ? 'Freshly assigned' : `${t.tours} tour(s) on ${esc(t.unit || 'this one')}`}</h4>
+    <p style="margin:0">${esc(t.note)}</p>
+    <p class="hint" style="margin:6px 0 0">Chance of a re-rig at your next home time:
+      <b>${t.chancePercent}%</b>${t.dropHookPercent > 0
+        ? `, of which drop and hook is <b>${t.dropHookPercent}%</b>` : ''}.
+      By tour: ${bar}</p>
+  </div>`;
+}
+
 /* ---- asking for a different trailer ---- */
 function askTrailerHtml() {
   const rq = S.views.requests || {};
@@ -2778,6 +2884,7 @@ function askTrailerHtml() {
           <button class="btn tiny ghost" data-act="release-arrangement">Put me back in the pool</button>
         </div>` : ''}
       </div>
+      ${tenureHtml()}
       ${open ? `<div class="callout info">
           <h4>${esc(open.number)} — asked for ${esc(open.requestedType)}</h4>
           <p class="hint" style="margin:0">Answer comes with your next close-out.</p></div>`
@@ -4667,24 +4774,10 @@ async function handleAction(act, d, ev) {
       // "Load roster" button, which also hid "Hire a driver" — a primary action nobody could find.
       if (TAB === 'fleet' && !FLEETOPS) loadFleetOps();
       return;
-    // A payday that landed on whatever this modal was reporting comes up as it closes, rather than
-    // waiting for a status report that may not happen for another day of driving.
-    case 'close-modal': {
-      const queued = ADVANCE_NEXT;
-      if (queued && queued.paid && queued.paid.length) {
-        ADVANCE_NEXT = null;
-        return paydayModal(queued.paid);
-      }
-      return closeModal();
-    }
-    // Whatever was queued behind the promotion — a payday or the home brief — still gets shown.
-    case 'advance-next': {
-      const q = ADVANCE_NEXT || {};
-      ADVANCE_NEXT = null;
-      if (q.paid) return paydayModal(q.paid);
-      if (q.brief) return homeBriefModal(q.brief);
-      return closeModal();
-    }
+    // Closing one modal shows the next thing waiting, if anything is. A payday that landed on whatever
+    // this modal was reporting comes up as it closes rather than waiting for a status report that may
+    // not happen for another day of driving.
+    case 'close-modal': return showNextModal();
     case 'clear-audit': TRIP_AUDIT = null; return render();
 
     /* ---- status & HOS */
@@ -4881,7 +4974,7 @@ async function handleAction(act, d, ev) {
     case 'shots-clear': SHOTS = []; EXTRACT = null; return render();
     case 'whereabouts': return run(async () => {
       const r = await api('/fleetops/whereabouts', 'POST', {
-        driverId: d.id,
+        trailerUnit: d.id,
         direction: sv(`wa-dir-${d.id}`) || 'Unknown',
         city: sv(`wa-city-${d.id}`), state: sv(`wa-state-${d.id}`),
       });
@@ -5093,8 +5186,13 @@ async function handleAction(act, d, ev) {
       // The audit belongs in front of the driver the moment the load closes, not sitting on a tab
       // until they have already taken the next one. A payday that landed on this close-out queues
       // behind it rather than being lost — closing out on a Friday is how most of them arrive.
-      ADVANCE_NEXT = (r.paid && r.paid.length) ? { paid: r.paid, brief: null } : null;
-      auditModal(r.audit);
+      const paid = unannouncedPay();
+      const tu = pendingTrueUp();
+      queueModals([
+        () => auditModal(r.audit),
+        paid.length ? () => paydayModal(paid) : null,
+        tu ? () => trueUpModal(tu) : null,
+      ]);
     });
     case 'show-cancel': return cancelModal(d.id);
     case 'do-cancel': return run(async () => {
@@ -5144,7 +5242,7 @@ async function handleAction(act, d, ev) {
 
     case 'true-up-submit': return run(async () => {
       const r = absorb(await api('/finance/true-up', 'POST', { atsBalance: fv('tu-balance') }));
-      closeModal();
+      showNextModal();
       toast(r.message, r.squared ? 'ok' : 'bad');
     });
     case 'true-up': return run(async () => {

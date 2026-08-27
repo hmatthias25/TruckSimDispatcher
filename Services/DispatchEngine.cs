@@ -79,7 +79,8 @@ public static class DispatchEngine
 
         // Rank: feasible first, then score.
         decision.Evaluations = decision.Evaluations
-            .OrderBy(e => e.HardFails.Count > 0 ? 2 : e.Feasibility.Verdict == "Infeasible" ? 2
+            .OrderBy(e => e.HardFails.Count > 0 ? 3 : e.Feasibility.Verdict == "Infeasible" ? 3
+                : e.HomeTimeFails.Count > 0 ? 2
                 : e.Feasibility.Verdict == "Tight" ? 1 : 0)
             .ThenByDescending(e => e.Score)
             .ToList();
@@ -162,10 +163,19 @@ public static class DispatchEngine
         bool TightButHeadsHome(LoadEvaluation e) =>
             e.Feasibility.Verdict == "Tight" && HomeTime.OverdueAndHeadsHome(s, e.Load);
 
-        var clear = decision.Evaluations
+        // Two lists, and the difference is the whole of issue #101 living beside issue #97.
+        //
+        // `runnable` is what the truck could legally and physically do. `clear` is what dispatch is
+        // willing to CHOOSE, which excludes anything running too far from home while the arrangement is
+        // in play. Asking for the city board is a question about the first: a dock board whose loads all
+        // run the wrong way is exactly when the city is worth seeing, and if the refusal counted as a
+        // hard fail there would be nothing left to hold or to fall back on.
+        var runnable = decision.Evaluations
             .Where(e => e.HardFails.Count == 0
                         && (e.Feasibility.Verdict == "Feasible" || TightButHeadsHome(e)))
             .ToList();
+
+        var clear = runnable.Where(e => e.HomeTimeFails.Count == 0).ToList();
 
         // A handful of loads at one dock is not the town. The board screen has always said "show me these
         // first; if none of them work I will ask for the whole city" — but the asking only ever happened
@@ -176,15 +186,15 @@ public static class DispatchEngine
         // A hold, not a rejection. The board stays up, the load it would have taken is named as the
         // backup, and authorizing that load directly is the override for when a dock really is all there
         // is — which happens, and the driver can see their own game.
-        if (clear.Count > 0 && HomeTime.WantCityBoardFirst(s, clear) is { } ask)
+        if (runnable.Count > 0 && HomeTime.WantCityBoardFirst(s, runnable) is { } ask)
         {
             decision.RejectAll = false;
             decision.WantCityBoard = true;
-            decision.HeldLoadId = clear[0].Load.Id;
+            decision.HeldLoadId = runnable[0].Load.Id;
             decision.Headline = "Before I commit you to this — show me the city board.";
             decision.Rationale = ask;
             decision.DispatchNotes.Add(ask);
-            foreach (var e in clear) e.Recommendation = "Backup";
+            foreach (var e in runnable) e.Recommendation = "Backup";
             return decision;
         }
 
@@ -283,9 +293,39 @@ public static class DispatchEngine
             return decision;
         }
 
+        // Every load on the board was refused for running the wrong way, and home time is late. That is
+        // not a bad board and it should not read like one — the freight may be perfectly good freight.
+        // What it is, is a board that cannot end the thing the company is currently failing at.
+        //
+        // Said as its own case because the generic rejection ends "reposition and pull a fresh board",
+        // which is the wrong instruction for a driver whose answer is to drive home.
+        var homeSt = HomeTime.Status(s);
+        if (homeSt.Overdue && decision.Evaluations.Count > 0
+            && decision.Evaluations.All(e => e.HomeTimeFails.Count > 0))
+        {
+            decision.RejectAll = true;
+            decision.Headline = $"Every load here runs further from {homeSt.TerminalLabel}, and you are " +
+                                $"{homeSt.DaysLate:0.#} days late for home.";
+            decision.Rationale = $"Nothing on this board finishes any nearer the yard than {homeSt.MilesFromHome:N0} mi, " +
+                                 "which is where you are standing. I am not taking freight that makes it worse.";
+            decision.DispatchNotes.Add(decision.Rationale);
+            foreach (var e in decision.Evaluations) e.Recommendation = "Reject";
+
+            // Where to go instead — the empty run in if the yard is reachable, otherwise named markets
+            // between here and there. Either way an answer, not "have a look somewhere else".
+            if (HomeTime.WhereToLookForHome(s) is { } goThere) decision.DispatchNotes.Add(goThere);
+            if (onlyLocalBoard(decision))
+                decision.DispatchNotes.Add(
+                    $"That was one dock's worth. If you want to be sure, open the full board for " +
+                    $"{Place(s.Status.LocationCity, s.Status.LocationState)} and show me — but I will apply the " +
+                    "same rule to it, so do not expect a load into the next state to survive.");
+            return decision;
+        }
+
         // Nothing clean. Reject the board, but name the closest thing to a runnable load.
         decision.RejectAll = true;
-        var tight = decision.Evaluations.FirstOrDefault(e => e.HardFails.Count == 0 && e.Feasibility.Verdict == "Tight");
+        var tight = decision.Evaluations.FirstOrDefault(
+            e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0 && e.Feasibility.Verdict == "Tight");
 
         // Rejecting what was on offer at the dock is not the same as rejecting the city. Ask for the
         // wider board before talking about repositioning — there may be plenty here we have not seen.
@@ -299,6 +339,7 @@ public static class DispatchEngine
         foreach (var e in decision.Evaluations.Take(6))
         {
             var reason = e.HardFails.FirstOrDefault()
+                         ?? e.HomeTimeFails.FirstOrDefault()
                          ?? e.Feasibility.Blockers.FirstOrDefault()
                          ?? e.Cons.FirstOrDefault()
                          ?? "does not fit the plan";
@@ -333,6 +374,10 @@ public static class DispatchEngine
 
         return decision;
     }
+
+    /// <summary>Everything the driver showed us came off the dock they are standing on.</summary>
+    private static bool onlyLocalBoard(BoardDecision d) =>
+        d.Evaluations.Count > 0 && d.Evaluations.All(e => e.Load.AtLocation);
 
     /// <summary>
     /// Whether this trailer type has to be loaded at a dock even off a facility's own board.
@@ -473,7 +518,7 @@ public static class DispatchEngine
         foreach (var e in decision.Evaluations)
         {
             // A hard fail is a rate, equipment, qualification or account problem — not the clock.
-            if (e.HardFails.Count > 0) return false;
+            if (e.HardFails.Count > 0 || e.HomeTimeFails.Count > 0) return false;
             // Anything still runnable means the board is fine and the driver is not stuck.
             if (e.Feasibility.Verdict != "Infeasible") return false;
         }
@@ -680,6 +725,13 @@ public static class DispatchEngine
             e.HardFails.Add(
                 $"Not while the truck is at {repairOrder.TruckDamagePct:0.#}%. You are going to {repairOrder.HomeLabel} for the repair, " +
                 $"and this finishes at {Place(load.DestCity, load.DestState)}. I will take a load that ends at the yard, not one that adds miles to it.");
+
+        // Home time, once it is close enough to mean something. A load that runs materially further from
+        // the yard is refused rather than scored down: a score is something a good rate outbids, and that
+        // is exactly what happened to a driver two and a half days late in Tulsa who was authorized 500
+        // miles into Texas. See HomeTime.OutboundRefusal for where the line sits and why.
+        if (HomeTime.OutboundRefusal(s, load) is { } wrongWay)
+            e.HomeTimeFails.Add(wrongWay);
 
         // Dedicated: the board is full of other companies' freight, and none of it is yours. Only
         // lifted when the account genuinely has nothing here — see Dedicated.CanRunOffAccount.
@@ -905,7 +957,8 @@ public static class DispatchEngine
             else e.HardFails.Add($"Under the ${floorRpm:0.00}/mi break-even with no positioning justification — this load loses money.");
         }
 
-        e.Recommendation = e.HardFails.Count > 0 || e.Feasibility.Verdict == "Infeasible" ? "Reject" : "Backup";
+        e.Recommendation = e.HardFails.Count > 0 || e.HomeTimeFails.Count > 0
+                           || e.Feasibility.Verdict == "Infeasible" ? "Reject" : "Backup";
         return e;
     }
 
@@ -1070,6 +1123,7 @@ public static class DispatchEngine
         var eval = Evaluate(s, load, truck, trailer);
         if (eval.HardFails.Count > 0)
             throw new InvalidOperationException("Cannot authorize: " + string.Join(" ", eval.HardFails));
+
         if (eval.Feasibility.Verdict == "Infeasible")
             throw new InvalidOperationException("Cannot authorize: " + string.Join(" ", eval.Feasibility.Blockers));
 
@@ -1186,6 +1240,21 @@ public static class DispatchEngine
 
         if (eval.Feasibility.Verdict == "Tight")
             trip.Notes = "Authorized as an exception with sub-buffer slack. Dispatcher owns any service failure on this load.";
+
+        // A home-time refusal is not a bar, it is a load dispatch will not CHOOSE. The driver can see
+        // their own game, and if a dock really is all there is they can take it anyway — recorded as the
+        // exception it is, the same as sub-buffer slack or off-account freight, rather than quietly
+        // counted as a normal run against a promise the company is already failing to keep.
+        if (eval.HomeTimeFails.Count > 0)
+        {
+            trip.Notes = $"Taken against dispatch advice on home time. {string.Join(" ", eval.HomeTimeFails)} {trip.Notes}".Trim();
+            trip.Events.Add(new TripEvent
+            {
+                GameTime = s.Status.GameTime,
+                Kind = "Note",
+                Detail = "Driver's call. Dispatch would not have booked this one with home time where it is."
+            });
+        }
 
         // Off-account freight is allowed when the account is dry, but it is recorded as the exception
         // it is rather than quietly counted as a normal dedicated run.

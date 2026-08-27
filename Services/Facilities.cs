@@ -44,6 +44,40 @@ public static class Facilities
         return Hash($"{s.Driver.EmployeeId}|parking|{key}") % 100 < AllowsOvernightPercent;
     }
 
+    /// <summary>
+    /// Whether the receiver on an open load will take the truck overnight, for the trip card.
+    ///
+    /// The briefing says this once, at authorization, and then the board is gone. It stays true for the
+    /// whole run and it decides where the last few hours before the appointment are spent — a decision
+    /// made several hundred miles and possibly two days after the sentence that answered it.
+    ///
+    /// Recomputed rather than stored: the answer is seeded on the career, the customer and the city, so
+    /// asking again gives the same answer and there is nothing to migrate onto old trips.
+    /// </summary>
+    public static object? ParkingFor(AppState s, Trip? trip)
+    {
+        if (trip == null || trip.Kind != "Freight") return null;
+        if (string.IsNullOrWhiteSpace(trip.DestCity) && string.IsNullOrWhiteSpace(trip.Receiver)) return null;
+
+        var allowed = AllowsOvernightParking(s, trip.DestCity, trip.DestState, trip.Receiver);
+        var who = string.IsNullOrWhiteSpace(trip.Receiver) ? "The receiver" : trip.Receiver.Trim();
+        var where = DispatchEngine.Place(trip.DestCity ?? "", trip.DestState ?? "");
+
+        return new
+        {
+            allowed,
+            receiver = who,
+            where,
+            headline = allowed ? "You can sit on their property" : "No overnight parking on site",
+            detail = allowed
+                ? $"{who} at {where} will let you park up. If you get in early you can wait it out at the dock, " +
+                  "so plan the last leg to arrive rather than to a truck stop short of it."
+                : $"{who} at {where} does not allow overnight parking. If you get in ahead of the window you " +
+                  $"need a truck stop nearby, which is about {Hhmm.Of(RepositionHoursEachWay * 2)} of running " +
+                  "either side and it comes off your clocks. Plan the last leg to arrive inside the window."
+        };
+    }
+
     /// <summary>How the driver should be told, once we know there is a wait to sit out.</summary>
     public static string OvernightNote(AppState s, string? city, string? state, string? receiver, double waitHours)
     {

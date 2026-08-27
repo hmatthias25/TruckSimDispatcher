@@ -100,21 +100,32 @@ const pros = (bd) => (evalOf(bd).pros || []).join(' ');
   ok('on the floor, as before', /break-even/i.test(fails(bd)), fails(bd).slice(0, 90));
 
   head('5. It is the home radius that decides, not the yard itself');
-  // Tulsa is 208 mi from Springfield, so it lands on either side of the line depending on the setting —
-  // which makes it the honest way to prove the radius is what is being read.
+  // Tulsa is 208 mi from Springfield, so it lands on either side of the configured 200 — which makes it
+  // the honest way to prove the radius is what is being read.
+  //
+  // Changed by #101: the radius WIDENS as the company runs late, so by this point in the fixture the
+  // driver is far enough past due that Tulsa is already inside it. The setting is still what is being
+  // read; it is simply no longer the whole answer. Proved here by narrowing it until Tulsa falls back
+  // outside, which is the same demonstration from the other end.
   const dist = (await api('/geo/distance?cityA=Tulsa&stateA=OK&cityB=Springfield&stateB=MO'))?.miles;
   let st = (await api('/bootstrap')).settings;
-  ok('Tulsa is outside the default 200 mi radius', dist > st.scoring.homeRadiusMiles,
+  let hsNow = (await api('/bootstrap')).views.homeTime;
+  ok('Tulsa is outside the CONFIGURED 200 mi radius', dist > st.scoring.homeRadiusMiles,
     `${Math.round(dist)} mi vs ${st.scoring.homeRadiusMiles}`);
+  ok('but the effective radius has widened with the lateness',
+    hsNow.homeRadius > st.scoring.homeRadiusMiles,
+    `${Math.round(hsNow.homeRadius)} mi at ${hsNow.daysLate?.toFixed?.(1)} days late`);
   bd = await only('Tulsa', 'OK', 180, 130);
-  ok('so a cheap load there is rejected', bd.rejectAll === true, `rejectAll=${bd.rejectAll}`);
+  ok('so a cheap load there gets through as the ride home',
+    bd.rejectAll !== true, `rejectAll=${bd.rejectAll}`);
+  ok('for that reason and no other', /gets you home/i.test(pros(bd)), 'ride home');
 
-  st.scoring.homeRadiusMiles = 250;
+  st.scoring.homeRadiusMiles = 90;   // widened it is still only 2x, so 180 keeps Tulsa outside
   await api('/settings', 'POST', st);
   bd = await only('Tulsa', 'OK', 180, 130);
-  ok('widen the radius past it and the same load gets through',
-    bd.rejectAll !== true, `rejectAll=${bd.rejectAll}`);
-  ok('for the same reason', /gets you home/i.test(pros(bd)), 'ride home');
+  ok('narrow it until Tulsa is outside again and the same load is rejected',
+    bd.rejectAll === true, `rejectAll=${bd.rejectAll}`);
+  ok('on the break-even floor, as it was before', /break-even/i.test(fails(bd)), fails(bd).slice(0, 90));
   st = (await api('/bootstrap')).settings;
   st.scoring.homeRadiusMiles = 200;
   await api('/settings', 'POST', st);

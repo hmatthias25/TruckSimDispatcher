@@ -36,6 +36,15 @@ async function goHome(S, dayNum) {
     driverName: 'T. Reassign', preferredDivision: 'Dry Van', secondDivision: 'Reefer',
     transmissionPreference: 'either', experienceYears: 5, homeTimePreference: 'biweekly',
     homeCity: 'Denver', homeState: 'CO', acceptsProbation: true,
+    // This suite is about being re-rigged onto a TRAILER that is out under somebody else — the wait at
+    // the yard, the refusal to invent a return date, the block on dispatch while it is away. Drop and
+    // hook is a posting with no box behind it, so it has none of those mechanics and rolling one here
+    // just hijacks the test. Saying up front we will not haul it keeps the suite on its own subject.
+    //
+    // It became worth saying with #103: the chance of a re-rig now climbs with how long the driver has
+    // been on one trailer, and drop and hook climbs with it, so a fixture that comes home eleven times
+    // reaches it long before it used to.
+    willNotHaul: ['Drop & Hook'],
   };
   await api('/onboarding/market', 'POST', app);
   let S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: day(1) }));

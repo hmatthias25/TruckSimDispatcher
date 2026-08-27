@@ -114,8 +114,11 @@ async function at(city, state, day, hm = '13:44', kind = 'Shipper') {
     decision.authorizedLoadId !== byDest['Great Falls']?.load.id, 'not Great Falls');
 
   head('3. Because it works him toward home, and the board says so');
-  ok('the Tulsa card says it works toward home',
-    (byDest.Tulsa.pros || []).some((x) => /toward Springfield/i.test(x)),
+  // #101 widened the home area with lateness, and this driver is far enough past due that Tulsa's 208
+  // miles now falls inside it — so the card reads "gets you home" rather than "toward home". Either
+  // wording is the same finding; what matters is that the card says Springfield is why.
+  ok('the Tulsa card says Springfield is the reason',
+    (byDest.Tulsa.pros || []).some((x) => /toward Springfield|home — 2\d\d mi from Springfield/i.test(x)),
     (byDest.Tulsa.pros || []).find((x) => /Springfield/i.test(x))?.slice(0, 70) || '(none)');
   // Overdue wording is blunter than the due-soon wording: it names the broken promise rather than the yard.
   ok('the Montana card is warned against',

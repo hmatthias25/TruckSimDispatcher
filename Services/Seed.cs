@@ -682,6 +682,10 @@ public static class Seed
             EmployeeId = $"{s.Company.Code}-{1000 + Math.Abs(StableSeed(app.DriverName) % 9000)}",
             HiredGameDate = s.Status.GameTime,
             HiredUtc = DateTime.UtcNow.ToString("o"),
+            // Squared up as at the day they started. The true-up now fires for any Monday that has GONE
+            // BY unsquared rather than only for today — which, left at the default, would have meant a
+            // brand-new career opening with a demand to reconcile a week it was not around for.
+            LastTrueUpDay = LedgerService.MondayOnOrBefore(GameClock.DayOf(s.Status.GameTime) ?? 0),
             Status = "Probation",
             Rank = "probationary",
             RankTitle = "Probationary Company Driver",

@@ -1129,22 +1129,34 @@ app.MapPost("/api/trips/{id}/window", (string id, WindowFixRequest req) => Resul
     return new { snapshot = Snapshot(s), message };
 })));
 
-/// Where a hired driver is with the company trailer, as the player last saw it. Asked when they report
-/// in at the yard, because that is the moment it matters and the only moment they are looking at the
-/// company screen anyway.
+/// Where one of the company's trailers is, as the player last saw it. Asked when they report in at the
+/// yard, because that is the moment it matters and the only moment they are looking at the game's
+/// trailer screen anyway.
+///
+/// Keyed on the TRAILER. It used to be keyed on the hired driver the app had down as pulling it, which
+/// AI drivers make wrong the first time they hook something else.
 app.MapPost("/api/fleetops/whereabouts", (WhereaboutsRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
-    var d = s.HiredDrivers.FirstOrDefault(x => x.Id == req.DriverId)
-            ?? throw new InvalidOperationException("No such driver on the roster.");
+    var t = s.Trailers.FirstOrDefault(x => x.Unit.Equals((req.TrailerUnit ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("No such trailer in the fleet.");
 
-    d.TrailerWhereabouts = req.Direction is "Inbound" or "Outbound" or "Unknown" ? req.Direction : "Unknown";
-    d.TrailerHeadingCity = (req.City ?? "").Trim();
-    d.TrailerHeadingState = (req.State ?? "").Trim().ToUpperInvariant();
-    d.TrailerWhereaboutsGameTime = s.Status.GameTime;
+    t.Whereabouts = Whereabouts.Normalise(req.Direction);
+    t.WhereaboutsCity = (req.City ?? "").Trim();
+    t.WhereaboutsState = (req.State ?? "").Trim().ToUpperInvariant();
+    t.WhereaboutsGameTime = s.Status.GameTime;
 
-    var estimate = Whereabouts.Assess(s, d);
-    store.Log(s, "career", $"{d.Name}: {estimate.Text}");
+    var estimate = Whereabouts.Assess(s, t);
+    store.Log(s, "fleet", $"{t.Ref}: {estimate.Text}");
     return new { estimate, snapshot = Snapshot(s) };
+})));
+
+// The driver has now actually seen a settlement. Separate from paying it on purpose: paying is the
+// calendar's job and telling them is the screen's, and conflating the two is what let a payday land on a
+// fuel-stop log and go unmentioned.
+app.MapPost("/api/pay/acknowledge", (AcknowledgePayRequest? req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var marked = PayEngine.MarkAnnounced(s, req?.Numbers);
+    return new { marked, snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mutate(s =>
@@ -1813,6 +1825,10 @@ object Snapshot(AppState? given = null)
                 type = DispatchEngine.AssignedTrailer(s)?.Type ?? "",
             },
 
+            // How long they have been on this box and what that does to the odds of being moved off it.
+            // The chance used to be flat and invisible; a rising one nobody can see is the same thing.
+            trailerTenure = HomeTime.TenureView(s),
+
             dedicated = new
             {
                 carrierRuns = Dedicated.CarrierRunsDedicated(s),
@@ -1916,6 +1932,10 @@ object Snapshot(AppState? given = null)
                 }).ToList(),
             infoNeeded = DispatchEngine.MissingContext(s),
             activeTrip = TripService.Active(s),
+            // Whether the receiver will have the truck overnight. Said in the dispatch briefing and then
+            // lost with the board, which is the one place it was no longer needed — it is planning
+            // information for the run, not for the decision to take it.
+            receiverParking = Facilities.ParkingFor(s, TripService.Active(s)),
             // What close-out measures the run against. A trip that was already rolling before the app
             // captured one falls back to the last reading the driver reported.
             startOdometer = TripService.Active(s) is { StartOdometer: > 0 } at
@@ -1958,14 +1978,26 @@ object Snapshot(AppState? given = null)
                     : new List<object>()
             },
 
-            // Monday, and the books have not been squared against the game this week.
+            // A Monday has gone by and the books have not been squared against the game. Not necessarily
+            // TODAY's Monday — the clock jumps in whatever steps the player's driving took, and a week
+            // stepped over used to be a week skipped rather than a week deferred.
             trueUp = new
             {
                 due = LedgerService.TrueUpDue(s),
+                forDay = LedgerService.TrueUpFor(s)?.Day,
+                daysAgo = LedgerService.TrueUpFor(s)?.DaysAgo,
                 expected = LedgerService.TotalCompanyCash(s),
                 lastReported = s.Status.AtsBankBalance,
                 shortfall = s.Driver.TrueUpShortfall
-            }
+            },
+
+            // Paydays the driver has not actually been shown.
+            //
+            // Read off state rather than off whatever the last call returned, because settling happens on
+            // whichever endpoint the clock crossed a Friday on — a status report, a close-out, a fuel-stop
+            // log — and two of those had no UI for it. Money moved, the record was right, and nothing said
+            // so. See Settlement.Announced.
+            unannouncedPay = PayEngine.Unannounced(s)
         }
     };
 }
@@ -2064,7 +2096,8 @@ record CancelRequest(string Reason, string Fault, bool ChargeCompany);
 record NoteRequest(string? Notes, string? SafetyNotes, string? FaultAttribution);
 
 /// Where a hired driver appears to be with the company's trailer. The direction is the honest part.
-record WhereaboutsRequest(string DriverId, string Direction, string? City, string? State);
+record WhereaboutsRequest(string? TrailerUnit, string Direction, string? City, string? State);
+record AcknowledgePayRequest(List<string>? Numbers);
 record AssignRequest(string? TruckUnit, string? TrailerUnit, bool Force);
 record CompleteWoRequest(decimal Cost, double DamageAfter, string Vendor, string PaidBy, string Notes);
 record WriteOffRequest(string Unit, bool DriverFault, decimal ScrapRecovery, string? Notes);

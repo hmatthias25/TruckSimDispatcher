@@ -301,12 +301,39 @@ public static class LedgerService
     public static decimal TotalCompanyCash(AppState s) =>
         Balance(s, Operating) + Balance(s, MaintenanceReserve) + Balance(s, PayrollReserve);
 
-    /// <summary>Monday, and not yet squared up this week.</summary>
+    /// <summary>The Monday on or before this day. Day 0 is a Monday, so the arithmetic is the calendar.</summary>
+    public static int MondayOnOrBefore(int day) => Math.Max(0, day) - (Math.Max(0, day) % 7);
+
+    /// <summary>
+    /// A Monday has gone by unsquared.
+    ///
+    /// This used to insist the driver be standing ON a Monday: <c>day % 7 == 0</c>. The game clock only
+    /// moves when the player reports it, and it moves in whatever jumps their play took — a 34 over a
+    /// weekend, a two-day run, a home time. Anybody who reported Sunday and then Wednesday never saw
+    /// the prompt at all, and the week was not deferred, it was skipped. Reported from play after a
+    /// restart taken over a Monday.
+    ///
+    /// So the question is not "is today Monday" but "has a Monday passed that we have not squared".
+    /// </summary>
     public static bool TrueUpDue(AppState s)
     {
         var day = GameClock.DayOf(s.Status.GameTime);
         if (day == null) return false;
-        return day.Value % 7 == 0 && s.Driver.LastTrueUpDay < day.Value;
+        return s.Driver.LastTrueUpDay < MondayOnOrBefore(day.Value);
+    }
+
+    /// <summary>
+    /// Which Monday the outstanding true-up is for, and how long ago it was. Null when nothing is due.
+    ///
+    /// Said out loud because "Monday — true up the books" on a Wednesday reads like the app has lost
+    /// track of the date. It has not; the Monday it means is simply behind them.
+    /// </summary>
+    public static (int Day, double DaysAgo)? TrueUpFor(AppState s)
+    {
+        var day = GameClock.DayOf(s.Status.GameTime);
+        if (day == null || !TrueUpDue(s)) return null;
+        var monday = MondayOnOrBefore(day.Value);
+        return (monday, day.Value - monday);
     }
 
     /// <summary>
@@ -342,7 +369,7 @@ public static class LedgerService
 
         if (over > 0.005m)
             Post(s, Operating, over, "Adjustment",
-                 $"Monday true-up: ATS holds ${atsBalance:N2} against ${expected:N2} on the books. " +
+                 $"Weekly true-up: ATS holds ${atsBalance:N2} against ${expected:N2} on the books. " +
                  "Taking the game as the world and bringing the books up to it.",
                  isAdjustment: true);
 

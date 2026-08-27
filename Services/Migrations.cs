@@ -31,6 +31,8 @@ public static class Migrations
         MeasureDeliveryFromArrivalNotRelease(s);
         GiveTripEventsIds(s);
         KeyDockTimesToTheTrailerPulled(s);
+        MoveWhereaboutsOntoTheTrailer(s);
+        SettlementsAlreadyBankedAreNotNews(s);
         EnsureDropHookIsOnOffer(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
@@ -295,6 +297,59 @@ public static class Migrations
     /// recoverable. Rebuilding afterwards is the point of doing it here: the rebuild reads
     /// <c>Trip.TrailerType</c>, so re-keying without it would faithfully reconstruct the same wrong rows.
     /// </summary>
+    /// <summary>
+    /// v13 — where a trailer is stops being a fact about the driver pulling it.
+    ///
+    /// It was filed on <c>HiredDriver.TrailerWhereabouts</c> and keyed by <c>AssignedTrailerUnit</c>, on
+    /// the assumption that a driver stays on the box the app has them down for. AI drivers in ATS change
+    /// trailers whenever the game feels like it and never tell anybody, so the app asked where somebody
+    /// was with DV-3 long after they had moved off it and filed the answer against the wrong trailer.
+    ///
+    /// What the player told us is still worth having — it was a real observation about a real trailer at
+    /// the time it was made. It moves onto whichever trailer the driver was down for, and the timestamp
+    /// comes with it so the staleness rule can decide on its own whether it is still worth anything.
+    /// </summary>
+    private static void MoveWhereaboutsOntoTheTrailer(AppState s)
+    {
+        if (s.SchemaVersion >= 13) return;
+
+#pragma warning disable CS0618
+        foreach (var d in s.HiredDrivers)
+        {
+            if (string.IsNullOrWhiteSpace(d.TrailerWhereabouts)) continue;
+            if (string.IsNullOrWhiteSpace(d.AssignedTrailerUnit)) continue;
+
+            var box = s.Trailers.FirstOrDefault(t =>
+                t.Unit.Equals(d.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase));
+            if (box == null) continue;
+
+            // Do not overwrite something already answered against the trailer itself — that answer was
+            // given about the right thing and this one only might have been.
+            if (!string.IsNullOrWhiteSpace(box.Whereabouts)) continue;
+
+            box.Whereabouts = Whereabouts.Normalise(d.TrailerWhereabouts);
+            box.WhereaboutsCity = d.TrailerHeadingCity;
+            box.WhereaboutsState = d.TrailerHeadingState;
+            box.WhereaboutsGameTime = d.TrailerWhereaboutsGameTime;
+        }
+#pragma warning restore CS0618
+    }
+
+    /// <summary>
+    /// v13 — settlements already in the file are history, not a queue of announcements.
+    ///
+    /// <see cref="Settlement.Announced"/> is new and defaults to false, which on an existing career would
+    /// mean every payday ever run comes back as an unread popup. They were read; the flag simply did not
+    /// exist to record it. Only paydays raised from here on start unannounced.
+    /// </summary>
+    private static void SettlementsAlreadyBankedAreNotNews(AppState s)
+    {
+        if (s.SchemaVersion >= 13) return;
+        s.SchemaVersion = 13;
+
+        foreach (var st in s.Settlements) st.Announced = true;
+    }
+
     private static void KeyDockTimesToTheTrailerPulled(AppState s)
     {
         if (s.SchemaVersion >= 12) return;

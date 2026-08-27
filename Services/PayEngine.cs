@@ -237,16 +237,54 @@ public static class PayEngine
 
         foreach (var payday in GameClock.PaydaysBetween(lastPaid, now.Value))
         {
-            s.Driver.LastPaydayDay = payday;
             var owed = s.Trips.Any(t => string.IsNullOrEmpty(t.SettlementNumber)
                                         && t.Status is "Delivered" or "Cancelled" && t.Pay.Total != 0);
-            if (!owed) continue;   // a quiet week is not an error, it just does not produce a stub
+
+            // A quiet week is not an error, it just does not produce a stub.
+            //
+            // But do not close TODAY's payday off on the way past. The clock moves several times in a
+            // Friday — an unload event at ten, a close-out at noon — and the first of those found
+            // nothing owed yet, marked the Friday done, and left the load delivered two hours later
+            // waiting a full week for a settlement it should have been on. Only a Friday genuinely
+            // behind us is finished with.
+            if (!owed)
+            {
+                if (payday < now.Value) s.Driver.LastPaydayDay = payday;
+                continue;
+            }
+
+            s.Driver.LastPaydayDay = payday;
 
             var st = RunSettlement(s, $"Payday — Friday, Day {payday}.");
             st.Trigger = "Payday";
+            st.Announced = false;       // stays false until something has actually put it in front of them
             issued.Add(st);
         }
         return issued;
+    }
+
+    /// <summary>
+    /// Settlements the driver has not been shown yet, newest first.
+    ///
+    /// Read off the snapshot rather than off whatever the last call returned, which is the whole point:
+    /// the endpoint that crosses the Friday and the screen that reports it no longer have to be the same
+    /// one. See <see cref="Settlement.Announced"/>.
+    /// </summary>
+    /// <remarks>
+    /// Paydays only. A final settlement on leaving an employer is handed over by the changeover screen at
+    /// the moment it is raised, so it has somewhere to be seen and does not need chasing.
+    /// </remarks>
+    public static List<Settlement> Unannounced(AppState s) =>
+        s.Settlements.Where(x => !x.Announced && x.Trigger == "Payday").ToList();
+
+    /// <summary>Marks settlements as shown. Called when the driver has actually seen the modal.</summary>
+    public static int MarkAnnounced(AppState s, IEnumerable<string>? numbers = null)
+    {
+        var want = numbers?.Where(x => !string.IsNullOrWhiteSpace(x)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var hit = s.Settlements.Where(x => !x.Announced && x.Trigger == "Payday"
+                                            && (want == null || want.Contains(x.Number))).ToList();
+        foreach (var x in hit) x.Announced = true;
+        return hit.Count;
     }
 
     /// <summary>

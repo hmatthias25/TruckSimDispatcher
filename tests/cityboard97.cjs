@@ -111,12 +111,30 @@ async function cityBoard(rows) {
   ok('authorizing the held load works', !!auth.trip?.number, auth.trip?.number || 'refused');
   await api(`/trips/${auth.trip.id}/cancel`, 'POST', { reason: 'fixture' });
 
-  head('5. Pull the city board and it commits');
+  head('5. Pull the city board and the ask is over — but so is taking one of these');
+  // Changed by #101. This used to commit to one of the three, which is the reported bug in the other
+  // direction: eleven days late for home, and every load on the board runs further from it. Seeing the
+  // city is what settles the question; it does not oblige us to take what the city had.
   bd = await cityBoard([['San Francisco', 'CA', 1650, 4200],
                         ['Sonora', 'TX', 480, 1500],
                         ['Cody', 'WY', 980, 2900]]);
   ok('a wider board is not held', bd.wantCityBoard !== true, `wantCityBoard=${bd.wantCityBoard}`);
-  ok('and something is authorized', !!bd.authorizedLoadId, bd.authorizedLoadId || 'none');
+  ok('and none of it is taken, because they all run further out',
+    !bd.authorizedLoadId, bd.authorizedLoadId || 'none');
+  ok('the headline says so rather than blaming the freight',
+    /runs further from/i.test(bd.headline || ''), bd.headline);
+  ok('and it points at the yard instead',
+    /Springfield/i.test((bd.dispatchNotes || []).join(' ')), 'home named');
+
+  head('5b. A city board with one load home takes it');
+  bd = await cityBoard([['San Francisco', 'CA', 1650, 4200],
+                        ['Springfield', 'MO', 330, 1050],
+                        ['Cody', 'WY', 980, 2900]]);
+  ok('something is authorized once there is something worth taking',
+    !!bd.authorizedLoadId, bd.authorizedLoadId || 'none');
+  ok('and it is the one going home',
+    /Springfield/i.test(((bd.evaluations || []).find((e) => e.load.id === bd.authorizedLoadId)
+      || {}).load?.destCity || ''), 'home');
 
   head('6. A dock board WITH a load going home is taken without any fuss');
   bd = await dockBoard([['San Francisco', 'CA', 1650, 4200],

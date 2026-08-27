@@ -20,7 +20,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 12;
+    public const int Current = 13;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -329,6 +329,21 @@ public class Driver
     public List<string> Restrictions { get; set; } = new();
     public string AssignedTruckUnit { get; set; } = "";
     public string AssignedTrailerUnit { get; set; } = "";
+
+    /// <summary>
+    /// Home times completed on the trailer currently assigned. Reset to zero whenever it changes.
+    ///
+    /// The reassignment roll used to be flat — the same one-in-three every time home, however long the
+    /// driver had been on the same box. Flat means a run of bad luck leaves somebody on one trailer
+    /// indefinitely with nothing building toward a change, which is both the least interesting outcome
+    /// for the player and not how a carrier behaves: four tours on the same freight makes a move MORE
+    /// likely, not equally likely. See <see cref="HomeTime.ReassignChancePercent"/>.
+    ///
+    /// A trailer the driver ASKED for is an arrangement and never rolls at all, so this does not apply
+    /// to one — see <see cref="TrailerByRequest"/>.
+    /// </summary>
+    public int HomeTimesOnTrailer { get; set; }
+
     /// <summary>Terminal the driver is domiciled out of — where home time starts and ends.</summary>
     public string HomeTerminalId { get; set; } = "";
     /// <summary>
@@ -727,6 +742,24 @@ public class Trailer
     public string CurrentLocation { get; set; } = "";
     public string AssignedTruckUnit { get; set; } = "";
     public bool IsCompanyOwned { get; set; } = true;
+    /// <summary>
+    /// Roughly where this trailer is, as the player last saw it on the ATS trailer screen.
+    ///
+    /// Inbound | Outbound | Parked | Unknown. Filed against the TRAILER because the trailer is the thing
+    /// being asked about — it used to hang off the hired driver the app had down as pulling it, and AI
+    /// drivers change trailers on their own, so every answer ended up against the wrong box.
+    ///
+    /// See <see cref="Services.Whereabouts"/> for what it is worth and what it decides.
+    /// </summary>
+    public string Whereabouts { get; set; } = "";
+
+    /// <summary>Where it appears to be heading, or where it is sitting. City, state. Optional.</summary>
+    public string WhereaboutsCity { get; set; } = "";
+    public string WhereaboutsState { get; set; } = "";
+
+    /// <summary>Game time that was reported, so a stale answer can be treated as stale.</summary>
+    public string WhereaboutsGameTime { get; set; } = "";
+
     /// <summary>Replaced and out of the fleet — kept on the book so its trip history still resolves.</summary>
     public bool Retired { get; set; }
     public string RetiredGameTime { get; set; } = "";
@@ -1227,6 +1260,20 @@ public class Settlement
     public PayStub? Stub { get; set; }
     /// <summary>Payday | JobChange — why this settlement ran.</summary>
     public string Trigger { get; set; } = "Payday";
+
+    /// <summary>
+    /// Whether the driver has actually been shown this settlement.
+    ///
+    /// Paydays settle on whatever call happens to move the clock across a Friday — a status report, a
+    /// close-out, a fuel-stop log, a loaded report. Two of those four had UI that showed the result and
+    /// two threw it away, so a driver got paid on a fuel stop and was never told: the money was right,
+    /// the record was right, and nothing said so. By the next status report there was nothing left to
+    /// announce, because it had already been paid.
+    ///
+    /// Making the settlement carry this means the announcement no longer depends on which endpoint
+    /// happened to cross the Friday. Anything unannounced surfaces off the snapshot on the next render.
+    /// </summary>
+    public bool Announced { get; set; }
     public string IssuedUtc { get; set; } = DateTime.UtcNow.ToString("o");
 }
 
@@ -1391,20 +1438,24 @@ public class HiredDriver
     /// days printed as a fact — which is exactly the fabrication this app refuses everywhere else.
     /// </summary>
     /// <summary>
-    /// Roughly where this driver is with the company's trailer, as the player last saw it.
+    /// Where this driver said the company's trailer was. <b>Moved to <see cref="Trailer.Whereabouts"/>.</b>
     ///
-    /// Inbound | Outbound | Unknown. The honest limit of what anybody can tell from the ATS company
-    /// screen — a direction and somewhere they are heading — which is enough to say whether a trailer is
-    /// worth waiting for. It replaces a due-back date, which was asked for on a fleet review line and
-    /// was the wrong question in the wrong place.
+    /// The question was always about the trailer; hanging it off the driver assumed a driver stays on the
+    /// box the app has them down for, and AI drivers in ATS swap trailers whenever they like. So the app
+    /// asked where somebody was with DV-3 when they had been on something else for a fortnight, and filed
+    /// the answer against the wrong trailer.
+    ///
+    /// Kept on the model so existing career files load unchanged; a migration copies what is here onto
+    /// the trailer each driver was down for. Nothing reads these.
     /// </summary>
+    [Obsolete("Moved to Trailer.Whereabouts — the question is about the trailer, not who is pulling it.")]
     public string TrailerWhereabouts { get; set; } = "";
 
-    /// <summary>Where they appear to be heading, if the player could tell. City, state.</summary>
+    [Obsolete("Moved to Trailer.WhereaboutsCity.")]
     public string TrailerHeadingCity { get; set; } = "";
+    [Obsolete("Moved to Trailer.WhereaboutsState.")]
     public string TrailerHeadingState { get; set; } = "";
-
-    /// <summary>Game time the whereabouts were reported, so a stale answer can be treated as stale.</summary>
+    [Obsolete("Moved to Trailer.WhereaboutsGameTime.")]
     public string TrailerWhereaboutsGameTime { get; set; } = "";
 
     /// <summary>
@@ -2432,6 +2483,22 @@ public class LoadEvaluation
     /// <summary>Authorize | Backup | Reject</summary>
     public string Recommendation { get; set; } = "Reject";
     public List<string> HardFails { get; set; } = new();
+
+    /// <summary>
+    /// Refused because it runs too far from home while the arrangement is in play.
+    ///
+    /// Kept apart from <see cref="HardFails"/> because it is a different KIND of no. A hard fail is
+    /// something the driver cannot do — no hazmat endorsement, a truck that is not clear to run. This is
+    /// something dispatch will not CHOOSE. The distinction matters twice over:
+    ///
+    ///   * dispatch never authorises one of these on its own, which is the whole point of the rule;
+    ///   * but the driver can see their own game, and if a dock really is all there is, they can take it
+    ///     with one click and the app records that they insisted rather than pretending it never offered.
+    ///
+    /// Treating it as an ordinary hard fail made every load on a small dock board unauthorizable, which
+    /// turned "show me the city board first" into a flat rejection with nothing to fall back on.
+    /// </summary>
+    public List<string> HomeTimeFails { get; set; } = new();
     public List<string> Pros { get; set; } = new();
     public List<string> Cons { get; set; } = new();
     public int DestTier { get; set; } = 2;

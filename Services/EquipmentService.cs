@@ -152,6 +152,11 @@ public static class EquipmentService
 
         trailer.AssignedTruckUnit = s.Driver.AssignedTruckUnit;
         trailer.CurrentLocation = here;
+        // New box, new tenure. The rising chance of a re-rig is about how long somebody has been on ONE
+        // trailer, so it has to start over the moment they are on a different one — otherwise a driver
+        // moved last week carries the old pressure onto the new assignment.
+        if (!string.Equals(s.Driver.AssignedTrailerUnit, trailer.Unit, StringComparison.OrdinalIgnoreCase))
+            s.Driver.HomeTimesOnTrailer = 0;
         s.Driver.AssignedTrailerUnit = trailer.Unit;
         s.Status.TrailerDamagePct = trailer.DamagePct;
 

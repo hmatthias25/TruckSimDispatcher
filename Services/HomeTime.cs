@@ -37,6 +37,75 @@ public static class HomeTime
         return hit.Label ?? "No arrangement";
     }
 
+    /// <summary>
+    /// How much the home area widens for every day the company runs late, in miles.
+    ///
+    /// A fixed radius is right while the arrangement is being kept. It is wrong the moment it is broken:
+    /// a driver 2.5 days late standing 200 miles from the yard is, in every sense that matters,
+    /// home — but measured against the same 200 miles used for a driver with a week in hand he reads as
+    /// "still out", and the board goes looking for freight instead of saying run it in and take your days.
+    ///
+    /// Forty a day is about half a shift of empty running per day late. It says the longer we have kept
+    /// somebody out past their word, the further we should be willing to eat empty miles to end it.
+    /// </summary>
+    public const double RadiusGrowthPerLateDayMiles = 40;
+
+    /// <summary>Ceiling on that growth, as a multiple of the configured radius.</summary>
+    public const double MaxRadiusMultiple = 2.0;
+
+    /// <summary>
+    /// The most a load may run AWAY from the yard while home time is merely approaching, in miles.
+    ///
+    /// Freight does not run in straight lines and some outbound movement on the way to a home-time date
+    /// is ordinary — a load two states out that comes back through home is a normal week. Seven hundred
+    /// miles is not: that is a different week, and no promise survives it.
+    /// </summary>
+    public const double MaxOutboundWhenDueSoonMiles = 500;
+
+    /// <summary>
+    /// The most a load may run away from the yard once the company is actually late, in miles.
+    ///
+    /// Not zero, and deliberately not the fifty the scorer starts arguing at. Arguing and refusing are
+    /// different jobs: a load a hundred miles the wrong way into a market full of freight home may well
+    /// be the right call, and it should lose points rather than be taken off the table. Five hundred
+    /// miles into Texas from Tulsa is not that, and no rate makes it that.
+    /// </summary>
+    public const double MaxOutboundWhenOverdueMiles = 150;
+
+    /// <summary>
+    /// How near the yard counts as home, given how late the company is.
+    ///
+    /// Widens with lateness and stops at <see cref="MaxRadiusMultiple"/>. There has to be a stop: past
+    /// some distance "close enough to run in empty" becomes a day of unpaid driving, and calling that
+    /// home would be the app solving its own scoring problem with the driver's time.
+    /// </summary>
+    public static double EffectiveHomeRadius(AppState s, double daysLate)
+    {
+        var configured = s.Settings.Scoring.HomeRadiusMiles;
+        if (daysLate <= 0) return configured;
+        return Math.Min(configured * MaxRadiusMultiple,
+                        configured + daysLate * RadiusGrowthPerLateDayMiles);
+    }
+
+    /// <summary>
+    /// How far further out a load is allowed to take the driver before it stops being a load dispatch
+    /// argues about and becomes one it refuses.
+    ///
+    /// Null while home time is not in play at all — a driver with most of their arrangement left goes
+    /// where the freight is, and that is the whole point of an arrangement with a date on it.
+    ///
+    /// Two numbers rather than a taper, because the thing that changes is categorical: either the
+    /// company is still keeping its word or it has broken it. A sliding scale down to nothing also
+    /// produced a nasty edge — with two days left on a fortnight, a perfectly ordinary 274-mile leg out
+    /// to Amarillo came out refused, which is not a promise being protected, it is a truck being
+    /// stopped from working.
+    /// </summary>
+    public static double? OutboundAllowance(HomeStatus st)
+    {
+        if (!st.Tracked || !st.DueSoon) return null;
+        return st.Overdue ? MaxOutboundWhenOverdueMiles : MaxOutboundWhenDueSoonMiles;
+    }
+
     /// <summary>Where home time stands right now.</summary>
     public class HomeStatus
     {
@@ -53,6 +122,24 @@ public static class HomeTime
         public bool Overdue { get; set; }
         /// <summary>Rough miles from where the truck is now to the home terminal. Null = unknown.</summary>
         public double? MilesFromHome { get; set; }
+
+        /// <summary>
+        /// How near the yard counts as home <b>for this driver right now</b>, in miles.
+        ///
+        /// Starts at the configured radius and widens the later the company runs — see
+        /// <see cref="EffectiveHomeRadius"/>. Read this rather than the setting, or half the app will be
+        /// working to a different definition of home than the other half.
+        /// </summary>
+        public double HomeRadius { get; set; }
+
+        /// <summary>Days past the agreed interval. Zero when not overdue.</summary>
+        public double DaysLate { get; set; }
+
+        /// <summary>
+        /// The furthest a load may finish from the yard, above where the driver is standing now, before
+        /// dispatch refuses it outright rather than merely arguing against it. Null = no ceiling.
+        /// </summary>
+        public double? OutboundAllowance { get; set; }
 
         /// <summary>
         /// Inside the planning radius — near enough that freight this way counts as heading home. This
@@ -165,8 +252,14 @@ public static class HomeTime
             st.Overdue = true;
         }
 
+        // How late we are, and therefore how near counts as home. Worked out once here so the scorer,
+        // the board notes and the empty-run offer cannot disagree about where home ends.
+        st.DaysLate = st.Overdue ? Math.Max(0, st.DaysOut - st.IntervalDays) : 0;
+        st.HomeRadius = EffectiveHomeRadius(s, st.DaysLate);
+        st.OutboundAllowance = OutboundAllowance(st);
+
         st.MilesFromHome = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
-        st.AtHome = st.MilesFromHome is { } m && m <= s.Settings.Scoring.HomeRadiusMiles;
+        st.AtHome = st.MilesFromHome is { } m && m <= st.HomeRadius;
         st.AtYard = st.MilesFromHome is { } y && y <= AtYardMiles;
 
         // Re-rigged and waiting on the trailer to come back in — that wait is spent at home.
@@ -275,6 +368,9 @@ public static class HomeTime
         if (!arriving) return false;
 
         s.Driver.HomeTimesTaken++;
+        // Another tour done on the same box. Ticked here, alongside the home time it counts, so the
+        // notice given on the way in and the order issued on arrival are working from the same number.
+        s.Driver.HomeTimesOnTrailer++;
 
         // Reporting in is the whole point of probation. Somebody goes through the period with them and
         // writes a verdict; three good ones in a row is what ends it.
@@ -318,9 +414,13 @@ public static class HomeTime
         // asking to come off it — see Requests.ReleaseTrailerArrangement.
         if (s.Driver.TrailerByRequest) return null;
 
-        // Drop and hook is an arrangement whatever route it arrived by. Re-rigging somebody off it at a
-        // home time they did not ask for would end their freight-market work without warning.
-        if (DropHook.Active(s)) return null;
+        // A drop and hook the driver ASKED for is caught by TrailerByRequest above, the same as any
+        // other arrangement. One they were simply put on is not an arrangement, it is a posting — and it
+        // used to be exempt here anyway, which left a driver on it permanently with no way off short of
+        // asking. Worse, ReassignmentTypeFor never knew about the exemption, so a drop-and-hook driver
+        // was told on the way in that they were changing trailers and then nothing happened.
+        //
+        // They get the same fortnight's notice as anybody being re-rigged — see ReassignmentNotice.
 
         var divisions = s.Company.Divisions?.Where(d => !string.IsNullOrWhiteSpace(d)).ToList() ?? new List<string>();
         if (divisions.Count < 2) return null;    // a one-division carrier has nothing to move you to
@@ -357,6 +457,83 @@ public static class HomeTime
     /// Seeded on the visit number, so the warning given on the way in is necessarily the same answer
     /// issued on arrival. Two different answers would be worse than no warning at all.
     /// </summary>
+    /// <summary>
+    /// How likely a freight-mix re-rig is, given how many tours the driver has done on this trailer.
+    ///
+    /// Was a flat 34 whatever the tenure. Flat is wrong in both directions: a driver settled on a box
+    /// last month should mostly be left alone, and one who has been on the same freight for four tours
+    /// is somebody a real carrier moves. It also produced the outcome nobody wants — a run of failed
+    /// rolls leaving a player on one trailer indefinitely with nothing accumulating toward a change.
+    ///
+    /// Climbs twelve a tour and stops at eighty, because the last rung should still be a roll rather
+    /// than a certainty. Something you can see coming is not the same as something scheduled.
+    /// </summary>
+    public static int ReassignChancePercent(int tenure) =>
+        (int)Math.Clamp(34 + 12 * (Math.Max(1, tenure) - 1), 34, 80);
+
+    /// <summary>
+    /// The same idea for drop and hook, which climbs more gently.
+    ///
+    /// It is a bigger change than swapping a van for a reefer — different market, different job, no
+    /// trailer of your own — so it should stay the occasional posting rather than becoming the likely
+    /// one for anybody who sits still long enough.
+    /// </summary>
+    public static int DropHookChancePercent(int tenure) =>
+        (int)Math.Clamp(12 + 4 * (Math.Max(1, tenure) - 1), 12, 28);
+
+    /// <summary>
+    /// Tours completed on the current trailer as at a given home time.
+    ///
+    /// Worked out relative to the home time being asked about, because this question is asked from both
+    /// sides of the counter being ticked: the notice on the way in asks about <c>HomeTimesTaken + 1</c>
+    /// before <see cref="Touch"/> runs, and the order on arrival asks about <c>HomeTimesTaken</c> after
+    /// it. Both mean the same home time and both must get the same answer, or the warning and the order
+    /// disagree — which is worse than no warning at all.
+    /// </summary>
+    public static int TenureAt(AppState s, int homeTimeNumber) =>
+        Math.Max(1, s.Driver.HomeTimesOnTrailer + (homeTimeNumber - s.Driver.HomeTimesTaken));
+
+    /// <summary>
+    /// Where the driver stands on the re-rig curve, for the equipment screen.
+    ///
+    /// Published rather than left as a constant nobody can see. A rising chance the player cannot
+    /// observe is indistinguishable from a flat one, and half the value of it rising is knowing that it
+    /// is — a fourth tour on the same box should feel like something building, not like more of the same.
+    /// </summary>
+    public static object TenureView(AppState s)
+    {
+        var trailer = DispatchEngine.AssignedTrailer(s);
+        var tours = Math.Max(0, s.Driver.HomeTimesOnTrailer);
+        var next = TenureAt(s, s.Driver.HomeTimesTaken + 1);
+        var byRequest = s.Driver.TrailerByRequest;
+        var eligible = trailer != null && !byRequest && !Dedicated.Active(s)
+                       && (s.Company.Divisions?.Count(d => !string.IsNullOrWhiteSpace(d)) ?? 0) >= 2;
+
+        return new
+        {
+            unit = trailer?.Ref ?? "",
+            tours,
+            byRequest,
+            eligible,
+            chancePercent = eligible ? ReassignChancePercent(next) : 0,
+            dropHookPercent = eligible && !DropHook.Is(trailer?.Type) ? DropHookChancePercent(next) : 0,
+            note = byRequest
+                ? "You asked for this one, so operations does not move you off it. You come off it by asking."
+                : !eligible
+                    ? "Nothing is going to move you off this one."
+                    : tours <= 1
+                        ? "Freshly assigned. Operations will leave you on it for a while yet."
+                        : $"{tours} tour(s) on this one. The longer you are on a box the more likely operations " +
+                          "is to move you, so a change gets more likely every time you come in.",
+            curve = Enumerable.Range(1, 6).Select(t => new
+            {
+                tenure = t,
+                percent = ReassignChancePercent(t),
+                dropHookPercent = DropHookChancePercent(t),
+            }).ToList(),
+        };
+    }
+
     public static string? ReassignmentTypeFor(AppState s, int homeTimeNumber)
     {
         if (homeTimeNumber < 2) return null;
@@ -377,13 +554,16 @@ public static class HomeTime
         // is not "occasionally" but "practically never". On its own it is one in eight.
         //
         // Its own seed key, so an ordinary reassignment still lands exactly where it always did.
+        var tenure = TenureAt(s, homeTimeNumber);
+
         if (!DropHook.Is(current.Type)
             && Qualified(s, DropHook.TrailerType)
-            && Hash($"{s.Driver.Name}|drophook|{homeTimeNumber}") % 100 < 12)
+            && Hash($"{s.Driver.Name}|drophook|{homeTimeNumber}") % 100 < (uint)DropHookChancePercent(tenure))
             return DropHook.TrailerType;
 
-        // Roughly one home time in three. Seeded, so refreshing does not re-roll it.
-        if (Hash($"{s.Driver.Name}|reassign|{homeTimeNumber}") % 100 >= 34) return null;
+        // Seeded, so refreshing does not re-roll it — but the THRESHOLD rises with how long the driver
+        // has been on this box. One in three on a fresh assignment, four in five by the fifth tour.
+        if (Hash($"{s.Driver.Name}|reassign|{homeTimeNumber}") % 100 >= (uint)ReassignChancePercent(tenure)) return null;
 
         // A division the carrier runs that is not what they are pulling now, and that they are actually
         // qualified for — no tanker without the endorsement.
@@ -413,22 +593,34 @@ public static class HomeTime
                   $"changing trailers when you get in" +
                   (current != null ? $" — off {current.Ref} ({current.Type})." : ".");
 
-        // Where the one they want is out under one of ours, say so now. That wait is what turned a home
-        // time into a home time plus a day, and knowing about it in advance is the whole point.
-        var holder = s.HiredDrivers.FirstOrDefault(d => d.Status == "Active"
-            && !string.IsNullOrWhiteSpace(d.AssignedTrailerUnit)
-            && s.Trailers.Any(t => t.Unit == d.AssignedTrailerUnit
-                                   && EquipmentService.TypeCovers(t.Type, next)));
-        if (holder != null)
+        // Where the one they want is somewhere other than the yard, say so now. That wait is what turned
+        // a home time into a home time plus a day, and knowing about it in advance is the whole point.
+        //
+        // Asked of the TRAILER. It used to look up whichever hired driver the app had down as pulling one
+        // of that type and describe where THEY were, which is a fact about a person the app cannot keep
+        // current — AI drivers change trailers by themselves and the app never hears about it.
+        var wanted = s.Trailers.FirstOrDefault(t => !t.Retired
+            && !t.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)
+            && EquipmentService.TypeCovers(t.Type, next));
+
+        if (wanted == null)
         {
-            msg += $" The {next.ToLowerInvariant()} we have is out under {holder.Name}, so there may be a wait at the " +
-                   "yard — plan your home time around it rather than sitting on top of it.";
-            // What the player last told us about where that driver is heading. Rough by nature, and
-            // enough to say whether the trailer is worth waiting for.
-            msg += " " + Whereabouts.Describe(s, holder);
+            msg += $" I do not have a {next.ToLowerInvariant()} on the books, so operations will be sourcing one. " +
+                   "There may be a wait at the yard — plan your home time around it rather than sitting on top of it.";
+            return msg;
         }
+
+        var where = Whereabouts.Assess(s, wanted);
+        msg += $" The one we have is {wanted.Ref}. ";
+
+        if (!where.Known)
+            msg += "I have nothing current on where it is — have a look at the trailer screen while you are in " +
+                   "and tell me, and I can say whether it is a straight swap or a wait at the yard.";
         else
-            msg += " Should be one on the property, so it ought to be a straight swap.";
+            msg += where.Text + (where.WorthWaiting
+                ? ""
+                : " That is a wait at the yard rather than a straight swap, so plan your home time around it " +
+                  "rather than sitting on top of it.");
 
         return msg;
     }
@@ -484,7 +676,7 @@ public static class HomeTime
         if (destMiles == null)
             return (0, $"{DispatchEngine.Place(load.DestCity, load.DestState)} is not in our geography table, so I cannot tell whether it moves you toward home.", null, null);
 
-        var radius = s.Settings.Scoring.HomeRadiusMiles;
+        var radius = st.HomeRadius > 0 ? st.HomeRadius : s.Settings.Scoring.HomeRadiusMiles;
         var w = s.Settings.Scoring.HomeTime;
         // Overdue doubles the weight — at that point the company is breaking its own promise.
         var urgency = st.Overdue ? 1.0 : 0.55;
@@ -520,9 +712,17 @@ public static class HomeTime
 
         if (closes < -deadBand)
         {
-            var pts = -1.0 * w * urgency;
+            // Scaled by how far wrong, not flat.
+            //
+            // A flat penalty says a load sixty miles further out and a load seven hundred miles further
+            // out are the same mistake. They are not, and treating them as one is how a 500-mile run into
+            // Texas beat everything else on rate while the driver was two and a half days late for home.
+            // Doubles by the time the load has put a full day's driving between the driver and the yard.
+            var wrongWay = Math.Abs(closes);
+            var severity = 1.0 + Math.Clamp((wrongWay - deadBand) / 500.0, 0, 1.0);
+            var pts = -1.0 * w * urgency * severity;
             return (pts,
-                $"Runs {Math.Abs(closes):N0} mi further from {st.TerminalLabel} ({nowMiles:N0} → {destMiles.Value:N0} mi out) with home time {(st.Overdue ? "overdue" : "close")}: {pts:+0.00;-0.00}",
+                $"Runs {wrongWay:N0} mi further from {st.TerminalLabel} ({nowMiles:N0} → {destMiles.Value:N0} mi out) with home time {(st.Overdue ? "overdue" : "close")}: {pts:+0.00;-0.00}",
                 null,
                 st.Overdue
                     ? $"Takes you {Math.Abs(closes):N0} mi further out and your home time is already {st.DaysOut - st.IntervalDays:0.#} days late. That is the company breaking its word."
@@ -530,6 +730,46 @@ public static class HomeTime
         }
 
         return (0, $"Roughly neutral on home time ({nowMiles:N0} → {destMiles.Value:N0} mi from {st.TerminalLabel}).", null, null);
+    }
+
+    /// <summary>
+    /// Whether this load runs so far the wrong way that dispatch declines it outright.
+    ///
+    /// The scorer argues; this refuses. The two are different jobs and the difference matters, because a
+    /// penalty is something a good rate can outbid and a refusal is not. Once the company has actually
+    /// broken its own promise about a date, a load that puts more miles between the driver and the yard
+    /// is not a trade to be priced — there is no number that makes it the right answer.
+    ///
+    /// Returns null when the load is fine. When it is not, returns the sentence to put in front of the
+    /// driver, because "rejected" with no reason is how somebody ends up re-entering the same board.
+    /// </summary>
+    public static string? OutboundRefusal(AppState s, BoardLoad load)
+    {
+        var st = Status(s);
+        if (st.OutboundAllowance is not { } allowance) return null;
+
+        var home = HomeTerminal(s);
+        if (home == null) return null;
+
+        var destMiles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
+        if (destMiles == null) return null;                 // unmeasurable is not the same as unacceptable
+        if (st.MilesFromHome is not { } nowMiles) return null;
+
+        // Anywhere inside the home area is heading home whatever the arithmetic says about the mileage.
+        // A load that finishes 40 miles the far side of the yard has not taken anybody further out.
+        if (destMiles.Value <= st.HomeRadius) return null;
+
+        var further = destMiles.Value - nowMiles;
+        if (further <= allowance) return null;
+
+        var where = DispatchEngine.Place(load.DestCity, load.DestState);
+        return st.Overdue
+            ? $"{where} is {further:N0} mi FURTHER from {st.TerminalLabel} and your home time is already " +
+              $"{st.DaysLate:0.#} days late. Past about {allowance:N0} mi I am not taking you further out to fix " +
+              "that — no rate on this board buys back a promise we have already broken."
+            : $"{where} runs {further:N0} mi further from {st.TerminalLabel} with home time due in " +
+              $"{st.DaysUntilDue:0.#} days. I will take you out of the way to keep the truck earning, but not by " +
+              $"more than about {allowance:N0} mi this close to your date — that is a different week, not a detour.";
     }
 
     /// <summary>
@@ -553,7 +793,7 @@ public static class HomeTime
         if (home == null) return 1.0;
 
         var destMiles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
-        if (destMiles != null && destMiles.Value <= s.Settings.Scoring.HomeRadiusMiles) return 1.0;
+        if (destMiles != null && destMiles.Value <= st.HomeRadius) return 1.0;
 
         return st.Overdue ? 2.0 : 1.6;
     }
@@ -592,7 +832,7 @@ public static class HomeTime
         foreach (var e in clear)
         {
             var miles = Geo.MilesBetween(e.Load.DestCity, e.Load.DestState, home.City, home.State);
-            if (miles != null && miles.Value <= s.Settings.Scoring.HomeRadiusMiles) return null;
+            if (miles != null && miles.Value <= st.HomeRadius) return null;
         }
 
         var where = DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState);
@@ -631,7 +871,7 @@ public static class HomeTime
         if (home == null) return false;
 
         var miles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
-        return miles != null && miles.Value <= s.Settings.Scoring.HomeRadiusMiles;
+        return miles != null && miles.Value <= st.HomeRadius;
     }
 
     /// <summary>
@@ -653,7 +893,7 @@ public static class HomeTime
 
         var destMiles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
         if (destMiles == null) return false;
-        if (destMiles.Value <= s.Settings.Scoring.HomeRadiusMiles) return true;
+        if (destMiles.Value <= st.HomeRadius) return true;
 
         var nowMiles = st.MilesFromHome;
         return nowMiles != null && nowMiles.Value - destMiles.Value > 150;
@@ -678,7 +918,7 @@ public static class HomeTime
         if (home == null) return lines;
 
         var destMiles = Geo.MilesBetween(destCity, destState, home.City, home.State);
-        if (destMiles == null || destMiles.Value > s.Settings.Scoring.HomeRadiusMiles) return lines;
+        if (destMiles == null || destMiles.Value > st.HomeRadius) return lines;
 
         lines.Add(destMiles.Value <= 1
             ? $"This load is your ride home — it delivers at {st.TerminalLabel}. Once you are empty, park it at the yard and take your home time."
@@ -768,11 +1008,11 @@ public static class HomeTime
         public string ReviewNotice { get; set; } = "";
 
         /// <summary>
-        /// Hired drivers holding a company trailer whose whereabouts are worth asking about.
+        /// Company trailers whose whereabouts are worth asking about.
         ///
-        /// Asked here because this is the one moment the player is at the yard with the company screen in
-        /// front of them, and because the answer only ever decides one thing: whether a trailer they might
-        /// be re-rigged onto is worth waiting for.
+        /// Asked here because this is the one moment the player is at the yard with the game's trailer
+        /// screen available, and because the answer only ever decides one thing: whether a trailer they
+        /// might be re-rigged onto is worth waiting for.
         /// </summary>
         public List<object> AskWhereabouts { get; set; } = new();
     }
@@ -914,19 +1154,19 @@ public static class HomeTime
         // And notice of the next one, so it is never a surprise — particularly once a bad one can end it.
         b.ReviewNotice = PeriodicReview.Notice(s) ?? "";
 
-        // Anybody out with a company trailer whose position we have nothing recent on.
-        foreach (var d in Whereabouts.WorthAsking(s))
-        {
-            var box = s.Trailers.FirstOrDefault(x => x.Unit == d.AssignedTrailerUnit);
+        // Company trailers we have nothing recent on. Asked per BOX rather than per driver, because the
+        // driver the app has down for a trailer is the part that goes stale.
+        foreach (var t in Whereabouts.WorthAsking(s))
             b.AskWhereabouts.Add(new
             {
-                driverId = d.Id,
-                driver = d.Name,
-                trailer = box?.Ref ?? d.AssignedTrailerUnit,
-                trailerType = box?.Type ?? "",
-                known = Whereabouts.Assess(s, d).Text,
+                unit = t.Unit,
+                trailer = t.Ref,
+                trailerType = t.Type,
+                current = t.Whereabouts,
+                city = t.WhereaboutsCity,
+                state = t.WhereaboutsState,
+                known = Whereabouts.Assess(s, t).Text,
             });
-        }
 
         b.NothingToDo = b.Shop.All(x => x.Contains("fine at") || x.Contains("nothing needed"))
                         && b.Equipment.Count == 0 && b.Paperwork.Count == 0

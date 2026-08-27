@@ -242,14 +242,17 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
   // The due-back date is gone: it asked where somebody is, on a fleet review line, with a precision
   // nobody has. A direction is the honest answer, given when reporting in at the yard, and it decides
   // the only thing that ever hung on it -- whether the trailer is worth sitting for.
+  // #102: asked of the trailer, because that is the thing being asked about. AI drivers change
+  // trailers on their own, so a fact filed against a driver goes wrong without anybody touching it.
+  const heldBox = held.assignedTrailerUnit || 'T900';
   let est = (await api('/fleetops/whereabouts', 'POST',
-    { driverId: held.id, direction: 'Outbound', city: 'Seattle', state: 'WA' })).estimate;
-  ok('an outbound driver is days away', est.days >= 2, `${est.days} day(s)`);
+    { trailerUnit: heldBox, direction: 'Outbound', city: 'Seattle', state: 'WA' })).estimate;
+  ok('an outbound trailer is days away', est.days >= 2, `${est.days} day(s)`);
   ok('and not worth waiting on', est.worthWaiting === false, `${est.worthWaiting}`);
 
   est = (await api('/fleetops/whereabouts', 'POST',
-    { driverId: held.id, direction: 'Inbound', city: 'Springfield', state: 'MO' })).estimate;
-  ok('an inbound driver close in is', est.worthWaiting === true, `${est.days} day(s)`);
+    { trailerUnit: heldBox, direction: 'Inbound', city: 'Springfield', state: 'MO' })).estimate;
+  ok('an inbound one close in is', est.worthWaiting === true, `${est.days} day(s)`);
   ok('and no due-back date is stored anywhere',
     !('trailerDueBackGameTime' in (await api('/fleetops')).drivers.find((d) => d.name === 'M. Torres')),
     'field is gone');

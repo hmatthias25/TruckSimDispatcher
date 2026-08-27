@@ -83,36 +83,61 @@ const goHome = async (day) => { await report('Amarillo', 'TX', day - 1); return 
   ok('and no due-back date is kept anywhere', !('trailerDueBackGameTime' in after),
     Object.keys(after).filter((k) => /due/i.test(k)).join(', ') || 'no such field');
 
-  head('63c. Where a driver is gets asked at the yard');
+  head('63c. Where the TRAILER is gets asked at the yard');
+  // #102: asked per box, not per driver. It used to name whoever the app had down as pulling one, which
+  // AI drivers make wrong the first time they hook something else — so the question named the wrong
+  // person and the answer was filed against the wrong trailer.
   let r = await goHome(35);
   const ask = r.homeBrief?.askWhereabouts || [];
   ok('the arrival brief asks about the trailer', ask.length >= 1,
-    ask.map((a) => `${a.driver}/${a.trailer}`).join(', ') || '(nothing asked)');
+    ask.map((a) => `${a.unit}/${a.trailer}`).join(', ') || '(nothing asked)');
+  ok('it is keyed on the unit, not on a driver', !!ask[0]?.unit && !('driverId' in (ask[0] || {})),
+    ask[0]?.unit || '(no unit)');
+  ok('and no driver is named in it', !('driver' in (ask[0] || {})), 'no driver field');
   ok('it says what it currently knows', !!ask[0]?.known, (ask[0]?.known || '').slice(0, 120));
-  ok('which is that it knows nothing yet', /nothing on where they are/i.test(ask[0]?.known || ''), '');
+  ok('which is that it knows nothing yet',
+    /nothing on where U100 is/i.test(ask[0]?.known || ''), (ask[0]?.known || '').slice(0, 60));
 
-  head('63d. An inbound driver nearby is worth waiting for');
+  head('63d. An inbound trailer nearby is worth waiting for');
   let est = (await api('/fleetops/whereabouts', 'POST',
-    { driverId: drv.id, direction: 'Inbound', city: 'Colorado Springs', state: 'CO' })).estimate;
+    { trailerUnit: 'U100', direction: 'Inbound', city: 'Colorado Springs', state: 'CO' })).estimate;
   ok('the estimate is known now', est.known === true, `${est.known}`);
   ok('it is measured in days', est.days > 0, `${est.days} day(s)`);
   ok('close in means worth waiting', est.worthWaiting === true, `${est.worthWaiting}`);
   ok('and it says so plainly', /worth sitting on|hook it when it lands/i.test(est.text), est.text.slice(0, 150));
 
-  head('63e. An outbound driver is not');
+  head('63e. An outbound one is not');
   est = (await api('/fleetops/whereabouts', 'POST',
-    { driverId: drv.id, direction: 'Outbound', city: 'Seattle', state: 'WA' })).estimate;
+    { trailerUnit: 'U100', direction: 'Outbound', city: 'Seattle', state: 'WA' })).estimate;
   ok('still known', est.known === true, `${est.known}`);
   ok('but days away', est.days >= 2, `${est.days} day(s)`);
   ok('and not worth waiting', est.worthWaiting === false, `${est.worthWaiting}`);
   ok('it says it will sort the trailer another way',
     /not worth|another way|re-rig you/i.test(est.text), est.text.slice(0, 160));
 
+  head('63e2. #102 A parked trailer is an answer in its own right');
+  // There was no way to say a box was sitting doing nothing. Inbound, outbound and no idea were the
+  // choices, and none of them is true of a trailer parked on the yard.
+  est = (await api('/fleetops/whereabouts', 'POST',
+    { trailerUnit: 'U100', direction: 'Parked', city: 'Denver', state: 'CO' })).estimate;
+  ok('parked is accepted as a status', est.direction === 'Parked', est.direction);
+  ok('it is known rather than a shrug', est.known === true, `${est.known}`);
+  ok('and it is treated as available', est.worthWaiting === true, `${est.days} day(s)`);
+  ok('the answer says nobody is on it', /nobody is on it|parked at the yard/i.test(est.text),
+    est.text.slice(0, 140));
+
+  head('63e3. #102 An answer against one trailer does not follow the driver');
+  // The whole point. The answer belongs to the box, so it survives the driver moving to another one.
+  const beforeSwap = (await api('/bootstrap')).trailers.find((t) => t.unit === 'U100');
+  ok('it is filed on the trailer', beforeSwap.whereabouts === 'Parked', beforeSwap.whereabouts);
+  ok('with the city it was reported at', beforeSwap.whereaboutsCity === 'Denver', beforeSwap.whereaboutsCity);
+  ok('and a stamp of when', !!beforeSwap.whereaboutsGameTime, beforeSwap.whereaboutsGameTime || '(none)');
+
   head('63f. Once answered, it stops asking');
   r = await goHome(38);
   const asked2 = r.homeBrief?.askWhereabouts || [];
   ok('a fresh answer is not asked for again', asked2.length === 0,
-    asked2.map((a) => a.driver).join(', ') || 'nothing asked');
+    asked2.map((a) => a.unit).join(', ') || 'nothing asked');
 
   head('63g. Idle plus old is a reason to sell the trailer');
   // Idle on its own is a quiet fortnight. Paired with age it is a verdict, the same way a truck needs two.
