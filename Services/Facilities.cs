@@ -70,23 +70,34 @@ public static class Facilities
             where,
             headline = allowed ? "You can sit on their property" : "No overnight parking on site",
             detail = allowed
-                ? $"{who} at {where} will let you park up. If you get in early you can wait it out at the dock, " +
-                  "so plan the last leg to arrive rather than to a truck stop short of it."
+                ? $"{who} at {where} will have you on the property. So an early arrival is yours to sit out at " +
+                  "the dock if you want it, and running the last leg straight in is an option rather than the " +
+                  "plan. A truck stop has showers, food and fuel; which of those is worth more tonight is your " +
+                  "call, not ours."
                 : $"{who} at {where} does not allow overnight parking. If you get in ahead of the window you " +
                   $"need a truck stop nearby, which is about {Hhmm.Of(RepositionHoursEachWay * 2)} of running " +
                   "either side and it comes off your clocks. Plan the last leg to arrive inside the window."
         };
     }
 
-    /// <summary>How the driver should be told, once we know there is a wait to sit out.</summary>
+    /// <summary>
+    /// What the driver is told once we know there is a wait to sit out.
+    ///
+    /// One fact and no instruction when the gate is open: whether they may sit there is something the app
+    /// knows, and whether they want to is not. It used to say "park up there and take the 2:30 where you
+    /// are dropping", which reads as the plan rather than as one of two — and a shower and a meal are a
+    /// perfectly good reason to spend the running instead.
+    /// </summary>
     public static string OvernightNote(AppState s, string? city, string? state, string? receiver, double waitHours)
     {
         var who = string.IsNullOrWhiteSpace(receiver) ? "The receiver" : receiver.Trim();
         var where = DispatchEngine.Place(city ?? "", state ?? "");
 
         return AllowsOvernightParking(s, city, state, receiver)
-            ? $"{who} at {where} will let you sit on their property, so park up there and take the " +
-              $"{Hhmm.Of(waitHours)} where you are dropping."
+            ? $"{who} at {where} will let you sit on their property, so the {Hhmm.Of(waitHours)} can be taken " +
+              "where you are dropping if that suits you. A truck stop instead costs about " +
+              $"{Hhmm.Of(RepositionHoursEachWay * 2)} of running either side and buys you a shower and a meal. " +
+              "Both are fine — I am telling you the gate is open, not where to sleep."
             : $"{who} at {where} does not allow overnight parking. Find a truck stop nearby, sit the " +
               $"{Hhmm.Of(waitHours)} there, and come back for your appointment — that is about " +
               $"{Hhmm.Of(RepositionHoursEachWay * 2)} of running either side, and it comes off your clocks.";

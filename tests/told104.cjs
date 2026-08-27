@@ -208,10 +208,46 @@ const views = async () => (await api('/bootstrap')).views;
     ok('it names the receiver it is about', /Cattle Ranch/i.test(pk.receiver), pk.receiver);
     ok('and where they are', /Oklahoma City/i.test(pk.where), pk.where);
     ok('the answer is yes or no, not a maybe', typeof pk.allowed === 'boolean', `${pk.allowed}`);
-    ok('and it says what to do about it rather than only stating it',
-      /plan the last leg/i.test(pk.detail || ''), (pk.detail || '').slice(-90));
+    ok('a refusal says what to do about it',
+      pk.allowed || /plan the last leg/i.test(pk.detail || ''), (pk.detail || '').slice(-90));
+    ok('#121 permission is offered rather than ordered',
+      !pk.allowed || /your call|if you want it/i.test(pk.detail || ''), (pk.detail || '').slice(-90));
     ok('the headline reads as an answer at a glance',
       /sit on their property|No overnight parking/i.test(pk.headline), pk.headline);
+  }
+
+  head('9b. #121 The gate being open is a fact. Where to sleep is not.');
+  // Both branches, for real. Whether any one customer allows it is seeded, so the trip above exercises
+  // whichever the seed picked — this walks receivers until it has met both and checks each on its own
+  // terms. Dispatch may direct a driver it has left no choice; it may not direct one it has.
+  const seen = {};
+  for (const [city, state, who] of [
+    ['Oklahoma City', 'OK', 'Cattle Ranch'], ['Dallas', 'TX', 'Voltison'], ['Denver', 'CO', 'Sellgoods'],
+    ['Phoenix', 'AZ', 'Bushnell'], ['Tucson', 'AZ', 'Gallogher'], ['Reno', 'NV', 'Trameri'],
+    ['Boise', 'ID', 'Posped'], ['Helena', 'MT', 'Stokes'], ['Butte', 'MT', 'NextBase'],
+    ['Salt Lake City', 'UT', 'Chemso'], ['Elko', 'NV', 'Tradeaux'], ['Ely', 'NV', 'Kaarfor'],
+  ]) {
+    const r = await api(`/facility/parking?city=${encodeURIComponent(city)}&state=${state}&receiver=${encodeURIComponent(who)}`);
+    seen[r.allowsOvernight ? 'yes' : 'no'] ??= { who, city, note: r.note };
+    if (seen.yes && seen.no) break;
+  }
+
+  ok('some receivers allow it and some do not', !!seen.yes && !!seen.no,
+    `${seen.yes?.who || '(none allowed)'} / ${seen.no?.who || '(none refused)'}`);
+
+  if (seen.yes) {
+    ok('when it is allowed, the note hands the decision over',
+      /your call|if that suits you|not where to sleep/i.test(seen.yes.note),
+      seen.yes.note.slice(-95));
+    ok('and it does not order anyone to park up',
+      !/park up there|so park up/i.test(seen.yes.note), 'no instruction');
+    ok('it still names the other option and what it costs',
+      /truck stop/i.test(seen.yes.note) && /\d+:\d\d/.test(seen.yes.note), 'trade-off given');
+  }
+
+  if (seen.no) {
+    ok('when it is refused, it is still directive — there is no choice to hand over',
+      /find a truck stop/i.test(seen.no.note), seen.no.note.slice(0, 80));
   }
 
   head('10. #106 Asking again cannot change the story halfway down the road');
