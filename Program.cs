@@ -443,6 +443,17 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
     l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
     if (string.IsNullOrWhiteSpace(l.TrailerType)) l.TrailerType = DispatchEngine.AssignedTrailer(s)?.Type ?? "";
 
+    // How long the listing itself has left. Anchored to the game clock here rather than trusted as a
+    // frozen number, so it runs down as the driver reports time — see BoardExpiry.
+    if (l.ExpiresInHours > 0 && string.IsNullOrWhiteSpace(l.ListedAtGameTime))
+        l.ListedAtGameTime = s.Status.GameTime ?? "";
+
+    // Under the floor it does not go on the board at all. Refused rather than added and then rejected:
+    // a row the driver can see and cannot have is an invitation to argue with dispatch about it, and the
+    // whole point is that this one is not a judgement call.
+    if (BoardExpiry.TooTight(s, l) is { } tooTight)
+        throw new InvalidOperationException(tooTight);
+
     // A window typed straight off the listing beats two figures the driver had to work out. Parsed here,
     // against the app's own game clock, which is the only place that knows what "tomorrow" means.
     if (!string.IsNullOrWhiteSpace(l.WindowText)
@@ -472,6 +483,29 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
         && Math.Abs(b.GameRevenue - l.GameRevenue) < 1);
 
     s.Board.Add(l);
+    return EvaluateBoard(s);
+})));
+
+app.MapPost("/api/board/{id}/pass", (string id) => Results.Ok(store.Mutate(s =>
+{
+    var load = s.Board.FirstOrDefault(b => b.Id == id)
+               ?? throw new InvalidOperationException("That load is not on the current board.");
+
+    // The one thing a driver of any rank may decline. Not a refusal and not freight selection — the
+    // listing is running out and only the driver knows where they actually are. Anything else still goes
+    // through the rank gate in AuthorizeLoad, which is untouched.
+    if (!BoardExpiry.MayPassRegardlessOfRank(s, load))
+    {
+        var privileges = CareerService.Privileges(s);
+        if (!privileges.CanChooseAlternateLoad && !privileges.CanRefuseLoad)
+            throw new InvalidOperationException(
+                "There is time on that listing, so passing on it is freight selection. " + privileges.Summary);
+    }
+
+    load.PassedOver = true;
+    var left = BoardExpiry.Countdown(s, load);
+    store.Log(s, "dispatch", $"Passed on {load.Cargo} out of {DispatchEngine.Place(load.OriginCity, load.OriginState)}" +
+                             (left.Length > 0 ? $" — {left} left on the listing." : "."));
     return EvaluateBoard(s);
 })));
 

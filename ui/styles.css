@@ -313,6 +313,8 @@ code{
   font:11.5px/1.6 var(--mono);color:var(--ink3);
 }
 .kv b{color:var(--ink);font-weight:650}
+/* A listing running out. Amber rather than red: it is a decision to make, not a refusal. */
+.kv b.warnfig{color:var(--amber2)}
 .reasons{font-size:12.5px;margin:0 0 9px;padding-left:18px;color:var(--ink2)}
 .reasons li{margin-bottom:3px}
 .reasons.bad li{color:#ff9a94}

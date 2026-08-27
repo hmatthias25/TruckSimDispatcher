@@ -947,6 +947,33 @@ public class BoardLoad
     public string Broker { get; set; } = "";
     public string Notes { get; set; } = "";
     public string AddedUtc { get; set; } = DateTime.UtcNow.ToString("o");
+
+    /// <summary>
+    /// How much longer the <b>listing</b> will be on the ATS market, in hours. Nothing to do with
+    /// <see cref="DeadlineHours"/>, which is how long the load has once it is yours.
+    ///
+    /// Zero means the listing did not say, and unknown plans exactly as it always did. The distinction
+    /// matters: a job with eleven hours to deliver and four minutes left on the market is a job the
+    /// driver will drive to and not find.
+    /// </summary>
+    public double ExpiresInHours { get; set; }
+
+    /// <summary>
+    /// The game time <see cref="ExpiresInHours"/> was read at, so the countdown can run down from it.
+    ///
+    /// Without this the figure is frozen at whatever it was when the board was typed, and a board left
+    /// sitting across a ten-hour break still offers a load that had forty minutes on it. Empty on a load
+    /// entered before this existed, and an empty one simply does not decay.
+    /// </summary>
+    public string ListedAtGameTime { get; set; } = "";
+
+    /// <summary>
+    /// The driver looked at what was left on this listing and said they could not get there in time.
+    ///
+    /// Kept on the load rather than deleting it so the card can say why it is out of the running, and
+    /// so passing is visibly a decision the driver made rather than freight quietly going missing.
+    /// </summary>
+    public bool PassedOver { get; set; }
 }
 
 // ---------------------------------------------------------------- trips
@@ -2501,6 +2528,22 @@ public class LoadEvaluation
     public List<string> Pros { get; set; } = new();
     public List<string> Cons { get; set; } = new();
     public int DestTier { get; set; } = 2;
+
+    /// <summary>
+    /// Hours left on the ATS listing, already run down to the current game time. Null when the listing
+    /// carried no expiry.
+    ///
+    /// Computed here rather than left for the browser to work out from the raw figure and the anchor:
+    /// the clock arithmetic belongs in one place, and it is the same figure the gates were judged on
+    /// this evaluation, so what the card shows cannot disagree with what dispatch did.
+    /// </summary>
+    public double? ListingHoursLeft { get; set; }
+
+    /// <summary>
+    /// The driver may pass on this one whatever their rank, because the listing is running out.
+    /// Drives whether the card offers the button at all.
+    /// </summary>
+    public bool MayPass { get; set; }
 
     /// <summary>
     /// This receiver will take the load whenever it arrives. On the evaluation and not only on the

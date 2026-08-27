@@ -55,6 +55,16 @@ public class ExtractedLoad
     public bool MilesDerived { get; set; }
 
     public double WeightLbs { get; set; }
+
+    /// <summary>
+    /// How much longer the listing stays on the market, in hours. Zero means the screenshot did not
+    /// show it, which is ordinary — not every ATS board view prints the countdown.
+    ///
+    /// Read rather than derived. It is the one figure on the row the app has no other way to learn, and
+    /// without it dispatch cannot tell a job the driver can reach from one that will be gone.
+    /// </summary>
+    public double ExpiresInHours { get; set; }
+
     /// <summary>ATS HazMat class off the listing, as a bare digit. Empty when nothing is placarded.</summary>
     public string HazmatClass { get; set; } = "";
     /// <summary>
@@ -226,6 +236,11 @@ public static class AiService
           The app knows the exact game clock and will do the subtraction. You do not, so any figure
           you work out yourself is a guess — which is how a nineteen-mile run once acquired an
           eight-hour appointment.
+        - expiresInHours: how much longer THE LISTING itself stays on the market, if the row shows
+          it — an "expires in", "available for" or similar countdown, as a number of hours ("45m"
+          is 0.75, "2h 10m" is 2.17). This is NOT the delivery deadline and NOT the same column;
+          it is how long the offer lasts. Leave it 0 if the view does not show one, which is common
+          and completely fine. Never infer it from the delivery time.
         - weightLbs: cargo weight in pounds. If shown in tons, convert (1 ton = 2000 lb).
         - hazmatClass: the ATS HazMat class the job needs, as a bare digit: "1" explosives,
           "2" gases, "3" flammable liquids, "4" flammable solids, "6" toxic, "8" corrosive. A
@@ -270,7 +285,7 @@ public static class AiService
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["cargo","originCity","originState","destCity","destState","shipper",
-                             "receiver","loadedMiles","gameRevenue","deadlineHours","weightLbs","hazmatClass","deliverByText",
+                             "receiver","loadedMiles","gameRevenue","deadlineHours","expiresInHours","weightLbs","hazmatClass","deliverByText",
                              "trailerType","isUrgent","isFragile","isHazmat","confidence","unreadable"],
                 "properties": {
                   "cargo":        { "type": "string" },
@@ -283,6 +298,7 @@ public static class AiService
                   "loadedMiles":  { "type": "number" },
                   "gameRevenue":  { "type": "number" },
                   "deadlineHours":{ "type": "number" },
+                  "expiresInHours":{ "type": "number" },
                   "weightLbs":    { "type": "number" },
                   "hazmatClass":  { "type": "string" },
                   "deliverByText":{ "type": "string" },

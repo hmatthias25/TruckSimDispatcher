@@ -944,6 +944,7 @@ function viewDispatch() {
           </label>
           <label>Time to deliver<input id="b-deadline" inputmode="numeric" placeholder="h:mm — only if no window shown"></label>
           <label>Receiver opens in<input id="b-opens" inputmode="numeric" placeholder="h:mm from now"></label>
+          ${BOARD_STAGE === 'local' ? '' : `<label title="How long the LISTING stays on the market — the countdown on the job offer, not the delivery time. Under half an hour is not accepted; under an hour dispatch asks you whether you can get there.">Listing expires in<input id="b-expires" inputmode="numeric" placeholder="h:mm, optional"></label>`}
           <label>Weight lb<input id="b-weight" type="number" step="1" min="0" placeholder="optional"></label>
           <label>ATS nav estimate<input id="b-nav" inputmode="numeric" placeholder="h:mm, optional"></label>
           <label>Shipper<input id="b-shipper" placeholder="optional"></label>
@@ -1474,6 +1475,8 @@ function loadCardHtml(e, d) {
       <span>${num(e.load.loadedMiles)} mi + <b>${num(e.load.deadheadMiles)}</b> DH</span>
       ${e.feasibility.waitForAppointmentHours > 0
         ? `<span>wait for dock <b>${hhmm(e.feasibility.waitForAppointmentHours)}</b></span>` : ''}
+      ${e.listingHoursLeft != null
+        ? `<span>listing <b class="${e.listingHoursLeft < 1 ? 'warnfig' : ''}">${hhmm(e.listingHoursLeft)}</b> left</span>` : ''}
       <span>slack <b>${hhmm(e.feasibility.slackHours)}</b></span>
       <span>drive <b>${hhmm(e.feasibility.driveHours)}</b></span>
       <span>rests <b>${e.feasibility.restsRequired}</b></span>
@@ -1501,6 +1504,8 @@ function loadCardHtml(e, d) {
         ? `<button class="btn ghost" data-act="request-alt" data-id="${e.load.id}">Ask dispatch for this one</button>` : ''}
       ${canForce && PRIV.canOverrideTightLoad
         ? `<button class="btn danger" data-act="authorize" data-id="${e.load.id}" data-force="1">Accept as exception (sub-buffer)</button>` : ''}
+      ${e.mayPass && !e.load.passedOver && !e.hardFails.length
+        ? `<button class="btn ghost" data-act="board-pass" data-id="${e.load.id}">Cannot make the pickup — pass</button>` : ''}
     </div>
   </div>`;
 }
@@ -4946,6 +4951,8 @@ async function handleAction(act, d, ev) {
         loadedMiles: fv('b-miles'), preLoaded: $('b-preloaded')?.checked === true, deadheadMiles: fv('b-dh'),
         gameRevenue: fv('b-rev'), deadlineHours: hv('b-deadline'),
         appointmentOpensHours: hv('b-opens'),
+        // How long the offer itself lasts. Nothing to do with the delivery clock above it.
+        expiresInHours: BOARD_STAGE === 'local' ? 0 : hv('b-expires'),
         // Typed straight off the listing. The server parses the range against its own game clock, which
         // is the only place that arithmetic belongs — asking the driver for "hours from now" is how a
         // next-day window ends up planned as same-day.
@@ -4963,6 +4970,10 @@ async function handleAction(act, d, ev) {
         absorb(await api('/bootstrap'));
       }, 'Load added to the board.');
     }
+    case 'board-pass': return run(async () => {
+      DECISION = await api('/board/' + d.id + '/pass', 'POST', {});
+      absorb(await api('/bootstrap'));
+    }, 'Passed. Next load.');
     case 'board-del': return run(async () => {
       DECISION = await api('/board/' + d.id, 'DELETE');
       absorb(await api('/bootstrap'));
@@ -5057,6 +5068,9 @@ async function handleAction(act, d, ev) {
           destCity: sv(`x-dcity-${i}`), destState: sv(`x-dstate-${i}`),
           loadedMiles: fv(`x-miles-${i}`), gameRevenue: fv(`x-rev-${i}`),
           deadlineHours: hv(`x-dl-${i}`), weightLbs: fv(`x-wt-${i}`),
+          // Read off the row when the board view showed it. Zero is ordinary — not every ATS view
+          // prints the market countdown — and zero means unknown, which plans as it always did.
+          expiresInHours: l.expiresInHours || 0,
           // The opening the reader found, so the plan waits for the gate rather than arriving early
           // and calling the wait slack.
           appointmentOpensHours: hvn(`x-op-${i}`) ?? (l.appointmentOpensHours || 0),
@@ -5082,12 +5096,26 @@ async function handleAction(act, d, ev) {
       }
 
       return run(async () => {
-        for (const load of chosen) DECISION = await api('/board/add', 'POST', load);
+        // One row the server will not take must not abort the other nine. A listing under the floor is
+        // refused by design, and a refusal here is information rather than a failure.
+        let added = 0;
+        const expired = [];
+        for (const load of chosen) {
+          try {
+            DECISION = await api('/board/add', 'POST', load);
+            added += 1;
+          } catch (err) {
+            if (!/listing/i.test(err?.message || '')) throw err;
+            expired.push(`${load.cargo} to ${load.destCity}`);
+          }
+        }
         absorb(await api('/bootstrap'));
         EXTRACT = null; SHOTS = [];
-        toast(rejected.length
-          ? `${chosen.length} load(s) added. Skipped ${rejected.join(', ')} — incomplete.`
-          : `${chosen.length} load(s) added to the board.`, 'ok');
+        const notes = [];
+        if (rejected.length) notes.push(`skipped ${rejected.join(', ')} — incomplete`);
+        if (expired.length) notes.push(`dropped ${expired.length} too close to expiring (${expired.join(', ')})`);
+        toast(`${added} load(s) added to the board${notes.length ? '. ' + notes.join('; ') + '.' : '.'}`,
+          added ? 'ok' : 'bad');
       });
     }
 

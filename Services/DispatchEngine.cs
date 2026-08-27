@@ -706,6 +706,22 @@ public static class DispatchEngine
         // ---- hard gates
         e.HardFails.AddRange(QualificationFails(s, load, trailer));
 
+        // The listing's own clock, which is not the load's. A row can be entered with fifty minutes on
+        // it and be worthless by the time the driver reports the next status — so this is checked here,
+        // every evaluation, and not only on the way in. See BoardExpiry.
+        if (BoardExpiry.TooTight(s, load) is { } tooTight)
+            e.HardFails.Add(tooTight);
+        else if (BoardExpiry.AskTheDriver(s, load) is { } askThem)
+            e.Cons.Add(askThem);
+
+        e.ListingHoursLeft = BoardExpiry.Remaining(s, load);
+        e.MayPass = BoardExpiry.MayPassRegardlessOfRank(s, load) || CareerService.Privileges(s).CanRefuseLoad;
+
+        if (load.PassedOver)
+            e.HardFails.Add(
+                $"You passed on this one — {(BoardExpiry.Countdown(s, load) is { Length: > 0 } left ? left + " left on the listing and " : "")}" +
+                "not enough road behind you to make it. Still on the board so you can see it was a decision, not a gap.");
+
         // Under a run-home repair order the truck is going to the yard whether or not it is loaded.
         // So freight is still on the table — but only freight that finishes there. Anything else puts
         // more miles on a unit that is already hurt, and moves it further from the shop we want it in.
