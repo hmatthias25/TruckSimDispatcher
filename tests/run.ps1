@@ -24,7 +24,10 @@ param(
     # Don't rebuild first. Only safe when nothing has changed since the last run.
     [switch] $SkipBuild,
     # First port to use. Each suite takes the next one up.
-    [int] $BasePort = 5600
+    [int] $BasePort = 5600,
+    # How many suites to run at once. Each has its own port and its own career file, so they do not
+    # interfere; this is only about how much of the machine to use. 1 restores the old serial behaviour.
+    [int] $Parallel = 8
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,10 +52,12 @@ try {
     if (-not (Test-Path $dll)) { throw "no binary at $dll - build first" }
 
     # ---- which suites
-    $suites = Get-ChildItem (Join-Path $PSScriptRoot '*.cjs') | Sort-Object Name
+    # @() matters: a single match comes back as one FileInfo, not a list, and the batching below
+    # indexes it. Without this, -Only <one suite> ran nothing and reported zero across zero suites.
+    $suites = @(Get-ChildItem (Join-Path $PSScriptRoot '*.cjs') | Sort-Object Name)
     if ($Only) {
         $want = $Only | ForEach-Object { ($_ -replace '\.cjs$', '') }
-        $suites = $suites | Where-Object { $want -contains $_.BaseName }
+        $suites = @($suites | Where-Object { $want -contains $_.BaseName })
         if (-not $suites) { throw "no suite matched: $($Only -join ', ')" }
     }
 
@@ -79,84 +84,112 @@ try {
     $results = @()
     $port = $BasePort
 
-    foreach ($suite in $suites) {
-        $port++
-        $data = Join-Path $work $suite.BaseName
-        New-Item -ItemType Directory -Path $data -Force | Out-Null
+    # ---- how a finished suite is read and reported. Pulled out of the loop because it is now called
+    # after a batch rather than inline, and the reporting has to stay identical either way.
+    function Read-SuiteResult {
+        param($Suite, $Work, $ShowAll, $Port)
 
-        $env:TSD_DATA_DIR = $data
-        $env:TSD_PORT = $port
-
-        # -NoNewWindow is the point: no console window, nothing steals focus.
-        $log = Join-Path $work "$($suite.BaseName).server.log"
-        $err = Join-Path $work "$($suite.BaseName).server.err"
-        $server = Start-Process -FilePath 'dotnet' -PassThru -NoNewWindow `
-            -ArgumentList $dll, '--port', $port, '--no-browser' `
-            -RedirectStandardOutput $log -RedirectStandardError $err
-
-        # Wait on the port rather than guessing at a sleep.
-        $up = $false
-        for ($i = 0; $i -lt 50 -and -not $up; $i++) {
-            Start-Sleep -Milliseconds 300
-            try {
-                Invoke-RestMethod "http://127.0.0.1:$port/api/bootstrap" -TimeoutSec 3 | Out-Null
-                $up = $true
-            } catch { }
-        }
-
-        if (-not $up) {
-            Write-Host ("  {0,-14} SERVER DID NOT START" -f $suite.BaseName) -ForegroundColor Red
-            Get-Content $err -ErrorAction SilentlyContinue | Select-Object -First 8 |
-                ForEach-Object { Write-Host "      $_" -ForegroundColor DarkRed }
-            $results += [pscustomobject]@{ Suite = $suite.BaseName; Pass = 0; Fail = 1; Note = 'no server' }
-            try { Stop-Process -Id $server.Id -Force } catch { }
-            continue
-        }
-
-        # 2>&1 on a native exe is a trap in PowerShell 5.1: each stderr line comes back as an
-        # ErrorRecord, and under $ErrorActionPreference = 'Stop' the first one kills this script. A
-        # suite that dies would take the whole run down with it and never say which suite it was.
-        # Redirect to a file instead, so a suite's own error output is just text we can print.
-        $sout = Join-Path $work "$($suite.BaseName).node.log"
+        $sout = Join-Path $Work "$($Suite.BaseName).node.log"
         $output = @()
-        try {
-            & node $suite.FullName > $sout 2> "$sout.err"
-        } catch {
-            $output += "RUNNER: node exited badly - $($_.Exception.Message)"
-        }
         foreach ($f in @($sout, "$sout.err")) {
             if (Test-Path $f) { $output += @(Get-Content -LiteralPath $f -ErrorAction SilentlyContinue) }
         }
-        try { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue } catch { }
 
         $text = $output -join "`n"
         $p = ([regex]::Matches($text, '(?m)^\s*PASS\s')).Count
         $f = ([regex]::Matches($text, '(?m)^\s*FAIL\s')).Count
 
-        if ($Full) {
+        if ($ShowAll) {
             Write-Host ""
-            Write-Host "--- $($suite.BaseName) (port $port)" -ForegroundColor Cyan
+            Write-Host "--- $($Suite.BaseName) (port $Port)" -ForegroundColor Cyan
             $output | ForEach-Object { Write-Host $_ }
         } else {
             $colour = if ($f -gt 0) { 'Red' } elseif ($p -eq 0) { 'Yellow' } else { 'Green' }
-            Write-Host ("  {0,-14} {1,4} pass  {2,3} fail" -f $suite.BaseName, $p, $f) -ForegroundColor $colour
-            # Failures are always shown, plus the error line when a suite died outright.
+            Write-Host ("  {0,-14} {1,4} pass  {2,3} fail" -f $Suite.BaseName, $p, $f) -ForegroundColor $colour
             $output | Where-Object { $_ -match '^\s*FAIL\s|^ERROR ' } |
                 ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
         }
 
         # Every suite ends by printing its own "N passed, M failed". No such line means it stopped
         # partway, and counting the assertions it managed before dying is not a pass.
-        #
-        # The zero-assertion check alone was not enough: a suite that died after seven of forty-one
-        # checks reported "7 pass 0 fail" and the run total said everything was green.
         $summary = $text -match '(?m)^\s*\d+ passed, \d+ failed\s*$'
         if (-not $summary) {
             $f = [Math]::Max(1, $f)
             Write-Host ("      DIED after {0} assertion(s) - no summary line" -f $p) -ForegroundColor Red
             $output | Select-Object -Last 6 | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkRed }
         }
-        $results += [pscustomobject]@{ Suite = $suite.BaseName; Pass = $p; Fail = $f; Note = '' }
+        [pscustomobject]@{ Suite = $Suite.BaseName; Pass = $p; Fail = $f; Note = '' }
+    }
+
+    # ---- run in batches. Each suite in a batch gets its own port and career file, so the only thing
+    # shared is the machine.
+    $width = [Math]::Max(1, $Parallel)
+    for ($start = 0; $start -lt $suites.Count; $start += $width) {
+        $stop  = [Math]::Min($start + $width - 1, $suites.Count - 1)
+        $batch = @($suites[$start..$stop])
+        $live  = @()
+
+        # 1. every server in the batch, started together rather than one after another.
+        foreach ($suite in $batch) {
+            $port++
+            $data = Join-Path $work $suite.BaseName
+            New-Item -ItemType Directory -Path $data -Force | Out-Null
+
+            $env:TSD_DATA_DIR = $data
+            $env:TSD_PORT = $port
+
+            $log = Join-Path $work "$($suite.BaseName).server.log"
+            $err = Join-Path $work "$($suite.BaseName).server.err"
+            $server = Start-Process -FilePath 'dotnet' -PassThru -NoNewWindow `
+                -ArgumentList $dll, '--port', $port, '--no-browser' `
+                -RedirectStandardOutput $log -RedirectStandardError $err
+
+            $live += [pscustomobject]@{ Suite = $suite; Port = $port; Data = $data; Server = $server;
+                                        Node = $null; Up = $false; Err = $err }
+        }
+
+        # 2. wait for them. Look FIRST and sleep after — the old loop slept 300 ms before its first
+        # check, which every suite paid whether or not it needed to.
+        $deadline = (Get-Date).AddSeconds(30)
+        while ((Get-Date) -lt $deadline -and ($live | Where-Object { -not $_.Up })) {
+            foreach ($x in ($live | Where-Object { -not $_.Up })) {
+                try {
+                    Invoke-RestMethod "http://127.0.0.1:$($x.Port)/api/bootstrap" -TimeoutSec 3 | Out-Null
+                    $x.Up = $true
+                } catch { }
+            }
+            if ($live | Where-Object { -not $_.Up }) { Start-Sleep -Milliseconds 40 }
+        }
+
+        # 3. every test in the batch, started together. Start-Process takes a snapshot of the
+        # environment as it launches, so setting the two variables immediately before each call is
+        # what gives each node its own port and career file.
+        foreach ($x in $live) {
+            if (-not $x.Up) { continue }
+            $sout = Join-Path $work "$($x.Suite.BaseName).node.log"
+            $env:TSD_DATA_DIR = $x.Data
+            $env:TSD_PORT = $x.Port
+            $x.Node = Start-Process -FilePath 'node' -PassThru -NoNewWindow `
+                -ArgumentList $x.Suite.FullName `
+                -RedirectStandardOutput $sout -RedirectStandardError "$sout.err"
+        }
+
+        foreach ($x in $live) {
+            if ($x.Node) { try { $x.Node.WaitForExit() } catch { } }
+        }
+
+        # 4. report in suite order, whatever order they finished in, then tear the batch down.
+        foreach ($x in $live) {
+            if (-not $x.Up) {
+                Write-Host ("  {0,-14} SERVER DID NOT START" -f $x.Suite.BaseName) -ForegroundColor Red
+                Get-Content $x.Err -ErrorAction SilentlyContinue | Select-Object -First 8 |
+                    ForEach-Object { Write-Host "      $_" -ForegroundColor DarkRed }
+                $results += [pscustomobject]@{ Suite = $x.Suite.BaseName; Pass = 0; Fail = 1; Note = 'no server' }
+            } else {
+                $results += Read-SuiteResult -Suite $x.Suite -Work $work -ShowAll:$Full -Port $x.Port
+            }
+            try { Stop-Process -Id $x.Server.Id -Force -ErrorAction SilentlyContinue } catch { }
+        }
     }
 
     Remove-Item Env:\TSD_DATA_DIR, Env:\TSD_PORT -ErrorAction SilentlyContinue
