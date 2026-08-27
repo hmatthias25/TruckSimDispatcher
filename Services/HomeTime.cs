@@ -755,10 +755,18 @@ public static class HomeTime
         if (destMiles == null) return null;                 // unmeasurable is not the same as unacceptable
         if (st.MilesFromHome is not { } nowMiles) return null;
 
-        // Anywhere inside the home area is heading home whatever the arithmetic says about the mileage.
-        // A load that finishes 40 miles the far side of the yard has not taken anybody further out.
-        if (destMiles.Value <= st.HomeRadius) return null;
-
+        // How much further out this load leaves the driver. Negative means it closes the distance, which
+        // is the case the ceiling was never about.
+        //
+        // There used to be an exemption above this for anything finishing inside the home area — written
+        // for the small case, a load landing forty miles the far side of the yard. But the home area
+        // WIDENS with lateness, so the exemption widened with it: at ten days late a 400-mile bubble round
+        // the yard was exempt from the rule that exists because the company is late. Standing in Tulsa,
+        // that authorised Omaha and Des Moines — 168 and 156 miles FURTHER from home — which is the
+        // reported bug arriving by a different road.
+        //
+        // The exemption was never needed. A load finishing nearer the yard than the driver already is has
+        // a negative gap and passes here on its own.
         var further = destMiles.Value - nowMiles;
         if (further <= allowance) return null;
 
