@@ -116,6 +116,63 @@ const addLoad = (o) => api('/board/add', 'POST', {
     await api('/career/dedicated', 'POST', { onDedicated: true, account: 'Walmart' });
   } catch (e) { refused = e.message; }
   ok('refused with a reason', /does not run a dedicated division/i.test(refused || ''), refused || '(allowed!)');
+  head('#119 The account is matched on whole words, not on fragments');
+  // IsOnAccount matches loosely on purpose — "Walmart DC 6094" and "Walmart" are the same customer. It
+  // used to do that with a two-way Contains, so anything whose name sat INSIDE the account counted as
+  // the account's freight: "Art" is inside "Walmart".
+  //
+  // The mislabel was the smaller half. With the app believing there was on-account work on the board,
+  // CanRunOffAccount withheld the off-account escape and hard-failed every other load — so the driver
+  // was pushed onto freight that was not theirs AND refused the freight they could have run.
+  //
+  // Stands itself up: by this point the suite has left dedicated and changed employer to one that does
+  // not run it.
+  async function accountReads(account, shipper) {
+    await api('/career/dedicated', 'POST', { onDedicated: true, account });
+    await api('/board/clear', 'POST', {});
+    const one = await api('/board/add', 'POST', {
+      cargo: 'Palletised Goods', trailerType: '', atLocation: true,
+      originCity: S.status.locationCity, originState: S.status.locationState,
+      shipper, receiver: shipper,
+      destCity: 'Salt Lake City', destState: 'UT', loadedMiles: 380, deadheadMiles: 0,
+      gameRevenue: 1100, deadlineHours: 60, weightLbs: 34000,
+    });
+    // The board note is the reliable read: when nothing is on-account the escape lifts and NOTHING is
+    // hard-failed, so an empty hard-fail list means the opposite of what it looks like.
+    const note = (one.dispatchNotes || []).find((x) => /Dedicated to/i.test(x)) || '';
+    return { ours: /load\(s\) on this board are yours/i.test(note), note };
+  }
+
+  await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+  await api('/onboarding/market', 'POST', app);
+  S = un(await api('/onboarding/hire', 'POST',
+    { application: app, force: true, gameTime: '2000-01-01T06:00', code: 'SNI' }));
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+  S = un(await api('/status', 'POST', {
+    locationCity: 'Denver', locationState: 'CO', locationKind: 'Shipper', gameTime: '2000-01-03T06:00',
+    fuelPct: 95, atsOdometer: 0, truckDamagePct: 0, trailerDamagePct: 0,
+    dutyStatus: 'OnDuty', atsBankBalance: 50000,
+  }));
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+
+  for (const [account, shipper, shouldBeOurs, why] of [
+    ['Walmart', 'Walmart DC 6094',         true,  'a depot number does not stop it being Walmart'],
+    ['Walmart', 'Walmart Supercenter #22', true,  'nor does the store format'],
+    ['Walmart', 'WALMART',                 true,  'case does not matter'],
+    ['Walmart', 'Art Supplies Inc',        false, 'a shipper called Art is not Walmart'],
+    ['Walmart', 'Art',                     false, 'even on its own'],
+    ['Walmart', 'Mart Foods',              false, 'nor a fragment at the other end'],
+    ['Walmart', 'Acme Steel',              false, 'and an unrelated name is still unrelated'],
+    ['BP',      'BP Fuel Terminal',        true,  'a short account matches as a whole word'],
+    ['BP',      'Superb Products',         false, 'but not a name that merely contains the letters'],
+    ['US Foods', 'US Foods Chicago',       true,  'a two-word account matches on the word that identifies it'],
+  ]) {
+    const r = await accountReads(account, shipper);
+    ok(why, r.ours === shouldBeOurs,
+      `${account} vs ${shipper} -> ${r.ours ? 'ours' : 'not ours'}`);
+  }
+
 
   console.log(`\n  ${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

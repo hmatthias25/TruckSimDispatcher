@@ -103,13 +103,46 @@ public static class Dedicated
                || Mentions(load.Broker, account);
     }
 
+    /// <summary>
+    /// Whether a name on a load refers to the driver's customer.
+    ///
+    /// Loose on purpose — ATS names the company on the job and the player types what they see, so
+    /// "Walmart DC 6094", "Walmart Supercenter" and "Walmart" all have to be the same account. But loose
+    /// on WORDS, not on raw substrings.
+    ///
+    /// It used to be a plain two-way Contains, which meant any name that happened to sit inside the
+    /// account counted as the account's freight: "Art" is inside "Walmart". That mislabelled somebody
+    /// else's load as the driver's, and then did real damage — with the app believing there was
+    /// on-account work on the board, CanRunOffAccount withheld the off-account escape and hard-failed
+    /// every other load. The driver was pushed onto freight that was not theirs and refused the freight
+    /// they could legitimately have run. ATS is full of short names that trip it: Art, Cal, Sun, Tex.
+    /// </summary>
     private static bool Mentions(string? field, string account)
     {
         var f = (field ?? "").Trim();
         if (f.Length == 0 || account.Length == 0) return false;
-        return f.Contains(account, StringComparison.OrdinalIgnoreCase)
-               || account.Contains(f, StringComparison.OrdinalIgnoreCase);
+
+        var fieldWords = Words(f);
+        var accountWords = Words(account);
+        if (fieldWords.Count == 0 || accountWords.Count == 0) return false;
+
+        // A shared word with enough letters in it to mean something. "Walmart" matches "Walmart DC";
+        // "Foods" matches "US Foods Chicago". Three letters is the floor because "DC", "Co" and "Inc"
+        // appear in half the names in the game and identify nobody.
+        if (fieldWords.Any(w => w.Length >= 4 && accountWords.Contains(w))) return true;
+
+        // Short accounts are real — BP, JBS, RC. They match as a whole word, never as a fragment.
+        return accountWords.Count == 1 && fieldWords.Contains(accountWords[0])
+               || fieldWords.Count == 1 && accountWords.Contains(fieldWords[0]);
     }
+
+    /// <summary>Lower-cased words, punctuation and unit numbers stripped.</summary>
+    private static List<string> Words(string text) =>
+        text.Split(new[] { ' ', '\t', '-', '/', ',', '.', '&', '(', ')', '\'', '"', '#' },
+                   StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => w.Trim().ToLowerInvariant())
+            .Where(w => w.Length > 0 && !w.All(char.IsDigit))
+            .ToList();
 
     /// <summary>
     /// Why a load is not the driver's to take. Returned as a hard fail so it reads as a rule rather
