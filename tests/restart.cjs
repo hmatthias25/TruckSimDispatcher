@@ -394,6 +394,73 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
   const standing = await findRestartOffer();
   ok('standing in the restart city, no empty run is offered', !standing,
     standing ? `${standing.city} ${standing.miles}mi OFFERED` : 'none offered');
+  head('#118 It will not send you home for the 34 if you cannot legally get there');
+  // Restart.Where has two branches. The market branch works out the BINDING clock — the smallest of
+  // drive, shift and cycle — because "with 0:43 of cycle left and a full shift there is still only 0:43
+  // of driving in it, and naming a city an hour and a half away is telling somebody to run illegal".
+  //
+  // The home branch, which runs first and wins when it matches, measured against the cycle alone. So
+  // with three hours of drive left and plenty of cycle it would order a 269-mile empty run home — the
+  // exact thing the other branch was written to prevent. Found by a hostile 300-step career.
+  await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
+  const rApp = { driverName: 'R. Each', preferredDivision: 'Dry Van', transmissionPreference: 'either',
+    experienceYears: 8, homeCity: 'Springfield', homeState: 'MO', acceptsProbation: true,
+    homeTimePreference: 'biweekly' };
+  await api('/onboarding/market', 'POST', rApp);
+  S = un(await api('/onboarding/hire', 'POST', { application: rApp, force: true, gameTime: at(1) }));
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+
+  // Overdue for home, standing in Tulsa — 208 mi out, inside the deadhead cap, so the home branch wants
+  // it. Then take the drive clock away while leaving the cycle low enough to need a 34.
+  for (const d of [8, 13, 17]) await place('Tulsa', 'OK', d, '08:00', 40);
+  await api('/status', 'POST', {
+    locationCity: 'Tulsa', locationState: 'OK', locationKind: 'TruckStop', gameTime: at(17, '18:00'),
+    fuelPct: 80, atsOdometer: 100000, truckDamagePct: 2, trailerDamagePct: 2,
+    dutyStatus: 'OnDuty', atsBankBalance: 80000,
+  });
+  await api('/hos', 'POST',
+    { driveRemaining: 2, shiftRemaining: 2.5, breakRemaining: 1, cycleRemaining: 6 });
+  S = un(await api('/bootstrap'));
+
+  const hsR = S.views.homeTime;
+  ok('overdue, and the yard is inside the deadhead cap', hsR.overdue === true && hsR.milesFromHome < 400,
+    `${Math.round(hsR.milesFromHome)} mi out, ${hsR.daysLate?.toFixed?.(1)} days late`);
+  ok('but there are only a couple of hours of driving left',
+    S.views.hos.drivableNowHours <= 2.1, `${S.views.hos.drivableNowHours?.toFixed?.(1)} h`);
+
+  const rsHome = S.views.restart || {};
+  const where = (rsHome.instructions || []).join(' ');
+  ok('a restart is on the cards', !!(rsHome.needed || rsHome.order), `needed=${rsHome.needed}`);
+  if (rsHome.needed || rsHome.order) {
+    ok('it is NOT sent to the yard, which cannot be reached on that clock',
+      !/Springfield/i.test(rsHome.order?.targetCity || ''), rsHome.order?.targetCity || '(none named)');
+    ok('and it says why home was passed over rather than going quiet',
+      /cannot legally get there|of driving left/i.test(where), where.slice(-140) || '(said nothing)');
+    // Whatever it names has to be inside the clock in hand.
+    if (rsHome.order?.targetCity && rsHome.order.targetCity !== 'Tulsa') {
+      const away = (await api(`/geo/distance?cityA=Tulsa&stateA=OK` +
+        `&cityB=${encodeURIComponent(rsHome.order.targetCity)}&stateB=${rsHome.order.targetState || ''}`))?.miles;
+      ok('and it is somewhere the driver can actually reach',
+        away == null || away <= S.views.hos.drivableNowHours * 60,
+        `${rsHome.order.targetCity} at ${Math.round(away || 0)} mi on ${S.views.hos.drivableNowHours?.toFixed?.(1)} h`);
+    } else {
+      ok('or it says to sit it where they are standing', true, rsHome.order?.targetCity || 'here');
+    }
+  }
+
+  head('#118 With a full clock, home is still the sensible place for it');
+  // The fix must not stop the app merging the two stops when the driver CAN get there — that is the
+  // whole point of the home branch.
+  await api('/hos', 'POST',
+    { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 6 });
+  S = un(await api('/bootstrap'));
+  const rs2 = S.views.restart || {};
+  ok('now it does route the restart home', /Springfield/i.test(rs2.order?.targetCity || ''),
+    rs2.order?.targetCity || '(none named)');
+  ok('and says why doing both in one stop is worth it',
+    /both in one stop|take your home time while you are there/i.test((rs2.instructions || []).join(' ')),
+    'said');
+
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

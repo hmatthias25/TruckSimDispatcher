@@ -148,6 +148,23 @@ public static class Restart
         var homeStatus = HomeTime.Status(s);
         var homeDeclined = "";
 
+        // What the driver can actually legally drive before they have to stop. The binding clock, not
+        // the cycle: with 0:43 of cycle left and a full shift there is still only 0:43 of driving in it,
+        // and naming a city an hour and a half away is telling somebody to run illegal.
+        //
+        // Worked out here rather than further down because BOTH branches need it. The home branch used
+        // to measure against the cycle alone and would order a 269-mile run home on 3.4 hours of clock —
+        // the exact thing the comment below it was written to prevent.
+        var mphNow = HosEngine.EffectiveMph(s.Settings, DispatchEngine.AssignedTruck(s));
+        var drivable = Math.Max(0, Math.Min(Math.Min(s.Hos.DriveRemaining, s.Hos.ShiftRemaining),
+                                            s.Hos.CycleRemaining));
+
+        // Keep a little back. Arriving with the clock on zero means no margin for a wrong turn, traffic,
+        // or the last mile through town to the parking.
+        var reserve = Math.Min(0.25, drivable * 0.15);
+        var reachHours = Math.Max(0, drivable - reserve);
+        var reachMiles = mphNow > 0 ? reachHours * mphNow : 0;
+
         if (home != null)
         {
             var toHome = Geo.MilesBetween(here.LocationCity, here.LocationState, home.City, home.State);
@@ -159,7 +176,11 @@ public static class Restart
             // state. A short reposition to merge two stops that were both going to happen is sensible;
             // most of a day empty to reach the yard is unpaid driving that saves nothing.
             var maxHop = Math.Max(0, s.Settings.Hos.RestartHomeMaxDeadheadHours);
-            var closeEnough = hoursHome <= maxHop && hoursHome <= Math.Max(1, s.Hos.CycleRemaining);
+            // Close enough to be worth it, AND close enough to be legal on the hours in hand. Both, or
+            // the driver is sent over their clock to reach better parking — the one outcome worse than
+            // parking somewhere ordinary.
+            var canGetThere = toHome is { } reach && reach <= reachMiles;
+            var closeEnough = hoursHome <= maxHop && canGetThere;
             var dueEnough = homeStatus.Tracked
                             && (homeStatus.Overdue
                                 || homeStatus.DaysUntilDue <= s.Settings.Hos.RestartHomeMaxDaysUntilDue);
@@ -183,25 +204,16 @@ public static class Restart
                     homeDeclined = $"{DispatchEngine.Place(home.City, home.State)} is close, but home time is not due " +
                                    $"for {homeStatus.DaysUntilDue:0.#} days — no point burning the trip now. " +
                                    "I will route you home with a load nearer the time.";
+                else if (hoursHome <= maxHop)
+                    homeDeclined = $"Home time is {(homeStatus.Overdue ? "overdue" : "close")} and the yard is only " +
+                                   $"{far:N0} mi out, but you have {Hhmm.Of(drivable)} of driving left and cannot " +
+                                   "legally get there. Sit the restart here; you will have a full clock for it after.";
                 else
                     homeDeclined = $"Home time is {(homeStatus.Overdue ? "overdue" : "close")}, but the yard is " +
                                    $"{far:N0} mi out — about {Hhmm.Of(hoursHome)} empty, and that is too far to " +
                                    "deadhead for a restart. Sit it here and I will get you home with freight.";
             }
         }
-
-        // What the driver can actually legally drive before they have to stop. The binding clock, not
-        // the cycle: with 0:43 of cycle left and a full shift there is still only 0:43 of driving in it,
-        // and naming a city an hour and a half away is telling somebody to run illegal.
-        var mphNow = HosEngine.EffectiveMph(s.Settings, DispatchEngine.AssignedTruck(s));
-        var drivable = Math.Max(0, Math.Min(Math.Min(s.Hos.DriveRemaining, s.Hos.ShiftRemaining),
-                                            s.Hos.CycleRemaining));
-
-        // Keep a little back. Arriving with the clock on zero means no margin for a wrong turn, traffic,
-        // or the last mile through town to the parking.
-        var reserve = Math.Min(0.25, drivable * 0.15);
-        var reachHours = Math.Max(0, drivable - reserve);
-        var reachMiles = mphNow > 0 ? reachHours * mphNow : 0;
 
         var options = Markets.ResetOptions(s, here.LocationState, 40);
         var measured = options
