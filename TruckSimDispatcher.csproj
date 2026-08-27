@@ -46,6 +46,16 @@
     <None Remove="data\**" />
     <Content Remove="publish\**" />
     <None Remove="publish\**" />
+    <!-- Nothing outside the app is build input. The Web SDK globs **/*.json as Content and copies it to
+         the publish folder, which quietly swept the manual's Chrome profiles - thousands of extension
+         manifests, some stamped 1979 - into the release output and broke the zip on a timestamp Zip
+         cannot represent. A single-file publish should produce a single file. -->
+    <Content Remove="docs\**" />
+    <None Remove="docs\**" />
+    <Content Remove="tests\**" />
+    <None Remove="tests\**" />
+    <Content Remove="publish-ship\**" />
+    <None Remove="publish-ship\**" />
   </ItemGroup>
 
   <ItemGroup>
