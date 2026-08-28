@@ -224,6 +224,9 @@ public static class HosEngine
 
         var clock = start.Value;
         var recapQueue = new Queue<RecapDay>(hos.Recap.Where(r => r.Hours > 0).OrderBy(r => r.InDays));
+        // Recap batches that land while the trip is being simulated. Held rather than reported one by
+        // one, because a batch is only good news if the trip does not need the 34 anyway.
+        var recapArrivals = new List<(DateTime At, double Hours)>();
         var timeline = new List<TimelineStep>();
         var guard = 0;
 
@@ -270,8 +273,9 @@ public static class HosEngine
                 var recap = recapQueue.Dequeue();
                 var before = cycle;
                 cycle = Math.Min(rules.CycleLimit, cycle + recap.Hours);
-                if (cycle > before)
-                    result.Warnings.Add($"Recap returns {Hhmm.Of(cycle - before)} to the cycle after the reset on {clock:ddd MMM d} (driver-reported projection).");
+                // Banked, not announced. Whether this is worth telling the driver depends on how the
+                // rest of the trip goes, and that is not known yet — see the end of the simulation.
+                if (cycle > before) recapArrivals.Add((clock, cycle - before));
             }
         }
 
@@ -546,6 +550,26 @@ public static class HosEngine
 
         if (result.CycleRestartRequired)
             result.Warnings.Add($"This load cannot be completed without a {rules.CycleRestartHours:0.#}-hour cycle restart mid-trip. That is a planning failure unless it is deliberate.");
+
+        // Recap, told once and only where it changes the answer.
+        //
+        // This used to fire a cheerful "recap returns 8:00 to the cycle" the moment a batch landed
+        // mid-simulation, which on a trip that still needed the 34 put the briefing at odds with the
+        // recap advice on the clocks screen — that one correctly says the batch arrives too late to be
+        // worth waiting for, and dispatch was simultaneously presenting it as hours in hand.
+        //
+        // A restart wipes pending recap (see TakeRestart), so anything banked here landed BEFORE the
+        // restart and was still not enough. Saying so is the useful version.
+        if (recapArrivals.Count > 0)
+        {
+            var gained = recapArrivals.Sum(r => r.Hours);
+            var last = recapArrivals[^1].At;
+            result.Warnings.Add(result.CycleRestartRequired
+                ? $"Recap puts {Hhmm.Of(gained)} back during this trip and it still does not cover it — " +
+                  $"the {rules.CycleRestartHours:0.#} is needed regardless, so there is nothing to wait for."
+                : $"Recap returns {Hhmm.Of(gained)} to the cycle by {GameClock.DayLabel(last)}, which this " +
+                  "plan is relying on (driver-reported projection).");
+        }
 
         if (cycle <= 0.01)
             result.Warnings.Add("Cycle lands at zero on delivery — the truck will be parked until a restart.");

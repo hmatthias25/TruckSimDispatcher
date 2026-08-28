@@ -129,14 +129,16 @@ const trailerOf = async (name) =>
     console.log(`  (${aOne.name} left the company mid-suite — resignations are seeded per career)`);
     ok('nothing was moved onto a driver who has gone', true, 'skipped');
   } else
-  ok('the first driver was left where they were',
-    await trailerOf(aOne.name) === aOne.assignedTrailerUnit,
-    `${await trailerOf(aOne.name)} (was ${aOne.assignedTrailerUnit})`);
-  ok('and told why', r.findings.some((f) => f.includes(aTwo.name) && /cannot pull the same/.test(f)),
+  ok('#122 the trailer moved to the driver the report put it under',
+    await trailerOf(aOne.name) === heldByTwo,
+    `${await trailerOf(aOne.name)} (wanted ${heldByTwo})`);
+  ok('#122 and came off the driver who had it', await trailerOf(aTwo.name) === '',
+    await trailerOf(aTwo.name) || '(nothing)');
+  ok('#122 which was said out loud, naming them',
+    r.findings.some((f) => f.includes(aTwo.name) && /bobtail/i.test(f)),
     r.findings.filter((f) => f.includes(aTwo.name)).join(' | '));
-  ok('the other still has it', await trailerOf(aTwo.name) === heldByTwo, await trailerOf(aTwo.name));
 
-  head("4. The player's own trailer is not the fleet's to hand out");
+  head("4. #122 The player's own trailer moves too, and they are told they are bobtailing");
   const mine = (await api('/bootstrap')).driver.assignedTrailerUnit;
   await place(45);
   r = (await api('/fleetops/report', 'POST', {
@@ -145,16 +147,30 @@ const trailerOf = async (name) =>
               trailerStars: 4, revenue: 9000, repairs: 0, perDay: 400, perMile: 1.9 }],
   })).report;
   if (!(await H.isActive(api, aOne.name))) {
-    console.log(`  (${aOne.name} has left — nothing to refuse)`);
-    ok('the player trailer was not handed out', true, 'skipped');
-  } else
-  ok('it was refused', await trailerOf(aOne.name) === aOne.assignedTrailerUnit,
-    `${await trailerOf(aOne.name)} (was ${aOne.assignedTrailerUnit})`);
-  ok('because it is the one being pulled', r.findings.some((f) => /the one you are pulling/.test(f)),
-    r.findings.filter((f) => /pulling/.test(f)).join(' | '));
+    console.log(`  (${aOne.name} has left — nothing to move)`);
+    ok('the player trailer was left alone', true, 'skipped');
+  } else {
+    // If ATS is showing a hired driver on that box then the player demonstrably is not pulling it, and
+    // the report exists to make the app agree with the game rather than argue with it.
+    ok('the trailer went to the hired driver', await trailerOf(aOne.name) === mine,
+      `${await trailerOf(aOne.name)} (wanted ${mine})`);
+    ok('and the player is left on nothing',
+      (await api('/bootstrap')).driver.assignedTrailerUnit === '',
+      (await api('/bootstrap')).driver.assignedTrailerUnit || '(nothing)');
+    ok('told in the second person, not buried in a fleet note',
+      r.findings.some((f) => /YOUR truck/.test(f) && /bobtail/i.test(f)),
+      r.findings.filter((f) => /YOUR truck/.test(f)).join(' | '));
+  }
+
+  const FLEET_HELD = (await H.activeDrivers(api)).map((d) => d.assignedTrailerUnit).filter(Boolean);
 
   head("5. The player's own line records equipment, and only equipment");
   await place(60);
+  // Section 4 handed the player's trailer to a hired driver, which is what it is there to prove — so
+  // there is nothing hooked to report condition on. Get back under one first, the way the player would.
+  const spare = (await api('/bootstrap')).trailers.find((x) => !x.retired
+    && !(FLEET_HELD.includes(x.unit)));
+  if (spare) await api('/fleet/assign', 'POST', { trailerUnit: spare.unit, force: true });
   // Read the baseline after the status report, not before: reporting in sets the odometer as well, so a
   // figure taken earlier is one status report out of date.
   const before = un(await api('/bootstrap'));

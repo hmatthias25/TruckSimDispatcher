@@ -758,45 +758,68 @@ public static class FleetOpsService
     /// <summary>
     /// Puts the driver on the trailer the player picked for them.
     ///
-    /// The dropdown offers what is in that driver's garage, so this is mostly a matter of recording a
-    /// choice. It still refuses a trailer somebody else is on: two drivers cannot pull the same one, and
-    /// silently moving it would leave the app planning a tour around a trailer that is not there.
+    /// This used to refuse two cases — a trailer another hire was on, and the one the player was pulling
+    /// — on the grounds that two drivers cannot pull the same box. True, and beside the point. A fleet
+    /// report is not an allocation: it is the player transcribing what ATS did while they were three
+    /// states away, and AI drivers drop and hook on their own. Somebody else having the trailer is the
+    /// fact being reported, so refusing to record it just left the fleet permanently wrong about which
+    /// box was where, which is the one thing the report exists to prevent.
+    ///
+    /// So it moves the trailer and says whose it was. The previous holder is left on nothing, because
+    /// that is what happened.
+    ///
+    /// A blank unit is an answer too, not a missing field: AI drivers bobtail between loads, and the
+    /// dropdown posts "" for "— none —" deliberately.
     /// </summary>
     private static void AssignReportedTrailer(AppState s, FleetReport report, HiredDriver driver,
                                               FleetReportLine line)
     {
-        if (string.IsNullOrWhiteSpace(line.TrailerUnit))
+        var wantUnit = (line.TrailerUnit ?? "").Trim();
+        if (string.Equals(wantUnit, driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)) return;
+
+        if (wantUnit.Length == 0)
         {
-            line.TrailerUnit = driver.AssignedTrailerUnit;
+            var dropped = s.Trailers.FirstOrDefault(t => t.Unit == driver.AssignedTrailerUnit);
+            if (dropped != null) dropped.AssignedTruckUnit = "";
+            report.Findings.Add($"{driver.Name} came off trailer " +
+                                $"{dropped?.Ref ?? driver.AssignedTrailerUnit} and is bobtailing.");
+            driver.AssignedTrailerUnit = "";
             return;
         }
-        if (line.TrailerUnit == driver.AssignedTrailerUnit) return;
 
-        var wanted = s.Trailers.FirstOrDefault(t => t.Unit == line.TrailerUnit && !t.Retired);
+        var wanted = s.Trailers.FirstOrDefault(
+            t => t.Unit.Equals(wantUnit, StringComparison.OrdinalIgnoreCase) && !t.Retired);
         if (wanted == null)
         {
-            report.Findings.Add($"{driver.Name}: trailer {line.TrailerUnit} is not in the fleet — left them on " +
+            report.Findings.Add($"{driver.Name}: trailer {wantUnit} is not in the fleet — left them on " +
                                 $"{(string.IsNullOrWhiteSpace(driver.AssignedTrailerUnit) ? "nothing" : driver.AssignedTrailerUnit)}.");
             line.TrailerUnit = driver.AssignedTrailerUnit;
             return;
         }
 
-        if (wanted.Unit == s.Driver.AssignedTrailerUnit)
+        // Take it off whoever is holding it, the player included. Said out loud both times — a trailer
+        // moving off somebody's truck is exactly the kind of thing that must not happen quietly.
+        if (string.Equals(wanted.Unit, s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase))
         {
-            report.Findings.Add($"{driver.Name}: trailer {wanted.Ref} is the one you are pulling, so it is not theirs " +
-                                "to take. Left them where they were.");
-            line.TrailerUnit = driver.AssignedTrailerUnit;
-            return;
+            s.Driver.AssignedTrailerUnit = "";
+            report.Findings.Add($"Trailer {wanted.Ref} was on YOUR truck. {driver.Name} has it, so you are " +
+                                "bobtailing — hook something before your next load.");
+
+            // An open trip is planned around a trailer that is now somebody else's. Nothing here can fix
+            // that; the driver has to, and they can only do it if they are told.
+            if (TripService.Active(s) is { } open)
+                report.Findings.Add($"Your open trip {open.Number} was dispatched on {wanted.Ref}. Sort the " +
+                                    "equipment out before you run it — the trip still names a trailer you do not have.");
         }
 
-        var other = s.HiredDrivers.FirstOrDefault(d => d.Id != driver.Id && d.Status == "Active"
-                                                       && d.AssignedTrailerUnit == wanted.Unit);
+        var other = s.HiredDrivers.FirstOrDefault(
+            d => d.Id != driver.Id && d.Status == "Active"
+                 && d.AssignedTrailerUnit.Equals(wanted.Unit, StringComparison.OrdinalIgnoreCase));
         if (other != null)
         {
-            report.Findings.Add($"{driver.Name}: trailer {wanted.Ref} is under {other.Name}. Two drivers cannot pull " +
-                                "the same trailer, so nothing was moved.");
-            line.TrailerUnit = driver.AssignedTrailerUnit;
-            return;
+            other.AssignedTrailerUnit = "";
+            report.Findings.Add($"Trailer {wanted.Ref} came off {other.Name}, who is now bobtailing. " +
+                                "Put them on something on the next report.");
         }
 
         var was = driver.AssignedTrailerUnit;

@@ -426,6 +426,16 @@ public static class GameClock
     public static string PrettyDay(string? value) =>
         TryParse(value) is { } dt ? PrettyDay(dt) : (value ?? "—");
 
+    /// <summary>
+    /// Just the day, for text that means a date rather than a moment: "Sat day 49".
+    ///
+    /// <see cref="PrettyDay(DateTime)"/> carries a time with it, which is right for "you are due at" and
+    /// wrong for "on". The epoch is arbitrary and exists only to be subtracted from, so a real date must
+    /// never reach the player — ATS shows its own calendar and two of them cannot be reconciled.
+    /// </summary>
+    public static string DayLabel(DateTime dt) =>
+        $"{WeekdayOf(DayOf(dt)).ToString()[..3]} day {DayOf(dt)}";
+
 
     private static readonly string[] Formats =
     {

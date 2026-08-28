@@ -3259,34 +3259,41 @@ function fleetOpsHtml() {
  * whatever was on the driver's record, which the player had no way to set from here. Choosing one here
  * re-rigs them onto it.
  *
- * Their garage is their home terminal, so that is what is offered: anything on the property that is not
- * already under somebody else and is not the one the player is pulling.
+ * EVERY trailer is offered, including ones somebody else is on and the one the player is pulling. This
+ * used to hide both, which was the wrong instinct in the right place: nothing is being allocated here.
+ * The player is writing down what ATS already did, and AI drivers swap boxes on their own — so the
+ * trailer you most need to pick is precisely the one the app currently thinks is taken. Hiding it left
+ * no way to correct the record at all.
+ *
+ * Each option says who has it, so a move is deliberate rather than a surprise. The home terminal still
+ * sorts to the top, but only sorts — it never filters.
  */
 function trailerPickHtml(d, current) {
-  const taken = (FLEETOPS?.drivers || [])
-    .filter((x) => x.id !== d.id && x.status === 'Active')
-    .map((x) => x.assignedTrailerUnit)
-    .filter(Boolean);
-  const mine = S.driver.assignedTrailerUnit;
-  // Anything not retired, not the one the player is pulling, and not already picked for someone else.
-  const free = S.trailers.filter((t) => !t.retired
-    && t.unit !== mine
-    && (!taken.includes(t.unit) || t.unit === d.assignedTrailerUnit));
-  // Prefer their own terminal, but never show an empty list because of it. Requiring the ids to match
-  // exactly emptied the control whenever the trailers were parked under a different terminal id than
-  // the driver — which left no way to set a trailer at all, the one thing this dropdown exists for.
-  const here = free.filter((t) => t.homeTerminalId === d.homeTerminalId);
-  const options = here.length ? here : free;
-  const elsewhere = here.length === 0 && free.length > 0;
-  // Whatever they are on stays selectable even if it is parked somewhere else, or the dropdown would
-  // silently move them off it just by filing a report.
+  const holderOf = (unit) => {
+    if (unit === S.driver.assignedTrailerUnit) return 'you';
+    const o = (FLEETOPS?.drivers || []).find((x) => x.id !== d.id && x.status === 'Active'
+      && x.assignedTrailerUnit === unit);
+    return o ? o.name : '';
+  };
+  const all = S.trailers.filter((t) => !t.retired);
+  // Their own yard first. Ordering only — anything parked elsewhere is still on the list, marked.
+  const options = [
+    ...all.filter((t) => t.homeTerminalId === d.homeTerminalId),
+    ...all.filter((t) => t.homeTerminalId !== d.homeTerminalId),
+  ];
+  // Whatever they are on stays selectable even if it has been retired out from under them, or filing a
+  // report would silently move them off it.
   if (current && !options.some((t) => t.unit === current.unit)) options.unshift(current);
-  return `<select id="fr-tl-${esc(d.id)}" style="min-width:172px"${
-      elsewhere ? ' title="Nothing is parked at their own terminal, so the whole fleet is listed."' : ''}>
-    <option value="">— none —</option>
-    ${options.map((t) => `<option value="${esc(t.unit)}"${t.unit === d.assignedTrailerUnit ? ' selected' : ''}>
+  return `<select id="fr-tl-${esc(d.id)}" style="min-width:196px"
+      title="Picking a trailer somebody else has moves it to this driver and leaves them on nothing.">
+    <option value="">— none — (bobtailing)</option>
+    ${options.map((t) => {
+      const held = holderOf(t.unit);
+      return `<option value="${esc(t.unit)}"${t.unit === d.assignedTrailerUnit ? ' selected' : ''}>
       ${esc(t.ref || t.unit)} · ${esc(t.type)}${
-        t.homeTerminalId !== d.homeTerminalId ? ' (off-yard)' : ''}</option>`).join('')}
+        t.homeTerminalId !== d.homeTerminalId ? ' (off-yard)' : ''}${
+        held && t.unit !== d.assignedTrailerUnit ? ` — ${esc(held)}` : ''}</option>`;
+    }).join('')}
   </select>`;
 }
 
