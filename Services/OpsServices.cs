@@ -116,8 +116,8 @@ public static class MaintenanceService
             // them to skip the panel where the ones that matter live. It is a decision instead, with a
             // price on it, and it says so here. See FleetMaintenance.
             alerts.Add(FleetMaintenance.IsHiredUnit(s, t)
-                ? $"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi — " +
-                  $"our shop can take it for ${FleetMaintenance.Cost(t):N0}. Fleet tab."
+                ? $"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi — the yard will do " +
+                  "it at the next fleet report."
                 : $"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi.");
         }
         foreach (var t in s.Trailers.Where(t => Tracked(t.Unit, t.InGameGarage)))

@@ -10,16 +10,21 @@ namespace TruckSimDispatcher.Services;
 /// alert nobody can act on is worse than no alert, because it teaches the player to skip the panel where
 /// the alerts that DO matter live.
 ///
-/// Two facts decide the shape of the answer.
+/// The first cut put two buttons on it — service it, or defer it — and that was wrong for a reason worth
+/// writing down. <b>The player is a driver.</b> Probation, reviews, discipline, home time: the whole app
+/// rests on their being an employee of a carrier with standards. An employee does not authorise the
+/// company's capital spending and does not defer its maintenance. An approve/defer pair handed them an
+/// authority the rest of the app spends its time telling them they have not got — and once deferring is
+/// off the table, approving is not a decision either, because the answer is always yes.
 ///
-/// The app cannot make ATS do anything, so it must never claim the truck was off the road — the game
-/// would contradict it the next time the player opened the driver manager, and an app that is visibly
-/// wrong about the world stops being worth reading. No downtime is simulated here. The driver keeps
-/// producing, because in the game they will.
+/// So the company services its own fleet, at the fleet report, which is already where fleet mileage
+/// updates and fleet money moves. Deferring still happens; the company does it, when the balance is
+/// thin, and the player reads about it in the findings rather than choosing it.
 ///
-/// Money is the opposite. The app IS the company's books; hired-driver repairs already go through the
-/// ledger off the fleet report. So the alert becomes what it should always have been — a bill the player
-/// authorises, on work the company's own shop does, at a yard the player never has to drive to.
+/// Two facts shape the rest. The app cannot make ATS do anything, so it must never claim a truck was off
+/// the road for a routine service — the game would contradict it the next time they opened the driver
+/// manager. Money is the opposite: the app IS the books, and hired-driver repairs already post to the
+/// ledger off this same report.
 /// </summary>
 public static class FleetMaintenance
 {
@@ -30,10 +35,14 @@ public static class FleetMaintenance
     public const decimal CostPerHundredThousand = 240m;
 
     /// <summary>
-    /// Deferring is allowed — cash is cash, and a carrier short this month puts it off. It is remembered,
-    /// and each time raises what the shop is likely to find. Said out loud before the player chooses,
-    /// never discovered afterwards.
+    /// Operating cash the company will not service below.
+    ///
+    /// A carrier that serviced itself into an empty account would be a worse carrier, so a thin period
+    /// holds the work over. That is the company's call, and the player is told it was made.
     /// </summary>
+    public const decimal ReserveFloor = 5000m;
+
+    /// <summary>Each time the company holds a service over, this much is added to the odds of a find.</summary>
     public const int FindChancePerDeferral = 9;
 
     /// <summary>Miles past the interval that count as neglect, per percentage point of find chance.</summary>
@@ -54,7 +63,7 @@ public static class FleetMaintenance
 
     /// <summary>Whether an active hired driver is running this unit.</summary>
     public static bool IsHiredUnit(AppState s, Truck t) =>
-        !t.Retired && t.Status != "Retired"
+        !t.Retired && t.Status != "Retired" && t.Status != "OutOfService"
         && s.HiredDrivers.Any(d => d.Status == "Active"
                                    && d.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
 
@@ -67,12 +76,12 @@ public static class FleetMaintenance
         Math.Round(BasePmCost + CostPerHundredThousand * (decimal)(Math.Max(0, t.AtsOdometer) / 100_000), 0);
 
     /// <summary>
-    /// The odds the service turns something up, as a percentage.
+    /// The odds a service turns something up, as a percentage.
     ///
-    /// Driven by real numbers rather than a flat roll: how far past due it was let go, how many times a
-    /// service was deferred, and what the unit has on the clock. An existing career upgrading into this
-    /// carries no deferrals, because it never had the option to schedule one — mileage and condition are
-    /// true regardless of what the app was tracking, and count as they always would.
+    /// Built from real numbers rather than a flat roll: how far past due it was let go, how many times
+    /// the company held it over, and what the unit has on the clock. An existing career upgrading into
+    /// this carries no deferrals, because nobody ever had the option — mileage and condition are true
+    /// regardless of what the app was tracking, and count as they always would.
     /// </summary>
     public static int FindChance(Truck t)
     {
@@ -83,8 +92,13 @@ public static class FleetMaintenance
         return Math.Clamp(fromOverdue + fromDeferrals + fromAge + fromCondition, 2, MaxFindChance);
     }
 
-    /// <summary>What the player is deciding about, before they decide it.</summary>
-    public static object? Offer(AppState s, Truck t)
+    /// <summary>
+    /// What is coming at the next report, so it is visible before it happens.
+    ///
+    /// Read-only, deliberately. There is no button here and there should not be: this is the player
+    /// seeing what the company is about to spend, not being asked about it.
+    /// </summary>
+    public static object? Coming(AppState s, Truck t)
     {
         if (!IsHiredUnit(s, t)) return null;
         var past = MilesPastDue(t);
@@ -106,102 +120,106 @@ public static class FleetMaintenance
             cost = Cost(t),
             findChancePct = chance,
             headline = $"Unit {t.Ref} is {past:N0} mi past its {t.ServiceIntervalMiles:N0}-mile PM.",
-            detail = $"Our own shop can take it — ${Cost(t):N0}. " +
-                     (driver != null ? $"{driver.Name} keeps running either way; " : "") +
-                     "you are authorising the work, not parking the truck.",
+            detail = $"The yard will do it at the next fleet report — about ${Cost(t):N0}. " +
+                     (driver != null ? $"{driver.Name} keeps running; " : "") +
+                     "nothing is being parked for it.",
             risk = chance >= 25
-                ? $"At {t.AtsOdometer:N0} mi and {past:N0} past due, there is a real chance they find something " +
-                  "worth more than the service. Better found in the bay than on the road."
+                ? $"At {t.AtsOdometer:N0} mi and {past:N0} past due, there is a real chance they find " +
+                  "something worth more than the service. Better found in the bay than on the road."
                 : "Routine, on the numbers we have.",
             deferNote = t.PmDeferrals > 0
-                ? $"Deferred {t.PmDeferrals} time(s) already. Each one makes the next look worse."
-                : "Deferring is fine if the cash is not there. It is remembered.",
+                ? $"Held over {t.PmDeferrals} time(s) already — the balance was short. Each one makes the " +
+                  "next look worse."
+                : "",
         };
     }
 
     /// <summary>
-    /// Puts a unit off until next time, and remembers it.
-    /// </summary>
-    public static string Defer(AppState s, string unit)
-    {
-        var t = Find(s, unit);
-        t.PmDeferrals++;
-        return $"Unit {t.Ref} left as it is. That is {t.PmDeferrals} deferral(s) on this unit — " +
-               $"the shop is now {FindChance(t)}% to find something when it does go in.";
-    }
-
-    /// <summary>
-    /// Does the service. Charges it, resets the clock, and occasionally finds something.
+    /// Services everything that came due, as part of filing a fleet report.
     ///
-    /// The find is seeded on the unit and the mileage it went in at, so filing again cannot re-roll it —
-    /// the same rule every other chance in the app follows.
+    /// Runs before <c>AssessRetirements</c> so a condemned unit rides the retirement path that already
+    /// exists: the player is told what to sell and what to buy, by make and spec, the same way a
+    /// worn-out tractor has always been handled.
+    ///
+    /// Each find is seeded on the unit and the mileage it went in at, so re-filing cannot re-roll it.
     /// </summary>
-    public static PmResult Schedule(AppState s, string unit, string gameTime)
+    public static void ServiceDueUnits(AppState s, FleetReport report)
     {
-        var t = Find(s, unit);
-        var past = MilesPastDue(t);
-        if (past <= 0) throw new InvalidOperationException($"Unit {t.Ref} is not due a service.");
-
-        var r = new PmResult { Unit = t.Unit, UnitRef = t.Ref, Cost = Cost(t) };
-        var chance = FindChance(t);
-        var roll = Hash($"{t.Unit}|pm|{t.ServiceMiles:0}") % 100;
-        var found = roll < (uint)chance;
-
-        // The clock resets whatever they find. The service was done.
-        t.LastServiceMiles = t.ServiceMiles;
-        t.PmDeferrals = 0;
-
-        if (!found)
+        foreach (var t in DueUnits(s))
         {
-            r.Outcome = "Routine";
-            r.Message = $"Unit {t.Ref} serviced — ${r.Cost:N0}. Nothing untoward. Next one due in " +
-                        $"{t.ServiceIntervalMiles:N0} mi.";
-            LedgerService.Post(s, LedgerService.Operating, -r.Cost, "Maintenance",
-                $"PM — unit {t.Ref}", "");
-            return r;
+            var cost = Cost(t);
+            var balance = LedgerService.Balance(s, LedgerService.Operating);
+
+            // A thin period holds the work over. Said out loud, because an unlogged deferral looks
+            // exactly like the app having forgotten.
+            if (balance - cost < ReserveFloor)
+            {
+                t.PmDeferrals++;
+                report.Findings.Add(
+                    $"Unit {t.Ref} was due a PM and it is being held over — ${balance:N0} in operating " +
+                    $"will not carry a ${cost:N0} service this period. That is {t.PmDeferrals} time(s) on " +
+                    $"this unit, and the shop is now {FindChance(t)}% to find something when it does go in.");
+                continue;
+            }
+
+            var chance = FindChance(t);
+            var found = Hash($"{t.Unit}|pm|{t.ServiceMiles:0}") % 100 < (uint)chance;
+
+            t.LastServiceMiles = t.ServiceMiles;
+            t.PmDeferrals = 0;
+
+            if (!found)
+            {
+                LedgerService.Post(s, LedgerService.Operating, -cost, "Maintenance",
+                    $"PM — unit {t.Ref}", report.Number);
+                report.Findings.Add($"Unit {t.Ref} was due a PM. Done at the yard, ${cost:N0}. " +
+                                    $"Next one at {t.ServiceIntervalMiles:N0} mi.");
+                continue;
+            }
+
+            if (t.AtsOdometer >= HighMileage)
+            {
+                // They stop when they find it, so the bill is the strip-down rather than the service.
+                var billed = Math.Round(cost / 2, 0);
+                LedgerService.Post(s, LedgerService.Operating, -billed, "Maintenance",
+                    $"PM — unit {t.Ref} (condemned)", report.Number);
+
+                var driver = s.HiredDrivers.FirstOrDefault(
+                    d => d.Status == "Active"
+                         && d.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
+
+                report.Findings.Add(
+                    $"Unit {t.Ref} went in for a PM and is not coming out. At {t.AtsOdometer:N0} mi the " +
+                    $"shop will not put it back on the road. Billed ${billed:N0} for the strip-down.");
+
+                // The existing retirement path takes it from here: trade instructions by make and spec.
+                report.Retirements.Add(new RetirementRecommendation
+                {
+                    Unit = t.Unit,
+                    UnitKind = "Truck",
+                    Headline = $"Unit {t.Ref} condemned at PM — {t.AtsOdometer:N0} mi.",
+                    Evidence =
+                    {
+                        $"Went in for a routine service at {t.AtsOdometer:N0} mi.",
+                        "The shop stopped rather than rebuilding it.",
+                        "Wear, not a wreck — there is no insurance claim here.",
+                    },
+                    ServiceMiles = t.ServiceMiles,
+                    DamagePct = t.DamagePct,
+                    AssignedTo = driver?.Name ?? "",
+                    IsPlayerUnit = false,
+                });
+                continue;
+            }
+
+            var major = Math.Round(cost * MajorRepairMultiple, 0);
+            LedgerService.Post(s, LedgerService.Operating, -major, "Maintenance",
+                $"PM — unit {t.Ref} (major repair)", report.Number);
+            report.Findings.Add(
+                $"Unit {t.Ref} needed more than a service — ${major:N0} all in. Found in the bay rather " +
+                "than on the shoulder, which is the whole argument for PM.");
         }
-
-        // Terminal or expensive. A unit deep into its second life is the one they condemn; anything
-        // younger gets a bill and keeps working.
-        if (t.AtsOdometer >= HighMileage)
-        {
-            r.Outcome = "Condemned";
-            r.Cost = Math.Round(r.Cost / 2, 0);   // they stop when they find it
-            r.Message = $"Unit {t.Ref} went in for a ${Cost(t):N0} service and is not coming out. " +
-                        $"At {t.AtsOdometer:N0} mi the shop will not put it back on the road, and they are right. " +
-                        $"Billed ${r.Cost:N0} for the strip-down.";
-            r.RecommendTrade = true;
-
-            // Off the road for real, and this one the game will agree with — the player is being sent to
-            // trade it in ATS, so the app and the game converge rather than drift. Nothing like the
-            // fiction of a two-day PM downtime, which ATS would contradict the moment they looked.
-            t.Status = "OutOfService";
-
-            var driver = s.HiredDrivers.FirstOrDefault(
-                d => d.Status == "Active" && d.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
-            r.Instructions.Add($"Sell unit {t.Ref} ({t.Year} {t.Make} {t.Model}, {t.AtsOdometer:N0} mi) in ATS.");
-            r.Instructions.Add($"Buy the replacement: {Seed.RecommendedTruck(s)}");
-            r.Instructions.Add("Add what you actually bought on the Fleet tab — " +
-                               (driver != null
-                                   ? $"{driver.Name} has no tractor until you do, and it comes to them on arrival."
-                                   : "the seat is empty until you do."));
-        }
-        else
-        {
-            r.Outcome = "MajorRepair";
-            r.Cost = Math.Round(Cost(t) * MajorRepairMultiple, 0);
-            r.Message = $"Unit {t.Ref} needed more than a service — ${r.Cost:N0} all in. " +
-                        "Found in the bay rather than on the shoulder, which is the whole argument for PM.";
-        }
-
-        LedgerService.Post(s, LedgerService.Operating, -r.Cost, "Maintenance",
-            $"PM — unit {t.Ref} ({r.Outcome})", "");
-        return r;
     }
-
-    private static Truck Find(AppState s, string unit) =>
-        s.Trucks.FirstOrDefault(t => t.Unit.Equals((unit ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
-        ?? throw new InvalidOperationException($"Unit {unit} is not in the fleet.");
 
     private static uint Hash(string text)
     {
@@ -212,19 +230,4 @@ public static class FleetMaintenance
             return h;
         }
     }
-}
-
-/// <summary>What a scheduled service came to.</summary>
-public class PmResult
-{
-    public string Unit { get; set; } = "";
-    public string UnitRef { get; set; } = "";
-    /// <summary>Routine | MajorRepair | Condemned</summary>
-    public string Outcome { get; set; } = "Routine";
-    public decimal Cost { get; set; }
-    public string Message { get; set; } = "";
-    /// <summary>The shop says it is finished. Goes through the same trade path a retirement does.</summary>
-    public bool RecommendTrade { get; set; }
-    /// <summary>What to do in ATS about it, in order. Empty on a routine service.</summary>
-    public List<string> Instructions { get; set; } = new();
 }

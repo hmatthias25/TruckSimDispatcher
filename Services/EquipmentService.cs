@@ -900,6 +900,20 @@ public static class EquipmentService
 
         if (!advice.Due && !advice.Soon) return advice;
 
+        // What running it long past due is likely to turn into. The same model a hired driver's unit
+        // gets — overdue miles, what is on the clock, what condition it is in — and the same reason for
+        // it: a service that is 38,000 miles late is not a service any more, it is whatever they find.
+        //
+        // The authority question that shaped FleetMaintenance does not arise here. Taking the truck you
+        // are sitting in to a shop is a driver's job, not the company's capital spending, so this stays
+        // advice and a warning rather than something done to the player.
+        advice.FindChancePct = FleetMaintenance.FindChance(truck);
+        if (advice.Due && advice.FindChancePct >= 25)
+            advice.Warning =
+                $"At {since - truck.ServiceIntervalMiles:N0} mi over and {truck.AtsOdometer:N0} on the " +
+                "clock, you are not booking a service any more — you are booking whatever they find. " +
+                "Expect it well above the usual, and do not let it go further.";
+
         var shops = ShopOptions(s);
         advice.ShopYards = shops.Select(t => $"{t.City}, {t.State} ({t.ShopLabourDiscount * 100:0}% off labour)").ToList();
         advice.Message = advice.Due
@@ -917,6 +931,19 @@ public class PmAdvice
 {
     public bool Due { get; set; }
     public bool Soon { get; set; }
+
+    /// <summary>
+    /// The odds the shop turns up more than a service, on the same model a hired driver's unit uses.
+    ///
+    /// Advisory here rather than rolled: the player drives their own truck to the shop and reports what
+    /// it cost, so the app has no business inventing the outcome. What it can do is say what the numbers
+    /// point at before they book it.
+    /// </summary>
+    public int FindChancePct { get; set; }
+
+    /// <summary>Said when the odds are bad enough to change what they should do. Empty otherwise.</summary>
+    public string Warning { get; set; } = "";
+
     public double MilesSinceService { get; set; }
     public double IntervalMiles { get; set; }
     public double MilesRemaining { get; set; }

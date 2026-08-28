@@ -787,7 +787,8 @@ function bannerHtml() {
   if (v.pm && (v.pm.due || v.pm.soon))
     out += `<div class="callout ${v.pm.due ? 'warn' : 'info'}">
       <h4>${v.pm.due ? 'Preventive service overdue' : 'PM coming due'}</h4>
-      <p>${esc(v.pm.message)}</p></div>`;
+      <p>${esc(v.pm.message)}</p>
+      ${v.pm.warning ? `<p class="hint"><b>${esc(v.pm.warning)}</b></p>` : ''}</div>`;
 
   if (S.driver.status === 'Suspended')
     out += `<div class="callout stop"><h4>Driver suspended</h4><p>No freight until Safety clears you. See the Safety tab.</p></div>`;
@@ -3104,9 +3105,12 @@ function fleetDecisionsHtml() {
  * Services owed on tractors hired drivers run.
  *
  * These raised the same "PM overdue" alert the player's own truck raises and could not be acted on:
- * ATS gives you no way to take a hired driver's truck to a shop. So the company's own shop does it and
- * the player authorises the bill — no driving to a yard, and pointedly no claim that the truck was off
- * the road, which is the one thing the game would contradict.
+ * ATS gives you no way to take a hired driver's truck to a shop.
+ *
+ * Read-only, and that is the point. The first cut had approve and defer buttons here, which handed a
+ * company driver authority over the company's capital spending — the one thing the rest of the app
+ * spends its time telling them they have not got. The yard services its own units when the report is
+ * filed. This panel is the player seeing what is about to be spent, not being asked about it.
  */
 function fleetPmHtml() {
   const due = S.views.fleetPm || [];
@@ -3116,12 +3120,14 @@ function fleetPmHtml() {
     <div class="panel-head"><h2>Scheduled maintenance</h2>
       ${badge('warn', `${due.length} unit(s) due`)}
       <div class="spacer"></div>
-      <span class="sub">our shop, our money — you are not driving these anywhere</span></div>
+      <span class="sub">the yard does these at the next report</span></div>
 
     <div class="callout info">
-      <p>You cannot take a hired driver's tractor to a shop in ATS, so the company's own shop does it.
-        Authorise the work and the ledger takes the bill. <b>Nobody stops driving</b> — the game keeps
-        them rolling and the app is not going to pretend otherwise.</p>
+      <p>You cannot take a hired driver's tractor to a shop in ATS, and it is not your call anyway — the
+        yard services its own units when you file the fleet report, and the ledger takes the bill there.
+        This is what is coming, so it is not a surprise on the findings.</p>
+      <p><b>Nobody stops driving for it.</b> The game keeps them rolling and the app is not going to
+        pretend otherwise.</p>
     </div>
 
     ${due.map((p) => `<div class="callout ${p.findChancePct >= 25 ? 'warn' : ''}" style="margin-top:10px">
@@ -3134,12 +3140,7 @@ function fleetPmHtml() {
         ${fkpi('Shop finds something', p.findChancePct + '%', p.findChancePct >= 25 ? 'warn' : 'ok')}
       </div>
       <p class="hint" style="margin-top:8px">${esc(p.risk)}</p>
-      <p class="hint">${esc(p.deferNote)}</p>
-      <div style="margin-top:8px">
-        <button class="btn tiny primary" data-act="pm-schedule" data-unit="${esc(p.unit)}">
-          Service it — ${money0(p.cost)}</button>
-        <button class="btn tiny ghost" data-act="pm-defer" data-unit="${esc(p.unit)}">Not this month</button>
-      </div>
+      ${p.deferNote ? `<p class="hint">${esc(p.deferNote)}</p>` : ''}
     </div>`).join('')}
   </div>`;
 }
@@ -5350,27 +5351,6 @@ async function handleAction(act, d, ev) {
     case 'goto-fleet': TAB = 'fleet';
       return run(async () => { FLEETOPS = await api('/fleetops'); });
     case 'load-fleetops': return run(async () => { FLEETOPS = await api('/fleetops'); });
-    case 'pm-schedule': {
-      const unit = d.unit;
-      return run(async () => {
-        const r = absorb(await api('/fleetops/pm/schedule', 'POST', { unit }));
-        const res = r.result;
-        // A condemned unit is the one case where the player has to go and do something in ATS, so it
-        // gets the full instruction list rather than a toast that scrolls away.
-        if (res.instructions?.length) {
-          alert(`${res.message}\n\n${res.instructions.map((x, i) => `${i + 1}. ${x}`).join('\n')}`);
-        }
-        toast(res.message, res.outcome === 'Routine' ? 'ok' : 'warn');
-        FLEETOPS = await api('/fleetops');
-      });
-    }
-    case 'pm-defer': {
-      const unit = d.unit;
-      return run(async () => {
-        const r = absorb(await api('/fleetops/pm/defer', 'POST', { unit }));
-        toast(r.message, 'warn');
-      });
-    }
     case 'terminate-driver': {
       const why = prompt(`Terminate ${d.name}?\n\nWhat goes on the file?`, 'Sustained poor performance.');
       if (why === null) return;

@@ -225,9 +225,10 @@ public static class FleetOpsService
                         report.Findings.Add($"Unit {truck.Ref} dropped from {starsBefore:0.#} to {truck.Stars:0.#} stars under {driver.Name}.");
                 }
 
-                var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
-                if (sinceService >= truck.ServiceIntervalMiles)
-                    report.Findings.Add($"Unit {truck.Ref} is {sinceService - truck.ServiceIntervalMiles:N0} mi past its PM.");
+                // "N mi past its PM" used to be reported here. It is not any more: FleetMaintenance
+                // services these units further down this same report and says what became of each one,
+                // so leaving this in printed a complaint immediately above the line saying it was dealt
+                // with — or worse, above the line saying the shop condemned the unit.
             }
 
             driver.LifetimeMiles = Math.Round(driver.LifetimeMiles + line.Miles, 0);
@@ -303,6 +304,12 @@ public static class FleetOpsService
 
         // Personnel and equipment decisions are resolved AFTER the numbers are posted, so they are made
         // on this period's figures rather than the last one's.
+        //
+        // Servicing goes first of the three. It is the company spending its own money on its own units —
+        // not the driver's call, which is why there is no button for it anywhere — and it has to land
+        // before AssessRetirements so a unit the shop condemns rides the retirement path that already
+        // exists, and comes out as trade instructions rather than as a dead end.
+        FleetMaintenance.ServiceDueUnits(s, report);
         ResolvePersonnel(s, report);
         AssessRetirements(s, report);
         IssueTradeInstructions(s, report);

@@ -1076,22 +1076,6 @@ app.MapDelete("/api/fleetops/drivers/{id}", (string id) => Results.Ok(store.Muta
     return Snapshot(s);
 })));
 
-// Scheduled maintenance on a hired driver's tractor. The player cannot drive it to a shop in ATS, so
-// the company's own shop does it and they authorise the bill — see FleetMaintenance.
-app.MapPost("/api/fleetops/pm/schedule", (PmRequest req) => Results.Ok(store.Mutate(s =>
-{
-    var r = FleetMaintenance.Schedule(s, req.Unit, req.GameTime ?? s.Status.GameTime);
-    store.Log(s, "maintenance", r.Message, "");
-    return new { result = r, snapshot = Snapshot(s) };
-})));
-
-app.MapPost("/api/fleetops/pm/defer", (PmRequest req) => Results.Ok(store.Mutate(s =>
-{
-    var message = FleetMaintenance.Defer(s, req.Unit);
-    store.Log(s, "maintenance", message, "");
-    return new { message, snapshot = Snapshot(s) };
-})));
-
 app.MapPost("/api/fleetops/terminate", (TerminateRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
     var change = FleetOpsService.Terminate(s, req.DriverId, req.Reason ?? "");
@@ -2012,7 +1996,7 @@ object Snapshot(AppState? given = null)
             receiverParking = Facilities.ParkingFor(s, TripService.Active(s)),
             // Services owed on tractors hired drivers run. Empty on a fleet with none due.
             fleetPm = FleetMaintenance.DueUnits(s)
-                .Select(t => FleetMaintenance.Offer(s, t))
+                .Select(t => FleetMaintenance.Coming(s, t))
                 .Where(x => x != null)
                 .ToList(),
             // What close-out measures the run against. A trip that was already rolling before the app
@@ -2193,7 +2177,6 @@ record TrimRequest(bool IncludeYards);
 record BalanceRequest(decimal? Balance, string? GameTime);
 record ForgiveRequest(string? Reason, bool Force);
 record TerminateRequest(string DriverId, string? Reason);
-record PmRequest(string Unit, string? GameTime);
 record RetireRequest(string Unit, string? ReplacementUnit);
 record TrailerBoughtRequest(string RequestId, string Unit, decimal PaidPrice, string? GameTime, string? GameId);
 record TrailerDeclineRequest(string RequestId, string? GameTime);
