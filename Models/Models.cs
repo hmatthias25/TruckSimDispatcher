@@ -1936,6 +1936,15 @@ public class FleetReportLine
     public double TrailerDamagePctAfter { get; set; }
     public decimal Wages { get; set; }
     public decimal Repairs { get; set; }
+
+    /// <summary>
+    /// How the revenue on this line was arrived at, when the app worked it out rather than being told.
+    ///
+    /// Shown back to the player because a number that appears from nowhere is a number nobody trusts —
+    /// and because seeing "$1.92/mi × 4,180 mi" is what makes it obvious when a figure was typed wrong.
+    /// Empty when the revenue was given directly.
+    /// </summary>
+    public string RevenueBasis { get; set; } = "";
     public string Notes { get; set; } = "";
 }
 

@@ -143,8 +143,10 @@ public static class FleetMaintenance
     ///
     /// Each find is seeded on the unit and the mileage it went in at, so re-filing cannot re-roll it.
     /// </summary>
-    public static void ServiceDueUnits(AppState s, FleetReport report)
+    /// <returns>What was spent per unit, so the report can attribute it without posting it twice.</returns>
+    public static Dictionary<string, decimal> ServiceDueUnits(AppState s, FleetReport report)
     {
+        var spent = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         foreach (var t in DueUnits(s))
         {
             var cost = Cost(t);
@@ -174,6 +176,7 @@ public static class FleetMaintenance
                     $"PM — unit {t.Ref}", report.Number);
                 report.Findings.Add($"Unit {t.Ref} was due a PM. Done at the yard, ${cost:N0}. " +
                                     $"Next one at {t.ServiceIntervalMiles:N0} mi.");
+                spent[t.Unit] = spent.GetValueOrDefault(t.Unit) + cost;
                 continue;
             }
 
@@ -209,6 +212,7 @@ public static class FleetMaintenance
                     AssignedTo = driver?.Name ?? "",
                     IsPlayerUnit = false,
                 });
+                spent[t.Unit] = spent.GetValueOrDefault(t.Unit) + billed;
                 continue;
             }
 
@@ -218,7 +222,10 @@ public static class FleetMaintenance
             report.Findings.Add(
                 $"Unit {t.Ref} needed more than a service — ${major:N0} all in. Found in the bay rather " +
                 "than on the shoulder, which is the whole argument for PM.");
+            spent[t.Unit] = spent.GetValueOrDefault(t.Unit) + major;
         }
+
+        return spent;
     }
 
     private static uint Hash(string text)

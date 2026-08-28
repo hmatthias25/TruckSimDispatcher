@@ -3167,6 +3167,10 @@ function fleetPmHtml() {
   </div>`;
 }
 
+// Whether the Fleet tab is showing every fleet report or just the last couple. Two is enough to see
+// where the fleet stands; a career's worth of them turns this page into a scroll with no bottom.
+let FLEET_ALL_REPORTS = false;
+
 function fleetOpsHtml() {
   const f = S.views.fleetOps || { driverCount: 0, unassignedUnits: [] };
   const drivers = FLEETOPS?.drivers || [];
@@ -3233,6 +3237,10 @@ function fleetOpsHtml() {
           and for their equipment the <b>star rating</b> — plus the truck's odometer. Those are the numbers
           the game gives for people and units you are not sitting in, so those are the numbers operations
           judges on. Leave wages blank to use the driver's agreed share.</p>
+        <p class="hint"><b>Revenue, wages and repairs are not asked for.</b> ATS shows no period total
+          for a driver you are not sitting next to, so those boxes could only be guessed at. Revenue comes
+          from the $/mile you enter against the miles the odometer gives, wages from the driver's agreed
+          share, and repairs from what the yard actually spent on that unit.</p>
         <p class="hint">Utilisation comes off the ATS <b>Trailer Manager</b> — the percentage of the past
           week that box was in use. It is what decides whether a trailer is worth keeping; a trailer nobody
           is using is not earning its place. Where a driver is with a trailer is asked when you report in
@@ -3259,8 +3267,7 @@ function fleetOpsHtml() {
             <th title="Which trailer this driver is on. Pick from the ones in their garage — setting it here re-rigs them onto it.">Trailer</th>
             <th class="num" title="Trailer condition in stars. Stars are all ATS shows for a trailer somebody else is pulling.">Trailer &starf;</th>
             <th class="num" title="Utilisation from the ATS Trailer Manager: the percentage of the past week the trailer was in use. An idle box is a candidate to sell.">Util %</th>
-            <th class="num">Revenue $</th>
-            <th class="num">Wages $ (blank = share)</th><th class="num">Repairs $</th></tr></thead>
+            </tr></thead>
           <tbody>${drivers.filter((d) => d.status === 'Active').map((d) => {
             const tk = S.trucks.find((t) => t.unit === d.assignedTruckUnit);
             const tl = S.trailers.find((t) => t.unit === d.assignedTrailerUnit);
@@ -3282,9 +3289,6 @@ function fleetOpsHtml() {
                   value="${tl?.stars || ''}" placeholder="—"></td>
             <td><input id="fr-util-${esc(d.id)}" type="number" step="1" min="0" max="100" style="width:74px"
                   value="${tl && tl.utilisationPct >= 0 ? Math.round(tl.utilisationPct) : ''}" placeholder="—"></td>
-            <td><input id="fr-rev-${esc(d.id)}" type="number" step="1" min="0" value="0"></td>
-            <td><input id="fr-wage-${esc(d.id)}" type="number" step="0.01" min="0" placeholder="auto"></td>
-            <td><input id="fr-rep-${esc(d.id)}" type="number" step="0.01" min="0" value="0"></td>
           </tr>`; }).join('')}</tbody></table></div>
         ${playerLineHtml()}
         <label>Report note<input id="fr-note" placeholder="optional"></label>
@@ -3292,13 +3296,18 @@ function fleetOpsHtml() {
         : '<div class="empty">No hired drivers yet. Hire one in ATS, then add them here.</div>'}
 
       ${reports.length ? `<h3 class="sect">Fleet reports</h3>
-        ${reports.map((r) => `<div class="loadcard ${r.netContribution >= 0 ? 'auth' : 'reject'}">
+        ${reports.length > 2 ? `<p class="hint">Showing the last 2 of ${reports.length}.
+          <button class="btn tiny ghost" data-act="reports-all">${FLEET_ALL_REPORTS ? 'Show fewer' : 'Show all ' + reports.length}</button></p>` : ''}
+        ${(FLEET_ALL_REPORTS ? reports : reports.slice(0, 2)).map((r) => `<div class="loadcard ${r.netContribution >= 0 ? 'auth' : 'reject'}">
           <div class="loadcard-head"><span class="lane">${esc(r.number)}</span>
             <span class="sub">${gt(r.periodStartGame)} → ${gt(r.periodEndGame)}</span>
             <div class="spacer"></div>
             <b style="font-family:var(--mono)">net ${money(r.netContribution)}</b></div>
           <div class="kv">
-            <span>revenue <b>${money(r.totalRevenue)}</b></span>
+            <span>revenue <b>${money(r.totalRevenue)}</b></span>${
+              r.lines?.find((l) => l.revenueBasis)
+                ? `<span class="hint">from ${esc(r.lines.find((l) => l.revenueBasis).revenueBasis)}${
+                    r.lines.filter((l) => l.revenueBasis).length > 1 ? ' and others' : ''}</span>` : ''}
             <span>wages <b>${money(r.totalWages)}</b></span>
             <span>repairs <b>${money(r.totalRepairs)}</b></span>
             <span>miles <b>${num(r.totalMiles)}</b></span>
@@ -5373,6 +5382,7 @@ async function handleAction(act, d, ev) {
     case 'goto-fleet': TAB = 'fleet';
       return run(async () => { FLEETOPS = await api('/fleetops'); });
     case 'load-fleetops': return run(async () => { FLEETOPS = await api('/fleetops'); });
+    case 'reports-all': FLEET_ALL_REPORTS = !FLEET_ALL_REPORTS; return render();
     case 'terminate-driver': {
       const why = prompt(`Terminate ${d.name}?\n\nWhat goes on the file?`, 'Sustained poor performance.');
       if (why === null) return;
@@ -5486,8 +5496,9 @@ async function handleAction(act, d, ev) {
         truckStars: fv('fr-tstar-' + x.id), truckOdometer: fv('fr-odo-' + x.id),
         trailerStars: fv('fr-lstar-' + x.id),
         trailerUtilisationPct: fvn(`fr-util-${x.id}`) ?? -1,
-        revenue: fv('fr-rev-' + x.id),
-        wages: fv('fr-wage-' + x.id), repairs: fv('fr-rep-' + x.id),
+        // Revenue, wages and repairs are not asked for any more: ATS shows no period total for a
+        // driver you are not sitting next to, so the boxes could only ever be guessed at and were
+        // sensibly left at zero. The app works all three out — see FleetOpsService.FileReport.
       })).filter((l) => l.revenue > 0 || l.repairs > 0 || l.perDay > 0 || l.perMile > 0
                         || l.truckStars > 0 || l.truckOdometer > 0);
 

@@ -89,6 +89,12 @@ public static class FleetOpsService
     /// </summary>
     public static FleetReport FileReport(AppState s, FleetReport report)
     {
+        // How long the period actually ran, for turning an average-per-day into a period total.
+        var periodDays = GameClock.TryParse(report.PeriodStartGame) is { } ps
+                         && GameClock.TryParse(report.PeriodEndGame) is { } pe
+            ? Math.Max(0, (pe - ps).TotalDays)
+            : 0;
+
         if (report.Lines == null || report.Lines.Count == 0)
             throw new InvalidOperationException("A fleet report needs at least one driver line.");
 
@@ -140,6 +146,25 @@ public static class FleetOpsService
             AssignReportedTrailer(s, report, driver, line);
 
             // Wages default to the driver's agreed share of what they brought in.
+            // Revenue, from what the game actually shows. ATS reports a driver's average income per
+            // mile and per day; it does not report a period total, so asking for one asked the player
+            // to do arithmetic on figures they would have had to invent. Per-mile against the odometer
+            // difference is the better of the two — both readings are real, and miles are exact where
+            // days are rounded — with per-day as the fallback when no odometer was given.
+            if (line.Revenue <= 0)
+            {
+                if (line.PerMile > 0 && line.Miles > 0)
+                {
+                    line.Revenue = Math.Round(line.PerMile * (decimal)line.Miles, 2);
+                    line.RevenueBasis = $"${line.PerMile:N2}/mi × {line.Miles:N0} mi";
+                }
+                else if (line.PerDay > 0 && periodDays > 0)
+                {
+                    line.Revenue = Math.Round(line.PerDay * (decimal)periodDays, 2);
+                    line.RevenueBasis = $"${line.PerDay:N2}/day × {periodDays:0.#} days";
+                }
+            }
+
             if (line.Wages <= 0 && line.Revenue > 0)
                 line.Wages = Math.Round(line.Revenue * (decimal)Math.Clamp(driver.WageShare, 0, 0.9), 2);
 
@@ -309,7 +334,25 @@ public static class FleetOpsService
         // not the driver's call, which is why there is no button for it anywhere — and it has to land
         // before AssessRetirements so a unit the shop condemns rides the retirement path that already
         // exists, and comes out as trade instructions rather than as a dead end.
-        FleetMaintenance.ServiceDueUnits(s, report);
+        // What the yard spent on each unit, attributed back to the line it belongs to. This is what the
+        // report's "repairs" column means now: the company's own maintenance spend, not a figure the
+        // player had to find somewhere. It runs here rather than in the posting loop above because the
+        // odometer readings on those lines are what decide which units were due in the first place.
+        //
+        // Already posted to the ledger by ServiceDueUnits, so nothing is posted again — this only
+        // attributes it to the line, the unit's lifetime spend, and the period total.
+        foreach (var (unit, spent) in FleetMaintenance.ServiceDueUnits(s, report))
+        {
+            var owning = report.Lines.FirstOrDefault(
+                l => l.TruckUnit.Equals(unit, StringComparison.OrdinalIgnoreCase));
+            if (owning != null) owning.Repairs = Math.Round(owning.Repairs + spent, 2);
+
+            var serviced = s.Trucks.FirstOrDefault(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase));
+            if (serviced != null)
+                serviced.LifetimeRepairCost = Math.Round(serviced.LifetimeRepairCost + spent, 2);
+
+            report.TotalRepairs = Math.Round(report.TotalRepairs + spent, 2);
+        }
         ResolvePersonnel(s, report);
         AssessRetirements(s, report);
         IssueTradeInstructions(s, report);
