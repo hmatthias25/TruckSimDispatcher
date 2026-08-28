@@ -50,12 +50,14 @@ PLAYER = {
     37, 40, 48,      # home time: what it is, choosing it, what to do at the yard
     51,              # garages, equipment and the trade cycle
     53, 55,          # money; reporting the balance
-    56, 57,          # payroll; the pay stub
-    58,              # maintenance and work orders
-    66,              # safety: incidents, discipline, being forgiven
-    72,              # career, promotion and changing carriers
-    78, 84,          # hired drivers and the fleet report; filling it in
-    98, 99, 100,     # settings, if something looks wrong, credits
+    56,              # fuel: what it pays to be good at
+                     #   (57, how the price board knows, is the mechanism -> Operations)
+    58, 59,          # payroll; the pay stub
+    60,              # maintenance and work orders
+    68,              # safety: incidents, discipline, being forgiven
+    74,              # career, promotion and changing carriers
+    80, 86,          # hired drivers and the fleet report; filling it in
+    100, 101, 102,   # settings, if something looks wrong, credits
 }
 
 OPS_COVER = """<div class="page">

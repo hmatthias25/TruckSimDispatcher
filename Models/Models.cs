@@ -557,6 +557,22 @@ public class PayPlan
     /// <summary>Retroactive per-mile kicker paid on a settlement with 100% on-time service.</summary>
     public decimal OnTimeBonusCpm { get; set; } = 0.02m;
     public decimal SafetyBonusPerSettlement { get; set; } = 150m;
+
+    /// <summary>
+    /// Paid per loaded mile on a settlement where the truck beat what it is rated for.
+    ///
+    /// Scaled by how far over: <see cref="TruckSimDispatcher.Services.Fuel.FullEfficiencyAt"/> over
+    /// rated earns it in full. 0 turns the whole thing off.
+    /// </summary>
+    public decimal FuelEfficiencyBonusCpm { get; set; } = 0.03m;
+
+    /// <summary>
+    /// The driver's share of what they saved buying fuel under the reference price.
+    ///
+    /// A share rather than the lot, because it is the company's fuel and the company's money — the
+    /// driver is being paid for the judgement, not handed the saving. 0 turns it off.
+    /// </summary>
+    public decimal FuelSavingShare { get; set; } = 0.25m;
     /// <summary>Minimum gross per settlement period once off probation. 0 = none.</summary>
     public decimal WeeklyGuarantee { get; set; } = 0m;
     public string Notes { get; set; } = "";
@@ -1280,6 +1296,16 @@ public class Settlement
     public decimal Accessorials { get; set; }
     public decimal OnTimeBonus { get; set; }
     public decimal SafetyBonus { get; set; }
+    /// <summary>Beating the tractor's rated mpg over the period.</summary>
+    public decimal FuelEfficiencyBonus { get; set; }
+    /// <summary>A share of what was saved buying fuel below the reference price.</summary>
+    public decimal FuelBuyingBonus { get; set; }
+    /// <summary>Miles per gallon actually achieved this period, or 0 where no fuel was logged.</summary>
+    public double Mpg { get; set; }
+    /// <summary>What the tractor is rated for, so the mpg above has something to be read against.</summary>
+    public double RatedMpg { get; set; }
+    /// <summary>Money not spent against the reference price, before the driver's share of it.</summary>
+    public decimal FuelSaved { get; set; }
     public decimal GuaranteeMakeup { get; set; }
     public decimal Chargebacks { get; set; }
     public decimal Gross { get; set; }

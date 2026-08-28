@@ -186,8 +186,35 @@ public static class PayEngine
                   "Settle a full period to earn all of it.");
         }
 
+        // ---- fuel: what the driving and the buying were worth.
+
+        //
+
+        // On the settlement rather than per load, for the same reason the safety bonus is: a per-load
+
+        // bonus is farmable by settling after every single load. Neither can go negative — an expensive
+
+        // fill has already cost the driver at the pump, and charging them again is charging twice.
+
+        var fuel = Fuel.Assess(s, freight);
+
+        st.Mpg = fuel.Mpg;
+
+        st.RatedMpg = fuel.RatedMpg;
+
+        st.FuelSaved = fuel.Saved;
+
+        st.FuelEfficiencyBonus = fuel.EfficiencyBonus;
+
+        st.FuelBuyingBonus = fuel.BuyingBonus;
+
+        foreach (var line in fuel.Lines) st.Lines.Add(line);
+
+
         st.Gross = st.LinehaulPay + st.DeadheadPay + st.DivisionPremium + st.Accessorials
-                   + st.OnTimeBonus + st.SafetyBonus - st.Chargebacks;
+                   + st.OnTimeBonus + st.SafetyBonus - st.Chargebacks
+
+                   + st.FuelEfficiencyBonus + st.FuelBuyingBonus;
 
         // Weekly guarantee makes up the shortfall for drivers who are off probation.
         if (p.WeeklyGuarantee > 0 && st.Gross < p.WeeklyGuarantee)

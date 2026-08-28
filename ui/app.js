@@ -1554,8 +1554,13 @@ function viewActive() {
   // gone with the board — but it is what decides where the last few hours before the window are spent,
   // and that call is made a long way down the road from where it was answered.
   const pk = S.views.receiverParking;
+  // Said before the state line rather than on the settlement afterwards, which is the only time
+  // it can change what the driver does.
+  const fx = S.views.fuelCrossing;
   return `
   <div class="panel">
+    ${fx ? `<div class="callout warn" style="margin:0 0 10px">
+      <h4>Fuel before you cross</h4><p>${esc(fx)}</p></div>` : ''}
     <div class="panel-head"><h2>${esc(t.number)} — ${esc(t.cargo)}</h2>
       ${badge(t.status === 'InTransit' ? 'info' : 'warn', t.status)}
       <div class="spacer"></div><span class="sub">${esc(t.division)} division · trailer ${esc(t.trailerUnit)} · unit ${esc(t.truckUnit)}</span></div>
@@ -3119,6 +3124,53 @@ function fleetDecisionsHtml() {
  * a fleet report — you need hired drivers before there is anything to report — and the truck a driver
  * lives in is the last one that should quietly run to a million miles with nobody mentioning it.
  */
+/**
+ * What fuel costs where, cheapest first.
+ *
+ * The half of this feature worth more than the bonus. Being paid a share of what you saved is pleasant;
+ * being told before you set off that you are about to cross into the dearest state on the map is what
+ * actually changes a decision.
+ *
+ * Every figure is either the driver's own receipts or a starting guess, and it says which — a price the
+ * app cannot source is a price nobody should plan on.
+ */
+function fuelBoardHtml() {
+  const f = S.views.fuel;
+  if (!f || !f.board?.length) return '';
+
+  const row = (x) => `<tr${x.here ? ' style="font-weight:600"' : ''}>
+    <td class="mono">${esc(x.state)}${x.here ? ' <span class="sub">(here)</span>' : ''}</td>
+    <td class="num mono">$${(+x.perGallon).toFixed(2)}</td>
+    <td class="num">${x.index < 1 ? '' : '+'}${Math.round((x.index - 1) * 100)}%</td>
+    <td class="sub">${esc(x.source)}${x.stops ? ` · ${x.stops} stop${x.stops === 1 ? '' : 's'}` : ''}${
+      x.stale ? ' · ' + badge('warn', 'worth re-checking') : ''}</td></tr>`;
+
+  const head = `<thead><tr><th>State</th><th class="num">$/gal</th>
+    <th class="num">vs ref</th><th>From</th></tr></thead>`;
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Where to buy fuel</h2>
+      <span class="sub">against $${(+f.reference).toFixed(2)}/gal reference</span>
+      <div class="spacer"></div>
+      ${f.staleCount ? badge('warn', `${f.staleCount} figure(s) going stale`) : ''}</div>
+
+    ${f.note ? `<div class="callout ${f.here && f.here.index >= 1.08 ? 'warn' : 'info'}">
+      <p>${esc(f.note)}</p></div>` : ''}
+
+    <h3>Cheapest</h3>
+    <table>${head}<tbody>${f.cheapest.map(row).join('')}</tbody></table>
+
+    <h3>Dearest — buy what you need to get out, not a full pair of tanks</h3>
+    <table>${head}<tbody>${f.dearest.map(row).join('')}</tbody></table>
+
+    <details style="margin-top:10px">
+      <summary>Every state, and how the app knows</summary>
+      <table style="margin-top:8px">${head}<tbody>${f.board.map(row).join('')}</tbody></table>
+      <p class="hint" style="margin-top:8px">${esc(f.learning)}</p>
+    </details>
+  </div>`;
+}
+
 function ownTruckTradeHtml() {
   const tr = S.views.ownTruckTrade;
   if (!tr) return '';
@@ -3623,6 +3675,8 @@ function viewFinance() {
   const f = S.views.finance;
   return `
   ${positionHtml()}
+
+  ${fuelBoardHtml()}
 
   <div class="cols3">
     ${f.accounts.filter((a) => a.key === 'operating' || a.kind === 'Liability').map((a) => `<div class="panel" style="margin:0">
