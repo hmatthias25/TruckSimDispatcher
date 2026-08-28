@@ -3112,6 +3112,28 @@ function fleetDecisionsHtml() {
  * spends its time telling them they have not got. The yard services its own units when the report is
  * filed. This panel is the player seeing what is about to be spent, not being asked about it.
  */
+/**
+ * The player's own tractor, when the company reckons it is finished.
+ *
+ * Shown on its own rather than buried in the fleet report's decisions, because most careers never file
+ * a fleet report — you need hired drivers before there is anything to report — and the truck a driver
+ * lives in is the last one that should quietly run to a million miles with nobody mentioning it.
+ */
+function ownTruckTradeHtml() {
+  const tr = S.views.ownTruckTrade;
+  if (!tr) return '';
+  return `<div class="panel">
+    <div class="panel-head"><h2>Your truck has done its time</h2>
+      ${badge('warn', 'trade recommended')}</div>
+    <div class="callout warn">
+      <h4>${esc(tr.headline)}</h4>
+      <ul>${(tr.evidence || []).map((e) => `<li>${esc(e)}</li>`).join('')}</ul>
+      <p class="hint">Nothing stops on this. It still runs — the company is telling you where it stands
+        so a trade is planned rather than forced on you by a breakdown.</p>
+    </div>
+  </div>`;
+}
+
 function fleetPmHtml() {
   const due = S.views.fleetPm || [];
   if (!due.length) return '';
@@ -3150,7 +3172,7 @@ function fleetOpsHtml() {
   const drivers = FLEETOPS?.drivers || [];
   const reports = FLEETOPS?.reports || [];
 
-  return `${fleetPmHtml()}${fleetDecisionsHtml()}
+  return `${ownTruckTradeHtml()}${fleetPmHtml()}${fleetDecisionsHtml()}
   <div class="panel">
     <div class="panel-head"><h2>Hired drivers</h2>
       <span class="sub">${f.activeCount || 0} active · ${f.reportCount || 0} report(s) filed</span>

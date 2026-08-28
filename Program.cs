@@ -1994,6 +1994,9 @@ object Snapshot(AppState? given = null)
             // lost with the board, which is the one place it was no longer needed — it is planning
             // information for the run, not for the decision to take it.
             receiverParking = Facilities.ParkingFor(s, TripService.Active(s)),
+            // The player's own tractor, when it has done its time. Asked here rather than only when a
+            // fleet report is filed, because most careers never file one.
+            ownTruckTrade = FleetOpsService.OwnTruckRetirement(s),
             // Services owed on tractors hired drivers run. Empty on a fleet with none due.
             fleetPm = FleetMaintenance.DueUnits(s)
                 .Select(t => FleetMaintenance.Coming(s, t))

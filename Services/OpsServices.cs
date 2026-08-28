@@ -125,6 +125,13 @@ public static class MaintenanceService
             var (status, directive) = Assess(s.Settings, t.DamagePct, $"Trailer {t.Ref}");
             if (status is "MandatoryReview" or "OutOfService") alerts.Add(directive);
         }
+
+        // A tractor that has done its time. One line here; the case for it is on the yard brief and the
+        // Fleet tab. Nothing blocks on it — a high-mileage truck still runs, it just should not be a
+        // surprise when the company says it is finished.
+        if (FleetOpsService.OwnTruckRetirement(s) is { } trade)
+            alerts.Add($"{trade.Headline} Report to the yard.");
+
         return alerts;
     }
 }

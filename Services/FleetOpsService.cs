@@ -637,9 +637,28 @@ public static class FleetOpsService
     private static void AssessRetirements(AppState s, FleetReport report)
     {
         foreach (var t in s.Trucks.Where(t => !t.Retired && t.InGameGarage))
+            if (RetirementFor(s, t) is { } r)
+                report.Retirements.Add(r);
+
+        // The drop-and-hook slot is an arrangement, not a box. Nothing to utilise, age or replace.
+        AssessTrailers(s, report);
+    }
+
+    /// <summary>
+    /// Whether a unit has done its time, or null when it has not.
+    ///
+    /// Public and per-truck so it can be asked outside a fleet report. It used to live inside the report
+    /// loop, which meant a player with no hired drivers — driving for the company with nobody under them
+    /// — never filed a report and was therefore never told their own tractor was finished, however many
+    /// miles were on it. The one case where it matters most, since they are sitting in it.
+    /// </summary>
+    public static RetirementRecommendation? RetirementFor(AppState s, Truck t)
+    {
         {
+            if (t.Retired || !t.InGameGarage) return null;
+
             // Never retire a unit that is out on a load.
-            if (s.Trips.Any(x => x.Status is "Authorized" or "InTransit" && x.TruckUnit == t.Unit)) continue;
+            if (s.Trips.Any(x => x.Status is "Authorized" or "InTransit" && x.TruckUnit == t.Unit)) return null;
 
             var driver = s.HiredDrivers.FirstOrDefault(d => d.AssignedTruckUnit == t.Unit && d.Status == "Active");
             var isMine = t.Unit == s.Driver.AssignedTruckUnit;
@@ -663,7 +682,7 @@ public static class FleetOpsService
             // Stars at the limit are reason enough on their own for a hired driver's unit: that is the
             // company's stated line, and the odometer and repair spend go alongside as the supporting
             // case. Everything else needs two reasons, because mileage alone is a well-used truck.
-            if (!wornOut && evidence.Count < 2) continue;
+            if (!wornOut && evidence.Count < 2) return null;
             if (wornOut)
             {
                 if (t.AtsOdometer > 0) evidence.Add($"Odometer reads {t.AtsOdometer:N0}.");
@@ -674,6 +693,12 @@ public static class FleetOpsService
             }
             var spare = BestSpare(s, t);
 
+            // Year, make and model are optional on a unit, and a blank one printed "Unit 101 (0  )".
+            // Say the spec where there is one and nothing where there is not.
+            var spec = string.Join(" ", new[] { t.Year > 0 ? t.Year.ToString() : "", t.Make, t.Model }
+                .Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+            var named = spec.Length > 0 ? $"Unit {t.Ref} ({spec})" : $"Unit {t.Ref}";
+
             // Your own truck goes to trade like anyone else's — the company just puts you in another.
             if (isMine)
                 evidence.Add(spare != null
@@ -683,26 +708,37 @@ public static class FleetOpsService
             else if (spare == null)
                 evidence.Add($"No spare to replace it with. What to buy: {Seed.RecommendedTruck(s)}");
 
-            report.Retirements.Add(new RetirementRecommendation
+            return new RetirementRecommendation
             {
                 Unit = t.Unit,
                 UnitKind = "Truck",
                 Headline = isMine
-                    ? $"Unit {t.Ref} ({t.Year} {t.Make} {t.Model}) — your own truck — is due for trade."
+                    ? $"{named} — your own truck — is due for trade."
                     : wornOut
-                        ? $"Unit {t.Ref} ({t.Year} {t.Make} {t.Model}) is down to {t.Stars:0.#} stars. Recommend selling it and replacing it."
-                        : $"Unit {t.Ref} ({t.Year} {t.Make} {t.Model}) has done its time. Recommend trading it.",
+                        ? $"{named} is down to {t.Stars:0.#} stars. Recommend selling it and replacing it."
+                        : $"{named} has done its time. Recommend trading it.",
                 Evidence = evidence,
                 ServiceMiles = t.ServiceMiles,
                 RepairSpend = t.LifetimeRepairCost,
                 DamagePct = t.DamagePct,
                 AssignedTo = t.Unit == s.Driver.AssignedTruckUnit ? s.Driver.Name : driver?.Name ?? "",
                 IsPlayerUnit = t.Unit == s.Driver.AssignedTruckUnit
-            });
+            };
         }
+    }
 
-        // The drop-and-hook slot is an arrangement, not a box. Nothing to utilise, age or replace.
-        AssessTrailers(s, report);
+    /// <summary>
+    /// The tractor the player is actually sitting in, if it has done its time.
+    ///
+    /// Asked on every snapshot rather than only when a fleet report is filed, because most careers never
+    /// file one — you need hired drivers before there is anything to report — and the truck a driver is
+    /// living in is the last one that should quietly run to a million miles with nobody mentioning it.
+    /// </summary>
+    public static RetirementRecommendation? OwnTruckRetirement(AppState s)
+    {
+        var mine = s.Trucks.FirstOrDefault(
+            x => x.Unit.Equals(s.Driver.AssignedTruckUnit, StringComparison.OrdinalIgnoreCase));
+        return mine == null ? null : RetirementFor(s, mine);
     }
 
     /// <summary>

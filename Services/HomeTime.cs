@@ -1176,6 +1176,15 @@ public static class HomeTime
                 b.Shop.Add($"Unit {truck.Ref} is {since - truck.ServiceIntervalMiles:N0} mi PAST its {truck.ServiceIntervalMiles:N0}-mile PM. Do it now.");
             else if (since >= truck.ServiceIntervalMiles * 0.85)
                 b.Shop.Add($"PM due on unit {truck.Ref} in {truck.ServiceIntervalMiles - since:N0} mi. Cheaper to do it here than on the road.");
+
+            // Past servicing it. The yard is where a swap actually happens — the driver is standing on
+            // the property and the spare, if there is one, is parked on it — so this is the right place
+            // to say a tractor is finished rather than a fleet report the player may never file.
+            if (FleetOpsService.OwnTruckRetirement(s) is { } trade)
+            {
+                b.Shop.Add(trade.Headline);
+                foreach (var line in trade.Evidence) b.Shop.Add($"  · {line}");
+            }
         }
 
         if (trailer is { InGameGarage: true } && !DropHook.Is(trailer.Type))
