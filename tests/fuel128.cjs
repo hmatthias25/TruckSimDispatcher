@@ -71,11 +71,23 @@ const fuel = (city, state, gallons, price, d) => ({
   gallons, pricePerGal: price, cost: Math.round(gallons * price * 100) / 100,
 });
 
-/** Settlements run themselves on a Friday; legacy-run forces one so a suite can read it. */
+/**
+ * The settlement covering the work just done.
+ *
+ * Settlements run themselves — closing a trip can produce one on its own — so forcing another finds
+ * nothing left to settle. Try to force one, and where there is nothing outstanding take the newest,
+ * which is the one that swept up the loads this section just ran.
+ */
 async function settle() {
-  const r = await api('/settlements/legacy-run', 'POST', { notes: 'fixture' });
-  S = un(r);
-  return r.settlement;
+  try {
+    const r = await api('/settlements/legacy-run', 'POST', { notes: 'fixture' });
+    S = un(r);
+    return r.settlement;
+  } catch (e) {
+    if (!/nothing to settle/i.test(e.message)) throw e;
+    S = await api('/bootstrap');
+    return S.settlements[0];
+  }
 }
 
 (async () => {
@@ -179,10 +191,11 @@ async function settle() {
   await stand('Barstow', 'CA');
   await runLoad('Barstow', 'CA', 'Los Angeles', 'CA', 130, [fuel('Barstow', 'CA', 150, 5.60)]);
   const st2 = await settle();
-  ok('the dear fill is called out', (st2.lines || []).some((l) => /over the odds/i.test(l)),
-    (st2.lines || []).find((l) => /over the odds/i.test(l))?.slice(0, 100) || '(not mentioned)');
-  ok('it says it is not being charged for',
-    (st2.lines || []).some((l) => /not charged for/i.test(l)), 'said');
+  // This run never leaves California, so under #129 it is NOT scolded — there was nowhere cheaper to
+  // buy. The naming of a genuinely poor choice is section 10, where Arizona was on the run.
+  ok('a fill with no cheaper option on the run is not called over the odds',
+    !(st2.lines || []).some((l) => /over the odds/i.test(l)),
+    (st2.lines || []).find((l) => /over the odds/i.test(l))?.slice(0, 100) || 'not scolded');
   ok('the buying bonus floors at zero rather than going negative',
     Number(st2.fuelBuyingBonus) >= 0, `$${st2.fuelBuyingBonus}`);
   ok('and nothing is deducted for it', Number(st2.chargebacks || 0) === 0, `$${st2.chargebacks || 0}`);
@@ -196,6 +209,45 @@ async function settle() {
   ok('and it says why rather than staying silent',
     (st3.lines || []).some((l) => /No fuel logged/i.test(l)),
     (st3.lines || []).find((l) => /No fuel logged/i.test(l))?.slice(0, 90) || '');
+
+  head('8. #129 A run that never leaves California is not a bad decision');
+  // San Diego to Redding. There is nowhere cheaper to buy, so measuring that fill against Oklahoma
+  // prices would mark the driver down for a lane dispatch chose.
+  await stand('San Diego', 'CA');
+  await runLoad('San Diego', 'CA', 'Redding', 'CA', 640, [fuel('Bakersfield', 'CA', 150, 5.25)]);
+  const st4 = await settle();
+  ok('the stub says the lane offered nothing cheaper',
+    (st4.lines || []).some((l) => /never left an expensive state/i.test(l)),
+    (st4.lines || []).find((l) => /never left an expensive state/i.test(l))?.slice(0, 105) || '(not said)');
+  ok('and it is not called buying over the odds',
+    !(st4.lines || []).some((l) => /over the odds/i.test(l)),
+    (st4.lines || []).find((l) => /over the odds/i.test(l))?.slice(0, 90) || 'not scolded');
+  ok('nothing is deducted for it', Number(st4.chargebacks || 0) === 0, `$${st4.chargebacks || 0}`);
+
+  head('9. #129 Finding a good pump in a dear state still earns');
+  // The only skill that lane leaves, so it is the one being judged. CA reads about $5.30 from the
+  // receipts above; buying well under that is worth something.
+  await stand('Redding', 'CA');
+  await runLoad('Redding', 'CA', 'Los Angeles', 'CA', 560, [fuel('Sacramento', 'CA', 140, 4.70)]);
+  const st5 = await settle();
+  ok('buying under what that state costs is still a saving', Number(st5.fuelSaved) > 0,
+    `$${st5.fuelSaved} saved`);
+  ok('and it is paid', Number(st5.fuelBuyingBonus) > 0, `$${st5.fuelBuyingBonus}`);
+  ok('the line says what it was measured against',
+    (st5.lines || []).some((l) => /cheapest state each run passed through/i.test(l)),
+    (st5.lines || []).find((l) => /Fuel buying/i.test(l))?.slice(0, 105) || '');
+
+  head('10. #129 But crossing a cheap state and buying dear anyway still counts');
+  // Arizona was right there. This one IS a decision, and it is named — still never charged for.
+  await stand('Kingman', 'AZ');
+  await runLoad('Kingman', 'AZ', 'Barstow', 'CA', 240, [fuel('Barstow', 'CA', 160, 5.45)]);
+  const st6 = await settle();
+  ok('a dear fill with a cheaper state on the run is named',
+    (st6.lines || []).some((l) => /over the odds/i.test(l)),
+    (st6.lines || []).find((l) => /over the odds/i.test(l))?.slice(0, 110) || '(not named)');
+  ok('and it points at the run it happened on',
+    (st6.lines || []).some((l) => /over the odds/i.test(l) && /on [A-Z]{2,4}-/.test(l)), 'trip named');
+  ok('still not charged for', Number(st6.chargebacks || 0) === 0, `$${st6.chargebacks || 0}`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

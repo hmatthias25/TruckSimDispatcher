@@ -293,31 +293,93 @@ public static class Fuel
         }
 
         // ---- what the buying was worth
-        var reference = Reference(s);
-        foreach (var f in stops.Where(f => f.PricePerGal > 0))
+        //
+        // Measured against the best price available ON THE RUN, not against one flat national figure.
+        // A driver sent San Diego to Redding has to buy in California; judging that fill against
+        // Oklahoma prices marks them down for a lane dispatch chose, which is the same mistake as
+        // counting damage somebody else did to them.
+        var stranded = new List<string>();
+
+        foreach (var trip in trips)
         {
-            var under = reference - f.PricePerGal;
-            if (under > 0) r.Saved += Math.Round(under * (decimal)f.Gallons, 2);
+            var onThis = trip.FuelStops.Where(f => f.Gallons > 0 && f.PricePerGal > 0).ToList();
+            if (onThis.Count == 0) continue;
+
+            var best = BestAvailableOn(s, trip, onThis, out var hadAChoice);
+            foreach (var f in onThis)
+            {
+                var under = best - f.PricePerGal;
+                if (under > 0) r.Saved += Math.Round(under * (decimal)f.Gallons, 2);
+            }
+
+            // Worth naming only where somewhere cheaper was actually on the run. Where it was not, the
+            // driver had no decision to get wrong and there is nothing to say to them about it.
+            if (!hadAChoice) continue;
+            foreach (var g in onThis.Where(f => f.PricePerGal > best * 1.05m)
+                                    .GroupBy(f => f.State.ToUpperInvariant()))
+            {
+                var overpaid = g.Sum(x => (x.PricePerGal - best) * (decimal)x.Gallons);
+                stranded.Add($"{g.Sum(x => x.Gallons):N0} gal bought in {g.Key} on {trip.Number} at over " +
+                             $"the odds — about ${overpaid:N0} more than the same fill earlier on that run. " +
+                             "Not charged for; worth planning around.");
+            }
         }
 
         if (r.Saved > 0 && cfg.FuelSavingShare > 0)
         {
             r.BuyingBonus = Math.Round(r.Saved * cfg.FuelSavingShare, 2);
-            r.Lines.Add($"Fuel buying: ${r.Saved:N2} under ${reference:N2}/gal across {r.Gallons:N0} gal. " +
-                        $"Your share ${r.BuyingBonus:N2}.");
+            r.Lines.Add($"Fuel buying: ${r.Saved:N2} saved against the cheapest state each run passed " +
+                        $"through, across {r.Gallons:N0} gal. Your share ${r.BuyingBonus:N2}.");
         }
 
-        // The dear fills are named rather than charged for. The pump already took the money.
-        var dear = stops.Where(f => f.PricePerGal > reference * 1.05m)
-                        .GroupBy(f => f.State.ToUpperInvariant())
-                        .Select(g => new { State = g.Key, Gal = g.Sum(x => x.Gallons),
-                                           Over = g.Sum(x => (x.PricePerGal - reference) * (decimal)x.Gallons) })
-                        .OrderByDescending(x => x.Over)
-                        .ToList();
-        foreach (var d in dear.Take(2))
-            r.Lines.Add($"{d.Gal:N0} gal bought in {d.State} at over the odds — about ${d.Over:N0} more than " +
-                        "the same fill elsewhere. Not charged for; worth planning around.");
+        foreach (var line in stranded.Take(2)) r.Lines.Add(line);
+
+        // Said once, so a driver working an expensive corner of the map knows the app can tell a bad
+        // decision from a bad lane.
+        var forced = trips.Count(t => t.FuelStops.Any(f => f.Gallons > 0) && !HadACheaperOption(s, t));
+        if (forced > 0)
+            r.Lines.Add($"{forced} run(s) never left an expensive state, so there was nowhere cheaper to " +
+                        "buy. Judged on the pumps that were actually available.");
 
         return r;
+    }
+
+    /// <summary>
+    /// The cheapest a gallon could reasonably have been bought for on a given run.
+    ///
+    /// Origin and destination are always in the reckoning, plus wherever the driver actually stopped.
+    /// Including the stops cannot open a loophole: origin and destination are in there too, so a poor
+    /// choice can never pull the bar below what the lane itself offered.
+    /// </summary>
+    private static decimal BestAvailableOn(AppState s, Trip trip, List<FuelPurchase> stops,
+                                           out bool hadACheaperOption)
+    {
+        var states = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(trip.OriginState)) states.Add(trip.OriginState.Trim());
+        if (!string.IsNullOrWhiteSpace(trip.DestState)) states.Add(trip.DestState.Trim());
+        foreach (var f in stops)
+            if (!string.IsNullOrWhiteSpace(f.State)) states.Add(f.State.Trim());
+
+        if (states.Count == 0)
+        {
+            hadACheaperOption = false;
+            return Reference(s);
+        }
+
+        var prices = states.Select(x => ExpectedPrice(s, x)).ToList();
+        var best = prices.Min();
+
+        // Was anywhere on this run meaningfully cheaper than the dearest part of it? If not, the lane
+        // offered no decision and the driver must not be judged as though it did.
+        hadACheaperOption = prices.Max() > best * 1.05m;
+        return best;
+    }
+
+    /// <summary>Whether a run passed through anywhere cheaper than its dearest point.</summary>
+    private static bool HadACheaperOption(AppState s, Trip trip)
+    {
+        var stops = trip.FuelStops.Where(f => f.Gallons > 0 && f.PricePerGal > 0).ToList();
+        BestAvailableOn(s, trip, stops, out var choice);
+        return choice;
     }
 }
