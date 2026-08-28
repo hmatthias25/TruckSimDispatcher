@@ -12,9 +12,17 @@ import subprocess
 import sys
 
 HERE = pathlib.Path(__file__).parent
-HTML = HERE / "manual.html"
-PDF = HERE / "TruckSim-Dispatcher-User-Manual.pdf"
-PAGES = HERE / "pages"
+# Which document to render. The companion is built by the same pipeline, so the output names are
+# derived from the input rather than hard-coded.
+import sys
+_NAME = sys.argv[1] if len(sys.argv) > 1 else "manual.html"
+_PDFS = {
+    "manual.html": "TruckSim-Dispatcher-User-Manual.pdf",
+    "operations.html": "TruckSim-Dispatcher-Operations-Manual.pdf",
+}
+HTML = HERE / _NAME
+PDF = HERE / _PDFS.get(_NAME, _NAME.replace(".html", ".pdf"))
+PAGES = HERE / ("pages" if _NAME == "manual.html" else "pages-" + _NAME.replace(".html", ""))
 
 CHROME = pathlib.Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 

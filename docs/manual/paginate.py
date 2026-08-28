@@ -13,7 +13,10 @@ import pathlib
 import re
 
 HERE = pathlib.Path(__file__).parent
-HTML = HERE / "manual.html"
+# Which document to number. Two are built from the same tooling now: the manual proper, and the
+# companion that holds the reasoning. Defaults to the manual so existing habits still work.
+import sys
+HTML = HERE / (sys.argv[1] if len(sys.argv) > 1 else "manual.html")
 
 text = HTML.read_text(encoding="utf-8")
 
@@ -34,7 +37,10 @@ section_title: dict[int, str] = {}
 # unfindable unless you already knew it was there.
 section_more: dict[int, list[tuple[int, str]]] = {}
 for idx, (_, body) in enumerate(pages, start=1):
-    m = re.search(r'<div class="kicker">Section\s+(\d+)([^<]*)</div>\s*<h2>(.*?)</h2>', body, re.S)
+    # "From Section 19" is how the Operations Manual labels a page, since "continued" means nothing
+    # once the page is in a different book. Both forms are read here so one generator serves both.
+    m = re.search(r'<div class="kicker">(?:From\s+)?Section\s+(\d+)([^<]*)</div>\s*<h2>(.*?)</h2>',
+                  body, re.S)
     if not m:
         continue
     num = int(m.group(1))
@@ -45,6 +51,18 @@ for idx, (_, body) in enumerate(pages, start=1):
         section_title[num] = title
     elif continued:
         section_more.setdefault(num, []).append((idx, title))
+    elif num in section_start:
+        section_more.setdefault(num, []).append((idx, title))
+
+# In the Operations Manual every page is a continuation of a section whose opening page lives in the
+# other book, so no section has a start. Promote the first page of each to be its own opener, or the
+# contents would list nothing at all.
+for num, more in list(section_more.items()):
+    if num not in section_start and more:
+        page, title = more[0]
+        section_start[num] = page
+        section_title[num] = title
+        section_more[num] = more[1:]
 
 # --- stamp the page number into each footer
 #
@@ -84,10 +102,13 @@ GROUPS = [
 ]
 rows: list[str] = []
 for label, nums in GROUPS:
+    # A group whose sections all live in the other book would otherwise print as a bare heading with
+    # nothing under it. The Operations Manual has two of those.
+    if not any(n in section_start for n in nums):
+        continue
     rows.append(f'    <div class="grp">{label}</div>')
     for n in nums:
         if n not in section_start:
-            print(f"  ! section {n} not found")
             continue
         rows.append(
             f'    <div><span class="n">{n}</span>'
@@ -111,6 +132,7 @@ text, count = re.subn(
 )
 if count != 1:
     raise SystemExit("could not find the contents block to rewrite")
+
 
 HTML.write_text(text, encoding="utf-8")
 
