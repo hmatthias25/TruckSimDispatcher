@@ -150,6 +150,12 @@ public static class PeriodicReview
         if (faults.Count == 0) forThem.Add("Nothing preventable on the record this period.");
         else against.Add($"{faults.Count} preventable incident(s): {string.Join("; ", faults.Select(f => f.Kind))}.");
 
+        // Equipment. This review looked at loads, service and faults and never once at what the driver
+        // was doing to the truck, so a senior driver could beat a tractor to death with nothing said.
+        var wear = WearReview.Assess(s, since.Value, now.Value, s.PeriodicReviews.FirstOrDefault()?.TruckDamagePct ?? -1);
+        WearReview.Apply(wear, forThem, against);
+        review.TruckDamagePct = wear.DamageNow;
+
         review.Strengths = forThem;
         review.Concerns = against;
 

@@ -131,11 +131,11 @@ public static class Probation
         if (faults.Count == 0) forThem.Add("Nothing preventable on the safety record this period.");
         else against.Add($"{faults.Count} preventable incident(s): {string.Join("; ", faults.Select(f => f.Kind))}.");
 
-        var damage = Math.Max(s.Status.TruckDamagePct, 0);
-        if (damage >= s.Settings.Maintenance.MandatoryReviewPct)
-            against.Add($"Brought the tractor back at {damage:0.#}% damage.");
-        else if (damage <= 5)
-            forThem.Add($"Equipment came back clean — {damage:0.#}% on the tractor.");
+        // Equipment. Not "what does the gauge say" — that punished a driver for the damage somebody
+        // else did to them and never once noticed wear. See WearReview.
+        var wear = WearReview.Assess(s, since.Value, now.Value, last?.TruckDamagePct ?? -1);
+        WearReview.Apply(wear, forThem, against);
+        review.TruckDamagePct = wear.DamageNow;
 
         if (daysCovered > ReviewIntervalDays + OverrunGraceDays)
             against.Add($"Took {daysCovered:0} days to report in against a {ReviewIntervalDays}-day requirement. " +

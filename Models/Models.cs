@@ -1581,6 +1581,14 @@ public class PeriodicReviewRecord
     public double OnTimePct { get; set; }
     public int PreventableFaults { get; set; }
     public int ReviewNumber { get; set; }
+
+    /// <summary>
+    /// Damage on the tractor when this review was taken, so the next one has something to measure wear
+    /// against. -1 means it was not recorded — every review filed before this was kept, and the first
+    /// one after. See <see cref="TruckSimDispatcher.Services.WearReview"/>.
+    /// </summary>
+    public double TruckDamagePct { get; set; } = -1;
+
     public List<string> Strengths { get; set; } = new();
     public List<string> Concerns { get; set; } = new();
 
@@ -1692,6 +1700,13 @@ public class ProbationReview
     public int LoadsDelivered { get; set; }
     public double OnTimePct { get; set; }
     public int PreventableFaults { get; set; }
+
+    /// <summary>
+    /// Damage on the tractor when this review was taken, so the next one has something to measure wear
+    /// against. -1 means it was not recorded — every review filed before this was kept, and the first
+    /// one after. See <see cref="TruckSimDispatcher.Services.WearReview"/>.
+    /// </summary>
+    public double TruckDamagePct { get; set; } = -1;
 
     /// <summary>Pass | Fail</summary>
     public string Verdict { get; set; } = "Fail";
