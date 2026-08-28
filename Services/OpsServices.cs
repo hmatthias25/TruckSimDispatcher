@@ -109,8 +109,16 @@ public static class MaintenanceService
             var (status, directive) = Assess(s.Settings, t.DamagePct, $"Unit {t.Ref}");
             if (status != "Monitor") alerts.Add(directive);
             var since = t.ServiceMiles - t.LastServiceMiles;
-            if (since >= t.ServiceIntervalMiles)
-                alerts.Add($"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi.");
+            if (since < t.ServiceIntervalMiles) continue;
+
+            // A hired driver's tractor cannot be taken to a shop in ATS, so "PM overdue" was an
+            // instruction the player had no way to carry out — and an alert nobody can act on teaches
+            // them to skip the panel where the ones that matter live. It is a decision instead, with a
+            // price on it, and it says so here. See FleetMaintenance.
+            alerts.Add(FleetMaintenance.IsHiredUnit(s, t)
+                ? $"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi — " +
+                  $"our shop can take it for ${FleetMaintenance.Cost(t):N0}. Fleet tab."
+                : $"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi.");
         }
         foreach (var t in s.Trailers.Where(t => Tracked(t.Unit, t.InGameGarage)))
         {

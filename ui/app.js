@@ -3100,12 +3100,56 @@ function fleetDecisionsHtml() {
 }
 
 /* ---- hired drivers and their weekly production ---- */
+/**
+ * Services owed on tractors hired drivers run.
+ *
+ * These raised the same "PM overdue" alert the player's own truck raises and could not be acted on:
+ * ATS gives you no way to take a hired driver's truck to a shop. So the company's own shop does it and
+ * the player authorises the bill — no driving to a yard, and pointedly no claim that the truck was off
+ * the road, which is the one thing the game would contradict.
+ */
+function fleetPmHtml() {
+  const due = S.views.fleetPm || [];
+  if (!due.length) return '';
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Scheduled maintenance</h2>
+      ${badge('warn', `${due.length} unit(s) due`)}
+      <div class="spacer"></div>
+      <span class="sub">our shop, our money — you are not driving these anywhere</span></div>
+
+    <div class="callout info">
+      <p>You cannot take a hired driver's tractor to a shop in ATS, so the company's own shop does it.
+        Authorise the work and the ledger takes the bill. <b>Nobody stops driving</b> — the game keeps
+        them rolling and the app is not going to pretend otherwise.</p>
+    </div>
+
+    ${due.map((p) => `<div class="callout ${p.findChancePct >= 25 ? 'warn' : ''}" style="margin-top:10px">
+      <h4>${esc(p.headline)}</h4>
+      <p>${esc(p.detail)}</p>
+      <div class="meters" style="margin-top:8px">
+        ${fkpi('Service', money0(p.cost))}
+        ${fkpi('Past due', num(p.milesPastDue) + ' mi', 'warn')}
+        ${fkpi('Odometer', num(p.odometer) + ' mi')}
+        ${fkpi('Shop finds something', p.findChancePct + '%', p.findChancePct >= 25 ? 'warn' : 'ok')}
+      </div>
+      <p class="hint" style="margin-top:8px">${esc(p.risk)}</p>
+      <p class="hint">${esc(p.deferNote)}</p>
+      <div style="margin-top:8px">
+        <button class="btn tiny primary" data-act="pm-schedule" data-unit="${esc(p.unit)}">
+          Service it — ${money0(p.cost)}</button>
+        <button class="btn tiny ghost" data-act="pm-defer" data-unit="${esc(p.unit)}">Not this month</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
 function fleetOpsHtml() {
   const f = S.views.fleetOps || { driverCount: 0, unassignedUnits: [] };
   const drivers = FLEETOPS?.drivers || [];
   const reports = FLEETOPS?.reports || [];
 
-  return `${fleetDecisionsHtml()}
+  return `${fleetPmHtml()}${fleetDecisionsHtml()}
   <div class="panel">
     <div class="panel-head"><h2>Hired drivers</h2>
       <span class="sub">${f.activeCount || 0} active · ${f.reportCount || 0} report(s) filed</span>
@@ -5306,6 +5350,27 @@ async function handleAction(act, d, ev) {
     case 'goto-fleet': TAB = 'fleet';
       return run(async () => { FLEETOPS = await api('/fleetops'); });
     case 'load-fleetops': return run(async () => { FLEETOPS = await api('/fleetops'); });
+    case 'pm-schedule': {
+      const unit = d.unit;
+      return run(async () => {
+        const r = absorb(await api('/fleetops/pm/schedule', 'POST', { unit }));
+        const res = r.result;
+        // A condemned unit is the one case where the player has to go and do something in ATS, so it
+        // gets the full instruction list rather than a toast that scrolls away.
+        if (res.instructions?.length) {
+          alert(`${res.message}\n\n${res.instructions.map((x, i) => `${i + 1}. ${x}`).join('\n')}`);
+        }
+        toast(res.message, res.outcome === 'Routine' ? 'ok' : 'warn');
+        FLEETOPS = await api('/fleetops');
+      });
+    }
+    case 'pm-defer': {
+      const unit = d.unit;
+      return run(async () => {
+        const r = absorb(await api('/fleetops/pm/defer', 'POST', { unit }));
+        toast(r.message, 'warn');
+      });
+    }
     case 'terminate-driver': {
       const why = prompt(`Terminate ${d.name}?\n\nWhat goes on the file?`, 'Sustained poor performance.');
       if (why === null) return;

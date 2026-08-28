@@ -658,6 +658,16 @@ public class Truck
     [Obsolete("Superseded by HomeTerminalId; kept so older career files still load.")]
     public string HomeTerminal { get; set; } = "";
     public double LastServiceMiles { get; set; }
+
+    /// <summary>
+    /// How many times a scheduled service on this unit has been put off.
+    ///
+    /// Only ever set on tractors a hired driver runs — the player takes their own to a shop in ATS, and
+    /// nothing here second-guesses that. Defaults to 0, which is the right answer for every career that
+    /// predates this: the mileage those units are past due piled up while the app offered no way to
+    /// service them, and that is not neglect on anybody's part.
+    /// </summary>
+    public int PmDeferrals { get; set; }
     public double ServiceIntervalMiles { get; set; } = 25000;
     /// <summary>
     /// Everything the company has spent keeping this unit running. What turns a trade decision from a
