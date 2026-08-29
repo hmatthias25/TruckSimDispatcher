@@ -134,6 +134,28 @@ async function offer(oc, os, dc, ds, miles, deadline) {
   ok('and the status panel agrees, with nothing else to type',
     Math.abs(after.status.trailerDamagePct - 1) < 0.01, `${after.status.trailerDamagePct}%`);
 
+  head('8. #134 A dropdown that shuts the instant you open it');
+  // data-act is dispatched from the CLICK listener, so putting it on a <select> means the click that
+  // opens the dropdown runs the action — and if that action re-renders, the list is torn down before
+  // anything can be picked. Checked against the JS the server actually serves, not the file on disk.
+  const js = await (await fetch(B.replace('/api', '') + '/app.js')).text();
+
+  ok('the click dispatcher refuses to act on a select',
+    /t\.dataset\.act && t\.tagName !== 'SELECT'/.test(js), 'guarded');
+
+  const kindSel = /<select id="wo-kind2"[^>]*>/.exec(js)?.[0] || '';
+  const unitSel = /<select id="wo-unit"[^>]*>/.exec(js)?.[0] || '';
+  ok('the unit-kind select carries no click action',
+    !!kindSel && !/data-act/.test(kindSel), kindSel.slice(0, 58) || '(not found)');
+  ok('nor does the unit select',
+    !!unitSel && !/data-act/.test(unitSel), unitSel.slice(0, 58) || '(not found)');
+
+  ok('both are wired to change instead',
+    /ev\.target\.id === 'wo-kind2'/.test(js) && /ev\.target\.id === 'wo-unit'/.test(js), 'on change');
+  ok('and they update in place rather than re-rendering the panel',
+    /sel\.outerHTML = woUnitPickHtml\(\)/.test(js) && !/case 'wo-kind'/.test(js),
+    'no render() on either');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR', e.message); process.exit(1); });

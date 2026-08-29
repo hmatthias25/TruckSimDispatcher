@@ -600,7 +600,10 @@ document.addEventListener('click', async (ev) => {
 
   if (t.id === 'btn-refresh') return run(async () => absorb(await api('/bootstrap')), 'Reloaded.');
 
-  if (t.dataset.act) return handleAction(t.dataset.act, t.dataset, ev);
+  // Never dispatch a click on a <select>. The click that opens a dropdown would run the action and,
+  // if it re-renders, tear the list down before anything can be picked — which is exactly what the
+  // maintenance unit picker did. Selects are driven by the change listeners below, without exception.
+  if (t.dataset.act && t.tagName !== 'SELECT') return handleAction(t.dataset.act, t.dataset, ev);
 });
 
 /* The garage dropdowns act on change, not click. */
@@ -686,6 +689,23 @@ document.addEventListener('drop', (ev) => {
 });
 document.addEventListener('change', (ev) => {
   if (ev.target.id === 'shot-file') [...ev.target.files].forEach(addImageFile);
+});
+
+// The maintenance form's two selects.
+//
+// On CHANGE, never on click: data-act is dispatched from the click listener, so putting it on a select
+// meant the click that opens the dropdown re-rendered the panel and the list shut again instantly.
+//
+// Updated in place rather than re-rendered, because only the unit list and one input depend on them —
+// rebuilding the whole panel would discard anything else half-typed on the form.
+document.addEventListener('change', (ev) => {
+  if (ev.target.id === 'wo-kind2') {
+    WO_KIND = ev.target.value || 'Truck';
+    const sel = document.getElementById('wo-unit');
+    if (sel) sel.outerHTML = woUnitPickHtml();
+    return syncWoDamageBefore();
+  }
+  if (ev.target.id === 'wo-unit') syncWoDamageBefore();
 });
 
 // The weekday beside a day-number box, kept current while it is being typed rather than on submit —
@@ -4015,11 +4035,22 @@ function woFleet() {
 
 function woUnitPickHtml() {
   const units = woFleet();
-  const mine = WO_KIND === 'Trailer' ? S.driver.assignedTrailerUnit : S.driver.assignedTruckUnit;
   if (units.length === 0) return `<select id="wo-unit" disabled><option value="">nothing on the fleet</option></select>`;
-  return `<select id="wo-unit" data-act="wo-unit">${units.map((u) => `<option value="${esc(u.unit)}"${
+  return `<select id="wo-unit">${woUnitOptionsHtml()}</select>`;
+}
+
+/** Just the options, so switching Truck/Trailer can refill the list without rebuilding the panel. */
+function woUnitOptionsHtml() {
+  const mine = WO_KIND === 'Trailer' ? S.driver.assignedTrailerUnit : S.driver.assignedTruckUnit;
+  return woFleet().map((u) => `<option value="${esc(u.unit)}"${
     u.unit === mine ? ' selected' : ''}>${esc(u.ref || u.unit)}${
-    u.unit === mine ? ' — yours' : ''} · ${pct(u.damagePct)}</option>`).join('')}</select>`;
+    u.unit === mine ? ' — yours' : ''} · ${pct(u.damagePct)}</option>`).join('');
+}
+
+/** Point "Damage before %" at whatever unit is now selected. */
+function syncWoDamageBefore() {
+  const el = document.getElementById('wo-dmgb');
+  if (el) el.value = woDamageBefore();
 }
 
 /** The selected unit's current damage, so the reading matches the unit rather than always the tractor. */
@@ -4069,7 +4100,7 @@ function viewMaint() {
     <div class="panel">
       <div class="panel-head"><h2>Open a work order</h2></div>
       <div class="grid2">
-        <label>Unit kind<select id="wo-kind2" data-act="wo-kind">
+        <label>Unit kind<select id="wo-kind2">
           <option${WO_KIND === 'Truck' ? ' selected' : ''}>Truck</option>
           <option${WO_KIND === 'Trailer' ? ' selected' : ''}>Trailer</option></select></label>
         <label>Unit${woUnitPickHtml()}</label>
@@ -5510,9 +5541,6 @@ async function handleAction(act, d, ev) {
     case 'goto-fleet': TAB = 'fleet';
       return run(async () => { FLEETOPS = await api('/fleetops'); });
     case 'load-fleetops': return run(async () => { FLEETOPS = await api('/fleetops'); });
-    // The unit list and the damage reading both follow these, so the panel is redrawn.
-    case 'wo-kind': WO_KIND = sv('wo-kind2') || 'Truck'; return render();
-    case 'wo-unit': return render();
     case 'reports-all': FLEET_ALL_REPORTS = !FLEET_ALL_REPORTS; return render();
     case 'terminate-driver': {
       const why = prompt(`Terminate ${d.name}?\n\nWhat goes on the file?`, 'Sustained poor performance.');
