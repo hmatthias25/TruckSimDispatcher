@@ -1993,6 +1993,9 @@ object Snapshot(AppState? given = null)
             // How long the truck has been over the run-home line, so the squeeze on the board is
             // visible rather than mysterious. Null when there is no damage order.
             damageDaysOverdue = Shop.DamageDaysOverdue(s),
+            // The recovery on file, so the panel can show what it cost rather than offering to log it
+            // a second time. Null when the truck drove itself in.
+            tow = s.Tow,
             // Condition of the equipment and what the company wants done about it, quoted in hours.
             shopOrder = Shop.Assess(s, truck, trailer),
             // The write-off line for every unit we can actually read, since it moves with the odometer.

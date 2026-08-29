@@ -4038,6 +4038,59 @@ function woFleet() {
   return (WO_KIND === 'Trailer' ? (S.trailers || []) : (S.trucks || [])).filter((u) => !u.retired);
 }
 
+/**
+ * Reporting a recovery.
+ *
+ * The truck went in on a hook, which settles two things the app cannot work out on its own: it is not
+ * driving home at any damage level, and it is already at whatever shop the wrecker picked rather than
+ * wherever the driver was standing. Whether that is a repair or a write-off is still the damage
+ * reading's business — a tow does not decide that, it just changes what can be ordered.
+ *
+ * Shown only when there is a tractor to be towed, and it names the one already on file rather than
+ * offering to report a second.
+ */
+function towHtml() {
+  const truck = S.trucks?.find((x) => x.unit === S.driver.assignedTruckUnit);
+  if (!truck) return '';
+
+  const on = S.views?.tow;
+  if (on) {
+    return `<div class="panel">
+      <div class="panel-head"><h2>Recovered on a hook</h2>${badge('warn', 'towed')}</div>
+      <div class="callout warn">
+        <h4>${esc(truck.ref || truck.unit)} was towed in${on.toCity ? ` to ${esc(on.toCity)}, ${esc(on.toState)}` : ''}</h4>
+        <p>${on.miles > 0 ? `${num(on.miles)} mi on the hook. ` : ''}Recovery billed at
+          <b>${money(on.cost)}</b> — the company's, and on the claim if this unit does not come back.</p>
+        <p class="hint" style="margin-top:6px">Nothing runs home on a hook. It is fixed or written off
+          where it sits; the damage decides which. This clears itself when the unit is repaired.</p>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Towed in?</h2>
+      <div class="spacer"></div><span class="sub">only if it did not drive there itself</span></div>
+    <p class="hint">Roll it, jack-knife it, or break something that will not turn a wheel, and the truck
+      goes to the shop on a hook. Tell me and I will stop offering to send it home &mdash; it is already
+      where it is going to be worked on.</p>
+    <div class="grid2">
+      <label>Where it stopped<input id="tow-from" value="${esc(S.status.locationCity)}"></label>
+      <label>State<input id="tow-fromst" class="up" maxlength="2" value="${esc(S.status.locationState)}"></label>
+      <label>Towed to<input id="tow-to" placeholder="city the wrecker took it to"></label>
+      <label>State<input id="tow-tost" class="up" maxlength="2" placeholder="ST"></label>
+      <label>Towed miles<input id="tow-miles" type="number" step="1" min="0"
+        placeholder="blank = work it out"></label>
+      <label>Tractor damage after %<input id="tow-dmg" type="number" step="0.1" min="0" max="100"
+        value="${Math.round((S.status.truckDamagePct || 0) * 10) / 10}"></label>
+    </div>
+    <label>What happened<input id="tow-notes" placeholder="optional"></label>
+    <p class="hint">The recovery is billed by distance &mdash; a hook fee plus the miles it was dragged.
+      Leave the miles blank and I will measure between the two places. Leave the destination blank and I
+      will assume the nearest shop.</p>
+    <div class="row-actions"><button class="btn warn" data-act="report-tow">Report the recovery</button></div>
+  </div>`;
+}
+
 function woUnitPickHtml() {
   const units = woFleet();
   if (units.length === 0) return `<select id="wo-unit" disabled><option value="">nothing on the fleet</option></select>`;
@@ -4130,6 +4183,8 @@ function viewMaint() {
         modifications, intentional abuse or clearly reckless conduct.</p>
       <div class="row-actions"><button class="btn primary" data-act="create-wo">Create work order</button></div>
     </div>
+
+    ${towHtml()}
 
     <div class="panel">
       <div class="panel-head"><h2>Open work orders (${open.length})</h2></div>
@@ -5925,6 +5980,19 @@ async function handleAction(act, d, ev) {
             ${fkpi('Scrap', money(w.scrapRecovery))}
             ${fkpi('Net recovery', money(w.netRecovery), w.netRecovery >= 0 ? 'ok' : 'bad')}
           </div>`);
+      });
+    }
+    case 'report-tow': {
+      if (!sv('tow-dmg') && sv('tow-dmg') !== '0') return toast('Read the tractor damage off the game first.', 'bad');
+      return run(async () => {
+        const r = absorb(await api('/maintenance/tow', 'POST', {
+          fromCity: sv('tow-from'), fromState: sv('tow-fromst'),
+          toCity: sv('tow-to'), toState: sv('tow-tost'),
+          miles: fv('tow-miles'), truckDamagePctAfter: fv('tow-dmg'), notes: sv('tow-notes'),
+        }));
+        const o = r.order || {};
+        toast(`Recovery logged — ${money(r.tow.cost)}. ${o.headline || ''}`.trim(),
+          o.kind === 'TotalLoss' ? 'bad' : 'warn');
       });
     }
     case 'create-wo': {

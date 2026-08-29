@@ -150,6 +150,20 @@ async function offer(dc, ds, miles) {
   ok('the company paid for the wrecker', !!led && led.amount < 0,
     led ? `${led.memo} ${led.amount}` : '(nothing posted)');
 
+  head('9. #139 And there is somewhere to actually report it');
+  // The whole tow mechanism shipped with no form on any tab, so it was unreachable from the app while
+  // the manual said to use the Maintenance tab. An endpoint nobody can reach is not a feature.
+  const js = await (await fetch(B.replace('/api', '') + '/app.js')).text();
+  ok('the maintenance tab has a tow panel', /function towHtml\(\)/.test(js), 'towHtml present');
+  ok('it is mounted, not just defined', /\$\{towHtml\(\)\}/.test(js), 'mounted');
+  ok('it posts the recovery', /'\/maintenance\/tow', 'POST'/.test(js), 'wired');
+  ok('and it asks for the damage after, which is what decides repair or write-off',
+    /id="tow-dmg"/.test(js), 'damage field');
+
+  // Once one is on file the panel reports it rather than offering to log a second.
+  ok('the recovery shows on the snapshot', !!(await api('/bootstrap')).views.tow,
+    `$${(await api('/bootstrap')).views.tow?.cost}`);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR', e.message); process.exit(1); });
