@@ -223,17 +223,48 @@ public static class HosEngine
         double cycle = Math.Max(0, hos.CycleRemaining);
 
         var clock = start.Value;
-        var recapQueue = new Queue<RecapDay>(hos.Recap.Where(r => r.Hours > 0).OrderBy(r => r.InDays));
+        // Each batch with the moment it actually lands, worked out once from the day the trip starts.
+        //
+        // This used to be a plain queue, popped whenever a reset crossed midnight — which credited a
+        // batch due in five days on the first night out, and credited two on a trip that spanned two
+        // nights. Recap.cs had always done this correctly, so dispatch and the clocks page gave the
+        // driver contradictory answers and the plan was built on the optimistic one.
+        var recapDue = hos.Recap
+            .Where(r => r.Hours > 0 && r.InDays >= 0)
+            .OrderBy(r => r.InDays)
+            .Select(r => (At: start.Value.Date.AddDays(r.InDays), r.Hours, Taken: false))
+            .ToList();
         // Recap batches that land while the trip is being simulated. Held rather than reported one by
         // one, because a batch is only good news if the trip does not need the 34 anyway.
         var recapArrivals = new List<(DateTime At, double Hours)>();
         var timeline = new List<TimelineStep>();
         var guard = 0;
 
+        /// <summary>
+        /// Hands back every batch whose midnight the clock has now passed.
+        ///
+        /// Called on every clock advance rather than only at a rest, because the cycle window rolls
+        /// forward at midnight whether the truck is parked or rolling.
+        /// </summary>
+        void CreditRecapDue()
+        {
+            for (var i = 0; i < recapDue.Count; i++)
+            {
+                if (recapDue[i].Taken || clock < recapDue[i].At) continue;
+                var before = cycle;
+                cycle = Math.Min(rules.CycleLimit, cycle + recapDue[i].Hours);
+                recapDue[i] = recapDue[i] with { Taken = true };
+                // Banked, not announced. Whether it is worth telling the driver depends on how the rest
+                // of the trip goes, and that is not known yet — see the end of the simulation.
+                if (cycle > before) recapArrivals.Add((recapDue[i].At, cycle - before));
+            }
+        }
+
         void Step(string label, string kind, double hours, double miles)
         {
             var from = clock;
             clock = clock.AddHours(hours);
+            CreditRecapDue();
             timeline.Add(new TimelineStep
             {
                 Label = label,
@@ -260,23 +291,13 @@ public static class HosEngine
 
         void TakeReset()
         {
-            var dayBefore = clock.Date;
             drive = rules.DriveLimit;
             shift = rules.ShiftLimit;
             brk = rules.DrivingBeforeBreak;
             result.RestsRequired++;
             Step($"{rules.OffDutyReset:0.#}-hour off-duty reset", "Rest", rules.OffDutyReset, 0);
-
-            // Recap: hours come back as days roll off the cycle window.
-            if (clock.Date > dayBefore && recapQueue.Count > 0)
-            {
-                var recap = recapQueue.Dequeue();
-                var before = cycle;
-                cycle = Math.Min(rules.CycleLimit, cycle + recap.Hours);
-                // Banked, not announced. Whether this is worth telling the driver depends on how the
-                // rest of the trip goes, and that is not known yet — see the end of the simulation.
-                if (cycle > before) recapArrivals.Add((clock, cycle - before));
-            }
+            // Recap is credited in Step, against each batch's own due date. It used to be done here,
+            // on any midnight a reset happened to cross, which is what made dispatch optimistic.
         }
 
         /// <summary>
@@ -328,7 +349,8 @@ public static class HosEngine
             brk = rules.DrivingBeforeBreak;
             cycle = rules.CycleLimit;
             result.CycleRestartRequired = true;
-            recapQueue.Clear();
+            // A restart wipes the window clean, so anything not yet banked is gone with it.
+            for (var i = 0; i < recapDue.Count; i++) recapDue[i] = recapDue[i] with { Taken = true };
             Step($"{rules.CycleRestartHours:0.#}-hour cycle restart", "Restart", rules.CycleRestartHours, 0);
         }
 

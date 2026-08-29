@@ -8,6 +8,23 @@ public static class MaintenanceService
 {
     public static WorkOrder OpenWorkOrder(AppState s, WorkOrder wo)
     {
+        // A work order against a unit that is not on the fleet repairs nothing at all: Close() looks the
+        // unit up, finds nothing, and returns without touching damage or clearing the shop status. The
+        // money still leaves the books, so the driver pays for a repair that never lands and the trailer
+        // is still sitting at 34%. Refused here rather than half-applied.
+        var known = wo.UnitKind == "Trailer"
+            ? s.Trailers.Any(x => x.Unit.Equals(wo.Unit ?? "", StringComparison.OrdinalIgnoreCase))
+            : s.Trucks.Any(x => x.Unit.Equals(wo.Unit ?? "", StringComparison.OrdinalIgnoreCase));
+        if (!known)
+        {
+            var have = wo.UnitKind == "Trailer"
+                ? string.Join(", ", s.Trailers.Where(x => !x.Retired).Select(x => x.Ref))
+                : string.Join(", ", s.Trucks.Where(x => !x.Retired).Select(x => x.Ref));
+            throw new InvalidOperationException(
+                $"There is no {wo.UnitKind.ToLowerInvariant()} {wo.Unit} on the fleet, so a repair on it " +
+                $"would post the cost and fix nothing. On the fleet: {(have.Length > 0 ? have : "nothing")}.");
+        }
+
         var code = string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code;
         wo.Number = $"{code}-WO-{++s.Counters.WorkOrder:0000}";
         if (string.IsNullOrWhiteSpace(wo.GameTime)) wo.GameTime = s.Status.GameTime;

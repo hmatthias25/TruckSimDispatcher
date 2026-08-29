@@ -639,10 +639,14 @@
   </table>
 
   <div class="note">
-    <h4>The clock is day numbers, not dates</h4>
+    <h4>Day numbers, not dates &mdash; and the weekday that checks them</h4>
     <p>ATS has no calendar you can reconcile against — there is no year or month in the game, only
       elapsed days and a time of day. So everything reads <b>Day 12 &middot; 14:30</b>. You enter a day
       number and a time, and every deadline, rest and projection is computed from that.</p>
+    <p style="margin-top:6pt">Beside every day box is the <b>weekday</b> it works out to, updating as you
+      type. A day number cannot be checked by eye &mdash; Day 41 and Day 14 are equally plausible &mdash;
+      but a weekday can, in a second. If it says <b>Tue</b> and ATS is showing you a Friday, fix it
+      before you file: a day entered wrong takes a whole shift's clocks with it.</p>
   </div>
 
   <div class="pfoot"><span>6 &middot; Reporting from the game</span><span>8</span></div>
@@ -918,6 +922,43 @@
   </div>
 
   <div class="pfoot"><span>7 &middot; Hours of service</span><span>13</span></div>
+</div>
+
+
+<!-- ============================================================ 7r - recap and the day it is due -->
+<div class="page">
+  <div class="kicker">Section 7, continued</div>
+  <h2>The day a recap is due, and the day it was spent</h2>
+
+  <p class="lede">A batch of hours has a date on it. Planning as though it were already in the bank is
+    how a run that cannot be made reads as one that can.</p>
+
+  <div class="rule">
+    <h4>Hours that are days away are not spent today</h4>
+    <p>Dispatch used to bank a recap batch every time a ten-hour reset happened to cross midnight,
+      whatever the batch's own due date said. A trip that spanned two nights therefore counted two
+      batches even when they were four days and six days out.</p>
+    <p style="margin-top:6pt">That is how Fresno to Seattle read as workable on twenty hours of cycle.
+      The clocks page said the opposite &mdash; it had always worked the arrival out properly &mdash; so
+      the two halves of the app gave contradictory answers, and the half a driver plans against was the
+      optimistic one. The run ended with no shift, no drive time and two hours of cycle, parked at the
+      receiver.</p>
+    <p style="margin-top:6pt">Each batch now has a due moment fixed when the plan is worked out, and is
+      counted only once the clock passes it. It is also credited on any clock advance rather than only
+      at a rest, because the window rolls forward at midnight whether you are parked or rolling.</p>
+  </div>
+
+  <div class="note">
+    <h4>Where this bit you</h4>
+    <p>Twenty hours of cycle, three batches four days out or more, and a nine-hundred-mile run to
+      Seattle. Two nights on the road meant two batches counted, seventeen and a half hours that were
+      not there &mdash; and the plan was built on them.</p>
+    <p style="margin-top:6pt">The clocks page was right the whole time: <i>"the next 9:30 is not due
+      until Sun Day 13 &middot; 00:00, which is 89:00 away &mdash; longer than the 34-hour restart
+      itself."</i> Both halves now say that.</p>
+  </div>
+
+  <div class="pfoot"><span>7 &middot; Hours of service</span><span class="pn"></span></div>
 </div>
 
 <!-- ============================================================ 7e - day numbering -->
@@ -3409,7 +3450,18 @@
       app will not send you to a shop for a truck you cannot see.</p>
   </div>
 
-  <div class="pfoot"><span>18 &middot; Maintenance</span><span>58</span></div>
+    <div class="rule">
+    <h4>Pick the unit, and enter the damage once</h4>
+    <p>The unit is a list of what is actually on the fleet, filtered by whether you chose Truck or
+      Trailer, with each one's current damage beside it and your own marked. It is a list rather than a
+      box because a unit number that matches nothing would post the cost and repair nothing.</p>
+    <p style="margin-top:6pt"><b>Damage after %</b> is the only place that reading is entered. Close the
+      order and it goes onto the unit &mdash; and onto your status panel, if it is the one you are
+      pulling. Repair trailer A1-5 to 1%, close it, and the trailer reads 1% with nothing else to
+      type.</p>
+  </div>
+
+<div class="pfoot"><span>18 &middot; Maintenance</span><span>58</span></div>
 </div>
 
 <!-- ============================================================ 18b -->

@@ -216,11 +216,44 @@ public class StateStore
                 try { File.Copy(_file, backup); } catch { /* best effort */ }
                 PruneBackups();
             }
-            File.Replace(tmp, _file, null);
+            ReplaceWithRetry(tmp, _file);
         }
         else
         {
             File.Move(tmp, _file);
+        }
+    }
+
+    /// <summary>
+    /// Swaps the freshly written file in, allowing for something briefly holding it open.
+    ///
+    /// <see cref="File.Replace(string,string,string)"/> fails outright if anything has either file open
+    /// for even a moment, and on Windows something always might: Defender scanning a file the instant it
+    /// is written, a sync client, a backup agent. Losing that race threw the save away — the career on
+    /// disk stayed at the previous write and the player was told nothing.
+    ///
+    /// Short retries rather than a swallowed exception. A scanner clears in milliseconds; anything that
+    /// does not is a real problem and still throws, because a save that cannot be written is something
+    /// the player has to know about.
+    /// </summary>
+    private static void ReplaceWithRetry(string tmp, string target)
+    {
+        const int attempts = 5;
+        for (var i = 1; ; i++)
+        {
+            try
+            {
+                File.Replace(tmp, target, null);
+                return;
+            }
+            catch (IOException) when (i < attempts)
+            {
+                Thread.Sleep(20 * i);
+            }
+            catch (UnauthorizedAccessException) when (i < attempts)
+            {
+                Thread.Sleep(20 * i);
+            }
         }
     }
 

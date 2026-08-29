@@ -194,11 +194,25 @@ function amendEventModal(tripId, evId) {
 }
 
 /** Pretty game time — what the player sees everywhere. */
+// Day 0 is a Monday — the app's own calendar, and what makes payday mean something.
+const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+function dowOf(v) {
+  const d = dayOf(v);
+  return Number.isFinite(d) ? DOW[((d % 7) + 7) % 7] : '';
+}
+
+/**
+ * A game moment, as the player reads it.
+ *
+ * The weekday is here because a day number cannot be sanity-checked by eye — Day 41 and Day 14 look
+ * equally plausible on a form, and a driver who has just typed one has no way of telling they got it
+ * wrong. A weekday they can check against the game in a second.
+ */
 function gt(v) {
   if (!v) return '—';
   const t = Date.parse(isoUtc(v));
   if (isNaN(t)) return esc(v);
-  return `Day ${dayOf(v)} · ${timeOf(v)}`;
+  return `${dowOf(v)} · Day ${dayOf(v)} · ${timeOf(v)}`;
 }
 
 /**
@@ -234,12 +248,28 @@ function fixBoardStage() {
   if (BOARD_STAGE === 'local' && !atCustomer()) BOARD_STAGE = 'city';
 }
 
-/** A paired day-number + time-of-day input. */
+/**
+ * A paired day-number + time-of-day input, with the weekday it works out to.
+ *
+ * The weekday is the point. A day number cannot be checked by eye — Day 41 and Day 14 are equally
+ * plausible in a box, and a driver who has just fat-fingered one has nothing to notice. A weekday they
+ * can check against the game in a second, which is what stops a whole day's clocks being filed against
+ * the wrong date. It updates as the number is typed rather than on submit, so the check happens while
+ * there is still something to correct.
+ */
+function dowForDay(day) {
+  const n = Number(day);
+  return Number.isFinite(n) && n >= 0 ? DOW[((Math.floor(n) % 7) + 7) % 7] : '—';
+}
+
 function dayTimeInput(idPrefix, iso, label) {
+  const day = iso ? dayOf(iso) : (S ? dayOf(S.status.gameTime) : 1);
   return `<label>${esc(label)}
-    <span style="display:flex;gap:6px">
+    <span style="display:flex;gap:6px;align-items:center">
       <input id="${idPrefix}-day" type="number" min="0" step="1" style="flex:0 0 92px"
-        value="${iso ? dayOf(iso) : (S ? dayOf(S.status.gameTime) : 1)}" title="Game day">
+        data-dow="${idPrefix}-dow" value="${day}" title="Game day">
+      <span id="${idPrefix}-dow" class="badge info" style="flex:0 0 auto"
+        title="Day 0 is a Monday. Check this against the game before you file.">${dowForDay(day)}</span>
       <input id="${idPrefix}-tod" type="time" step="60" style="flex:1"
         value="${iso ? timeOf(iso) : (S ? timeOf(S.status.gameTime) : '06:00')}" title="Time of day">
     </span></label>`;
@@ -656,6 +686,15 @@ document.addEventListener('drop', (ev) => {
 });
 document.addEventListener('change', (ev) => {
   if (ev.target.id === 'shot-file') [...ev.target.files].forEach(addImageFile);
+});
+
+// The weekday beside a day-number box, kept current while it is being typed rather than on submit —
+// the whole value of it is catching the wrong day before it is filed.
+document.addEventListener('input', (ev) => {
+  const target = ev.target?.dataset?.dow;
+  if (!target) return;
+  const el = document.getElementById(target);
+  if (el) el.textContent = dowForDay(ev.target.value);
 });
 
 window.addEventListener('hashchange', () => {
@@ -3959,6 +3998,39 @@ function writeOffHtml() {
   </div>`;
 }
 
+// Which kind of unit the work order form is on, so the unit list and the damage reading follow it.
+let WO_KIND = 'Truck';
+
+/**
+ * The units a work order can actually be raised against.
+ *
+ * A free-text box here was worse than it looked: a unit that matches nothing in the fleet posts the
+ * cost and repairs nothing, because the server looks the unit up to apply the damage and quietly finds
+ * nothing. It also defaulted to the tractor's number even with Trailer selected, which is the exact
+ * typo that produces that outcome.
+ */
+function woFleet() {
+  return (WO_KIND === 'Trailer' ? (S.trailers || []) : (S.trucks || [])).filter((u) => !u.retired);
+}
+
+function woUnitPickHtml() {
+  const units = woFleet();
+  const mine = WO_KIND === 'Trailer' ? S.driver.assignedTrailerUnit : S.driver.assignedTruckUnit;
+  if (units.length === 0) return `<select id="wo-unit" disabled><option value="">nothing on the fleet</option></select>`;
+  return `<select id="wo-unit" data-act="wo-unit">${units.map((u) => `<option value="${esc(u.unit)}"${
+    u.unit === mine ? ' selected' : ''}>${esc(u.ref || u.unit)}${
+    u.unit === mine ? ' — yours' : ''} · ${pct(u.damagePct)}</option>`).join('')}</select>`;
+}
+
+/** The selected unit's current damage, so the reading matches the unit rather than always the tractor. */
+function woDamageBefore() {
+  const sel = document.getElementById('wo-unit')?.value;
+  const units = woFleet();
+  const mine = WO_KIND === 'Trailer' ? S.driver.assignedTrailerUnit : S.driver.assignedTruckUnit;
+  const u = units.find((x) => x.unit === sel) || units.find((x) => x.unit === mine) || units[0];
+  return u ? Math.round((u.damagePct || 0) * 10) / 10 : 0;
+}
+
 function viewMaint() {
   const m = S.settings.maintenance;
   const open = S.workOrders.filter((w) => w.status === 'Open');
@@ -3997,13 +4069,15 @@ function viewMaint() {
     <div class="panel">
       <div class="panel-head"><h2>Open a work order</h2></div>
       <div class="grid2">
-        <label>Unit kind<select id="wo-kind2"><option>Truck</option><option>Trailer</option></select></label>
-        <label>Unit<input id="wo-unit" value="${esc(S.driver.assignedTruckUnit)}"></label>
+        <label>Unit kind<select id="wo-kind2" data-act="wo-kind">
+          <option${WO_KIND === 'Truck' ? ' selected' : ''}>Truck</option>
+          <option${WO_KIND === 'Trailer' ? ' selected' : ''}>Trailer</option></select></label>
+        <label>Unit${woUnitPickHtml()}</label>
         <label>Type<select id="wo-type">${['Repair', 'Preventive', 'Damage', 'Inspection', 'Tires', 'Recall'].map((x) => `<option>${x}</option>`).join('')}</select></label>
         <label>Vendor<input id="wo-vendor" placeholder="e.g. TA Truck Service"></label>
         <label>City<input id="wo-city" value="${esc(S.status.locationCity)}"></label>
         <label>State<input id="wo-state" class="up" maxlength="2" value="${esc(S.status.locationState)}"></label>
-        <label>Damage before %<input id="wo-dmgb" type="number" step="0.1" value="${S.status.truckDamagePct}"></label>
+        <label>Damage before %<input id="wo-dmgb" type="number" step="0.1" value="${woDamageBefore()}"></label>
         <label>Odometer<input id="wo-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
       </div>
       <label>Description<input id="wo-desc" placeholder="what needs doing"></label>
@@ -5436,6 +5510,9 @@ async function handleAction(act, d, ev) {
     case 'goto-fleet': TAB = 'fleet';
       return run(async () => { FLEETOPS = await api('/fleetops'); });
     case 'load-fleetops': return run(async () => { FLEETOPS = await api('/fleetops'); });
+    // The unit list and the damage reading both follow these, so the panel is redrawn.
+    case 'wo-kind': WO_KIND = sv('wo-kind2') || 'Truck'; return render();
+    case 'wo-unit': return render();
     case 'reports-all': FLEET_ALL_REPORTS = !FLEET_ALL_REPORTS; return render();
     case 'terminate-driver': {
       const why = prompt(`Terminate ${d.name}?\n\nWhat goes on the file?`, 'Sustained poor performance.');
