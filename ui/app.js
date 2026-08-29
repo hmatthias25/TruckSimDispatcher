@@ -223,14 +223,19 @@ function gt(v) {
  * board there invites entering a list that does not exist.
  */
 /**
- * The one blocker that means "do not even look at the board".
+ * Any reason no load at all can be authorized, so the board is not offered.
  *
- * Everything else is a reason a particular load will not go. This is a reason no load will, and it is
- * worth pulling out of the list because acting on it saves the driver typing in two pages of freight —
- * and, where they paste screenshots, an API call per board that was never going to produce a load.
+ * Everything else is a reason a particular load will not go. These are reasons none will, and acting on
+ * them saves the driver typing in two pages of freight — and, where they paste screenshots, real money
+ * in tokens reading a board that was never going to produce a load.
+ *
+ * This used to match one specific HOS phrase, so a driver stopped for damage got the whole treatment:
+ * screenshots taken, tokens spent, board read, and only then told nothing on it could be run. The
+ * answer was on the snapshot the entire time — every blocker here is already known before the board is
+ * entered, so there is no excuse for finding out afterwards.
  */
-function noWindowToWork() {
-  return (S?.views?.dispatchBlockers || []).find((b) => /Do not bother pulling the job list/i.test(b)) || '';
+function nothingWillRun() {
+  return (S?.views?.dispatchBlockers || [])[0] || '';
 }
 
 function atCustomer() {
@@ -962,12 +967,12 @@ function viewDispatch() {
           <span class="sub">One row per job you can see in ATS.</span></div>
 
         ${dropHookHtml()}
-        ${noWindowToWork() ? `<div class="callout stop">
+        ${nothingWillRun() ? `<div class="callout stop">
           <h4>Do not pull the board</h4>
-          <p style="margin:0">${esc(noWindowToWork())}</p>
+          <p style="margin:0">${esc(nothingWillRun())}</p>
         </div>` : ''}
 
-        <div class="row-actions" style="margin:0 0 10px"${noWindowToWork() ? ' hidden' : ''}>
+        <div class="row-actions" style="margin:0 0 10px"${nothingWillRun() ? ' hidden' : ''}>
           ${atCustomer() ? `<button class="btn ${BOARD_STAGE === 'local' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="local">
             Jobs at this location</button>` : ''}
           <button class="btn ${BOARD_STAGE === 'city' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="city">

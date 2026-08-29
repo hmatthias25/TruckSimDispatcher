@@ -60,9 +60,21 @@ public static class Shop
             TotalLossAtPct = TotalLossPctFor(s, truck)
         };
 
+        // Intake first, then labour by damage.
+        //
+        // A flat per-point rate put a 10% repair under seven hours, which is a truck that was never
+        // booked in, never waiting on a part and never behind anything else in the bay. The fixed part
+        // is why a small job still costs a day; the per-point part is why a big one costs more than
+        // that without running to a week.
+        //
+        // One intake, not one per unit: the tractor and the trailer go into the same shop on the same
+        // visit, so the queue is paid for once and the longer of the two jobs is what you wait on.
         var factor = atCompanyShop ? Math.Clamp(m.CompanyShopFactor, 0.1, 1.0) : 1.0;
-        q.TruckHours = q.TruckDamagePct * m.RepairHoursPerPoint * factor;
-        q.TrailerHours = q.TrailerDamagePct * m.RepairHoursPerPoint * m.TrailerRepairFactor * factor;
+        var intake = Math.Max(0, m.RepairIntakeHours) * factor;
+        q.TruckHours = q.TruckDamagePct > 0
+            ? intake + q.TruckDamagePct * m.RepairHoursPerPoint * factor : 0;
+        q.TrailerHours = q.TrailerDamagePct > 0
+            ? intake + q.TrailerDamagePct * m.RepairHoursPerPoint * m.TrailerRepairFactor * factor : 0;
         q.WaitHours = Math.Max(q.TruckHours, q.TrailerHours);
 
         if (q.TruckDamagePct >= q.TotalLossAtPct)
@@ -224,6 +236,15 @@ public static class Shop
         var worst = Math.Max(td, rd);
         if (worst < m.StopDispatchPct) return order;
 
+        // A truck on a hook is not driving anywhere, so no run-home order at any damage level. It is
+        // already at whatever shop the wrecker chose, and that is where this gets settled.
+        var towed = s.Tow != null;
+
+        // Between the run-home line and the review line, home is the answer whatever the distance.
+        // Not catastrophic, our labour is cheaper, and the one thing that makes it worse is more miles
+        // on the road looking for a dealer. See RunHomeForDamage.
+        var mustRunHome = worst < m.MandatoryReviewPct;
+
         var atShop = AtCompanyShop(s);
         order.Quote = Quote(s, td, rd, atShop, truck);
 
@@ -243,7 +264,7 @@ public static class Shop
         // low, so the cap has to move with it rather than sitting at a fixed 20%.
         var runHomeCap = Math.Min(m.RunHomeMaxDamagePct, writeOffAt * 0.75);
 
-        if (homeIsClose && td < runHomeCap && rd < m.RunHomeMaxDamagePct)
+        if (!towed && (mustRunHome || homeIsClose) && td < runHomeCap && rd < m.RunHomeMaxDamagePct && home != null)
         {
             order.Kind = "RunHome";
             order.HomeLabel = DispatchEngine.Place(home!.City, home.State);
@@ -251,10 +272,18 @@ public static class Shop
             order.HomeDriveHours = driveHours;
             order.Quote = Quote(s, td, rd, true, truck);
             order.Headline = $"{what} — no more loads. Run it home to {order.HomeLabel} and fix it there.";
-            order.Instructions.Add(
-                $"{order.HomeLabel} is {miles:N0} mi out, about {Hhmm.Of(driveHours!.Value)} of driving. That is inside a day, " +
-                "and the damage is light enough to make it — so you take it to our own shop rather than the first dealer you pass. " +
-                "Cheaper labour, and the truck ends up where it needs to be.");
+            order.Instructions.Add(homeIsClose && driveHours is { } dhr
+                ? $"{order.HomeLabel} is {miles:N0} mi out, about {Hhmm.Of(dhr)} of driving. That is inside a day, " +
+                  "and the damage is light enough to make it — so you take it to our own shop rather than the first dealer " +
+                  "you pass. Cheaper labour, and the truck ends up where it needs to be."
+                : $"{order.HomeLabel} is {miles:N0} mi out — further than a day, and you are going anyway. At {worst:0.#}% " +
+                  "this is not something we patch up at a dealer on the road: our shop is cheaper, the truck ends up where " +
+                  "it is needed, and every mile you spend hunting a bay is a mile it might get worse.");
+            if (!homeIsClose)
+                order.Instructions.Add(
+                    "From here you are worked like a driver whose home time is due today. Freight that heads home is fine " +
+                    "and paid; freight that takes you further out is not, and the room narrows for every day this takes. " +
+                    "It does not touch your home-time record — this is our truck, not your promise.");
             order.Instructions.Add(
                 "Show me the board where you are before you roll. If there is freight going that way I will put you on it — " +
                 "a paying load home beats an empty one, and it costs nothing to look. If there is nothing, you deadhead in.");
@@ -277,11 +306,25 @@ public static class Shop
         }
 
         order.Kind = "Shop";
-        order.Headline = $"{what} — no more loads until it is fixed. Nearest shop on the road.";
+        order.Headline = towed
+            ? $"{what} — and it went in on a hook. It is fixed where it sits."
+            : $"{what} — no more loads until it is fixed. Nearest shop on the road.";
+        if (towed)
+        {
+            var at = string.IsNullOrWhiteSpace(s.Tow!.ToCity)
+                ? "the shop it was recovered to"
+                : DispatchEngine.Place(s.Tow.ToCity, s.Tow.ToState);
+            order.Instructions.Add($"Recovered to {at}. Nothing is running home on a hook, however light the " +
+                                   "damage reads — the truck is already where it is going to be worked on.");
+            if (s.Tow.Cost > 0)
+                order.Instructions.Add($"Recovery billed at ${s.Tow.Cost:N0}. That is the company's, not yours; " +
+                                       "it goes on the claim if this unit does not come back.");
+        }
         if (home != null && miles is { } mi)
             order.Instructions.Add(td >= runHomeCap || rd >= m.RunHomeMaxDamagePct
                 ? $"{DispatchEngine.Place(home.City, home.State)} is {mi:N0} mi out, but past {runHomeCap:0.#}% I am not gambling another day's driving on it. Nearest shop."
-                : $"{DispatchEngine.Place(home.City, home.State)} is {mi:N0} mi out — about {Hhmm.Of(driveHours ?? 0)}, which is more than a day. Too far. Nearest shop.");
+                : $"{DispatchEngine.Place(home.City, home.State)} is {mi:N0} mi out — about {Hhmm.Of(driveHours ?? 0)}, which is more than a day. " +
+                  $"Past {m.MandatoryReviewPct:0.#}% that is too far to nurse it. Nearest shop.");
         order.Instructions.AddRange(order.Quote.Lines);
         if (runHomeCap < m.RunHomeMaxDamagePct && td >= runHomeCap)
             order.Instructions.Add(ExplainTotalLossLine(s, truck) +
@@ -409,5 +452,107 @@ public static class Shop
         });
 
         return r;
+    }
+    /// <summary>
+    /// What a recovery costs: a hook fee plus the miles it was dragged.
+    ///
+    /// Distance rather than a flat fee because the two ends of the range are nothing alike — twelve
+    /// miles off a ramp outside Kingman, or a hundred and forty out of the mountains in Nevada.
+    /// </summary>
+    public static decimal TowCost(AppState s, double miles)
+    {
+        var m = s.Settings.Maintenance;
+        var run = miles > 0 ? miles : m.TowDefaultMiles;
+        return Math.Round(m.TowHookFee + m.TowPerMile * (decimal)run, 0);
+    }
+
+    /// <summary>
+    /// Records a recovery and works out what it cost.
+    ///
+    /// The damage decides whether this is a repair or a write-off, exactly as it always did. The tow
+    /// only settles that the truck is not driving itself anywhere and that somebody has to be paid.
+    /// </summary>
+    public static TowReport RecordTow(AppState s, TowReport tow)
+    {
+        if (string.IsNullOrWhiteSpace(tow.GameTime)) tow.GameTime = s.Status.GameTime;
+        if (string.IsNullOrWhiteSpace(tow.FromCity)) { tow.FromCity = s.Status.LocationCity; tow.FromState = s.Status.LocationState; }
+
+        if (tow.Miles <= 0 && !string.IsNullOrWhiteSpace(tow.ToCity))
+            tow.Miles = Geo.MilesBetween(tow.FromCity, tow.FromState, tow.ToCity, tow.ToState) ?? 0;
+
+        if (tow.Cost <= 0) tow.Cost = TowCost(s, tow.Miles);
+
+        if (tow.TruckDamagePctAfter >= 0)
+        {
+            s.Status.TruckDamagePct = Math.Clamp(tow.TruckDamagePctAfter, 0, 100);
+            var truck = DispatchEngine.AssignedTruck(s);
+            if (truck != null) truck.DamagePct = s.Status.TruckDamagePct;
+        }
+
+        // The truck is where the wrecker left it, not where it stopped.
+        if (!string.IsNullOrWhiteSpace(tow.ToCity))
+        {
+            s.Status.LocationCity = tow.ToCity;
+            s.Status.LocationState = tow.ToState;
+            s.Status.LocationKind = "Shop";
+        }
+
+        s.Tow = tow;
+        SyncDamageClock(s, DispatchEngine.AssignedTruck(s), DispatchEngine.AssignedTrailer(s));
+
+        LedgerService.Post(s, LedgerService.Operating, -tow.Cost, "Repairs",
+            $"Recovery — {DispatchEngine.Place(tow.FromCity, tow.FromState)}, {tow.Miles:N0} mi", "");
+        return tow;
+    }
+
+    /// <summary>
+    /// How many days the truck has been over the run-home line, or null when it is not.
+    ///
+    /// Zero on the day it happens, so the driver is filtered as though home time fell due today, and one
+    /// per day after. Separate from home time on purpose &mdash; see AppState.DamageRunHomeSinceGameTime.
+    /// </summary>
+    public static double? DamageDaysOverdue(AppState s)
+    {
+        if (string.IsNullOrWhiteSpace(s.DamageRunHomeSinceGameTime)) return null;
+        var since = GameClock.TryParse(s.DamageRunHomeSinceGameTime);
+        var now = GameClock.TryParse(s.Status.GameTime);
+        if (since == null || now == null) return null;
+        return Math.Max(0, (now.Value - since.Value).TotalDays);
+    }
+
+    /// <summary>
+    /// The room to work outward that the damage clock allows, or null when there is no damage order.
+    ///
+    /// Deliberately the same arithmetic as an overdue home time, against the driver's own arrangement
+    /// length, so a weekly driver and a six-week driver are squeezed at the same rate relative to what
+    /// they were promised.
+    /// </summary>
+    public static double? DamageOutboundAllowance(AppState s, HomeTime.HomeStatus st)
+    {
+        if (DamageDaysOverdue(s) is not { } days) return null;
+        return HomeTime.OutboundAllowance(new HomeTime.HomeStatus
+        {
+            Tracked = true,
+            DueSoon = true,
+            Overdue = true,
+            DaysLate = days,
+            DaysUntilDue = 0,
+            IntervalDays = st.IntervalDays > 0 ? st.IntervalDays : 14,
+        });
+    }
+
+    /// <summary>
+    /// Starts or clears the damage clock from a fresh reading. Called where damage is reported.
+    /// </summary>
+    public static void SyncDamageClock(AppState s, Truck? truck, Trailer? trailer)
+    {
+        var m = s.Settings.Maintenance;
+        var td = Math.Max(truck?.DamagePct ?? 0, s.Status.TruckDamagePct);
+        var rd = Math.Max(trailer?.DamagePct ?? 0, s.Status.TrailerDamagePct);
+        var over = Math.Max(td, rd) >= m.StopDispatchPct;
+
+        if (!over) { s.DamageRunHomeSinceGameTime = ""; s.Tow = null; return; }
+        if (string.IsNullOrWhiteSpace(s.DamageRunHomeSinceGameTime))
+            s.DamageRunHomeSinceGameTime = s.Status.GameTime;
     }
 }

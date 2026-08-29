@@ -78,6 +78,7 @@ public static class MaintenanceService
                 if (wo.Kind == "Preventive")
                     t.LastServiceMiles = wo.OdometerAtService > 0 ? wo.OdometerAtService : t.ServiceMiles;
                 if (t.Unit == s.Driver.AssignedTruckUnit) s.Status.TruckDamagePct = wo.DamageAfter;
+                Shop.SyncDamageClock(s, t, null);
             }
         }
         else
@@ -89,6 +90,7 @@ public static class MaintenanceService
                 if (t.Status is "OutOfService" or "Shop" && wo.DamageAfter < s.Settings.Maintenance.MandatoryReviewPct)
                     t.Status = "InService";
                 if (t.Unit == s.Driver.AssignedTrailerUnit) s.Status.TrailerDamagePct = wo.DamageAfter;
+                Shop.SyncDamageClock(s, null, t);
             }
         }
     }

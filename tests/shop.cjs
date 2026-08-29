@@ -52,26 +52,35 @@ const order = () => S.views.shopOrder || { kind: 'None' };
   console.log(`  thresholds: stop ${m.stopDispatchPct}% · total loss ${m.totalLossPct}% · run home under ${m.runHomeMaxDamagePct}% within ${m.runHomeMaxHours} h`);
 
   head('1. A repair is quoted in hours before it is committed to');
-  const RATE = m.repairHoursPerPoint;      // 0:40 a point on the tractor
+  // #138 A quote is an intake period plus labour by damage. Pure per-point labour put a 10% repair
+  // under seven hours — a truck that is never booked in, never waiting on a part and never behind
+  // anything else in the bay. The fixed part is why a small job still costs a day.
+  const RATE = m.repairHoursPerPoint;
+  const INTAKE = m.repairIntakeHours;
   const TRF = m.trailerRepairFactor;
+  const expect = (truck, trailer) => INTAKE + Math.max(truck * RATE, trailer * RATE * TRF);
 
   let q = await api('/maintenance/quote?truck=15&trailer=0&companyShop=false');
-  ok('the tractor rate is 40 min a point', Math.abs(RATE - 2 / 3) < 0.01, `${(RATE * 60).toFixed(0)} min`);
-  ok('15 points is most of a day, not an afternoon', q.waitHours >= 9.5 && q.waitHours <= 10.5,
-    `${q.waitHours.toFixed(2)} h`);
+  ok('a repair starts with a shop day before any labour', INTAKE >= 12, `${INTAKE} h intake`);
+  ok('15 points is more than a day', q.waitHours >= 24, `${q.waitHours.toFixed(2)} h`);
+  ok('and it is intake plus labour', Math.abs(q.waitHours - expect(15, 0)) < 0.2,
+    `${q.waitHours.toFixed(2)} h vs ${expect(15, 0).toFixed(2)}`);
   ok('long enough to be worth routing home for', q.waitHours > 8);
   ok('the quote explains itself', q.lines.some((l) => /in the bay/.test(l)), q.lines[0]);
 
   q = await api('/maintenance/quote?truck=0&trailer=20&companyShop=false');
-  ok('trailer work runs at a fraction of the tractor rate',
-    Math.abs(q.waitHours - 20 * RATE * TRF) < 0.2, `${q.waitHours.toFixed(2)} h for 20 pts`);
+  ok('trailer LABOUR runs at a fraction of the tractor rate',
+    Math.abs(q.waitHours - expect(0, 20)) < 0.2, `${q.waitHours.toFixed(2)} h for 20 pts`);
   ok('and a trailer is a much lighter job than a tractor', 20 * RATE * TRF < 20 * RATE * 0.5,
     `factor ${TRF}`);
 
   q = await api('/maintenance/quote?truck=18&trailer=18&companyShop=false');
-  const tOnly = 18 * RATE;
+  const tOnly = expect(18, 0);
   ok('both at once is the LONGER, not the sum', Math.abs(q.waitHours - tOnly) < 0.2,
-    `${q.waitHours.toFixed(2)} h (tractor alone ${tOnly.toFixed(2)}, sum would be ${(tOnly * (1 + TRF)).toFixed(2)})`);
+    `${q.waitHours.toFixed(2)} h (tractor alone ${tOnly.toFixed(2)})`);
+  ok('one intake covers the visit, not one per unit',
+    q.waitHours < tOnly + INTAKE - 1,
+    `${q.waitHours.toFixed(2)} h; a second intake would make it ${(tOnly + INTAKE).toFixed(2)}`);
   ok('and it says so', q.lines.some((l) => /longer of the two/.test(l)), q.lines.find((l) => /longer/.test(l)) || '(none)');
 
   const road = await api('/maintenance/quote?truck=20&trailer=0&companyShop=false');
@@ -79,12 +88,24 @@ const order = () => S.views.shopOrder || { kind: 'None' };
   ok('a company shop is quicker than a dealer', yard.waitHours < road.waitHours,
     `yard ${yard.waitHours.toFixed(2)} h vs road ${road.waitHours.toFixed(2)} h`);
 
-  head('2. Dispatch stops at 10%, far from home');
+  head('2. #136 At 13% it goes home, however far that is');
+  // This used to be the nearest shop. 13% is not catastrophic, our labour is cheaper, and the thing
+  // that makes it worse is more miles hunting a dealer — so between the run-home line and the review
+  // line it goes home at any distance.
   await stand({ city: 'Seattle', state: 'WA', truckDmg: 13 });
   ok('an order was raised', order().kind !== 'None', order().kind);
-  ok('nearest shop, not home', order().kind === 'Shop', order().headline);
-  ok('it says how far home is and why not', /Too far|more than a day/.test(order().instructions.join(' ')),
-    order().instructions.find((x) => /Too far|more than a day/.test(x)) || '(none)');
+  ok('it is a run-home order', order().kind === 'RunHome', order().headline?.slice(0, 80));
+  ok('and it does not pretend home is close',
+    /further than a day|you are going anyway/.test(order().instructions.join(' ')),
+    order().instructions.find((x) => /further than a day/.test(x))?.slice(0, 90) || '(none)');
+  ok('freight is not stopped outright', order().blocksAllFreight === false, `${order().blocksAllFreight}`);
+
+  head('2b. #136 Past the review line it is the nearest shop, as 10% used to be');
+  await stand({ city: 'Seattle', state: 'WA', truckDmg: 17 });
+  ok('nearest shop, not home', order().kind === 'Shop', order().headline?.slice(0, 80));
+  ok('it says how far home is and why not',
+    /Too far|more than a day|too far to nurse/.test(order().instructions.join(' ')),
+    order().instructions.find((x) => /too far/i.test(x))?.slice(0, 90) || '(none)');
   ok('dispatch is blocked', blockers().includes(order().headline), blockers().slice(0, 120));
 
   await board('Portland', 'OR');

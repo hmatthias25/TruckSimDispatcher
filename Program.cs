@@ -77,6 +77,9 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     if (u.Notes != null) s.Status.Notes = u.Notes;
     s.Status.UpdatedUtc = DateTime.UtcNow.ToString("o");
 
+    // A fresh reading is what starts the damage clock, and what stops it once the truck is fixed.
+    Shop.SyncDamageClock(s, DispatchEngine.AssignedTruck(s), DispatchEngine.AssignedTrailer(s));
+
     // The driver has now signed off on these readings, whether they edited them or accepted what the
     // last close-out carried forward.
     s.Status.Confirmed = true;
@@ -1319,6 +1322,16 @@ app.MapPost("/api/maintenance/workorder/{number}/complete", (string number, Comp
 
 // What the shop will cost you in hours, before you commit to it. Quoted against whatever damage the
 // driver asks about, so they can price a repair they have not taken yet.
+// A recovery: the truck went in on a hook rather than driving. Changes what can be ordered, not what
+// the damage means — see Shop.RecordTow.
+app.MapPost("/api/maintenance/tow", (TowReport tow) => Results.Ok(store.Mutate(s =>
+{
+    var t = Shop.RecordTow(s, tow);
+    store.Log(s, "maintenance",
+        $"Recovered from {DispatchEngine.Place(t.FromCity, t.FromState)}, {t.Miles:N0} mi, ${t.Cost:N0}.");
+    return new { tow = t, order = Shop.Assess(s, DispatchEngine.AssignedTruck(s), DispatchEngine.AssignedTrailer(s)), snapshot = Snapshot(s) };
+})));
+
 app.MapGet("/api/maintenance/quote", (double? truck, double? trailer, bool? companyShop) =>
 {
     var s = store.State;
@@ -1977,6 +1990,9 @@ object Snapshot(AppState? given = null)
             },
             maintenanceAlerts = MaintenanceService.FleetAlerts(s),
             dispatchBlockers = DispatchEngine.DispatchBlockers(s, truck, trailer),
+            // How long the truck has been over the run-home line, so the squeeze on the board is
+            // visible rather than mysterious. Null when there is no damage order.
+            damageDaysOverdue = Shop.DamageDaysOverdue(s),
             // Condition of the equipment and what the company wants done about it, quoted in hours.
             shopOrder = Shop.Assess(s, truck, trailer),
             // The write-off line for every unit we can actually read, since it moves with the odometer.

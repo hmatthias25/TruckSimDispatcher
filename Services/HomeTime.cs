@@ -809,7 +809,18 @@ public static class HomeTime
     public static string? OutboundRefusal(AppState s, BoardLoad load)
     {
         var st = Status(s);
-        if (st.OutboundAllowance is not { } allowance) return null;
+
+        // Two things can hold a driver near the yard: home time falling due, and a truck over the
+        // run-home damage line. Whichever is tighter wins. The damage clock is worked out the same way
+        // an overdue home time is — see Shop.DamageOutboundAllowance — but it is a separate clock and
+        // never appears on the home-time record.
+        var byDamage = Shop.DamageOutboundAllowance(s, st);
+        var allowed = st.OutboundAllowance is { } byHomeTime
+            ? (byDamage is { } d ? Math.Min(byHomeTime, d) : byHomeTime)
+            : byDamage;
+        if (allowed is not { } allowance) return null;
+        var damageIsTighter = byDamage is { } bd && Math.Abs(bd - allowance) < 0.01
+                              && (st.OutboundAllowance is not { } h2 || bd < h2);
 
         var home = HomeTerminal(s);
         if (home == null) return null;
@@ -855,6 +866,19 @@ public static class HomeTime
         if (further <= allowance) return null;
 
         var where = DispatchEngine.Place(load.DestCity, load.DestState);
+
+        // Say which clock is doing the squeezing. A driver whose home time is not due for a fortnight,
+        // being told the board is narrow "because home time", would reasonably think the app was broken.
+        if (damageIsTighter)
+        {
+            var days = Shop.DamageDaysOverdue(s) ?? 0;
+            return $"{where} is {further:N0} mi FURTHER from {st.TerminalLabel}, and the truck is over the " +
+                   $"damage line — {(days < 1 ? "as of today" : $"{days:0.#} day(s) now")}. It is going to our shop " +
+                   $"and I am not sending it the wrong way to get there: about {allowance:N0} mi out is the limit, " +
+                   "and it tightens for every day this takes. Nothing to do with your home time — that stands where " +
+                   "it was.";
+        }
+
         return st.Overdue
             ? $"{where} is {further:N0} mi FURTHER from {st.TerminalLabel} and your home time is already " +
               $"{st.DaysLate:0.#} days late. At that point I will not take you more than about {allowance:N0} mi " +

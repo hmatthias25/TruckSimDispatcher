@@ -4,6 +4,31 @@ namespace TruckSimDispatcher.Models;
 public class AppState
 {
     /// <summary>
+    /// When the truck first went over the run-home damage line, or empty.
+    ///
+    /// A clock of its own, and pointedly not the home-time one. From the moment it is set the driver is
+    /// filtered as though home time were due — zero days overdue on the day it happens, one day overdue
+    /// the day after — so the room to work outward narrows exactly the way it does when the company is
+    /// late getting them home. What it must never do is appear on their record as lateness: being sent
+    /// in to fix a truck is not the company breaking its word about home time.
+    ///
+    /// Cleared when the damage comes back under the line, which a repair does.
+    /// </summary>
+    public string DamageRunHomeSinceGameTime { get; set; } = "";
+
+    /// <summary>
+    /// Set when the truck was recovered on a hook rather than driven in.
+    ///
+    /// It changes what can be ordered, not what the damage means. A towed truck is not running home at
+    /// any damage level and is not looking for the nearest dealer either &mdash; it is already at the
+    /// shop the wrecker chose. Whether that shop repairs it or the company writes it off is still the
+    /// damage reading's business.
+    ///
+    /// Cleared once the unit is repaired or written off.
+    /// </summary>
+    public TowReport? Tow { get; set; }
+
+    /// <summary>
     /// The shape this file was written in. A new career starts at the current version; anything lower
     /// came off an older build and gets brought forward once.
     ///
@@ -1216,6 +1241,24 @@ public class TripEvent
 /// One fuel purchase. Recorded when it happens rather than reconstructed at the end of the trip, so
 /// a run that fuels three times at three prices produces three lines and an honest blended cost.
 /// </summary>
+/// <summary>A recovery: where it happened, where it went, and what it cost.</summary>
+public class TowReport
+{
+    public string GameTime { get; set; } = "";
+    public string FromCity { get; set; } = "";
+    public string FromState { get; set; } = "";
+    /// <summary>Where the wrecker took it. Blank means the nearest shop to where it stopped.</summary>
+    public string ToCity { get; set; } = "";
+    public string ToState { get; set; } = "";
+    /// <summary>Towed distance. Zero means work it out from the two places.</summary>
+    public double Miles { get; set; }
+    /// <summary>What the recovery cost. Zero means quote it from the distance.</summary>
+    public decimal Cost { get; set; }
+    public string Notes { get; set; } = "";
+    /// <summary>Damage read off the game after the recovery, or -1 when not given.</summary>
+    public double TruckDamagePctAfter { get; set; } = -1;
+}
+
 public class FuelPurchase
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
@@ -2397,7 +2440,27 @@ public class MaintenanceThresholds
     /// systems and electronics, and real body work on one is a day in the bay, not an afternoon. This
     /// has to be long enough that routing a truck home for it is a decision rather than a detour.
     /// </summary>
-    public double RepairHoursPerPoint { get; set; } = 2.0 / 3.0;
+    /// <summary>
+    /// Hours a unit sits in the shop before any labour is counted: booked in, looked at, parts found.
+    ///
+    /// Without it the estimate was pure labour, so a 10% repair came out under seven hours — a truck
+    /// that is never in a queue, never waiting on a part and never behind anything else. That is not a
+    /// shop. The fixed part is what makes a small job cost a day while leaving a big one merely
+    /// expensive rather than absurd.
+    /// </summary>
+    public double RepairIntakeHours { get; set; } = 16;
+
+    /// <summary>Hook fee on a recovery, before the mileage.</summary>
+    public decimal TowHookFee { get; set; } = 350m;
+
+    /// <summary>Per towed mile. A hook off an interstate ramp and a drag out of the mountains are
+    /// not the same bill, which is why this is not a flat fee.</summary>
+    public decimal TowPerMile { get; set; } = 9m;
+
+    /// <summary>Assumed distance to a shop when the driver does not say how far it went.</summary>
+    public double TowDefaultMiles { get; set; } = 35;
+
+    public double RepairHoursPerPoint { get; set; } = 0.9;
 
     /// <summary>
     /// Trailer work runs at a fraction of the tractor rate — a box on wheels has far less to take

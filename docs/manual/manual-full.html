@@ -1223,6 +1223,14 @@
   </div>
 
   <div class="rule">
+    <h4>You are told before the board, not after</h4>
+    <p>If nothing at all can be authorized &mdash; out of cycle, equipment stopped, a career that has
+      ended &mdash; the board is not offered and the reason is on screen instead. The app already knows;
+      there is no sense in you photographing a freight list, spending tokens reading it, and being told
+      afterwards that none of it was ever going to go.</p>
+  </div>
+
+  <div class="rule">
     <h4>Rejecting the dock is not rejecting the city</h4>
     <p>If nothing at the location is worth running, dispatch says so in those terms —
       <i>"Nothing worth running out of Las Vegas, NV at this dock"</i> — and asks for the wider board.
@@ -2160,7 +2168,7 @@
     <tr><th style="width:1.5in">Status</th><th>Default</th><th>What happens</th></tr>
     <tr><td>Monitor</td><td class="mono">under 5%</td><td>Nothing. Condition is fine.</td></tr>
     <tr><td>Report</td><td class="mono">5%+</td><td>Keep running, fix it at the next terminal or major stop.</td></tr>
-    <tr><td>Mandatory review</td><td class="mono">15%+</td><td>Repair before your next dispatch. A work order is opened automatically.</td></tr>
+    <tr><td>Mandatory review</td><td class="mono">15%+</td><td>Repair before your next dispatch, and the road is the place if home is more than a day. A work order is opened automatically.</td></tr>
     <tr><td>Out of service</td><td class="mono">30%+</td><td>Stop. No more loads until it is fixed. The unit is marked out of service.</td></tr>
   </table>
 
@@ -3462,6 +3470,75 @@
   </div>
 
 <div class="pfoot"><span>18 &middot; Maintenance</span><span>58</span></div>
+</div>
+
+<!-- ============================================================ 18t - what the lines actually do -->
+<div class="page">
+  <div class="kicker">Section 18, continued</div>
+  <h2>Where the damage lines put you</h2>
+
+  <p class="lede">Ten per cent is a trip home. Fifteen is a stop. The difference is not how bad it is
+    &mdash; it is how many more miles the company is willing to put on it.</p>
+
+  <div class="rule">
+    <h4>Ten per cent sends you home. Fifteen stops you where you are.</h4>
+    <p>Ten per cent is not catastrophic, and our own shop is cheaper than the first dealer you pass. But
+      the one thing that makes it worse is more miles hunting a bay. So from <b>10%</b> there is no
+      fixing it on the road at any distance &mdash; it goes home.</p>
+    <p style="margin-top:6pt">From then on you are worked like a driver whose home time falls due
+      <em>today</em>. Freight that heads home is fine and paid; freight that takes you further out is
+      not, and the room narrows for every day the trip takes &mdash; one day out is one day overdue, the
+      same arithmetic as a late home time.</p>
+    <p style="margin-top:6pt"><b>It does not touch your home-time record.</b> Being sent in to fix a
+      truck is the company looking after its own equipment. It is not the company failing to get you
+      home, and it will not read as a broken promise on your file. Your arrangement stands exactly where
+      it was.</p>
+    <p style="margin-top:6pt">At <b>15%</b> the calculation changes. If home is inside a day, go there.
+      If it is not, the nearest shop gets it and <b>nothing moves until it is fixed</b> &mdash; past that
+      line the company will not gamble another day's driving on it.</p>
+  </div>
+
+  <div class="rule">
+    <h4>If it went in on a hook</h4>
+    <p>Report the recovery on the Maintenance tab: where it happened, where the wrecker took it, and the
+      damage as the game shows it afterwards. A towed truck is not running home at any damage level
+      &mdash; it is already at the shop somebody else chose &mdash; and the app will stop offering to
+      send it there.</p>
+    <p style="margin-top:6pt">The recovery is billed by distance: a hook fee plus the miles it was
+      dragged, because twelve miles off a ramp and a hundred and forty out of the mountains are not the
+      same job. The company pays it, and it goes on the claim if the unit does not come back.</p>
+    <p style="margin-top:6pt">Whether it is a repair or a write-off is still the damage reading's
+      business. Being towed does not decide that.</p>
+  </div>
+
+  <div class="pfoot"><span>18 &middot; Maintenance</span><span class="pn"></span></div>
+</div>
+
+<!-- ============================================================ 18u - time in the shop -->
+<div class="page">
+  <div class="kicker">Section 18, continued</div>
+  <h2>What a repair costs you in time</h2>
+
+  <p class="lede">A shop is a queue before it is a workshop. The estimate says so now.</p>
+
+  <div class="note">
+    <h4>A repair takes a shop day, then labour</h4>
+    <p>A quote is an intake period &mdash; booked in, looked at, parts found &mdash; plus labour by
+      damage. It used to be labour alone, which put a 10% repair under seven hours: a truck that is never
+      in a queue, never waiting on a part and never behind anything else.</p>
+    <table style="margin-top:6pt">
+      <tr><th style="width:1.1in">Damage</th><th class="num">A dealer</th><th class="num">Our shop</th></tr>
+      <tr><td>5%</td><td class="mono">20:30</td><td class="mono">14:24</td></tr>
+      <tr><td>10%</td><td class="mono">25:00</td><td class="mono">17:30</td></tr>
+      <tr><td>15%</td><td class="mono">29:30</td><td class="mono">20:42</td></tr>
+      <tr><td>20%</td><td class="mono">34:00</td><td class="mono">23:48</td></tr>
+      <tr><td>30%</td><td class="mono">43:00</td><td class="mono">30:06</td></tr>
+    </table>
+    <p style="margin-top:6pt">Tractor and trailer in the same visit share one intake, so you wait on the
+      longer of the two jobs rather than both added together.</p>
+  </div>
+
+  <div class="pfoot"><span>18 &middot; Maintenance</span><span class="pn"></span></div>
 </div>
 
 <!-- ============================================================ 18b -->
