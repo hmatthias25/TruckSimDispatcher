@@ -26,39 +26,76 @@ import re
 HERE = pathlib.Path(__file__).parent
 SOURCE = HERE / "manual-full.html"
 
-# Pages that go in the USER manual, by index in the source.
+# Pages that go in the USER manual, by their HEADING.
+#
+# Headings, not page numbers. The first cut keyed on the index, and every page inserted afterwards
+# shifted everything below it — so the two books quietly drifted apart and shipped wrong. A heading
+# survives an insertion above it; a number does not.
 #
 # The test for each: does somebody who just wants to play need this to get through a day's work? If it
 # explains a mechanism rather than telling them what to do, it belongs in Operations.
-#
-# Deliberately an explicit list rather than a rule over titles — the call is a judgement per page and
-# should be reviewable as one.
-PLAYER = {
-    1, 2,            # cover, contents
-    3,               # what this app is, and the rules it holds itself to
-    4,               # running it, and where your career file lives
-    5, 6,            # getting hired, your first day
-    7,               # THE LOOP, END TO END — the spine of the book
-    8, 9,            # reporting from the game; after a delivery you usually just confirm
-    10, 11, 12,      # the four clocks, reporting them, reading them off a screenshot
-    18, 19,          # the board: the dock first, then the city
-    21,              # how a load is judged
-    23,              # appointments, and the receiver who takes you early
-    26, 27,          # running the load; reporting after you load
-    28, 29,          # closing out; clocks at delivery
-    35,              # the audit, and whose fault it was
-    37, 40, 48,      # home time: what it is, choosing it, what to do at the yard
-    51,              # garages, equipment and the trade cycle
-    53, 55,          # money; reporting the balance
-    56,              # fuel: what it pays to be good at
-                     #   (57, how the price board knows, is the mechanism -> Operations)
-    58, 59,          # payroll; the pay stub
-    60,              # maintenance and work orders
-    68,              # safety: incidents, discipline, being forgiven
-    74,              # career, promotion and changing carriers
-    80, 86,          # hired drivers and the fleet report; filling it in
-    100, 101, 102,   # settings, if something looks wrong, credits
+PLAYER_TITLES = {
+    # getting going
+    "TruckSimDispatcher",
+    "Contents",
+    "What this app is, and the rules it holds itself to",
+    "Running it, and where your career file lives",
+    "Getting hired \u2014 the application and the carrier market",
+    "Your first day: what to buy and set up",
+    # the daily loop
+    "The loop, end to end",
+    "Reporting from the game",
+    "After a delivery you usually just confirm",
+    "Hours of service \u2014 the four clocks",
+    "Reporting and reading your clocks",
+    "Reading your clocks off a screenshot",
+    "The board: the dock first, then the city",
+    "Stage two: the city board",
+    "The other clock: how long the listing lasts",
+    "How a load is judged",
+    "Turning a load down",
+    "Appointments, and the receiver who takes you early",
+    "Running the load: the trip log and fuel stops",
+    "Reporting after you load, and getting stuck at a dock",
+    "Closing out, and never typing a number twice",
+    "The empty miles between two loads",
+    "Clocks at delivery, and the carry-forward",
+    "The audit, and whose fault it was",
+    # the company
+    "Home time",
+    "Choosing and changing your arrangement",
+    "What to do when you get in",
+    "Garages, equipment and the trade cycle",
+    "Money \u2014 one bank account, two sets of obligations",
+    "Reporting the balance",
+    "Fuel: what it pays to be good at",
+    "Payroll \u2014 payday is Friday",
+    "The pay stub",
+    "Maintenance and work orders",
+    "Where the damage lines put you",
+    "Running the GDC service schedule",
+    "Safety: incidents, discipline, and being forgiven",
+    "Career, promotion and changing carriers",
+    "Hired drivers and the fleet report",
+    "Filling the review in",
+    # reference
+    "Settings, backups and updating the app",
+    "If something looks wrong",
+    "Credits",
 }
+
+
+def title_of(page: str) -> str:
+    """The page's heading, normalised the way PLAYER_TITLES is written."""
+    m = re.search(r"<h2>(.*?)</h2>", page, re.S) or re.search(r"<h1>(.*?)</h1>", page, re.S)
+    if not m:
+        return ""
+    text = re.sub(r"<[^>]+>", "", m.group(1))
+    text = (text.replace("&mdash;", "\u2014").replace("&ndash;", "\u2013")
+                .replace("&middot;", "\u00b7").replace("&rarr;", "\u2192")
+                .replace("&amp;", "&").replace("&rsquo;", "\u2019"))
+    return re.sub(r"\s+", " ", text).strip()
+
 
 OPS_COVER = """<div class="page">
   <div class="kicker">TruckSim Dispatcher</div>
@@ -115,8 +152,17 @@ def main() -> None:
     pages[-1] = pages[-1].split("</body>")[0].rstrip() + "\n"
     tail = "\n</body>\n</html>\n"
 
-    player = [(i, p) for i, p in enumerate(pages, 1) if i in PLAYER]
-    ops = [(i, p) for i, p in enumerate(pages, 1) if i not in PLAYER]
+    titled = [(i, p, title_of(p)) for i, p in enumerate(pages, 1)]
+    player = [(i, p) for i, p, ti in titled if ti in PLAYER_TITLES]
+    ops = [(i, p) for i, p, ti in titled if ti not in PLAYER_TITLES]
+
+    # A heading that no longer matches anything is a page silently changing books, which is exactly the
+    # failure this rewrite exists to stop. Fail loudly instead.
+    missing = PLAYER_TITLES - {ti for _, _, ti in titled}
+    if missing:
+        raise SystemExit("split.py: these headings are in PLAYER_TITLES but not in the source:\n  "
+                         + "\n  ".join(sorted(missing))
+                         + "\n\nRetitled a page? Update the set. Do not let the books drift.")
 
     # A page in Operations says "Section 19, continued", which means nothing in a different book.
     # "From Section 19" points back at where it belongs.

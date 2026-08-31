@@ -628,6 +628,13 @@ public class ProbationPlan
 
 // ---------------------------------------------------------------- equipment
 
+/// <summary>One service checkpoint, and the odometer it was last done at.</summary>
+public class ServiceRecord
+{
+    public string Key { get; set; } = "";
+    public double AtOdometer { get; set; }
+}
+
 public class Truck
 {
     public string Unit { get; set; } = "";
@@ -719,6 +726,22 @@ public class Truck
     /// </summary>
     public int PmDeferrals { get; set; }
     public double ServiceIntervalMiles { get; set; } = 25000;
+
+    /// <summary>
+    /// Per-checkpoint service history, used when the GDC schedule is in force.
+    ///
+    /// Empty means nothing has been recorded, which is taken as the dealer baseline being complete at
+    /// <see cref="BaselineOdometer"/> — the guide's own rule for a used truck purchase, and the only
+    /// reading that does not open a career by declaring a new tractor hopelessly overdue.
+    /// </summary>
+    public List<ServiceRecord> ServiceLog { get; set; } = new();
+
+    /// <summary>
+    /// The odometer this unit came onto the fleet at. Where its service clocks count from.
+    /// </summary>
+    public double BaselineOdometer { get; set; }
+
+
     /// <summary>
     /// Everything the company has spent keeping this unit running. What turns a trade decision from a
     /// hunch into an argument: a truck costing more in the shop than the payment is worth is finished,
@@ -2471,6 +2494,37 @@ public class MaintenanceThresholds
     /// expensive rather than absurd.
     /// </summary>
     public double RepairIntakeHours { get; set; } = 16;
+
+    /// <summary>
+    /// Hold the fleet to the GDC economy mod's service interval guide instead of one blended PM figure.
+    ///
+    /// Off by default: a career on stock ATS has nothing underneath the game's single condition number,
+    /// and per-checkpoint tracking there would be bookkeeping about nothing.
+    /// </summary>
+    public bool UseGdcSchedule { get; set; }
+
+    /// <summary>
+    /// A change to the schedule that has not taken effect yet, or null.
+    ///
+    /// Switching schedules mid-period would re-date every unit against a different set of intervals
+    /// while trucks are out working to the old one. It lands at the next fleet report instead, which is
+    /// when the fleet's mileage is brought up to date anyway and the only moment the change can be
+    /// applied to real readings rather than stale ones.
+    /// </summary>
+    public bool? PendingGdcSchedule { get; set; }
+
+    /// <summary>
+    /// Whether the fleet runs the severe-duty schedule.
+    ///
+    /// A duty cycle, NOT a season. GDC is explicit that seasonal wear tuning does not move a truck onto
+    /// severe service — that is for repeated heavy haul, construction or forestry work, rough access,
+    /// frequent mountain running, high idle. One setting for the career, because a carrier that runs
+    /// that kind of work runs it, and asking per unit would be asking the same question over and over.
+    /// </summary>
+    public bool SevereDuty { get; set; }
+
+    /// <summary>Labour on one checkpoint, before it is scaled by how major the checkpoint is.</summary>
+    public decimal CheckpointBaseCost { get; set; } = 420m;
 
     /// <summary>Hook fee on a recovery, before the mileage.</summary>
     public decimal TowHookFee { get; set; } = 350m;

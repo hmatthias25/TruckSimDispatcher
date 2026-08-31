@@ -808,6 +808,10 @@ app.MapPost("/api/trips/{id}/notes", (string id, NoteRequest req) => Results.Ok(
 app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
 {
     var existing = s.Trucks.FirstOrDefault(x => x.Unit == t.Unit);
+    // Where this unit's service clocks count from. GDC's guide takes the dealer baseline as complete at
+    // purchase, so a truck bought at 600,000 mi does not owe every review ever published.
+    if (t.BaselineOdometer <= 0)
+        t.BaselineOdometer = existing?.BaselineOdometer > 0 ? existing.BaselineOdometer : Math.Max(0, t.AtsOdometer);
     // One game ID per unit, or the label is ambiguous in exactly the case it exists to resolve.
     Equip.GuardGameId(s, t.GameId, t.Unit);
 
@@ -1995,6 +1999,16 @@ object Snapshot(AppState? given = null)
             damageDaysOverdue = Shop.DamageDaysOverdue(s),
             // Refusals left this week, so the driver knows what a pick costs before they make it.
             refusals = Rejections.View(s),
+            // Where the driver's own tractor stands against the schedule in force. Empty off GDC.
+            serviceSchedule = ServicePlan.GdcActive(s) && truck is { InGameGarage: true }
+                ? new
+                {
+                    severe = s.Settings.Maintenance.SevereDuty,
+                    unit = truck.Ref,
+                    checkpoints = ServicePlan.Status(s, truck),
+                }
+                : null,
+            pendingScheduleChange = s.Settings.Maintenance.PendingGdcSchedule,
             // The recovery on file, so the panel can show what it cost rather than offering to log it
             // a second time. Null when the truck drove itself in.
             tow = s.Tow,

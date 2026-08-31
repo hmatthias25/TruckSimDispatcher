@@ -334,6 +334,10 @@ public static class FleetOpsService
         // not the driver's call, which is why there is no button for it anywhere — and it has to land
         // before AssessRetirements so a unit the shop condemns rides the retirement path that already
         // exists, and comes out as trade instructions rather than as a dead end.
+        // A staged schedule change lands here and nowhere else — this is the moment the fleet's mileage
+        // is current, so it is the only moment the new intervals can be applied to real readings.
+        if (ServicePlan.ApplyPendingChange(s) is { } switched) report.Findings.Add(switched);
+
         // What the yard spent on each unit, attributed back to the line it belongs to. This is what the
         // report's "repairs" column means now: the company's own maintenance spend, not a figure the
         // player had to find somewhere. It runs here rather than in the posting loop above because the

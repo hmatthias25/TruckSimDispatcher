@@ -4091,6 +4091,43 @@ function towHtml() {
   </div>`;
 }
 
+/**
+ * Where your own tractor stands against the GDC service schedule.
+ *
+ * Only shown when that schedule is in force. Off it, there is nothing underneath the game's single
+ * condition figure to track, and a page of checkpoints would be bookkeeping about nothing.
+ */
+function serviceScheduleHtml() {
+  const sc = S.views?.serviceSchedule;
+  if (!sc) return '';
+  const rows = (sc.checkpoints || []).map((c) => {
+    const state = c.done ? badge('mute', 'done')
+      : c.overrun ? badge('bad', 'overrun')
+      : c.due ? badge('warn', 'due')
+      : badge('ok', 'ok');
+    const when = c.done ? '—'
+      : c.due ? `${num(Math.abs(c.milesUntilDue))} mi over`
+      : `in ${num(c.milesUntilDue)} mi`;
+    return `<tr>
+      <td>${esc(c.name)}${c.milestone ? ' ' + badge('info', 'one-off') : ''}
+        <div class="sub">${esc(c.represents)}</div></td>
+      <td class="num mono">${num(c.intervalMiles)}</td>
+      <td class="num mono">${when}</td>
+      <td>${state}</td></tr>`;
+  }).join('');
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Service schedule — ${esc(sc.unit)}</h2>
+      ${badge(sc.severe ? 'warn' : 'info', sc.severe ? 'severe duty' : 'standard duty')}</div>
+    <p class="hint">The GDC intervals. <b>Mileage is not damage</b> — a truck can reach a checkpoint with
+      almost no repairable damage, and an impact can justify service long before the next one. This says
+      when routine work is due; the condition reading says when something needs attention sooner.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Checkpoint</th><th class="num">Every</th><th class="num">Status</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+
 function woUnitPickHtml() {
   const units = woFleet();
   if (units.length === 0) return `<select id="wo-unit" disabled><option value="">nothing on the fleet</option></select>`;
@@ -4184,6 +4221,7 @@ function viewMaint() {
       <div class="row-actions"><button class="btn primary" data-act="create-wo">Create work order</button></div>
     </div>
 
+    ${serviceScheduleHtml()}
     ${towHtml()}
 
     <div class="panel">
@@ -4815,6 +4853,25 @@ function viewSettings() {
       </div>
       <p class="hint">A driver-fault write-off pays double the deductible. Insurance settles at
         ${pct(m.totalLossPayoutFactor * 100, 0)} of the unit's book value — nobody is made whole on a write-off.</p>
+
+      <h3 class="sect">Service schedule</h3>
+      <label class="chk"><input type="checkbox" id="mt-gdc"${
+        (S.views?.pendingScheduleChange ?? m.useGdcSchedule) ? ' checked' : ''}>
+        Use the <b>GDC</b> service interval guide instead of one PM interval</label>
+      <label class="chk"><input type="checkbox" id="mt-severe"${m.severeDuty ? ' checked' : ''}>
+        Severe duty &mdash; heavy haul, construction, forestry, rough access, mountains, high idle</label>
+      <p class="hint">On GDC every unit carries a record per checkpoint &mdash; engine, tyres and
+        suspension, driveline, chassis, and the long-term major reviews &mdash; each on its own mileage.
+        Off it, the single PM interval above governs, which is right for stock ATS where the game tracks
+        one condition figure and nothing underneath it.</p>
+      <p class="hint"><b>Severe is a duty cycle, not a season.</b> Seasonal wear tuning changes how fast
+        condition develops; it does not move the fleet onto the severe schedule.</p>
+      ${(S.views?.pendingScheduleChange ?? null) !== null && S.views.pendingScheduleChange !== m.useGdcSchedule
+        ? `<div class="callout warn"><h4>Staged for the next fleet report</h4>
+            <p style="margin:0">Switching now would re-date every unit against different intervals while
+              trucks are out working to the old ones. It takes effect when you next file a fleet report,
+              which is when the fleet's mileage is current.</p></div>`
+        : ''}
     </div>
 
     <div class="panel">
@@ -6207,6 +6264,10 @@ function collectSettings() {
       preventiveIntervalMiles: fv('mt-pm'),
       runHomeMaxDamagePct: fv('mt-runhome-pct'), runHomeMaxHours: hv('mt-runhome-h'),
       repairHoursPerPoint: hv('mt-perpoint'), trailerRepairFactor: fv('mt-trfactor'),
+      // Staged, not applied: the schedule changes at the next fleet report. Sending useGdcSchedule
+      // straight through would re-date the fleet mid-period against intervals it has not been run on.
+      pendingGdcSchedule: bv('mt-gdc'), useGdcSchedule: S.settings.maintenance.useGdcSchedule,
+      severeDuty: bv('mt-severe'),
       companyShopFactor: fv('mt-shopfactor'), totalLossDeductible: fv('mt-deduct'),
     },
     scoring: {

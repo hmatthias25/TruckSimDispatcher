@@ -59,7 +59,11 @@ public static class FleetMaintenance
 
     /// <summary>Trucks a hired driver is running that the company owes a service.</summary>
     public static List<Truck> DueUnits(AppState s) =>
-        s.Trucks.Where(t => IsHiredUnit(s, t) && MilesPastDue(t) > 0).ToList();
+        s.Trucks.Where(t => IsHiredUnit(s, t) && DueBy(s, t) > 0).ToList();
+
+    /// <summary>How far past due a unit is, on whichever schedule is in force.</summary>
+    public static double DueBy(AppState s, Truck t) =>
+        ServicePlan.GdcActive(s) ? GdcMilesPastDue(s, t) : MilesPastDue(t);
 
     /// <summary>Whether an active hired driver is running this unit.</summary>
     public static bool IsHiredUnit(AppState s, Truck t) =>
@@ -70,6 +74,18 @@ public static class FleetMaintenance
     /// <summary>How far past the service interval, or 0 when it is not due.</summary>
     public static double MilesPastDue(Truck t) =>
         Math.Max(0, (t.ServiceMiles - t.LastServiceMiles) - t.ServiceIntervalMiles);
+
+    /// <summary>
+    /// How far past due on the GDC schedule: the worst overrun of any checkpoint.
+    ///
+    /// A unit is as overdue as its most neglected checkpoint. Averaging them would let a truck two
+    /// hundred thousand miles past its driveline service read as fine because its tyres were done.
+    /// </summary>
+    public static double GdcMilesPastDue(AppState s, Truck t)
+    {
+        var due = ServicePlan.DueNow(s, t);
+        return due.Count == 0 ? 0 : due.Max(d => d.MilesSince - d.IntervalMiles);
+    }
 
     /// <summary>What the shop wants for the service. Older units cost more; that is not a penalty.</summary>
     public static decimal Cost(Truck t) =>
@@ -167,6 +183,13 @@ public static class FleetMaintenance
             var chance = FindChance(t);
             var found = Hash($"{t.Unit}|pm|{t.ServiceMiles:0}") % 100 < (uint)chance;
 
+            // On the GDC schedule a unit goes in and everything due gets done at once. A hired driver's
+            // tractor cannot be worked on piece by piece — the player is not there, and ATS offers no
+            // such control — so the report says which checkpoints were covered rather than pretending
+            // somebody chose.
+            var checkpoints = ServicePlan.GdcActive(s) ? ServicePlan.ServiceAll(t, s) : new List<ServiceDue>();
+            if (checkpoints.Count > 0) cost += ServicePlan.CostOf(s, checkpoints);
+
             t.LastServiceMiles = t.ServiceMiles;
             t.PmDeferrals = 0;
 
@@ -174,8 +197,11 @@ public static class FleetMaintenance
             {
                 LedgerService.Post(s, LedgerService.Operating, -cost, "Maintenance",
                     $"PM — unit {t.Ref}", report.Number);
-                report.Findings.Add($"Unit {t.Ref} was due a PM. Done at the yard, ${cost:N0}. " +
-                                    $"Next one at {t.ServiceIntervalMiles:N0} mi.");
+                report.Findings.Add(checkpoints.Count > 0
+                    ? $"Unit {t.Ref} went through the shop, ${cost:N0} — " +
+                      string.Join(", ", checkpoints.Select(c => c.Name.ToLowerInvariant())) + "."
+                    : $"Unit {t.Ref} was due a PM. Done at the yard, ${cost:N0}. " +
+                      $"Next one at {t.ServiceIntervalMiles:N0} mi.");
                 spent[t.Unit] = spent.GetValueOrDefault(t.Unit) + cost;
                 continue;
             }
