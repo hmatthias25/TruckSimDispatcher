@@ -758,7 +758,24 @@ public static class AiService
     /// Reading in small batches and merging keeps every request well inside its budget, so the driver
     /// can paste as many boards as they like without having to know any of this.
     /// </summary>
-    private const int BatchSize = 3;
+    /// <summary>
+    /// Screenshots per request.
+    ///
+    /// One. Output tokens are what a request waits on, and three screens' worth of rows out of a single
+    /// call is three times the output before anything comes back. One screenshot per call returns
+    /// sooner, lets more run at once, and gives the model a simpler job than reading three boards and
+    /// keeping their rows apart.
+    /// </summary>
+    private const int BatchSize = 1;
+
+    /// <summary>
+    /// How many reads are in flight at once.
+    ///
+    /// Capped rather than "all of them": twenty-four concurrent requests is a good way to meet a rate
+    /// limit, and a 429 costs more time than the parallelism saved. Six is comfortably inside a normal
+    /// account's limits and still turns a twelve-screenshot board into two waves.
+    /// </summary>
+    private const int MaxConcurrentReads = 6;
 
     /// <summary>Generous ceiling. Not a limit anyone will meet in practice — the board is ten rows.</summary>
     private const int MaxScreenshots = 24;
@@ -785,13 +802,41 @@ public static class AiService
         var merged = new ExtractionResult { Ok = true, Model = model };
         var notes = new List<string>();
         var failures = new List<string>();
-        var offset = 0;
 
-        foreach (var batch in batches)
+        // Read them at the same time.
+        //
+        // This was a foreach with an await in it, so twelve screenshots meant four calls each waiting on
+        // the one before — five to ten minutes of a driver watching a spinner. The batches are entirely
+        // independent: each is a read of its own images and none of them needs anything another produced.
+        // The waiting bought nothing.
+        //
+        // Results are collected BY INDEX and merged in order afterwards, because the rows have to come
+        // back in screenshot order even though the reads finish in whatever order they finish.
+        var results = new ExtractionResult?[batches.Count];
+        using (var gate = new SemaphoreSlim(MaxConcurrentReads))
         {
-            var part = await ExtractBatchAsync(state, model, batch, offset, images.Count, ct);
-            offset += batch.Count;
+            // Materialised deliberately. A Select with an async lambda is a lazy sequence of tasks, so
+            // enumerating it twice would fire every request twice — and it is enumerated by whatever
+            // consumes it, which is not obvious at the call site.
+            var running = batches.Select(async (batch, idx) =>
+            {
+                await gate.WaitAsync(ct);
+                try
+                {
+                    results[idx] = await ExtractBatchAsync(
+                        state, model, batch, idx * BatchSize, images.Count, ct);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            }).ToList();
+            await Task.WhenAll(running);
+        }
 
+        foreach (var part in results)
+        {
+            if (part == null) continue;
             if (!part.Ok)
             {
                 // One bad batch must not lose the rows the others read successfully.
@@ -821,7 +866,7 @@ public static class AiService
         if (failures.Count > 0)
             notes.Add($"{failures.Count} of {batches.Count} batches could not be read: {string.Join(" ", failures.Distinct())}");
         if (batches.Count > 1)
-            notes.Insert(0, $"Read in {batches.Count} batches of up to {BatchSize} screenshots.");
+            notes.Insert(0, $"Read {batches.Count} screenshots, up to {MaxConcurrentReads} at a time.");
 
         merged.Notes = string.Join(" ", notes);
         return merged;
@@ -873,7 +918,13 @@ public static class AiService
             {
                 Model = model,
                 MaxTokens = 16000,
-                Thinking = new ThinkingConfigAdaptive(),
+                // No thinking budget. This is transcription — the model reads what is on the screen and
+                // this app does every calculation, which is the division the whole prompt is built on.
+                // There is nothing here to deliberate about, and deliberating about it was a large part
+                // of why a board took minutes.
+                //
+                // Effort stays High deliberately. A misread rate or deadline propagates into every
+                // decision made off that board, and it is worth far more than the seconds it costs.
                 OutputConfig = new OutputConfig
                 {
                     Effort = Effort.High,
