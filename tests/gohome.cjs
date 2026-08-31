@@ -289,7 +289,8 @@ async function badBoard(fromCity, fromState) {
     `${rep.trip.deadheadMiles} mi (41,000 -> 41,040)`);
   ok('and flagged as measured, not quoted', rep.trip.deadheadMeasured === true, `${rep.trip.deadheadMeasured}`);
   ok('the driver is told it beat the listing', /Going with yours/i.test(said6), said6.slice(0, 200));
-  ok('naming both figures', /40 mi/.test(said6) && /55 mi/.test(said6), '');
+  ok('naming both figures', /measured at 40 mi/.test(said6) && /against 55 mi/.test(said6),
+    said6.slice(0, 150));
 
   await api(`/trips/${dhTrip.id}/complete`, 'POST', {
     deliveredGameTime: iso(54, '14:00'), actualMiles: 135, endOdometer: 41175, actualRevenue: 900,
@@ -330,7 +331,9 @@ async function badBoard(fromCity, fromState) {
   ok('the quoted deadhead is kept, not zeroed', rep2.trip.deadheadMiles === 30,
     `${rep2.trip.deadheadMiles} mi`);
   ok('and it is not claimed as measured', !rep2.trip.deadheadMeasured, `${rep2.trip.deadheadMeasured}`);
-  ok('the driver is told why', /has not moved since this load was booked/i.test((rep2.notes || []).join(' ')),
+  // The baseline is the last close-out now, not the booking reading — see #140. Same behaviour, and
+  // the wording follows the measurement.
+  ok('the driver is told why', /has not moved since you closed out/i.test((rep2.notes || []).join(' ')),
     (rep2.notes || []).join(' | ').slice(0, 190));
 
   console.log(`

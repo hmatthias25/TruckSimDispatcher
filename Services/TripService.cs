@@ -314,7 +314,7 @@ public static class TripService
             // the driver's own: one at the truck stop when the load was booked, this one after loading.
             // The difference is the deadhead they actually drove, which is what should be paid — the
             // listing's figure is the game's estimate of a route they may not have taken.
-            notes.AddRange(MeasureDeadhead(trip, odometer.Value));
+            notes.AddRange(MeasureDeadhead(s, trip, odometer.Value));
         }
 
         trip.LoadedReported = true;
@@ -336,24 +336,44 @@ public static class TripService
     /// real deadhead means the reading was not updated rather than that the truck never moved, and
     /// silently paying zero for a drive the driver made is the failure this whole path exists to stop.
     /// </summary>
-    private static List<string> MeasureDeadhead(Trip trip, double loadedOdometer)
+    private static List<string> MeasureDeadhead(AppState s, Trip trip, double loadedOdometer)
     {
         var notes = new List<string>();
-        if (trip.DispatchOdometer <= 0) return notes;          // older trip, nothing to measure against
 
-        var ran = loadedOdometer - trip.DispatchOdometer;
+        // Measured from the last TRIP BOUNDARY, not from the reading on file when the load was booked.
+        //
+        // Booking uses whatever the driver last reported, so a status update between the previous
+        // drop-off and booking moved the baseline forward and quietly shortened the empty run they were
+        // paid for. Reporting clocks is the thing this app asks for most, so the cost landed on the
+        // drivers doing as they were told. The previous drop-off is where the empty running actually
+        // began and no amount of reporting in can move it.
+        var boundary = LastReportedOdometer(s, trip);
+        var from = boundary > 0 ? boundary
+                 : trip.DispatchOdometer > 0 ? trip.DispatchOdometer
+                 : 0;
+        if (from <= 0) return notes;                           // older trip, nothing to measure against
+
+        var ran = loadedOdometer - from;
         var quoted = trip.DeadheadMiles;
+        var bookedAt = trip.DispatchOdometer;
 
         if (ran < 0)
         {
-            notes.Add($"That reading is {Math.Abs(ran):N0} mi BELOW the {trip.DispatchOdometer:N0} on file when this " +
-                      "load was booked. Keeping the quoted deadhead and leaving it alone — check the number.");
+            notes.Add($"That reading is {Math.Abs(ran):N0} mi BELOW the {from:N0} you closed out on. " +
+                      "Keeping the quoted deadhead and leaving it alone — check the number.");
             return notes;
         }
 
+        // Miles run before the load was even booked. Legitimate — repositioning, a run at a truck stop —
+        // but they should be on an empty move rather than folded into a load's deadhead unnoticed.
+        if (bookedAt > 0 && bookedAt - from >= 25)
+            notes.Add($"{bookedAt - from:N0} mi of that was run before this load was booked. It is being paid as " +
+                      "deadhead, but if it was a repositioning run it belongs on an empty move of its own — " +
+                      "that is what keeps the record straight about where the truck actually went.");
+
         if (ran > ImplausibleDeadheadMiles)
         {
-            notes.Add($"That is {ran:N0} mi between booking this load and loading it, which is too far to be a run " +
+            notes.Add($"That is {ran:N0} mi between closing out and loading, which is too far to be a run " +
                       $"to the shipper. Keeping the {quoted:N0} mi quoted — if you really ran that empty it wants " +
                       "dispatching as an empty move.");
             return notes;
@@ -361,7 +381,7 @@ public static class TripService
 
         if (ran < 0.5 && quoted >= 1)
         {
-            notes.Add($"The odometer has not moved since this load was booked, but the listing quoted {quoted:N0} mi " +
+            notes.Add($"The odometer has not moved since you closed out, but the listing quoted {quoted:N0} mi " +
                       "of deadhead to the shipper. I am keeping the quoted figure rather than paying you nothing — " +
                       "report the reading from the shipper if you want it exact.");
             return notes;
@@ -371,12 +391,12 @@ public static class TripService
         trip.DeadheadMeasured = true;
 
         if (quoted >= 1 && Math.Abs(ran - quoted) >= 5)
-            notes.Add($"Deadhead to the shipper measured at {trip.DeadheadMiles:N0} mi from your own readings " +
-                      $"({trip.DispatchOdometer:N0} → {loadedOdometer:N0}), against {quoted:N0} mi on the listing. " +
+            notes.Add($"Empty miles measured at {trip.DeadheadMiles:N0} mi from your own readings " +
+                      $"({from:N0} → {loadedOdometer:N0}), against {quoted:N0} mi on the listing. " +
                       "Going with yours — you drove it, the listing guessed it.");
         else
-            notes.Add($"Deadhead to the shipper: {trip.DeadheadMiles:N0} empty mi, measured " +
-                      $"({trip.DispatchOdometer:N0} → {loadedOdometer:N0}) and paid at the empty rate.");
+            notes.Add($"Empty miles since you closed out: {trip.DeadheadMiles:N0}, measured " +
+                      $"({from:N0} → {loadedOdometer:N0}) and paid at the empty rate.");
 
         return notes;
     }

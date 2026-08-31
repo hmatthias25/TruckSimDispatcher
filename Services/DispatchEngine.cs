@@ -593,6 +593,26 @@ public static class DispatchEngine
     }
 
     /// <summary>Conditions that ground the truck entirely.</summary>
+    /// <summary>
+    /// The takeable loads ranked above the one being authorized — the ones being turned down to reach it.
+    ///
+    /// Only loads that could actually have been run count. A board full of freight the driver was never
+    /// cleared for is not a board they are refusing; it is a board that refused them, and charging a
+    /// weekly allowance for it would be charging them for the app's own filtering.
+    /// </summary>
+    public static List<BoardLoad> LoadsSkippedToReach(AppState s, string loadId)
+    {
+        var board = EvaluateBoard(s);
+        var takeable = board.Evaluations
+            .Where(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
+                        && e.Feasibility.Verdict != "Infeasible")
+            .ToList();
+
+        var at = takeable.FindIndex(e => e.Load.Id == loadId);
+        if (at <= 0) return new List<BoardLoad>();             // dispatch's own pick, or not takeable at all
+        return takeable.Take(at).Select(e => e.Load).ToList();
+    }
+
     public static List<string> DispatchBlockers(AppState s, Truck? truck, Trailer? trailer)
     {
         // Nothing moves for a career that has ended, and the reason has to be the first thing said —
@@ -917,7 +937,12 @@ public static class DispatchEngine
 
         // ---- pros / cons
         if (e.AllInRpm >= targetRpm) e.Pros.Add($"${e.AllInRpm:0.00}/mi all-in beats our ${targetRpm:0.00} target.");
-        if (load.DeadheadMiles <= 0) e.Pros.Add("No deadhead — loaded from where you sit.");
+        // "No deadhead" is a claim about where the truck is, made from a number the driver typed on the
+        // listing. It is only ever the QUOTE — the empty run is measured from the odometer at loading,
+        // and a listing that quoted nothing can still turn out to be fifty miles up the road.
+        if (load.DeadheadMiles <= 0)
+            e.Pros.Add("The listing quotes no deadhead. Empty miles are measured off your odometer at the shipper, " +
+                       "so if you do have to run to it you are still paid for it.");
         if (e.DestTier == 1) e.Pros.Add($"{Place(load.DestCity, load.DestState)} reloads easily.");
         if (e.DestResetFriendly && s.Hos.CycleRemaining <= w.ResetWatchCycleHours)
             e.Pros.Add("Destination can hold a restart.");
@@ -1143,17 +1168,29 @@ public static class DispatchEngine
         // hiding a button is not a rule, and the driver must not be able to pick their own freight
         // before they have earned it.
         var privileges = CareerService.Privileges(s);
-        if (s.Board.Count > 1 && !privileges.CanChooseAlternateLoad)
+
+        // Taking a load further down the board means turning down the ones above it, and refusals are
+        // rationed by rank rather than switched on and off by it — see Rejections. Picking the third
+        // load costs two, unless the ones skipped were expiring anyway, which are free at every rank.
+        var skipped = LoadsSkippedToReach(s, loadId);
+        if (skipped.Count > 0)
         {
-            // A board held for the city question has no authorized load, but it does name the one
-            // operations would have taken — and that is still the assignment. Without this the hold
-            // would quietly hand a probationary driver the pick of the board.
-            var board = EvaluateBoard(s);
-            var assigned = board.AuthorizedLoadId ?? (string.IsNullOrWhiteSpace(board.HeldLoadId) ? null : board.HeldLoadId);
-            if (assigned != null && assigned != loadId)
-                throw new InvalidOperationException(
-                    $"That is not your assignment. {privileges.Summary} " +
-                    "Operations has already picked the load for this dispatch — take that one, or ask for a different one and I will decide.");
+            var chargeable = skipped.Where(l => !Rejections.IsFreeRefusal(s, l)).ToList();
+            var left = Rejections.Remaining(s);
+            if (chargeable.Count > left)
+            {
+                var allowance = Rejections.WeeklyAllowance(s.Driver.Rank);
+                throw new InvalidOperationException(allowance == 0
+                    ? "That is not your assignment. You are on probation — you run the load you are given, and the " +
+                      "only one you may turn down is one that will expire before you can reach it. " +
+                      "Operations has already picked this dispatch."
+                    : $"Taking that one means turning down {chargeable.Count} ahead of it, and you have {left} " +
+                      $"refusal(s) left this week out of {allowance}. They come back Monday. " +
+                      "Until then, take the load operations picked — or one you can afford to reach.");
+            }
+
+            foreach (var l in skipped)
+                Rejections.Record(s, l, $"Passed over to take {load.Cargo} to {Place(load.DestCity, load.DestState)}.");
         }
 
         if (eval.Feasibility.Verdict == "Tight")

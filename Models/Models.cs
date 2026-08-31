@@ -17,6 +17,15 @@ public class AppState
     public string DamageRunHomeSinceGameTime { get; set; } = "";
 
     /// <summary>
+    /// Loads turned down, newest first. Only the current week is ever read.
+    ///
+    /// Kept as a list rather than a counter so the week can be recomputed from the game clock instead of
+    /// being reset by something remembering to. A counter would need a "reset on Monday" job, and
+    /// anything that has to remember to fire is something that will one day not.
+    /// </summary>
+    public List<LoadRefusal> LoadRefusals { get; set; } = new();
+
+    /// <summary>
     /// Set when the truck was recovered on a hook rather than driven in.
     ///
     /// It changes what can be ordered, not what the damage means. A towed truck is not running home at
@@ -1241,6 +1250,19 @@ public class TripEvent
 /// One fuel purchase. Recorded when it happens rather than reconstructed at the end of the trip, so
 /// a run that fuels three times at three prices produces three lines and an honest blended cost.
 /// </summary>
+/// <summary>A load the driver turned down, and whether it cost them one of their weekly refusals.</summary>
+public class LoadRefusal
+{
+    public string GameTime { get; set; } = "";
+    public string Cargo { get; set; } = "";
+    public string Lane { get; set; } = "";
+    public string Reason { get; set; } = "";
+    /// <summary>True for a load about to expire. Logged, but never counted against the allowance.</summary>
+    public bool Free { get; set; }
+    /// <summary>The rank they held at the time, so a promotion mid-week reads honestly on the record.</summary>
+    public string RankAtTime { get; set; } = "";
+}
+
 /// <summary>A recovery: where it happened, where it went, and what it cost.</summary>
 public class TowReport
 {
