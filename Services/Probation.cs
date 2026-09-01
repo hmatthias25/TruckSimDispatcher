@@ -165,32 +165,36 @@ public static class Probation
         s.ProbationReviews.Insert(0, review);
 
         // ---- does this clear it?
+        //
+        // On THIS driver's plan, not the default. The passes figure is per-career now and a two-pass
+        // probation that still auto-cleared at three would never clear at all.
+        var want = PassesFor(s);
         var run = ConsecutivePasses(s);
         review.PassesInARow = run;
 
-        if (review.Verdict == "Pass" && run >= PassesToClear)
+        if (review.Verdict == "Pass" && run >= want)
         {
             var (metThresholds, shortfall) = MeetsCompanyThresholds(s);
             if (metThresholds)
             {
                 review.ClearedProbation = true;
-                review.NextStep = $"That is {PassesToClear} in a row. Probation is done — you are a company driver. " +
+                review.NextStep = $"That is {want} in a row. Probation is done — you are a company driver. " +
                                   "Your own home-time arrangement takes over from here.";
             }
             else
             {
-                review.NextStep = $"That is {PassesToClear} good reviews in a row, which is the hard part. " +
+                review.NextStep = $"That is {want} good reviews in a row, which is the hard part. " +
                                   $"You are still short on the numbers though: {shortfall} Keep the run going and it will come.";
             }
         }
         else if (review.Verdict == "Pass")
         {
-            review.NextStep = $"{run} in a row. {PassesToClear - run} more and you are off probation. " +
+            review.NextStep = $"{run} in a row. {want - run} more and you are off probation. " +
                               $"Back in {ReviewIntervalDays} days.";
         }
         else
         {
-            review.NextStep = $"The run resets — you need {PassesToClear} in a row. Back in {ReviewIntervalDays} days. " +
+            review.NextStep = $"The run resets — you need {want} in a row. Back in {ReviewIntervalDays} days. " +
                               "This is not discipline and it is not on your safety record; it means the probation carries on.";
         }
 

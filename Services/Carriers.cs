@@ -588,8 +588,12 @@ public static class Carriers
                 HqCity = spec.HqCity,
                 HqState = spec.HqState,
                 Yards = spec.OtherYards.Select(y => y.Replace(",", ", ")).ToList(),
-                // Show what they would actually pay this period, not the posted rate.
+                // The company rate this period. NOT what the driver would start on — see StartingCpm,
+                // which is the figure the card leads with, because every new hire is probationary.
                 LoadedCpm = Math.Round(spec.LoadedCpm * cond.PayFactor, 3),
+                StartingCpm = StartingRate(s, spec.Code, s.Application).Loaded,
+                StartingNote = StartingRate(s, spec.Code, s.Application).Note,
+                CurrentCpm = s.Onboarded ? s.Driver.Pay.LoadedCpm : 0,
                 DeadheadCpm = Math.Round(spec.DeadheadCpm * cond.PayFactor, 3),
                 PostedLoadedCpm = spec.LoadedCpm,
                 EquipmentStars = spec.EquipmentStars,
@@ -1137,17 +1141,25 @@ public static class Carriers
     /// A driver short of the carrier's experience bar starts under the posted rate, which is how
     /// carriers really treat drivers they are taking a chance on.
     /// </summary>
-    public static void ApplyPayScale(AppState s, string code, DriverApplication app)
+    /// <summary>
+    /// What this driver would actually be paid on day one at <paramref name="code"/>, and why.
+    ///
+    /// Every new hire starts probationary, which is a 0.90 multiplier, so the carrier's posted rate is
+    /// a number the driver will not see for weeks. The market card used to show the posted figure under
+    /// a comment claiming it was "what they would actually pay this period" — true of a company driver,
+    /// not of the person reading it, and wrong by 10% in the one direction that matters.
+    ///
+    /// Extracted so the card and <see cref="ApplyPayScale"/> compute it the same way. Two functions
+    /// answering "what will I earn" is how the answer on screen stops matching the answer in the books.
+    /// </summary>
+    public static (decimal Loaded, decimal Deadhead, string Note) StartingRate(AppState s, string code, DriverApplication? app)
     {
-        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase))
-                   ?? throw new InvalidOperationException("No such carrier.");
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code ?? "", StringComparison.OrdinalIgnoreCase));
+        if (spec == null) return (0, 0, "");
 
         var years = app?.ExperienceYears ?? 0;
         var totalLoads = s.Driver.PriorLoads;
-        var cond = ConditionOf(s, code);
-        // Probation pays under the carrier's own scale — the same rung the ladder calls probationary.
-        // Without this an experienced hire started ON the company rate, and clearing probation was worth
-        // nothing at all: same money, new title.
+        var cond = ConditionOf(s, spec.Code);
         var probationary = MultiplierFor("probationary");
         var underTheBar = years < spec.MinYears && totalLoads < 20;
         var entry = underTheBar ? 0.85m : probationary;
@@ -1155,18 +1167,33 @@ public static class Carriers
         var loaded = Math.Round(spec.LoadedCpm * cond.PayFactor * entry, 3);
         var deadhead = Math.Round(spec.DeadheadCpm * cond.PayFactor * entry, 3);
         var note = underTheBar
-            ? $"{spec.Name} entry scale — under even their probationary rate, on experience. It comes up when probation clears."
-            : cond.PayFactor > 1m
-                ? $"{spec.Name} probationary scale, {(cond.PayFactor - 1m) * 100:0}% over posted while they are short of drivers."
-                : $"{spec.Name} probationary scale.";
+            ? "entry scale — under even their probationary rate, on experience"
+            : "probationary scale";
 
-        // A driver arriving with real history is worth more than a first-timer, even on probation.
         if (!underTheBar && totalLoads >= 60)
         {
             loaded = Math.Round(loaded * 1.04m, 3);
             deadhead = Math.Round(deadhead * 1.04m, 3);
-            note = $"{spec.Name} probationary scale with a seniority premium for {totalLoads} loads of history.";
+            note = $"probationary scale, with a seniority premium for {totalLoads} loads of history";
         }
+        return (loaded, deadhead, note);
+    }
+
+    public static void ApplyPayScale(AppState s, string code, DriverApplication app)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase))
+                   ?? throw new InvalidOperationException("No such carrier.");
+
+        // The same arithmetic the market card quotes, so what the driver was shown is what they get.
+        // Probation pays under the carrier's own scale — the same rung the ladder calls probationary.
+        // Without this an experienced hire started ON the company rate, and clearing probation was worth
+        // nothing at all: same money, new title.
+        var cond = ConditionOf(s, code);
+        var (loaded, deadhead, why) = StartingRate(s, code, app);
+        var note = $"{spec.Name} {why}." +
+                   (cond.PayFactor > 1m
+                       ? $" {(cond.PayFactor - 1m) * 100:0}% over posted while they are short of drivers."
+                       : "");
 
         s.Driver.Pay.LoadedCpm = loaded;
         s.Driver.Pay.DeadheadCpm = deadhead;
@@ -1385,6 +1412,20 @@ public class CarrierListing
     public bool StartsAboveProbation { get; set; }
 
     /// <summary>How far they promote, and what the top of their scale pays.</summary>
+    /// <summary>
+    /// What this driver would be paid on day one — probationary, which every new hire is.
+    ///
+    /// The card leads with this rather than <see cref="LoadedCpm"/>, which is the company rate and a
+    /// number the driver does not see for weeks.
+    /// </summary>
+    public decimal StartingCpm { get; set; }
+
+    /// <summary>Why the starting figure is what it is, in a few words.</summary>
+    public string StartingNote { get; set; } = "";
+
+    /// <summary>What the driver earns right now, so the comparison is made for them.</summary>
+    public decimal CurrentCpm { get; set; }
+
     public string CeilingRank { get; set; } = "";
     public string CeilingTitle { get; set; } = "";
     public decimal TopLoadedCpm { get; set; }

@@ -392,6 +392,35 @@ function readApplication() {
 
 const stars = (n) => '★'.repeat(n) + '<span style="color:var(--line3)">' + '★'.repeat(5 - n) + '</span>';
 
+/* What you would actually earn there, against what you earn now.
+ *
+ * The card used to lead with the carrier's posted rate, which is what they pay a COMPANY driver. Every
+ * new hire is probationary — a 0.90 multiplier — so that number was one the driver would not see for
+ * weeks, and a move that reads as a 9% cut is an 18% one until probation clears. All three figures are
+ * shown now, and the comparison against the current rate is made rather than left to be remembered. */
+function payLadderHtml(c) {
+  const start = +c.startingCpm || 0;
+  const company = +c.loadedCpm || 0;
+  const now = +c.currentCpm || 0;
+  if (!start) return '';
+
+  const delta = now ? start - now : 0;
+  const cls = delta < -0.0005 ? 'bad' : delta > 0.0005 ? 'ok' : 'mute';
+  const sign = delta > 0 ? '+' : '';
+
+  return `<div class="kv" style="margin-top:6px">
+    <span>to start <b class="mono">$${start.toFixed(3)}</b>${
+      c.startingNote ? ` <span class="sub">${esc(c.startingNote)}</span>` : ''}</span>
+    <span>off probation <b class="mono">$${company.toFixed(3)}</b></span>
+    ${c.topLoadedCpm ? `<span>top of scale <b class="mono">$${(+c.topLoadedCpm).toFixed(3)}</b>${
+      c.ceilingTitle ? ` <span class="sub">${esc(c.ceilingTitle)}</span>` : ''}</span>` : ''}
+    ${now && !c.isCurrentEmployer
+      ? `<span>you earn now <b class="mono">$${now.toFixed(3)}</b> ${
+          badge(cls, `${sign}$${delta.toFixed(3)}/mi to start`)}</span>`
+      : ''}
+  </div>`;
+}
+
 /** The job market: who is hiring, who would take you, and who to come back to later. */
 function renderMarket(market, { onboarding }) {
   // Applying out from an unfinished probation is the one thing that overrides a good record, so it is
@@ -411,10 +440,10 @@ function renderMarket(market, { onboarding }) {
         <span class="lane">${esc(c.name)}</span>
         <span class="sub">${esc(c.hqCity)}, ${esc(c.hqState)} · ${esc(c.size)}</span>
         <div class="spacer"></div>
-        <b style="font-family:var(--mono)">$${(+c.loadedCpm).toFixed(3)}/mi</b>
-        ${c.postedLoadedCpm && Math.abs(c.loadedCpm - c.postedLoadedCpm) > 0.0005
-          ? `<span class="hint" style="margin:0">posted $${(+c.postedLoadedCpm).toFixed(3)}</span>` : ''}
+        <b style="font-family:var(--mono)">$${(+(c.startingCpm || c.loadedCpm)).toFixed(3)}/mi</b>
+        <span class="hint" style="margin:0">to start</span>
       </div>
+      ${payLadderHtml(c)}
       ${c.standingNote ? `<p class="hint" style="margin:6px 0 0">${esc(c.standingNote)}</p>` : ''}
       <div class="kv">
         <span>${badge(

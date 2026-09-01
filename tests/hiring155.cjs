@@ -116,6 +116,55 @@ const find = (m, code) => m.find((c) => c.code === code);
     `${reviews - p.passesRequired} spare`);
   ok('and the plan says so in words', /review/i.test(p.notes || ''), (p.notes || '').slice(0, 120));
 
+  head('8. #156 Every gate reads the plan, not the old constant');
+  // PassesToClear was a const, and five references inside Probation.cs still read it after the figure
+  // went per-career — including the auto-clear, so a two-pass probation would never have cleared.
+  const want = p.passesRequired;
+  const view = (await api('/bootstrap')).views.probation;
+  ok('the view quotes the plan', view.passesNeeded === want, `${view.passesNeeded} vs ${want}`);
+  // Whole numbers only, and deliberately without a regex: a word-boundary escape written through a
+  // template literal is a backspace character, not a boundary, and the assertion then passes forever.
+  const quoted = String(view.standing || '').match(/[0-9]+/g) || [];
+  ok('and the standing text does too', quoted.includes(String(want)),
+    `quotes ${quoted.join(', ') || 'no numbers'} — wanted ${want}`);
+
+  let refusal = '';
+  try { await api('/career/clear-probation', 'POST', { force: false, note: 'gate check' }); }
+  catch (e) { refusal = e.message; }
+  ok('clearing early is refused', refusal.length > 0, refusal.slice(0, 90) || '(allowed!)');
+  ok('and the refusal counts against the plan, not a constant',
+    new RegExp(`against ${want} required`).test(refusal), refusal.slice(0, 110));
+
+
+  head('9. #158 The card leads with what YOU would be paid');
+  const board = await market();
+  const priced = board.filter((c) => c.startingCpm > 0);
+  ok('every carrier quotes a starting rate', priced.length === board.length,
+    `${priced.length}/${board.length}`);
+  ok('and it is under the company rate, because every hire is probationary',
+    priced.every((c) => c.startingCpm < c.loadedCpm),
+    priced.filter((c) => c.startingCpm >= c.loadedCpm).map((c) => c.code).join(', ') || 'all lower');
+  ok('roughly the probationary multiplier off it',
+    priced.every((c) => Math.abs(c.startingCpm / c.loadedCpm - 0.9) < 0.06),
+    `${priced[0].code}: ${priced[0].startingCpm} vs ${priced[0].loadedCpm}`);
+  ok('the comparison against what you earn now is made for you',
+    priced.every((c) => c.currentCpm > 0), `current $${priced[0].currentCpm}`);
+
+  // The number on the card has to be the number in the books, or the driver was misled by the app
+  // that then paid them something else.
+  const target = board.find((c) => c.wouldHire && !c.isCurrentEmployer && c.standing === 'Strong');
+  if (target) {
+    const quoted = target.startingCpm;
+    await api('/career/clear-probation', 'POST', { force: true, note: 'so the move can land' });
+    const movedTo = un(await api('/market/apply', 'POST', { code: target.code, reason: 'pay check' }));
+    ok(`what ${target.code} quoted is what got paid`,
+      Math.abs(movedTo.driver.pay.loadedCpm - quoted) < 0.0005,
+      `quoted $${quoted}, paid $${movedTo.driver.pay.loadedCpm}`);
+  } else {
+    ok('no strong-standing carrier to move to this run', true, 'skipped');
+  }
+
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR', e.message); process.exit(1); });
