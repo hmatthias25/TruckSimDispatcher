@@ -52,7 +52,7 @@ public static class EquipmentService
         if (candidates.Count == 0)
         {
             plan.Reason = $"The company has no available {requiredType} trailer. " +
-                          "Buy one in ATS and add it on the Fleet tab, or take a market trailer with the job.";
+                          "Buy one in ATS and add it on the Equipment tab, or take a market trailer with the job.";
             return plan;
         }
 
@@ -328,7 +328,7 @@ public static class EquipmentService
             Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, null)} freight and the company has none " +
                           $"available. While you are home, buy one in ATS at {homeLabel}: " +
                           $"{(TrailerSpec.IsTanker(requiredType) ? TrailerSpec.BuyingAdvice(s, requiredType, null) : $"a {requiredType.ToLowerInvariant()}.")} " +
-                          "Add it on the Fleet tab, hook it, then mark this order complete.",
+                          "Add it on the Equipment tab, hook it, then mark this order complete.",
             Notes = $"No {requiredType} on the property."
         });
     }
@@ -364,7 +364,7 @@ public static class EquipmentService
             MustPurchase = true,
             AvailableFromGameTime = s.Status.GameTime,
             Instruction = $"{retiring.Ref} is coming off the fleet. Buy the replacement in ATS at {homeLabel}: " +
-                          $"{advice} Add it on the Fleet tab, then mark this order complete — " +
+                          $"{advice} Add it on the Equipment tab, then mark this order complete — " +
                           $"{retiring.Ref} retires when the new one is on the books.",
             Notes = $"Replacing {retiring.Ref} ({retiring.Type}) with a {newType}."
         });
@@ -460,7 +460,7 @@ public static class EquipmentService
             TerminalLabel = yardLabel,
             MustPurchase = true,
             Instruction =
-                $"Buy the tractor in ATS: {spec} Add it on the Fleet tab, and leave it unassigned — " +
+                $"Buy the tractor in ATS: {spec} Add it on the Equipment tab, and leave it unassigned — " +
                 $"it is going under you, not {driverName}. Then report to {yardLabel} and mark this order " +
                 $"complete; {driverName} takes your old unit at the same time. I will work you back that " +
                 "way with freight rather than running you there empty."
@@ -639,7 +639,7 @@ public static class EquipmentService
                                                             && t.Unit != s.Driver.AssignedTrailerUnit);
                 if (bought == null)
                     throw new InvalidOperationException(
-                        "No new trailer on the books yet. Buy it in ATS, add it on the Fleet tab, then close this order.");
+                        "No new trailer on the books yet. Buy it in ATS, add it on the Equipment tab, then close this order.");
                 o.ToTrailerUnit = bought.Unit;
             }
         }

@@ -78,6 +78,7 @@ PLAYER_TITLES = {
     "Maintenance and work orders",
     "Where the damage lines put you",
     "Running the GDC service schedule",
+    "What the company buys, and what counts as better",
     "Safety: incidents, discipline, and being forgiven",
     "Career, promotion and changing carriers",
     "Hired drivers and the fleet report",

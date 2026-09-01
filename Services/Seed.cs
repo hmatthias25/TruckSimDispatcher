@@ -344,9 +344,20 @@ public static class Seed
         var spec = SpecsForStandard(s.Company.EquipmentStars, pref).FirstOrDefault();
         if (spec == null) return "any sleeper tractor you can afford";
 
-        return $"a {spec.Year}-or-newer {spec.Make} {spec.Model} — {spec.Engine} around {spec.Hp} hp, " +
+        // NEW, and it says so. "2021-or-newer" invited a used truck, and a carrier replacing a unit it
+        // has just condemned does not go and buy somebody else's worn-out one — the reason this
+        // replacement exists is that the last tractor's remaining life ran out, and used life runs out
+        // again. It also starts the GDC service schedule from a real zero rather than a dealer baseline
+        // nobody can verify.
+        //
+        // Existing fleet mileage is a different question and stays as it is: StartingServiceMiles gives
+        // inherited units 15k-720k on the carrier's equipment standard, because joining a carrier means
+        // inheriting trucks that have been working. That is only ever used to populate a garage.
+        return $"a NEW {spec.Make} {spec.Model} off the dealer lot — {spec.Engine} around {spec.Hp} hp, " +
                $"{spec.Trans}, {spec.Cab.ToLowerInvariant()}, roughly {spec.Fuel:N0} gal of fuel. " +
-               $"Anything close to that spec is fine; match what you actually buy on the Fleet tab.";
+               "Buy it new, not used: we are replacing a unit that ran out of life and second-hand miles " +
+               "put us back here inside two years. Anything close to that spec is fine; match what you " +
+               "actually buy on the Equipment tab.";
     }
 
     /// <summary>
@@ -412,7 +423,7 @@ public static class Seed
             HomeTerminalId = yard?.Id ?? "",
             PurchasePrice = 118_000m + rnd.Next(0, 46) * 1000m,
             MonthlyPayment = 2_150m + rnd.Next(0, 12) * 50m,
-            Notes = "Match this to the tractor you actually buy in game — edit the spec on the Fleet tab."
+            Notes = "Match this to the tractor you actually buy in game — edit the spec on the Equipment tab."
         });
 
         var primary = divisions.FirstOrDefault() ?? "Dry Van";

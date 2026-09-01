@@ -129,6 +129,26 @@ function body(js, name) {
     ['any', 'trucks', 'trailers', 'yards'].every((k) => k in v.backdrop),
     Object.keys(v.backdrop || {}).join(', '));
 
+  head('12. #159/#160 What to buy, and where the button for it is');
+  // Splitting the asset book out left 30 instructions pointing at the Fleet tab for controls that had
+  // moved to Equipment. An app that tells you where to go and is wrong about it is worse than one that
+  // says nothing, because you go there and conclude the feature is missing.
+  const rec = (await api('/fleetops')).recommendedTruck || '';
+  ok('there is a recommendation to check', rec.length > 0, rec.slice(0, 60));
+  ok('it sends you to the tab the button is actually on', /Equipment tab/.test(rec), rec.slice(-70));
+  ok('and not to the one it moved off', !/Fleet tab/.test(rec), 'no stale pointer');
+
+  // #159: a carrier replacing a unit it just condemned does not buy somebody else's worn-out one.
+  // Word-split, not a boundary escape: a backslash-b written through a generator becomes a
+  // backspace character and the assertion then passes on everything forever. It has happened
+  // here before, more than once.
+  ok('the replacement is specified as new',
+    rec.split(/[^A-Za-z]+/).includes('NEW'), rec.slice(0, 70));
+  ok('and it says why, so a cheap used one on the lot is not tempting',
+    /not used|second-hand/i.test(rec), rec.slice(0, 150));
+  ok('the old "or-newer" wording is gone', !/or-newer/i.test(rec), 'no used invitation');
+
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR', e.message); process.exit(1); });

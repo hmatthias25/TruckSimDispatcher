@@ -1251,7 +1251,7 @@ public static class Carriers
             Detail = "This is your headquarters yard. A small garage — one truck — is all you need to start, " +
                      "and it is what a fresh profile can afford.\n\n" +
                      "It is not a ceiling. If you have seeded cash, buy the large garage instead, set the " +
-                     "tier to Large on the Terminals tab, and use 'Stock a yard' on the Fleet tab to put a " +
+                     "tier to Large on the Terminals tab, and use 'Stock a yard' on the Equipment tab to put a " +
                      "five-truck fleet in it in one step. Tier decides capacity: Small 1, Medium 3, Large 5, " +
                      "matching the ATS garage upgrades. Upgrade the garage in game whenever you want more room.\n\n" +
                      "If you already own a garage elsewhere, either buy one here or edit the terminal so the " +
@@ -1302,7 +1302,7 @@ public static class Carriers
                          (withShop.Count > 0
                             ? $"The yards with a repair shop are {string.Join(", ", withShop)}."
                             : "Only the headquarters has a shop at this tier.") +
-                         " If you would rather run a different network, edit or delete yards on the Fleet tab.",
+                         " If you would rather run a different network, edit or delete yards on the Equipment tab.",
                 Why = "Fuel and repairs are the two biggest costs against the company, and a yard cuts both."
             });
         }

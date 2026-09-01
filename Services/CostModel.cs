@@ -169,7 +169,7 @@ public static class CostModel
                 c.Recommendations.Add(
                     $"Fuel is ${be.FuelPerMile:0.000}/mi at ${s.Settings.FuelPricePerGal:0.00}/gal and " +
                     $"{(DispatchEngine.AssignedTruck(s)?.AvgMpg ?? 6.5):0.0} mpg. Set the fuel price to what your game " +
-                    "actually charges at the pump, and check the truck's mpg on the Fleet tab.");
+                    "actually charges at the pump, and check the truck's mpg on the Equipment tab.");
 
             if (be.DriverPayPerMile > (double)c.MedianRpm * 0.45)
                 c.Recommendations.Add(

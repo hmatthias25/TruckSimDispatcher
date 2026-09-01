@@ -5937,7 +5937,7 @@ async function handleAction(act, d, ev) {
     case 'retire-unit': {
       const mine = d.mine === '1';
       const rep = prompt(mine
-        ? `Trade unit ${d.unit}.\n\nLeave blank and the company puts you in the best spare on the property.\nOr type the unit number of a replacement you have bought and added on the Fleet tab.`
+        ? `Trade unit ${d.unit}.\n\nLeave blank and the company puts you in the best spare on the property.\nOr type the unit number of a replacement you have bought and added on the Equipment tab.`
         : `Trade unit ${d.unit}.\n\nLeave blank to retire it with nobody moving.\nOr type the unit number of its replacement.`, '');
       if (rep === null) return;
       return run(async () => {

@@ -76,12 +76,12 @@ public static class TotalLoss
         var order = EquipmentService.OpenOrder(s);
         steps.Add(order != null && order.MustPurchase
             ? $"{order.Number}: we have put an order in for your replacement — {Seed.RecommendedTruck(s)} " +
-              "Go and pick it up in ATS and add it on the Fleet tab."
+              "Go and pick it up in ATS and add it on the Equipment tab."
             : "Buy the replacement in ATS: " + Seed.RecommendedTruck(s));
 
         steps.Add($"Then write {truck.Ref} off on the Maintenance tab — fault, scrap value, and it settles the " +
                   "insurance. If the replacement is already on the books when you do that, I put you " +
-                  "straight into it; if not, add it on the Fleet tab and I will pick it up from there.");
+                  "straight into it; if not, add it on the Equipment tab and I will pick it up from there.");
 
         return steps;
     }

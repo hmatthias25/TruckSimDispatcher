@@ -1196,7 +1196,7 @@ public static class FleetOpsService
             {
                 report.Instructions.Add(
                     $"Trade unit {oldLabel} in ATS and buy the replacement: {spec} Add what you actually " +
-                    "buy on the Fleet tab and I will move you into it.");
+                    "buy on the Equipment tab and I will move you into it.");
                 continue;
             }
 
@@ -1212,7 +1212,7 @@ public static class FleetOpsService
             {
                 report.Instructions.Add(
                     $"Sell unit {oldLabel} in ATS and buy {driverName} a replacement: {spec} Put " +
-                    $"{driverName} in it and add it on the Fleet tab.");
+                    $"{driverName} in it and add it on the Equipment tab.");
                 continue;
             }
 
@@ -1427,7 +1427,7 @@ public static class FleetOpsService
                     $"Trailer {tr.Ref} coming off the fleet on {reason}.");
                 evidence.Add(order != null
                     ? $"{order.Number} is raised for it — buy the {newType.ToLowerInvariant()} in ATS and add it on the " +
-                      "Fleet tab, then close the order out."
+                      "Equipment tab, then close the order out."
                     : $"We will raise the order for the {newType.ToLowerInvariant()} once the equipment order " +
                       "already open is closed out.");
             }
@@ -1586,7 +1586,7 @@ public static class FleetOpsService
         if (!string.IsNullOrWhiteSpace(replacementUnit))
         {
             var rep = s.Trucks.FirstOrDefault(x => x.Unit.Equals(replacementUnit, StringComparison.OrdinalIgnoreCase))
-                      ?? throw new InvalidOperationException($"Unit {replacementUnit} is not on the book yet — add it on the Fleet tab first.");
+                      ?? throw new InvalidOperationException($"Unit {replacementUnit} is not on the book yet — add it on the Equipment tab first.");
             rep.HomeTerminalId = string.IsNullOrWhiteSpace(rep.HomeTerminalId) ? t.HomeTerminalId : rep.HomeTerminalId;
 
             // Whoever was in the old truck takes the new one.
@@ -1615,7 +1615,7 @@ public static class FleetOpsService
         {
             throw new InvalidOperationException(
                 $"Unit {t.Ref} is the truck you are in and there is no spare on the property to put you in. " +
-                "Buy the replacement in ATS, add it on the Fleet tab, then retire this one against it.");
+                "Buy the replacement in ATS, add it on the Equipment tab, then retire this one against it.");
         }
 
         t.Retired = true;

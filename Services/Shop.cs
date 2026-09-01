@@ -229,7 +229,7 @@ public static class Shop
             order.Instructions.Add(ExplainTotalLossLine(s, truck));
             order.Instructions.Add("We do not put that kind of money into a unit and get a good truck back.");
             order.Instructions.Add("Operations is filing the insurance claim. Sell the wreck for scrap in your game and tell me what it fetched — that goes against the claim.");
-            order.Instructions.Add("Report to your home terminal to be issued a replacement. Write off the unit on the Fleet tab and I will tell you what to buy.");
+            order.Instructions.Add("Report to your home terminal to be issued a replacement. Write off the unit on the Equipment tab and I will tell you what to buy.");
             return order;
         }
 
@@ -440,7 +440,7 @@ public static class Shop
         r.Instructions.Add($"Buy the replacement: {r.ReplacementSpec}");
         if (wasMine && home != null)
             r.Instructions.Add($"You start again out of {DispatchEngine.Place(home.City, home.State)} once the new unit is on the books. " +
-                               "Add it on the Fleet tab and I will put you back in service.");
+                               "Add it on the Equipment tab and I will put you back in service.");
         if (!string.IsNullOrWhiteSpace(notes)) r.Instructions.Add(notes);
 
         s.Events.Insert(0, new LogEvent

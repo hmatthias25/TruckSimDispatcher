@@ -61,7 +61,7 @@ public static class TrailerSpec
         var likely = LikelyFor(s);
         var others = TankerKinds.Where(k => k.Key != likely.Key).Select(k => k.Label);
         return $"a tanker — most likely a {likely.Label} for {s.Company.Name}'s freight ({likely.Hauls}). " +
-               $"The alternatives are {string.Join(", ", others)}. Set the subtype on the Fleet tab once you know.";
+               $"The alternatives are {string.Join(", ", others)}. Set the subtype on the Equipment tab once you know.";
     }
 
     /// <summary>
