@@ -65,8 +65,27 @@ public static class TrailerSpec
     }
 
     /// <summary>
+    /// Trailer types ATS will actually sell. Anything else can be pulled, but never owned.
+    ///
+    /// <b>There is no ownable car carrier.</b> Ownable trailers arrived in 1.32 and auto transport was
+    /// not among them — car hauling is Freight Market work with SCS's own trailer, or a mod. The app was
+    /// stocking yards with a Cottrell 9-car, pricing it, basing it and telling the driver to go and buy
+    /// one. See <see cref="CarHauling"/> for what happens instead.
+    /// </summary>
+    public static bool Ownable(string? type) => !IsCarHauler(type) && !IsDropHook(type);
+
+    public static bool IsCarHauler(string? type) =>
+        (type ?? "").Trim().Equals("Car Hauler", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The subtype that marks a drop-and-hook slot as auto-only.</summary>
+    public const string CarHauling = "Auto";
+
+    /// <summary>
     /// The trailer a division is pulled with. Used when the company needs to say what to go and buy,
     /// so it names an actual trailer rather than a division.
+    ///
+    /// Auto comes back as the drop-and-hook arrangement rather than a box, because that is what car
+    /// hauling actually is in this game: freight you pull, not equipment you own.
     /// </summary>
     public static (string Type, string Subtype) ForDivision(string? division)
     {
@@ -79,13 +98,43 @@ public static class TrailerSpec
             "heavy haul" => ("Lowboy", ""),
             "tanker" => ("Tanker", "Fuel"),
             "livestock" => ("Livestock", ""),
-            "car hauler" => ("Car Hauler", ""),
-            "auto" => ("Car Hauler", ""),
+            "car hauler" or "auto" or "car hauling" => (DropHook.TrailerType, CarHauling),
             "log" => ("Log", ""),
             "dump" => ("Dump", ""),
             "intermodal" => ("Dry Van", ""),
             _ => ("Dry Van", "")
         };
+    }
+
+    /// <summary>
+    /// What this carrier should actually be given for a division, with a length to put on the record.
+    ///
+    /// The one place that answers this. There used to be two: this, and <c>Seed.TrailerForDivision</c>,
+    /// which returned <c>(type, length)</c> and dropped the subtype on the floor — so stocking a yard
+    /// produced a bare "Tanker" with no indication of which of the five ATS sells you were meant to go
+    /// and buy. Two helpers with nearly the same name is how that survived.
+    /// </summary>
+    public static (string Type, string Subtype, string Length) ForCarrier(AppState s, string? division)
+    {
+        var (type, subtype) = ForDivision(division);
+
+        // A tanker is five different trailers. Name the one this carrier's freight points at rather
+        // than writing "Tanker" and leaving the driver at the dealer guessing.
+        if (IsTanker(type)) subtype = LikelyFor(s).Key;
+
+        var length = type switch
+        {
+            "Reefer" => "53'",
+            "Flatbed" => "48'",
+            "Step Deck" => "48'",
+            "Lowboy" => "48' RGN",
+            "Tanker" => "42'",
+            "Livestock" => "53'",
+            "Log" => "40'",
+            "Dump" or "Hopper" => "40'",
+            _ => DropHook.Is(type) ? "—" : "53'",
+        };
+        return (type, subtype, length);
     }
 
     /// <summary>Which division a trailer type belongs to. The inverse of <see cref="ForDivision"/>.</summary>

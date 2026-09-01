@@ -2007,6 +2007,16 @@ object Snapshot(AppState? given = null)
                 // A career migrated off the old CDL model has hazmat on file but no classes chosen.
                 needsChoosing = Endorsements.NeedsClassesChosen(s)
             },
+            // What the current rung actually allows, and what the last change to it meant. A promotion
+            // that announces a pay rate and nothing else leaves the driver to discover the rest by
+            // bumping into it.
+            rank = new
+            {
+                title = s.Driver.RankTitle,
+                privileges = CareerService.Privileges(s),
+                refusalsPerWeek = Rejections.WeeklyAllowance(s.Driver.Rank),
+                lastChange = s.Driver.LastRankBriefing,
+            },
             probation = new
             {
                 on = Probation.IsOn(s),

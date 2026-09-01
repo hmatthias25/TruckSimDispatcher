@@ -18,6 +18,8 @@ public static class Migrations
             return;
         }
 
+        RetireTheCarHaulerNobodyCanBuy(s);
+        NameTheTankOnTheYard(s);
         RebaseGameCalendar(s);
         MatchGameDayNumbering(s);
         ClearSafetyRecordWrittenUnderOldRules(s);
@@ -1388,6 +1390,70 @@ public static class Migrations
     /// Capacity and services follow the yard tier. Even the smallest yard fuels and parks a truck —
     /// a terminal that cannot do that is not a terminal — while a shop needs real square footage.
     /// </summary>
+    /// <summary>
+    /// Takes the car carrier off the books, because there has never been one to take off them in game.
+    ///
+    /// ATS sells no auto transporter — ownable trailers arrived in 1.32 and that was not among them — so
+    /// a career carrying one has a box on its fleet count and against its yard capacity that could not
+    /// possibly exist in the driver's garage. Car hauling runs as the drop-and-hook arrangement instead,
+    /// which is what it actually is: the shipper's transporter, on a market job.
+    ///
+    /// The driver is moved onto the arrangement if they were sitting on the phantom trailer, because
+    /// leaving them assigned to a deleted unit is a hard dispatch blocker with no way out of it.
+    /// </summary>
+    private static void RetireTheCarHaulerNobodyCanBuy(AppState s)
+    {
+        var phantom = s.Trailers.Where(t => TrailerSpec.IsCarHauler(t.Type)).ToList();
+        if (phantom.Count == 0) return;
+
+        var wasMine = phantom.Any(t => t.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase));
+        foreach (var t in phantom) s.Trailers.Remove(t);
+
+        var slot = DropHook.Ensure(s, TrailerSpec.CarHauling);
+        if (wasMine) s.Driver.AssignedTrailerUnit = slot.Unit;
+
+        foreach (var d in s.HiredDrivers)
+            if (phantom.Any(t => t.Unit.Equals(d.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)))
+                d.AssignedTrailerUnit = "";
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "fleet",
+            GameTime = s.Status.GameTime,
+            Message = $"{phantom.Count} car carrier(s) taken off the books — ATS sells no auto transporter, " +
+                      "so that box was never something you could have bought. Car hauling runs off the " +
+                      "freight market on the shipper's trailer, and the arrangement is on your fleet now.",
+        });
+    }
+
+    /// <summary>
+    /// Says which tank is on the yard.
+    ///
+    /// "Tanker" is five different trailers in ATS — fuel, gas, chemical, food-grade and dry bulk — and a
+    /// yard stocked before this named none of them, so the driver was sent to a dealer to buy one of five
+    /// things with no way to tell which. The subtype is filled in from the carrier's own freight, which
+    /// is the same judgement the buying advice already made and just never wrote down.
+    /// </summary>
+    private static void NameTheTankOnTheYard(AppState s)
+    {
+        var bare = s.Trailers
+            .Where(t => TrailerSpec.IsTanker(t.Type) && string.IsNullOrWhiteSpace(t.Subtype))
+            .ToList();
+        if (bare.Count == 0) return;
+
+        var likely = TrailerSpec.LikelyFor(s);
+        foreach (var t in bare) t.Subtype = likely.Key;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "fleet",
+            GameTime = s.Status.GameTime,
+            Message = $"{bare.Count} tanker(s) on the books said only \"tanker\", which is five different " +
+                      $"trailers at the dealer. Recorded as {likely.Label} on {s.Company.Name}'s freight — " +
+                      "change it on the Equipment tab if the one you actually bought is different.",
+        });
+    }
+
     public static void ApplyLevel(Terminal t, string level)
     {
         t.Level = level;

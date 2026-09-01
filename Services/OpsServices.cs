@@ -625,8 +625,16 @@ public static class CareerService
     private record Rank(string Key, string Title, int Loads, double Miles, double OnTime,
         double MaxDamage, int MaxFaults, decimal LoadedCpm, decimal DeadheadCpm, string[] Unlocks, string Note);
 
-    /// <summary>Freight-selection authority by rank.</summary>
-    public static DriverPrivileges Privileges(AppState s) => s.Driver.Rank switch
+    /// <summary>Freight-selection authority for the rank the driver is standing on.</summary>
+    public static DriverPrivileges Privileges(AppState s) => PrivilegesFor(s.Driver.Rank);
+
+    /// <summary>
+    /// Freight-selection authority by rank.
+    ///
+    /// Takes the rank rather than the state so a promotion can ask what the driver had a moment ago and
+    /// what they have now, and say what actually changed. See <see cref="RankMeaning"/>.
+    /// </summary>
+    public static DriverPrivileges PrivilegesFor(string? rank) => (rank ?? "") switch
     {
         "company" => new DriverPrivileges
         {
@@ -873,6 +881,9 @@ public static class CareerService
                 throw new InvalidOperationException($"Not eligible for {target.Title} yet. Promotions come from performance, not from asking.");
         }
 
+        // Worked out BEFORE the rank moves, so the two sides can actually be compared.
+        var wasRank = s.Driver.Rank;
+
         s.Driver.Rank = target.Key;
         s.Driver.RankTitle = target.Title;
 
@@ -914,6 +925,13 @@ public static class CareerService
 
         if (target.Key is "lease" or "owner")
             s.Driver.Pay.Notes += " Driver now carries fuel and maintenance cost on this unit — settlement rate reflects that.";
+
+        // What the rung actually means, kept on file and said out loud. Every line of it comes from the
+        // rule that enforces it, so this cannot drift away from what the app will really let them do.
+        var briefing = RankMeaning.Compare(s, wasRank, target.Key);
+        s.Driver.LastRankBriefing = briefing;
+        foreach (var line in briefing.Gained)
+            s.Events.Insert(0, new LogEvent { Channel = "career", GameTime = s.Status.GameTime, Message = line });
 
         return $"{s.Driver.Name} promoted to {target.Title}: ${target.LoadedCpm:0.000}/loaded mi, ${target.DeadheadCpm:0.000}/empty mi. {target.Note}";
     }

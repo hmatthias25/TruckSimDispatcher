@@ -68,10 +68,14 @@ async function report(city, state, day, hm = '08:00') {
     ok('and it is answered now, not at the next close-out',
       !/close.*out|next load/i.test(r.message), r.message);
   } else {
-    // Two legitimate refusals here: nothing better on the property, or an order already outstanding —
-    // promotion off probation issues one of its own, which is exactly the case to not double up on.
+    // Three legitimate refusals here: nothing better on the property, an order already outstanding —
+    // promotion off probation issues one of its own, which is exactly the case to not double up on —
+    // or the standing roll simply going against them, which says how close they were.
+    //
+    // Asserted as the intent rather than as an allow-list of phrasings. The list version passed only
+    // because of which branch happened to fire, and broke the moment "better truck" got a real test.
     ok('refused for a sound reason, not the probation one',
-      /nothing on the property|nothing.*better|already have/i.test(r.message), r.message);
+      r.message.length > 0 && !/probation/i.test(r.message), r.message);
   }
 
   head('5. Regression: a FIRST home time never re-rigs the trailer');

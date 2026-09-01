@@ -473,9 +473,8 @@ public static class EquipmentService
         var better = BestAvailableTruck(s);
         if (better == null || (current != null && better.Unit == current.Unit)) return null;
 
-        // Only an actual improvement is worth moving a driver for.
-        if (current != null && better.Year <= current.Year && better.ServiceMiles >= current.ServiceMiles)
-            return null;
+        // Only an actual improvement is worth moving a driver for, on the one scale everything uses.
+        if (!TruckGrade.IsUpgrade(s, current, better, out _)) return null;
 
         var yard = Migrations.TerminalOf(s, better.HomeTerminalId);
         var label = yard != null ? $"{yard.City}, {yard.State}" : "the yard";
@@ -556,7 +555,7 @@ public static class EquipmentService
 
         return candidates
             .OrderBy(t => Proximity(s, t))          // 0 = this city, 1 = this state, 2 = elsewhere
-            .ThenByDescending(t => t.Year)
+            .ThenByDescending(t => TruckGrade.Score(s, t))
             .ThenBy(t => t.ServiceMiles)
             .FirstOrDefault();
     }
@@ -750,8 +749,7 @@ public static class EquipmentService
         if (mine == null || freed.Unit.Equals(mine.Unit, StringComparison.OrdinalIgnoreCase)) return null;
 
         // Worth moving for, on the same test the Fleet tab already used to call it an upgrade.
-        var better = freed.Year > mine.Year || freed.ServiceMiles < mine.ServiceMiles * 0.6;
-        if (!better) return null;
+        if (!TruckGrade.IsUpgrade(s, mine, freed, out var freedWhy)) return null;
 
         if (!UpgradeGranted(s, freed.Unit)) return null;
 
@@ -768,7 +766,8 @@ public static class EquipmentService
             TerminalLabel = label,
             AvailableFromGameTime = s.Status.GameTime,
             Instruction = $"{freed.Ref} — a {freed.Year} {freed.Make} {freed.Model} with {freed.ServiceMiles:N0} mi — " +
-                          $"is standing at {label} with nobody in it. It is yours: do not hire for that seat. " +
+                          $"is standing at {label} with nobody in it. {freedWhy} " +
+                          "It is yours: do not hire for that seat. " +
                           "No rush and no empty running — I will work freight back that way, and you swap over " +
                           $"when you get in. Move your gear across from {mine.Ref} and mark this order complete.",
             Notes = $"Seat vacated; {s.Driver.RankTitle} moved up from {mine.Ref}."
@@ -836,8 +835,9 @@ public static class EquipmentService
     /// </summary>
     public static string? CascadeOldTruck(AppState s, Truck stepping)
     {
-        // Rank by what the fleet report already calls a better truck: newer first, then fewer miles.
-        int Worth(Truck t) => t.Year * 1000 - (int)Math.Min(999, t.ServiceMiles / 1000);
+        // The same scale the rest of the app judges a tractor on, so the good equipment works its way
+        // down the list in the order the driver would actually rank it.
+        double Worth(Truck t) => TruckGrade.Score(s, t);
 
         var others = s.Trucks
             .Where(t => !t.Retired && t.Status != "OutOfService"

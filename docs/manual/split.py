@@ -41,6 +41,7 @@ PLAYER_TITLES = {
     "What this app is, and the rules it holds itself to",
     "Running it, and where your career file lives",
     "Getting hired \u2014 the application and the carrier market",
+    "Probation, and who decides a sacking",
     "Your first day: what to buy and set up",
     # the daily loop
     "The loop, end to end",
@@ -154,6 +155,18 @@ def main() -> None:
     tail = "\n</body>\n</html>\n"
 
     titled = [(i, p, title_of(p)) for i, p in enumerate(pages, 1)]
+
+    # A page with no h1/h2 has nothing to key on, so it fell through to Operations by default — which
+    # is a page silently changing books, the exact failure this rewrite exists to stop. It looked like
+    # a working continuation page in the source and only showed up as a page count that went the wrong
+    # way. Every page carries a heading, or the split does not happen.
+    untitled = [i for i, _, ti in titled if not ti]
+    if untitled:
+        raise SystemExit("split.py: page(s) with no <h2> heading: "
+                         + ", ".join(str(i) for i in untitled)
+                         + "\n\nA page with no heading cannot be assigned to a book. Give it an <h2> and, "
+                           "if it belongs to the User Manual, add that heading to PLAYER_TITLES.")
+
     player = [(i, p) for i, p, ti in titled if ti in PLAYER_TITLES]
     ops = [(i, p) for i, p, ti in titled if ti not in PLAYER_TITLES]
 

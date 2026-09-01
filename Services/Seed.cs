@@ -416,28 +416,37 @@ public static class Seed
         });
 
         var primary = divisions.FirstOrDefault() ?? "Dry Van";
-        var (type, len) = TrailerForDivision(primary);
-        s.Trailers.Add(new Trailer
+        var (type, subtype, len) = TrailerSpec.ForCarrier(s, primary);
+
+        // An auto carrier gets no box at all: ATS sells no car carrier, so the division resolves to the
+        // arrangement below rather than to something the driver would be sent to a dealer for.
+        if (TrailerSpec.Ownable(type))
         {
-            Unit = "T501",
-            Type = type,
-            Division = primary,
-            Year = 2016 + rnd.Next(0, 9),
-            Make = TrailerMake(type),
-            Length = len,
-            Axles = type is "Lowboy" or "Car Hauler" ? "Tri-axle" : "Tandem",
-            DamagePct = 0,
-            InGameGarage = false,
-            ServiceMiles = rnd.Next(40, 220) * 1000,
-            Status = "InService",
-            HomeTerminalId = yard?.Id ?? "",
-            CurrentLocation = yard == null ? "" : $"{yard.City}, {yard.State}",
-            Notes = "Match this to the trailer you actually buy in game."
-        });
+            s.Trailers.Add(new Trailer
+            {
+                Unit = "T501",
+                Type = type,
+                Subtype = subtype,
+                Division = primary,
+                Year = 2016 + rnd.Next(0, 9),
+                Make = TrailerMake(type),
+                Length = len,
+                Axles = type == "Lowboy" ? "Tri-axle" : "Tandem",
+                DamagePct = 0,
+                InGameGarage = false,
+                ServiceMiles = rnd.Next(40, 220) * 1000,
+                Status = "InService",
+                HomeTerminalId = yard?.Id ?? "",
+                CurrentLocation = yard == null ? "" : $"{yard.City}, {yard.State}",
+                Notes = "Match this to the trailer you actually buy in game."
+            });
+        }
 
         // Every carrier has freight-market work as well. It is not equipment and nothing is bought for
-        // it — it is the arrangement a driver gets put on or asks for. See DropHook.
-        s.Trailers.Add(DropHook.Build(s, yard?.Id ?? ""));
+        // it — it is the arrangement a driver gets put on or asks for. See DropHook. Where the carrier
+        // hauls cars, this IS their trailer, and it carries the subtype that narrows the board.
+        s.Trailers.Add(DropHook.Build(s, yard?.Id ?? "",
+            TrailerSpec.Ownable(type) ? "" : subtype));
     }
 
     /// <summary>What stocking a yard produced, so the UI can report it rather than guess.</summary>
@@ -527,16 +536,26 @@ public static class Seed
             if (addTrailers)
             {
                 var division = divisions[i % divisions.Count];
-                var (type, len) = TrailerForDivision(division);
+                var (type, subtype, len) = TrailerSpec.ForCarrier(s, division);
+
+                // Car hauling is freight, not equipment: the arrangement stands in for the box, and
+                // nothing is bought. Anything else the game will not sell is skipped the same way.
+                if (!TrailerSpec.Ownable(type))
+                {
+                    DropHook.Ensure(s, subtype);
+                    continue;
+                }
+
                 var tUnit = NextTrailerUnit(s);
                 s.Trailers.Add(new Trailer
                 {
+                    Subtype = subtype,
                     Unit = tUnit,
                     Type = type, Division = division,
                     Year = 2016 + rnd.Next(0, 9),
                     Make = TrailerMake(type),
                     Length = len,
-                    Axles = type is "Lowboy" or "Car Hauler" ? "Tri-axle" : "Tandem",
+                    Axles = type == "Lowboy" ? "Tri-axle" : "Tandem",
                     DamagePct = 0,
                     InGameGarage = alreadyBought,
                     ServiceMiles = rnd.Next(40, 220) * 1000,
@@ -587,24 +606,14 @@ public static class Seed
         "Step Deck" => "Fontaine Velocity",
         "Tanker" => "Polar 7000 gal",
         "Lowboy" => "Trail King RGN",
-        "Car Hauler" => "Cottrell 9-car",
         "Livestock" => "Wilson Silverstar",
         "Log" => "Peerless log trailer",
         _ => "Great Dane"
     };
 
-    private static (string Type, string Len) TrailerForDivision(string division) => division switch
-    {
-        "Reefer" => ("Reefer", "53'"),
-        "Flatbed" => ("Flatbed", "48'"),
-        "Heavy Haul" => ("Lowboy", "48' RGN"),
-        "Tanker" => ("Tanker", "42'"),
-        "Auto" => ("Car Hauler", "75'"),
-        "Livestock" => ("Livestock", "53'"),
-        "Log" => ("Log", "40'"),
-        "Bulk" => ("Hopper", "40'"),
-        _ => ("Dry Van", "53'")
-    };
+    // TrailerForDivision used to live here, returning (type, length) and silently discarding the
+    // subtype — which is how a yard ended up holding a "Tanker" that named none of the five ATS sells,
+    // and a "Car Hauler" that the game will not sell at all. One helper now, in TrailerSpec.
 
     private static int StableSeed(string text)
     {

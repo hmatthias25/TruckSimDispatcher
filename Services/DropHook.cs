@@ -122,12 +122,13 @@ public static class DropHook
     /// re-rig path works on it like any other type. Never in an ATS garage, never damaged, never
     /// counted in utilisation — see the guards in FleetOpsService and Shop.
     /// </summary>
-    public static Trailer Build(AppState s, string terminalId) => new()
+    public static Trailer Build(AppState s, string terminalId, string subtype = "") => new()
     {
         Unit = Unit,
         Type = TrailerType,
+        Subtype = subtype,
         Length = "—",
-        Division = "Drop & Hook",
+        Division = string.IsNullOrWhiteSpace(subtype) ? "Drop & Hook" : subtype,
         Status = "InService",
         HomeTerminalId = terminalId,
         InGameGarage = false,
@@ -138,14 +139,37 @@ public static class DropHook
     };
 
     /// <summary>Makes sure the carrier has the slot on its books, and returns it.</summary>
-    public static Trailer Ensure(AppState s)
+    public static Trailer Ensure(AppState s, string subtype = "")
     {
         var existing = s.Trailers.FirstOrDefault(t => Is(t.Type));
-        if (existing != null) return existing;
+        if (existing != null)
+        {
+            // A carrier that hauls cars needs the slot marked so dispatch knows to offer auto freight
+            // and nothing else. Never cleared here — an existing open arrangement is not narrowed by
+            // somebody stocking a yard.
+            if (!string.IsNullOrWhiteSpace(subtype) && string.IsNullOrWhiteSpace(existing.Subtype))
+            {
+                existing.Subtype = subtype;
+                existing.Division = subtype;
+            }
+            return existing;
+        }
 
         var yard = HomeTime.HomeTerminal(s) ?? s.Company.Terminals.FirstOrDefault();
-        var made = Build(s, yard?.Id ?? "");
+        var made = Build(s, yard?.Id ?? "", subtype);
         s.Trailers.Add(made);
         return made;
     }
+
+    /// <summary>
+    /// Whether the arrangement is the car-hauling one, which only ever gets auto freight.
+    ///
+    /// There is no ownable car carrier in ATS, so a carrier with an auto division runs it the only way
+    /// the game allows: market jobs pulling the shipper's transporter. Dispatch narrows the board to
+    /// match, because the whole point of the arrangement is that the trailer waiting at the shipper is
+    /// the right one.
+    /// </summary>
+    public static bool CarHaulingActive(AppState s) =>
+        Active(s) && (DispatchEngine.AssignedTrailer(s)?.Subtype ?? "")
+            .Trim().Equals(TrailerSpec.CarHauling, StringComparison.OrdinalIgnoreCase);
 }

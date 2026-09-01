@@ -401,6 +401,16 @@ public class Driver
     /// Not the same as quitting or being let go for anything else. This is what puts a driver in front of
     /// second-chance carriers only, and it stays true until they have earned their way back.
     /// </summary>
+    /// <summary>
+    /// What the last rank change actually meant, kept until the driver has seen it.
+    ///
+    /// On the state rather than in the endpoint's response because probation usually clears on a yard
+    /// review — <see cref="TruckSimDispatcher.Services.HomeTime"/>, not a button — and that path had
+    /// nowhere to return anything to. A promotion the driver is never told the shape of is how "you can
+    /// now refuse a load a week" stayed a secret.
+    /// </summary>
+    public object? LastRankBriefing { get; set; }
+
     public bool TerminatedForCause { get; set; }
 
     /// <summary>Why, in the company's words. Shown to the driver and to whoever hires them next.</summary>
@@ -809,6 +819,19 @@ public class Trailer
     /// question the app previously had no honest way to answer.
     /// </summary>
     public double UtilisationPct { get; set; } = -1;
+
+    /// <summary>
+    /// Consecutive fleet reports in which no driver was assigned to this box.
+    ///
+    /// Utilisation only ever arrives on a report line, and a line exists per DRIVER — so a trailer
+    /// nobody is on produced no line, kept its <c>-1</c>, and failed the <c>UtilisationPct >= 0</c> test
+    /// forever. The one box the company should obviously be asking about was the only one it could not
+    /// see.
+    ///
+    /// A period with nobody on it is a fact the app already holds rather than a reading it would have to
+    /// invent, which is the line everything else here is drawn on. So it is counted.
+    /// </summary>
+    public int IdlePeriods { get; set; }
 
     public string UtilisationReportedGameTime { get; set; } = "";
 
@@ -2562,6 +2585,19 @@ public class MaintenanceThresholds
     /// it cannot be re-rolled by filing again.
     /// </summary>
     public double PlayerGetsTradedTruckPct { get; set; } = 22;
+
+    /// <summary>
+    /// The driver level at which somebody becomes worth headhunting.
+    ///
+    /// Below it a driver still leaves — people leave jobs — but for their own reasons rather than for a
+    /// competitor, and no flight-risk warning is raised, because warning about a driver nobody is
+    /// bidding for is noise that teaches the player to skip the panel.
+    ///
+    /// Ten by default, which is GDC's rookie band: that mod treats levels 1-10 as one long apprenticeship
+    /// and a level 6 is halfway through learning the job, not a developed driver with options. A stock
+    /// career can lower it.
+    /// </summary>
+    public int PoachableFromLevel { get; set; } = 10;
 
     /// <summary>
     /// Game days after being put in a tractor during which the player is not handed another one.

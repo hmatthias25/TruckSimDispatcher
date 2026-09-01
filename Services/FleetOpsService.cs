@@ -650,9 +650,13 @@ public static class FleetOpsService
     {
         var chance = 40.0;                                    // 4% baseline, as before
 
-        // Level is open-ended in ATS. Every level above 3 adds risk, flattening out at the top end.
+        // Level only becomes a risk once somebody would actually compete for this driver. Under that
+        // line they still leave — people leave jobs — but for their own reasons, at the flat baseline.
+        // The old curve started at level 4, which on GDC's 1-10 rookie band was warning about drivers
+        // halfway through learning the job.
         var level = Math.Max(0, d.Level);
-        if (level > 3) chance += Math.Min(90, (level - 3) * 11.0);
+        var poachable = Math.Max(1, s.Settings.Maintenance.PoachableFromLevel);
+        if (level >= poachable) chance += Math.Min(90, (level - poachable + 1) * 11.0);
 
         // The employer's standing is the multiplier. Three stars is the neutral middle.
         var stars = s.Company.EmployerStars;
@@ -670,7 +674,9 @@ public static class FleetOpsService
     /// </summary>
     public static string? FlightRisk(AppState s, HiredDriver d)
     {
-        if (d.Status != "Active" || d.Level <= 4) return null;
+        // Warning about a driver nobody is trying to hire is noise, and noise on this panel teaches the
+        // player to skip the panel — which is where the warnings that matter live.
+        if (d.Status != "Active" || d.Level < s.Settings.Maintenance.PoachableFromLevel) return null;
         var chance = ResignationChancePerMille(s, d);
         if (chance < 80) return null;
         var stars = s.Company.EmployerStars;
@@ -690,8 +696,9 @@ public static class FleetOpsService
     /// </summary>
     private static string ResignationReason(AppState s, HiredDriver d, FleetReport report)
     {
+        // A competitor has to actually want them before "went to a competitor" is an honest story.
         var stars = s.Company.EmployerStars;
-        var poached = d.Level >= 5 && stars > 0 && stars < 3.5;
+        var poached = d.Level >= s.Settings.Maintenance.PoachableFromLevel && stars > 0 && stars < 3.5;
 
         var reasons = poached
             ? new[]
@@ -1248,8 +1255,40 @@ public static class FleetOpsService
         return mine.ServiceMiles < 25_000;
     }
 
+    /// <summary>
+    /// Records which boxes had nobody on them this period.
+    ///
+    /// Utilisation arrives on a report line and a line exists per DRIVER, so a trailer no driver is
+    /// assigned to produced no line at all, kept its -1, and failed the <c>UtilisationPct >= 0</c> test
+    /// forever. The single box most obviously worth asking about was the only one invisible.
+    ///
+    /// "Nobody was on it" is a fact already on file rather than a reading the app would have to invent,
+    /// which is the line every other figure here is drawn on — so it is counted here.
+    ///
+    /// It is counted in <see cref="Trailer.IdlePeriods"/> and NOT written into
+    /// <see cref="Trailer.UtilisationPct"/>, which the model defines as a reading off the game's Trailer
+    /// Manager with negative meaning never reported. Deriving a 0% into it looked equivalent and was not:
+    /// the fake reading outlived the box going back to work, and then counted as a real 0% in the
+    /// type averages that decide what to buy next.
+    /// </summary>
+    private static void RecordIdleTrailers(AppState s)
+    {
+        foreach (var tr in s.Trailers.Where(x => !x.Retired && !DropHook.Is(x.Type)))
+        {
+            // The player's own box, and anything mid-trip, are being used by definition.
+            var working = tr.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)
+                          || s.Trips.Any(x => x.Status is "Authorized" or "InTransit"
+                                              && x.TrailerUnit.Equals(tr.Unit, StringComparison.OrdinalIgnoreCase))
+                          || s.HiredDrivers.Any(d => d.Status == "Active"
+                                                     && d.AssignedTrailerUnit.Equals(tr.Unit, StringComparison.OrdinalIgnoreCase));
+            if (working) { tr.IdlePeriods = 0; continue; }
+            tr.IdlePeriods++;
+        }
+    }
+
     private static void AssessTrailers(AppState s, FleetReport report)
     {
+        RecordIdleTrailers(s);
         var m = s.Settings.Maintenance;
         var now = GameClock.TryParse(report.PeriodEndGame) ?? GameClock.TryParse(s.Status.GameTime);
 
@@ -1266,7 +1305,12 @@ public static class FleetOpsService
             // Utilisation off the game's own Trailer Manager: what share of the week the box worked. A
             // trailer nobody is using is not earning its place, and this is the first honest measure of
             // that the app has had.
-            var idle = tr.UtilisationPct >= 0 && tr.UtilisationPct < m.TrailerLowUtilisationPct;
+            var idle = (tr.UtilisationPct >= 0 && tr.UtilisationPct < m.TrailerLowUtilisationPct)
+                       || tr.IdlePeriods > 0;
+
+            // Three fortnights with nobody able to pull a box is not a quiet spell, it is a box that
+            // does not fit the operation. It stands on its own rather than needing a second reason.
+            var nobodyOnIt = tr.IdlePeriods >= 3;
 
             double? ageYears = null;
             if (now != null && GameClock.TryParse(tr.AcquiredGameTime) is { } got)
@@ -1293,11 +1337,23 @@ public static class FleetOpsService
             // verdict — so they have to pair with something.
             var idleAndOld = idle && old;
             var idleAndQuiet = idle && unproductive;
-            if (!starsGone && !(old && unproductive) && !idleAndOld && !idleAndQuiet)
+            if (!starsGone && !nobodyOnIt && !(old && unproductive) && !idleAndOld && !idleAndQuiet)
             {
+                // One period with nobody on it is a watch note, the way one low reading already is.
+                if (tr.IdlePeriods > 0)
+                {
+                    report.Watching.Add(new TrailerWatchNote
+                    {
+                        Unit = tr.Unit, Type = tr.Type,
+                        Note = $"Nothing has pulled trailer {tr.Ref} ({TrailerSpec.Describe(tr.Type, tr.Subtype)}) for " +
+                               $"{tr.IdlePeriods} period(s) — no driver has been on it. Watching it; if that reaches " +
+                               "three we will look at moving it on.",
+                    });
+                    continue;
+                }
                 // One soft reason is a quiet fortnight, not a verdict. Say it is being watched rather
                 // than dropping it — the driver should not have a replacement land out of nowhere.
-                if (idle)
+                if (idle && tr.IdlePeriods == 0)
                     report.Watching.Add(new TrailerWatchNote
                     {
                         Unit = tr.Unit, Type = tr.Type,
@@ -1317,13 +1373,18 @@ public static class FleetOpsService
 
             var evidence = new List<string>();
             var reason = starsGone ? "condition"
+                : nobodyOnIt ? "nobody is pulling it"
                 : idleAndOld ? "age and utilisation"
                 : idleAndQuiet ? "utilisation and production"
                 : "age and production";
 
+            if (nobodyOnIt)
+                evidence.Add($"No driver has been on it for {tr.IdlePeriods} consecutive period(s). It is not " +
+                             "a box we are short of work for — it is a box nobody is running at all.");
+
             if (starsGone)
                 evidence.Add($"Down to {tr.Stars:0.#} stars — at or under our {m.TrailerReplaceStars:0.#}-star line.");
-            if (idle)
+            if (idle && tr.UtilisationPct >= 0 && tr.IdlePeriods == 0)
                 evidence.Add($"Utilisation {tr.UtilisationPct:0.#}% of the week, against the " +
                              $"{m.TrailerLowUtilisationPct:0}% we want to see. It is not earning its place on the yard.");
             if (ageYears is { } yrs)
@@ -1331,6 +1392,31 @@ public static class FleetOpsService
             if (old && unproductive)
                 evidence.Add("Old, and what it is pulling is not paying. Either reason alone would be fine; together they are not.");
             if (holder != null) evidence.Add($"Currently under {holder.Name}.");
+
+            // A box nobody has been on for three periods is not replaced. Buying another one of
+            // something the fleet demonstrably has no work for is the opposite of the decision, and an
+            // order for it would take the single open-order slot off a tractor the driver is being
+            // moved into. It goes, and nothing comes in behind it.
+            if (nobodyOnIt && !starsGone)
+            {
+                evidence.Add("Nothing is being bought to replace it. The fleet does not need another box " +
+                             "of a type it has not found work for — it needs one fewer.");
+                report.Retirements.Add(new RetirementRecommendation
+                {
+                    Unit = tr.Unit,
+                    UnitKind = "Trailer",
+                    Headline = $"Trailer {tr.Ref} ({TrailerSpec.Describe(tr.Type, tr.Subtype)}) has had nobody on it " +
+                               $"for {tr.IdlePeriods} periods. Sell it.",
+                    Evidence = evidence,
+                    ServiceMiles = tr.ServiceMiles,
+                    DamagePct = 0,
+                    AssignedTo = "",
+                    IsPlayerUnit = false
+                });
+                report.Instructions.Add(
+                    $"Sell trailer {tr.Ref} in ATS and delete it on the Equipment tab. Nothing replaces it.");
+                continue;
+            }
 
             // Operations decides what replaces it. The driver is a company driver — what the fleet buys
             // is not their call, and being handed the utilisation figures as homework was the bug.
@@ -1368,6 +1454,17 @@ public static class FleetOpsService
     /// <summary>
     /// Average utilisation by trailer type, across everything with a figure reported off the game's
     /// Trailer Manager. The basis for deciding what a retiring trailer is replaced with.
+    /// </summary>
+    /// <summary>
+    /// How each trailer TYPE is performing, for deciding what to buy next.
+    ///
+    /// Real readings only, which is all of them: idleness is counted in
+    /// <see cref="Trailer.IdlePeriods"/> and never written in here as a derived 0%.
+    ///
+    /// Idle boxes are deliberately NOT filtered out. A box that went quiet this period because its
+    /// driver was moved onto something else still carries a true reading from when it was working, and
+    /// that reading is real evidence about how the TYPE earns. Dropping it took the only dry-van figure
+    /// off the board and left the company comparing a reefer against nothing.
     /// </summary>
     private static Dictionary<string, double> UtilisationByType(AppState s) =>
         s.Trailers
@@ -1525,7 +1622,7 @@ public static class FleetOpsService
             // Hiring costs money in ATS that the app cannot see, so judge on what is spendable and say
             // the real price is in the game.
             var canAfford = position.Spendable >= 15_000m;
-            var better = playerTruck != null && (t.Year > playerTruck.Year || t.ServiceMiles < playerTruck.ServiceMiles * 0.6);
+            var better = playerTruck != null && TruckGrade.IsUpgrade(s, playerTruck, t, out _);
 
             return (object)new
             {

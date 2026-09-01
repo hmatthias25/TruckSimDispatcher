@@ -319,6 +319,18 @@ code{
 .reasons li{margin-bottom:3px}
 .reasons.bad li{color:#ff9a94}
 .reasons.good li{color:#7ee78d}
+/* Standing explanation — true, worth having once, and not worth scrolling past for the rest of a
+   career. Collapsed by default; the arrow is the only thing between the driver and the panel. */
+details.explainer{margin:12px 0 0;border-top:1px solid var(--line);padding-top:9px}
+details.explainer>summary{
+  cursor:pointer;font:600 11px/1.5 var(--sans);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--ink3);list-style:none}
+details.explainer>summary::-webkit-details-marker{display:none}
+details.explainer>summary::before{content:'\25B8  ';color:var(--amber)}
+details.explainer[open]>summary::before{content:'\25BE  '}
+details.explainer>summary:hover{color:var(--amber)}
+details.explainer>*:not(summary){margin-top:10px}
+
 details.score{margin:0 0 11px}
 details.score summary{
   cursor:pointer;font:600 10px/1.6 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);

@@ -22,6 +22,7 @@ const TABS = [
   ['active', 'Active Load'],
   ['trips', 'Trips'],
   ['fleet', 'Fleet'],
+  ['equipment', 'Equipment'],
   ['payroll', 'Payroll'],
   ['finance', 'Finances'],
   ['maint', 'Maintenance'],
@@ -771,6 +772,9 @@ function render() {
     payroll: unsettled ? `<span class="pip amber">${unsettled}</span>` : '',
     dispatch: S.board.length ? `<span class="pip amber">${S.board.length}</span>` : '',
     career: (v.career.availableActions || []).length ? `<span class="pip amber">!</span>` : '',
+    // The one job on this tab that has a clock on it. Without a pip the only way to find out a report
+    // was due was to open the tab and scroll for the form.
+    fleet: v.fleetOps?.due?.isDue ? '<span class="pip amber">!</span>' : '',
   };
   $('tabs').innerHTML = TABS.map(([k, label]) =>
     `<button data-act="tab" data-tab="${k}" class="${TAB === k ? 'on' : ''}">${label}${pips[k] || ''}</button>`).join('');
@@ -780,6 +784,7 @@ function render() {
 
   const view = ({
     dispatch: viewDispatch, active: viewActive, trips: viewTrips, fleet: viewFleet,
+    equipment: viewEquipment,
     payroll: viewPayroll, finance: viewFinance, maint: viewMaint, safety: viewSafety,
     career: viewCareer, market: viewJobMarket, settings: viewSettings,
   }[TAB] || viewDispatch);
@@ -1823,7 +1828,7 @@ function discoveryHtml(n) {
     <h4>${esc(n.headline)}</h4>
     ${n.detail && n.detail.length ? `<ul>${n.detail.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${n.garageAvailable ? `<div class="row-actions">
-      <button class="btn" data-act="tab" data-tab="terminals">Open a yard here</button>
+      <button class="btn" data-act="tab" data-tab="equipment">Open a yard here</button>
       <button class="btn ghost" data-act="decline-garage"
         data-city="${esc(n.city)}" data-state="${esc(n.state)}">Not interested</button>
     </div>` : ''}
@@ -2607,21 +2612,7 @@ function tripDetailModal(id) {
 /* ============================================================ FLEET */
 function viewFleet() {
   const t = S.views.truck, tr = S.views.trailer;
-  const b = S.views.backdrop || {};
   return `
-  ${b.any ? `<div class="callout warn">
-    <h4>Equipment on the book that ATS knows nothing about</h4>
-    <p>${[b.trucks ? `${b.trucks} tractor(s)` : '', b.trailers ? `${b.trailers} trailer(s)` : '',
-         b.yards ? `${b.yards} yard(s) in cities you have not reached` : '']
-        .filter(Boolean).join(', ')}. These were never bought in your game, so their damage and mileage
-      are fiction — and a truck based in an undiscovered city would never see cargo, because ATS does not
-      generate freight for cities you did not drive to.</p>
-    <p>Trim the book to what you actually own. Anything with real trip history, anything assigned to you
-      or to a hired driver, and headquarters are all kept.</p>
-    <div class="row-actions">
-      <button class="btn" data-act="trim-fleet" data-yards="0">Trim equipment only</button>
-      ${b.yards ? `<button class="btn" data-act="trim-fleet" data-yards="1">Trim equipment and yards</button>` : ''}
-    </div></div>` : ''}
   <div class="panel">
     <div class="panel-head"><h2>Your assignment</h2></div>
     <div class="cols">
@@ -2675,42 +2666,36 @@ function viewFleet() {
     </div>`}
   </div>
 
+  ${fleetOpsHtml()}`;
+}
+
+/* ============================================================ EQUIPMENT
+ *
+ * The company's asset book: yards, tractors, trailers, and where each unit sits.
+ *
+ * Split off the Fleet tab, which had grown three unrelated jobs on one page — a glance at your own
+ * kit, the fortnightly hired-driver report, and this. They run on completely different clocks: you
+ * check your assignment daily, file a report every fortnight, and add a truck perhaps five times in
+ * a career. Interleaved, the fortnightly job sat below the once-a-career one, and adding a unit was
+ * scattered across four panels on two halves of a very long page.
+ */
+function viewEquipment() {
+  const b = S.views.backdrop || {};
+  return `
+  ${b.any ? `<div class="callout warn">
+    <h4>Equipment on the book that ATS knows nothing about</h4>
+    <p>${[b.trucks ? `${b.trucks} tractor(s)` : '', b.trailers ? `${b.trailers} trailer(s)` : '',
+         b.yards ? `${b.yards} yard(s) in cities you have not reached` : '']
+        .filter(Boolean).join(', ')}. These were never bought in your game, so their damage and mileage
+      are fiction — and a truck based in an undiscovered city would never see cargo, because ATS does not
+      generate freight for cities you did not drive to.</p>
+    <p>Trim the book to what you actually own. Anything with real trip history, anything assigned to you
+      or to a hired driver, and headquarters are all kept.</p>
+    <div class="row-actions">
+      <button class="btn" data-act="trim-fleet" data-yards="0">Trim equipment only</button>
+      ${b.yards ? `<button class="btn" data-act="trim-fleet" data-yards="1">Trim equipment and yards</button>` : ''}
+    </div></div>` : ''}
   ${terminalsHtml()}
-  ${fleetOpsHtml()}
-
-  <div class="callout warn">
-    <h4>Affording all this in ATS</h4>
-    <p>The company modelled here — ${(S.company.terminals || []).length} yard(s),
-      ${S.trucks.length} tractor(s), plus hired drivers — costs far more than a fresh ATS profile has.
-      Two honest ways to play it:</p>
-    <ul>
-      <li><b>Start small and grow (recommended, no tools).</b> Delete the yards and units you do not
-        actually own, keep the one truck you bought, and add things here as you buy them in the game.
-        Every system in this app works the same for a one-truck operation.</li>
-      <li><b>Seed your game with a save editor or mods.</b> Money lives in
-        <span class="mono">Documents\\American Truck Simulator\\profiles\\&lt;profile&gt;\\save\\&lt;slot&gt;\\game.sii</span>
-        (encrypted — SII_Decrypt opens it; TS SE Tool is a dedicated editor). Mods can unlock all
-        dealerships, garages, cities and recruiting agencies, which ATS otherwise hides until you drive
-        to them.</li>
-    </ul>
-    <p><b>Back up your profile folder before running any editor.</b> Editors can corrupt a save, TS SE
-      Tool is alpha software, and SCS cannot support a modified save because they cannot tell what
-      changed. If that puts you off, take the first option — it is the better roleplay anyway.</p>
-  </div>
-
-  <div class="callout info">
-    <h4>Real equipment vs company backdrop</h4>
-    <p>ATS lets you buy trucks and trailers, but it gives you no way to <em>set</em> damage — damage
-      only accrues from driving, and only on the unit you are actually in. So the app tracks condition
-      on equipment marked <b>in garage</b> and treats the rest as the carrier's paper fleet:
-      real for roleplay, but never given invented damage and never the subject of a shop directive
-      you could not act on.</p>
-    <p>Mark a unit <b>in garage</b> once you have bought its equivalent in ATS. Delete anything the
-      company should not own, and add units as you buy them.</p>
-  </div>
-
-  ${equipmentByYardHtml()}
-
   <div class="panel">
     <div class="panel-head"><h2>Tractors (${S.trucks.length})</h2>
       <span class="sub">${S.trucks.filter((t) => t.inGameGarage).length} in your ATS garage</span>
@@ -2754,14 +2739,48 @@ function viewFleet() {
         <td>${badge(x.status === 'InService' ? 'ok' : 'bad', x.status)}</td>
         <td>${esc(x.currentLocation || '—')}</td>
         <td><button class="btn tiny ghost" data-act="edit-trailer" data-unit="${esc(x.unit)}">Edit</button></td></tr>`).join('')}</tbody></table></div>
-  </div>`;
+  </div>
+  ${equipmentByYardHtml()}
+
+  <details class="explainer">
+    <summary>Affording all this in ATS, and what &ldquo;backdrop&rdquo; means</summary>
+  <div class="callout warn">
+    <h4>Affording all this in ATS</h4>
+    <p>The company modelled here — ${(S.company.terminals || []).length} yard(s),
+      ${S.trucks.length} tractor(s), plus hired drivers — costs far more than a fresh ATS profile has.
+      Two honest ways to play it:</p>
+    <ul>
+      <li><b>Start small and grow (recommended, no tools).</b> Delete the yards and units you do not
+        actually own, keep the one truck you bought, and add things here as you buy them in the game.
+        Every system in this app works the same for a one-truck operation.</li>
+      <li><b>Seed your game with a save editor or mods.</b> Money lives in
+        <span class="mono">Documents\\American Truck Simulator\\profiles\\&lt;profile&gt;\\save\\&lt;slot&gt;\\game.sii</span>
+        (encrypted — SII_Decrypt opens it; TS SE Tool is a dedicated editor). Mods can unlock all
+        dealerships, garages, cities and recruiting agencies, which ATS otherwise hides until you drive
+        to them.</li>
+    </ul>
+    <p><b>Back up your profile folder before running any editor.</b> Editors can corrupt a save, TS SE
+      Tool is alpha software, and SCS cannot support a modified save because they cannot tell what
+      changed. If that puts you off, take the first option — it is the better roleplay anyway.</p>
+  </div>
+
+  <div class="callout info">
+    <h4>Real equipment vs company backdrop</h4>
+    <p>ATS lets you buy trucks and trailers, but it gives you no way to <em>set</em> damage — damage
+      only accrues from driving, and only on the unit you are actually in. So the app tracks condition
+      on equipment marked <b>in garage</b> and treats the rest as the carrier's paper fleet:
+      real for roleplay, but never given invented damage and never the subject of a shop directive
+      you could not act on.</p>
+    <p>Mark a unit <b>in garage</b> once you have bought its equivalent in ATS. Delete anything the
+      company should not own, and add units as you buy them.</p>
+  </div>
+
+  </details>`;
 }
 
 function terminalsHtml() {
   const ts = S.company.terminals || [];
   const home = ts.find((t) => t.id === S.driver.homeTerminalId);
-  const open = (S.driver.transfers || []).filter((t) => t.outcome === 'Conditional' || t.outcome === 'Deferred');
-  const last = (S.driver.transfers || [])[0];
 
   return `<div class="panel">
     <div class="panel-head"><h2>Terminals (${ts.length})</h2>
@@ -2791,6 +2810,64 @@ function terminalsHtml() {
         </tr>`;
       }).join('')}</tbody></table></div>
 
+  </div>`;
+}
+
+/* ---- probation: fortnightly reviews at the yard, not a silent threshold ---- */
+
+/* ---- your domicile, and what you have asked to be running
+ *
+ * Not equipment. These three are requests and preferences about the DRIVER — where home is, how long
+ * a run you want, how often you get back — and they sat inside the Terminals panel because that is
+ * where the yard list happened to be. Splitting the asset book onto its own tab left them stranded
+ * next to tractor capacity, which is where the mismatch finally showed. They belong with the other
+ * things you ask operations for.
+ */
+/* What this rung actually lets you do.
+ *
+ * Every line comes off the server, which builds it from the rule that enforces it — the refusal
+ * allowance table, the privileges table, the review interval. Writing this copy by hand would have made
+ * it a page of confident lies the first time somebody edited one of those. */
+function rankMeaningHtml() {
+  const r = S.views?.rank;
+  if (!r) return '';
+  const last = r.lastChange;
+  const p = r.privileges || {};
+
+  const can = [
+    r.refusalsPerWeek > 0
+      ? `Refuse <b>${r.refusalsPerWeek}</b> load(s) a week, with a reason on record.`
+      : 'Run the load you are given &mdash; no refusals yet.',
+    p.canRequestAlternate ? 'Ask operations for a different load.' : null,
+    p.canChooseAlternateLoad ? 'Pick from the cleared loads on the board.' : null,
+    p.canOverrideTightLoad ? 'Call a tight window yourself.' : null,
+  ].filter(Boolean);
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>What ${esc(r.title || 'your rank')} allows</h2>
+      <div class="spacer"></div>
+      <span class="sub">${r.refusalsPerWeek} refusal(s)/week</span></div>
+
+    ${last && (last.gained || []).length ? `<div class="callout go">
+      <h4>You moved up to ${esc(last.title || r.title)} &mdash; here is what changed</h4>
+      <ul>${last.gained.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      ${(last.still || []).length ? `<p class="hint" style="margin-top:8px"><b>Still not yours:</b></p>
+        <ul>${last.still.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    </div>` : ''}
+
+    <ul>${can.map((x) => `<li>${x}</li>`).join('')}</ul>
+    ${p.summary ? `<p class="hint">${esc(p.summary)}</p>` : ''}
+  </div>`;
+}
+
+function domicilePrefsHtml() {
+  const ts = S.company.terminals || [];
+  const home = ts.find((t) => t.id === S.driver.homeTerminalId);
+  // Not `pendingMoves`: that shadows window.pendingMoves, so a lost declaration reads as a function rather than
+  // throwing, and the panel renders wrongly instead of failing loudly.
+  const pendingMoves = (S.driver.transfers || []).filter((t) => t.outcome === 'Conditional' || t.outcome === 'Deferred');
+  const last = (S.driver.transfers || [])[0];
+  return `
     <h3 class="sect">Home terminal</h3>
     <p class="hint">Your domicile is where home time starts and ends. Asking to move is a request —
       seniority, service record, whether the yard has a slot and whether the company wants a truck in
@@ -2811,7 +2888,7 @@ function terminalsHtml() {
       ${last.factors.length ? `<ul>${last.factors.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
     </div>` : ''}
 
-    ${open.map((t) => `<div class="row-actions">
+    ${pendingMoves.map((t) => `<div class="row-actions">
       <button class="btn" data-act="settle-transfer" data-id="${esc(t.id)}">
         Check on the ${esc(t.toTerminalName)} request (${t.loadsRequired} loads asked)</button></div>`).join('')}
 
@@ -2852,10 +2929,9 @@ function terminalsHtml() {
            ${S.views.homeTime.intervalDays}.</p>` : ''}</div>
     </div>
 
-  </div>`;
+`;
 }
 
-/* ---- probation: fortnightly reviews at the yard, not a silent threshold ---- */
 function probationHtml() {
   const p = S.views.probation;
   if (!p) return '';
@@ -3283,7 +3359,9 @@ function fleetOpsHtml() {
   const drivers = FLEETOPS?.drivers || [];
   const reports = FLEETOPS?.reports || [];
 
-  return `${ownTruckTradeHtml()}${fleetPmHtml()}${fleetDecisionsHtml()}
+  // Decisions the last report left, then the roster and the form that files the next one, and only
+  // then what the yard is spending and which unit is finished. The first two are why the tab is open.
+  return `${fleetDecisionsHtml()}
   <div class="panel">
     <div class="panel-head"><h2>Hired drivers</h2>
       <span class="sub">${f.activeCount || 0} active · ${f.reportCount || 0} report(s) filed</span>
@@ -3339,6 +3417,7 @@ function fleetOpsHtml() {
         </tr>`; }).join('')}</tbody></table></div>
 
         <h3 class="sect">File a fleet report</h3>
+        <details class="explainer"><summary>What to copy off the game, and what is not asked for</summary>
         <p class="hint">Every ${f.due?.intervalDays ?? 15} game days, open the ATS company screen and copy
           down what it shows you: each driver's <b>level</b>, <b>rating</b>, <b>$/mile</b> and <b>$/day</b>,
           and for their equipment the <b>star rating</b> — plus the truck's odometer. Those are the numbers
@@ -3356,6 +3435,7 @@ function fleetOpsHtml() {
           nothing here asks for one. Condition is stars: five is a fresh unit, and
           <b>${num(S.settings.maintenance.truckReplaceStars, 0)} stars or under</b> is where the company
           starts recommending you replace it.</p>
+        </details>
         ${f.due?.isDue ? `<div class="callout warn"><p>${esc(f.due.message)}</p></div>`
           : f.due?.nextDueGameTime ? `<p class="hint">Next report due ${gt(f.due.nextDueGameTime)}.</p>` : ''}
         <div class="grid2">
@@ -3432,7 +3512,8 @@ function fleetOpsHtml() {
           </div>` : ''}
         </div>`).join('')}` : ''}
     ` : ''}
-  </div>`;
+  </div>
+  ${fleetPmHtml()}${ownTruckTradeHtml()}`;
 }
 
 /**
@@ -4632,12 +4713,21 @@ function viewCareer() {
     </div>
   </div>
 
+  ${rankMeaningHtml()}
+
   <div class="panel">
     <div class="panel-head"><h2>Ask operations</h2>
       <div class="spacer"></div>
       <span class="sub">answers come back when you close your next load out</span></div>
     ${askHomeHtml()}
     ${askTrailerHtml()}
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Where you are based, and what you want</h2>
+      <div class="spacer"></div>
+      <span class="sub">standing preferences, not one-off asks</span></div>
+    ${domicilePrefsHtml()}
   </div>
 
   <div class="panel">
@@ -4987,6 +5077,15 @@ function viewSettings() {
         ${pct(m.totalLossPayoutFactor * 100, 0)} of the unit's book value — nobody is made whole on a write-off.</p>
 
       <h3 class="sect">Service schedule</h3>
+      <label>Drivers become poachable at level
+        <input id="mt-poach" type="number" min="1" max="30" step="1"
+          value="${S.settings.maintenance.poachableFromLevel ?? 10}"></label>
+      <p class="hint">Below this a hired driver still leaves &mdash; people leave jobs &mdash; but for
+        their own reasons rather than for a competitor, and no flight-risk warning is raised. <b>10</b>
+        matches the GDC economy mod, which treats levels 1&ndash;10 as one long rookie band: a level 6 is
+        halfway through learning the job, not somebody another carrier is bidding for. Lower it for a
+        stock career.</p>
+
       <label class="chk"><input type="checkbox" id="mt-gdc"${
         (S.views?.pendingScheduleChange ?? m.useGdcSchedule) ? ' checked' : ''}>
         Use the <b>GDC</b> service interval guide instead of one PM interval</label>
@@ -6409,6 +6508,7 @@ function collectSettings() {
       repairHoursPerPoint: hv('mt-perpoint'), trailerRepairFactor: fv('mt-trfactor'),
       // Staged, not applied: the schedule changes at the next fleet report. Sending useGdcSchedule
       // straight through would re-date the fleet mid-period against intervals it has not been run on.
+      poachableFromLevel: Math.max(1, Math.round(fv('mt-poach')) || 10),
       pendingGdcSchedule: bv('mt-gdc'), useGdcSchedule: S.settings.maintenance.useGdcSchedule,
       severeDuty: bv('mt-severe'),
       companyShopFactor: fv('mt-shopfactor'), totalLossDeductible: fv('mt-deduct'),

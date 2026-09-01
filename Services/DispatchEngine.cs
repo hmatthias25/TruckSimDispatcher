@@ -758,6 +758,16 @@ public static class DispatchEngine
         if (HomeTime.OutboundRefusal(s, load) is { } wrongWay)
             e.HomeTimeFails.Add(wrongWay);
 
+        // Car hauling: the arrangement exists because ATS will not sell a car carrier, so the only way
+        // to run it is a market job pulling the shipper's transporter. That means the freight has to BE
+        // auto freight — anything else and there is no transporter waiting, just a load somebody else's
+        // trailer is under.
+        if (DropHook.CarHaulingActive(s)
+            && !DivisionForTrailer(load.TrailerType).Equals("Auto", StringComparison.OrdinalIgnoreCase))
+            e.HardFails.Add(
+                $"You are on the car-hauling arrangement, and this is {DivisionForTrailer(load.TrailerType).ToLowerInvariant()} " +
+                "freight. There is no transporter behind the truck for it — take an auto load.");
+
         // Dedicated: the board is full of other companies' freight, and none of it is yours. Only
         // lifted when the account genuinely has nothing here — see Dedicated.CanRunOffAccount.
         if (Dedicated.Active(s) && !Dedicated.IsOnAccount(s, load))

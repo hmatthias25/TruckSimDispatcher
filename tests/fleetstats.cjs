@@ -77,7 +77,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
       level: 2, rating: 4.5, perMile: 1.55, perDay: 600, revenue: 9500, miles: 6000,
       truckStars: 5, truckOdometer: 120000, trailerStars: 5 },
     { driverId: strong.id, truckUnit: strong.assignedTruckUnit, trailerUnit: strong.assignedTrailerUnit,
-      level: 7, rating: 9.2, perMile: 1.85, perDay: 720, revenue: 12000, miles: 6500,
+      level: 11, rating: 9.2, perMile: 1.85, perDay: 720, revenue: 12000, miles: 6500,
       truckStars: 5, truckOdometer: 90000, trailerStars: 5 },
   ]);
   roster = (await api('/fleetops')).drivers;
@@ -92,6 +92,9 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
     personnelOf(rep, 'Probation').map((x) => x.driverName).join(', ') || 'none');
 
   head('2b. Retention: level and employer standing both matter');
+  // B. Strong is level 11. "Developed" means at or above the poaching threshold, which defaults to 10
+  // for GDC's 1-10 rookie band — this driver used to be level 7, which the old curve called developed
+  // from level 4 and which nobody would actually be competing for. See #149.
   ok('a developed driver at a 2-star carrier is flagged as a flight risk',
     (fleet().flightRisks || []).length >= 1,
     (fleet().flightRisks || []).join(' | ') || 'none flagged');
@@ -119,7 +122,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
       level: 2, rating: 4.0, perMile: 0.35, perDay: 90, revenue: 2000, miles: 5500,
       truckStars: 5, truckOdometer: 175000, trailerStars: 5 },
     { driverId: strong.id, truckUnit: strong.assignedTruckUnit, trailerUnit: strong.assignedTrailerUnit,
-      level: 7, rating: 9.3, perMile: 1.90, perDay: 760, revenue: 12500, miles: 6600,
+      level: 11, rating: 9.3, perMile: 1.90, perDay: 760, revenue: 12500, miles: 6600,
       truckStars: 5, truckOdometer: 156000, trailerStars: 5 },
   ]);
   const prob = personnelOf(rep, 'Probation');
@@ -138,7 +141,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
       level: 3, rating: 6.0, perMile: 1.70, perDay: 690, revenue: 11000, miles: 6400,
       truckStars: 5, truckOdometer: 230000, trailerStars: 5 },
     { driverId: strong.id, truckUnit: strong.assignedTruckUnit, trailerUnit: strong.assignedTrailerUnit,
-      level: 7, rating: 9.3, perMile: 1.88, perDay: 740, revenue: 12200, miles: 6500,
+      level: 11, rating: 9.3, perMile: 1.88, perDay: 740, revenue: 12200, miles: 6500,
       truckStars: 5, truckOdometer: 220000, trailerStars: 5 },
   ]);
   ok('probation lifted', personnelOf(rep, 'ProbationLifted').length === 1,
@@ -157,7 +160,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
         level: 3, rating: 3.0, perMile: 0.30, perDay: 70, revenue: 1500, miles: 5000,
         truckStars: 5, truckOdometer: 280000 + i * 40000, trailerStars: 5 },
       { driverId: strong.id, truckUnit: strong.assignedTruckUnit, trailerUnit: strong.assignedTrailerUnit,
-        level: 7, rating: 9.3, perMile: 1.88, perDay: 740, revenue: 12200, miles: 6500,
+        level: 11, rating: 9.3, perMile: 1.88, perDay: 740, revenue: 12200, miles: 6500,
         truckStars: 5, truckOdometer: 280000 + i * 40000, trailerStars: 5 },
     ]);
     if (i === 0) ok('second failure re-opens probation', personnelOf(rep, 'Probation').length === 1,
@@ -188,7 +191,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   head('7. A truck at three stars is recommended for replacement');
   rep = await fileReport([
     { driverId: strong.id, truckUnit: strong.assignedTruckUnit, trailerUnit: strong.assignedTrailerUnit,
-      level: 7, rating: 9.3, perMile: 1.88, perDay: 740, revenue: 12200, miles: 6500,
+      level: 11, rating: 9.3, perMile: 1.88, perDay: 740, revenue: 12200, miles: 6500,
       truckStars: 3, truckOdometer: 420000, trailerStars: 5 },
   ]);
   const truckRet = (rep.retirements || []).filter((r) => r.unitKind === 'Truck' && r.unit === strong.assignedTruckUnit);
@@ -203,7 +206,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   const mine = S.driver.assignedTrailerUnit;
   rep = await fileReport([
     { driverId: strong.id, truckUnit: strong.assignedTruckUnit, trailerUnit: strong.assignedTrailerUnit,
-      level: 7, rating: 9.3, perMile: 1.88, perDay: 740, revenue: 12200, miles: 6500,
+      level: 11, rating: 9.3, perMile: 1.88, perDay: 740, revenue: 12200, miles: 6500,
       truckStars: 4, truckOdometer: 470000, trailerStars: 2 },
   ]);
   const trRet = (rep.retirements || []).filter((r) => r.unitKind === 'Trailer');
@@ -232,7 +235,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   for (let i = 0; i < 12 && !ask; i++) {
     rep = await fileReport([
       { driverId: strong.id, truckUnit: strong.assignedTruckUnit, trailerUnit: strong.assignedTrailerUnit,
-        level: 7, rating: 9.0, perMile: 1.80, perDay: 700, revenue: 11000, miles: 6100,
+        level: 11, rating: 9.0, perMile: 1.80, perDay: 700, revenue: 11000, miles: 6100,
         truckStars: 4, truckOdometer: 520000 + i * 30000, trailerStars: 4 },
     ]);
     ask = fleet().trailerRequest;
@@ -264,7 +267,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   const gone = finalRoster.filter((d) => d.status === 'Resigned');
   if (gone.length) {
     ok('somebody resigned over the run', true, gone.map((d) => `${d.name} (lvl ${d.level})`).join(', '));
-    const developed = gone.find((d) => d.level >= 5);
+    const developed = gone.find((d) => d.level >= 10);
     if (developed) {
       ok('a developed driver at a 2-star outfit gives a poaching reason',
         /competitor|paying more|better equipment|Poached/i.test(developed.separationReason),

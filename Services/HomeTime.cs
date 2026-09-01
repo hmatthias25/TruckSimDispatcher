@@ -708,7 +708,11 @@ public static class HomeTime
         "Step Deck" => "Step Deck",
         "Heavy Haul" or "Oversize" => "Lowboy",
         "Tanker" or "Bulk" => "Tanker",
-        "Auto" or "Car Hauling" => "Car Hauler",
+        // Auto is not a trailer type either, for the same reason Dedicated is not: ATS sells no car
+        // carrier, so there is nothing to re-rig a driver onto and nothing to tell the company to buy.
+        // Both callers here decide about equipment we own. Car hauling runs as the drop-and-hook
+        // arrangement instead — see TrailerSpec.ForDivision.
+        "Auto" or "Car Hauling" => "",
         "Livestock" => "Livestock",
         "Log" => "Log",
         _ => ""
@@ -1279,17 +1283,21 @@ public static class HomeTime
         if (EquipmentService.OpenOrder(s) is { } order)
             b.Equipment.Add($"{order.Number}: {order.Instruction}");
 
+        // Was `t.Year > truck.Year` and nothing else, so this would send a driver to put in for a
+        // newer plate on a worse truck and let them find out when they climbed into it.
         var spare = s.Trucks.FirstOrDefault(t => !t.Retired && t.InGameGarage
                                                  && t.Unit != s.Driver.AssignedTruckUnit
                                                  && t.HomeTerminalId == home?.Id
                                                  && string.IsNullOrWhiteSpace(t.AssignedDriver)
-                                                 && truck != null && t.Year > truck.Year);
+                                                 && truck != null
+                                                 && TruckGrade.IsUpgrade(s, truck, t, out _));
         if (spare != null)
         {
             b.BetterUnitAvailable = true;
             b.BetterUnit = spare.Ref;
+            TruckGrade.IsUpgrade(s, truck, spare, out var spareWhy);
             b.Equipment.Add($"There is a better unit sitting here: {spare.Ref} ({spare.Year} {spare.Make} {spare.Model}, " +
-                            $"{spare.ServiceMiles:N0} mi) against your {truck!.Year} {truck.Make}. " +
+                            $"{spare.ServiceMiles:N0} mi) against your {truck!.Year} {truck.Make}. {spareWhy} " +
                             "Put in for it below and operations will answer while you are standing here.");
         }
 
