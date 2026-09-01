@@ -274,6 +274,14 @@ public static class FleetOpsService
                 utilTrailer.UtilisationReportedGameTime = report.PeriodEndGame;
             }
 
+            // What the box actually earned this period. Utilisation says how much of the week it moved;
+            // this says what the moving was worth, and the two can disagree.
+            if (s.Trailers.FirstOrDefault(x => x.Unit == line.TrailerUnit) is { } paidTrailer && booked > 0)
+            {
+                paidTrailer.LifetimeRevenue = Math.Round(paidTrailer.LifetimeRevenue + booked, 2);
+                paidTrailer.PeriodsWorked++;
+            }
+
             driver.Periods.Insert(0, new DriverPeriodResult
             {
                 ReportNumber = report.Number,
@@ -360,6 +368,10 @@ public static class FleetOpsService
         ResolvePersonnel(s, report);
         AssessRetirements(s, report);
         IssueTradeInstructions(s, report);
+        // After the tractors, deliberately. Both compete for the one open equipment order, and a truck
+        // the driver is being moved into outranks a box swap — this ran first for a while and a spare
+        // trailer took the slot off a tractor the company had just decided to put the player in.
+        AssessTrailers(s, report);
         // The company may also want another box somewhere. Occasional, and always an ask.
         TrailerFleet.Consider(s, report);
 
@@ -919,8 +931,6 @@ public static class FleetOpsService
             if (RetirementFor(s, t) is { } r)
                 report.Retirements.Add(r);
 
-        // The drop-and-hook slot is an arrangement, not a box. Nothing to utilise, age or replace.
-        AssessTrailers(s, report);
     }
 
     /// <summary>
@@ -1393,43 +1403,34 @@ public static class FleetOpsService
                 evidence.Add("Old, and what it is pulling is not paying. Either reason alone would be fine; together they are not.");
             if (holder != null) evidence.Add($"Currently under {holder.Name}.");
 
-            // A box nobody has been on for three periods is not replaced. Buying another one of
-            // something the fleet demonstrably has no work for is the opposite of the decision, and an
-            // order for it would take the single open-order slot off a tractor the driver is being
-            // moved into. It goes, and nothing comes in behind it.
-            if (nobodyOnIt && !starsGone)
-            {
-                evidence.Add("Nothing is being bought to replace it. The fleet does not need another box " +
-                             "of a type it has not found work for — it needs one fewer.");
-                report.Retirements.Add(new RetirementRecommendation
-                {
-                    Unit = tr.Unit,
-                    UnitKind = "Trailer",
-                    Headline = $"Trailer {tr.Ref} ({TrailerSpec.Describe(tr.Type, tr.Subtype)}) has had nobody on it " +
-                               $"for {tr.IdlePeriods} periods. Sell it.",
-                    Evidence = evidence,
-                    ServiceMiles = tr.ServiceMiles,
-                    DamagePct = 0,
-                    AssignedTo = "",
-                    IsPlayerUnit = false
-                });
-                report.Instructions.Add(
-                    $"Sell trailer {tr.Ref} in ATS and delete it on the Equipment tab. Nothing replaces it.");
-                continue;
-            }
-
             // Operations decides what replaces it. The driver is a company driver — what the fleet buys
             // is not their call, and being handed the utilisation figures as homework was the bug.
             var (newType, why) = ReplacementFor(s, tr);
             evidence.Add(why);
 
-            var order = EquipmentService.OrderReplacementTrailer(s, tr, newType,
-                $"Trailer {tr.Ref} coming off the fleet on {reason}.");
-            evidence.Add(order != null
-                ? $"{order.Number} is raised for it — buy the {newType.ToLowerInvariant()} in ATS and add it on the " +
-                  "Fleet tab, then close the order out."
-                : $"We will raise the order for the {newType.ToLowerInvariant()} once the equipment order " +
-                  "already open is closed out.");
+            // Condition takes an order. Idleness takes a recommendation, and deliberately: there is only
+            // ever one open equipment order, and a box nobody has touched for three periods must not
+            // hold that slot against a tractor the company has just decided to put the driver in. The
+            // instruction below says the same thing without occupying the queue.
+            if (nobodyOnIt && !starsGone)
+            {
+                evidence.Add($"Sell it in ATS and buy the {newType.ToLowerInvariant()} when you are next at " +
+                             "the yard, then square both up on the Equipment tab. No order is being raised — " +
+                             "nothing is waiting on this one.");
+                report.Instructions.Add(
+                    $"Sell trailer {tr.Ref} in ATS and put a {newType.ToLowerInvariant()} in its place. " +
+                    "Update both on the Equipment tab.");
+            }
+            else
+            {
+                var order = EquipmentService.OrderReplacementTrailer(s, tr, newType,
+                    $"Trailer {tr.Ref} coming off the fleet on {reason}.");
+                evidence.Add(order != null
+                    ? $"{order.Number} is raised for it — buy the {newType.ToLowerInvariant()} in ATS and add it on the " +
+                      "Fleet tab, then close the order out."
+                    : $"We will raise the order for the {newType.ToLowerInvariant()} once the equipment order " +
+                      "already open is closed out.");
+            }
 
             report.Retirements.Add(new RetirementRecommendation
             {
@@ -1438,8 +1439,11 @@ public static class FleetOpsService
                 Headline = starsGone
                     ? $"Trailer {tr.Ref} ({tr.Type}) is down to {tr.Stars:0.#} stars. We are replacing it with a " +
                       $"{newType.ToLowerInvariant()}."
-                    : $"Trailer {tr.Ref} ({tr.Type}) is old and not earning its keep. We are replacing it with a " +
-                      $"{newType.ToLowerInvariant()}.",
+                    : nobodyOnIt
+                        ? $"Nobody has been on trailer {tr.Ref} ({tr.Type}) for {tr.IdlePeriods} periods. " +
+                          $"We are trading it for a {newType.ToLowerInvariant()}."
+                        : $"Trailer {tr.Ref} ({tr.Type}) is old and not earning its keep. We are replacing it with a " +
+                          $"{newType.ToLowerInvariant()}.",
                 Evidence = evidence,
                 ServiceMiles = tr.ServiceMiles,
                 DamagePct = 0,
@@ -1493,25 +1497,70 @@ public static class FleetOpsService
     /// The gap is wide on purpose — a few points is noise, and a fleet that re-rigged on noise would be
     /// a fleet with no plan.
     /// </summary>
+    /// <summary>What each type brings in per working period, for the half of the question utilisation cannot answer.</summary>
+    private static Dictionary<string, decimal> RevenuePerPeriodByType(AppState s) =>
+        s.Trailers
+            .Where(t => !t.Retired && t.PeriodsWorked > 0 && !string.IsNullOrWhiteSpace(t.Type))
+            .GroupBy(t => t.Type, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Sum(t => t.LifetimeRevenue) / Math.Max(1, g.Sum(t => t.PeriodsWorked)),
+                StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What a retiring box is replaced with.
+    ///
+    /// Two figures, because one of them alone is misleading. <b>Utilisation</b> says how much of the
+    /// week a type moved; <b>revenue per period</b> says what the moving was worth. A flatbed out five
+    /// days a week on cheap freight is busier and poorer than a reefer out three, and a company that
+    /// replaced on utilisation alone would keep buying the busy one.
+    ///
+    /// A box nobody has been on comes through here too. It is idle because it is the wrong <em>type</em>
+    /// for the work this carrier gets, not because the fleet is one trailer over — so it is traded for
+    /// whatever is actually earning rather than simply sold off.
+    /// </summary>
     private static (string Type, string Why) ReplacementFor(AppState s, Trailer tr)
     {
         var same = (tr.Type, $"Like for like — another {tr.Type.ToLowerInvariant()}.");
         var util = UtilisationByType(s);
-        if (!util.TryGetValue(tr.Type, out var mine)) return same;
+        var money = RevenuePerPeriodByType(s);
+
+        // A box nobody has been on has no figures of its own to argue from, so it is judged against the
+        // rest of the fleet at zero rather than being let off for having produced no reading.
+        var mine = util.TryGetValue(tr.Type, out var u) ? u : (tr.IdlePeriods > 0 ? 0 : double.NaN);
+        if (double.IsNaN(mine)) return same;
+        var minePaid = money.TryGetValue(tr.Type, out var mp) ? mp : 0m;
 
         var gap = s.Settings.Maintenance.TrailerTypeSwitchGapPct;
         var best = TypesWeRun(s)
-            .Where(t => !t.Equals(tr.Type, StringComparison.OrdinalIgnoreCase) && util.ContainsKey(t))
-            .Select(t => (Type: t, Util: util[t]))
-            .OrderByDescending(x => x.Util)
+            .Where(t => !t.Equals(tr.Type, StringComparison.OrdinalIgnoreCase)
+                        && (util.ContainsKey(t) || money.ContainsKey(t)))
+            .Select(t => (
+                Type: t,
+                Util: util.TryGetValue(t, out var tu) ? tu : 0,
+                Paid: money.TryGetValue(t, out var tp) ? tp : 0m))
+            // Busy AND paying. Utilisation orders it, earnings break the tie — and where a type earns
+            // decisively more, that is what carries it.
+            .OrderByDescending(x => x.Util + (double)(x.Paid > 0 && minePaid > 0 ? Math.Min(40m, (x.Paid / Math.Max(1m, minePaid) - 1m) * 25m) : 0m))
             .FirstOrDefault();
 
         if (best.Type == null || best.Util - mine < gap) return same;
 
-        return (best.Type,
-            $"Going to a {best.Type.ToLowerInvariant()} rather than another {tr.Type.ToLowerInvariant()}: our " +
-            $"{best.Type.ToLowerInvariant()}s are running at {best.Util:0.#}% against {mine:0.#}% on the " +
-            $"{tr.Type.ToLowerInvariant()}s. That is where the freight is.");
+        // Both figures, always. Which box is going and which type replaces it are two different
+        // arguments, and the second one is the company spending money — it shows its working.
+        var why = $"Going to a {best.Type.ToLowerInvariant()} rather than another {tr.Type.ToLowerInvariant()}: our " +
+                  $"{best.Type.ToLowerInvariant()}s are running at {best.Util:0.#}% against {mine:0.#}% on the " +
+                  $"{tr.Type.ToLowerInvariant()}s. That is where the freight is.";
+
+        if (tr.IdlePeriods > 0)
+            why = $"Nothing has been on the {tr.Type.ToLowerInvariant()} for {tr.IdlePeriods} period(s). " + why;
+
+        if (best.Paid > 0)
+            why += minePaid > 0
+                ? $" They also bring in ${best.Paid:N0} a period against ${minePaid:N0}."
+                : $" They also bring in ${best.Paid:N0} a period.";
+
+        return (best.Type, why);
     }
 
     /// <summary>

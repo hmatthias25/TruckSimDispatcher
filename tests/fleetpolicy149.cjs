@@ -174,14 +174,26 @@ async function fileReport(ids) {
   ok('there is a trailer nobody is assigned to', !!spare, spare?.unit || '(none)');
 
   await truck('IDL1', {});
+  await api('/fleet/trailer', 'POST', {
+    unit: 'WORK1', type: 'Dry Van', division: 'Dry Van', year: 2021, make: 'Wabash',
+    length: "53'", inGameGarage: true, status: 'InService',
+    homeTerminalId: S.company.terminals[0].id,
+  });
   const idler = (await api('/fleetops/drivers', 'POST', {
-    name: 'Idle Test', status: 'Active', assignedTruckUnit: 'IDL1', skill: 'Competent',
-    level: 5, homeTerminalId: S.company.terminals[0].id, hiredGameDate: at(2),
+    name: 'Idle Test', status: 'Active', assignedTruckUnit: 'IDL1', assignedTrailerUnit: 'WORK1',
+    skill: 'Competent', level: 5, homeTerminalId: S.company.terminals[0].id, hiredGameDate: at(2),
   })).driver;
 
   let raised = false;
   for (let i = 0; i < 3; i++) {
-    const rep = await fileReport([idler.id]);
+    // The dry van is worked hard and reports it; the reefer has nobody on it at all.
+    period += 15;
+    const rep = (await api('/fleetops/report', 'POST', {
+      periodStartGame: at(period - 15 + 5), periodEndGame: at(period + 5),
+      lines: [{ driverId: idler.id, truckUnit: 'IDL1', trailerUnit: 'WORK1',
+                truckStars: 4, trailerStars: 5, perDay: 900, perMile: 2.1,
+                miles: 5000, revenue: 11000, trailerUtilisationPct: 88 }],
+    })).report;
     if ((rep.watching || []).some((w) => w.unit === spare.unit)
         || (rep.retirements || []).some((r) => r.unit === spare.unit)) raised = true;
   }
@@ -192,6 +204,26 @@ async function fileReport(ids) {
   ok('and no utilisation reading is invented for it', (box?.utilisationPct ?? -1) < 0,
     `utilisationPct=${box?.utilisationPct}`);
   ok('and it got raised rather than sitting there invisibly', raised, `raised=${raised}`);
+
+  head('9. #152 An idle box is TRADED, not just sold off');
+  // It is idle because it is the wrong type for the work this carrier gets, not because the fleet is
+  // one trailer over. So the company says what to put in its place, on what is actually earning.
+  const rec = (await api('/fleetops')).retirements || [];
+  const idleRec = rec.find((r) => r.unit === spare.unit);
+  if (idleRec) {
+    const ev = (idleRec.evidence || []).join(' | ');
+    ok('the recommendation names a replacement type',
+      /replacing it with|trading it for|Going to a/i.test(idleRec.headline + ' ' + ev),
+      idleRec.headline);
+    // Like-for-like is the honest answer when the carrier runs one type and there is nothing to
+    // compare against; where there IS an alternative the switch has to show both figures.
+    ok('it switches to the type that is actually working', /dry van/i.test(idleRec.headline),
+      idleRec.headline);
+    ok('and argues it on both figures, not on a preference',
+      /%/.test(ev) && /period\(s\)/.test(ev), ev.slice(0, 190) || '(no figures)');
+  } else {
+    ok('the box was raised for disposal', raised, 'watch-list stage');
+  }
 
 
   console.log(`\n${pass} passed, ${fail} failed`);

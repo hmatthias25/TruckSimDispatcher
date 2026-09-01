@@ -833,6 +833,17 @@ public class Trailer
     /// </summary>
     public int IdlePeriods { get; set; }
 
+    /// <summary>
+    /// Revenue booked against whoever was pulling this box, and how many periods it worked.
+    ///
+    /// Utilisation says how much of the week a trailer moved. It does not say what the moving was
+    /// worth, and those are different questions: a flatbed out five days a week on cheap freight is
+    /// busier and poorer than a reefer out three. Deciding what to replace a box with on utilisation
+    /// alone answered the first question while the company was asking the second.
+    /// </summary>
+    public decimal LifetimeRevenue { get; set; }
+    public int PeriodsWorked { get; set; }
+
     public string UtilisationReportedGameTime { get; set; } = "";
 
     /// <summary>
