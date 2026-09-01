@@ -29,7 +29,11 @@ public static class PayrollTax
 
     private const decimal FederalStandardDeduction = 16_100m;
     private const decimal SocialSecurityRate = 0.062m;
-    private const decimal SocialSecurityWageBase = 184_500m;
+    /// <summary>
+    /// Wages subject to Social Security in one year, per employer. Public because the W-2 has to say
+    /// where box 3 stopped, and two figures for the same cap is a contradiction waiting to happen.
+    /// </summary>
+    public const decimal SocialSecurityWageBase = 184_500m;
     private const decimal MedicareRate = 0.0145m;
 
     /// <summary>
@@ -133,9 +137,19 @@ public static class PayrollTax
         return stub;
     }
 
-    /// <summary>Wages already subject to Social Security this career, for the wage-base cap.</summary>
-    public static decimal YtdSocialSecurityWages(AppState s) =>
-        s.Settlements.Where(x => x.Stub != null).Sum(x => x.Stub!.TaxableWages);
+    /// <summary>
+    /// Wages already subject to Social Security <b>this year, from this employer</b> — which is what
+    /// the wage base caps.
+    ///
+    /// It used to be every settlement ever issued. A career that had grossed past the base therefore
+    /// stopped paying Social Security for good, and went on saying so on a stub that claimed to be a
+    /// year's withholding. The base resets with the year, and it resets per employer, both of which are
+    /// how the real thing works. See <see cref="W2Service"/>.
+    /// </summary>
+    public static decimal YtdSocialSecurityWages(AppState s, string? asOfGameTime = null) =>
+        W2Service.YearToDate(s, asOfGameTime).Where(x => x.Stub != null).Sum(x => x.Stub!.TaxableWages);
 
-    public static decimal YtdGross(AppState s) => s.Settlements.Sum(x => x.Gross);
+    /// <summary>Gross paid this year by this employer. The figure "year to date" was always meant to be.</summary>
+    public static decimal YtdGross(AppState s, string? asOfGameTime = null) =>
+        W2Service.YearToDate(s, asOfGameTime).Sum(x => x.Gross);
 }

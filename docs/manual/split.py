@@ -71,6 +71,7 @@ PLAYER_TITLES = {
     "Fuel: what it pays to be good at",
     "Payroll \u2014 payday is Friday",
     "The pay stub",
+    "The tax year and your W-2",
     "Maintenance and work orders",
     "Where the damage lines put you",
     "Running the GDC service schedule",

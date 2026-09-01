@@ -378,3 +378,10 @@ pre.reply{
   background:var(--panel);border:1px solid var(--line3);border-radius:var(--r);
   padding:20px;max-width:760px;width:100%;max-height:88vh;overflow:auto;
 }
+
+/* ---- W-2. The real form is boxes in a fixed order, and recognising it is the point. */
+.w2grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:10px}
+.w2box{border:1px solid var(--line);border-radius:6px;padding:7px 9px;background:var(--bg2)}
+.w2box .w2n{display:inline-block;min-width:20px;font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.w2box .w2l{font-size:11px;color:var(--ink3)}
+.w2box .w2v{display:block;margin-top:3px;font-family:var(--mono);font-size:15px;font-weight:600}

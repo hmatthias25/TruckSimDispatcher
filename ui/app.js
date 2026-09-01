@@ -2633,8 +2633,7 @@ function viewFleet() {
         <dt>Fuel / economy</dt><dd>${num(t.fuelCapacityGal)} gal · ${num(t.avgMpg, 1)} mpg</dd>
         <dt>Company service mi</dt><dd>${num(t.serviceMiles)}</dd>
         <dt>ATS odometer</dt><dd>${num(t.atsOdometer)}</dd>
-        <dt>PM</dt><dd>last at ${num(t.lastServiceMiles)} · every ${num(t.serviceIntervalMiles)} mi
-          (${num(Math.max(0, t.serviceIntervalMiles - (t.serviceMiles - t.lastServiceMiles)))} mi to go)</dd>
+        <dt>Service</dt><dd>${esc(serviceLine(t.unit))}</dd>
         <dt>Damage</dt><dd>${pct(t.damagePct)}</dd>
         <dt>Note</dt><dd style="font-family:inherit">${esc(t.notes || '—')}</dd>
       </dl>` : '<div class="empty">No truck assigned.</div>'}</div>
@@ -3084,14 +3083,13 @@ function equipmentByYardHtml() {
    Drivers leaving, seats standing empty and trucks past their time are all consequences of the
    period's numbers, so they surface together after the report is filed. */
 function fleetDecisionsHtml() {
-  const pending = FLEETOPS?.pendingTerminations || [];
   const retire = FLEETOPS?.retirements || [];
   const open = FLEETOPS?.openUnits || [];
   const probation = S.views.fleetOps?.onProbation || [];
   const risks = S.views.fleetOps?.flightRisks || [];
   const ask = S.views.fleetOps?.trailerRequest || null;
   const watching = FLEETOPS?.watching || [];
-  const count = pending.length + retire.length + open.length + probation.length + (ask ? 1 : 0);
+  const count = retire.length + open.length + probation.length + (ask ? 1 : 0);
   if (!count && !risks.length && !watching.length) return '';
 
   return `<div class="panel">
@@ -3110,7 +3108,8 @@ function fleetDecisionsHtml() {
       <p>${esc(pr.reason)}</p>
       <p><b>To clear it:</b> ${esc(pr.target)}</p>
       <p class="hint">Warned ${gt(pr.since)}. Nothing for you to do — if the next report comes in no
-        better, operations will recommend letting them go. If it improves, they come off it.</p>
+        better, operations decides whether to let them go and you will read it on the report. If it
+        improves, they come off it.</p>
     </div>`).join('')}
 
     ${ask ? `<div class="callout ${ask.unaffordable ? 'warn' : 'info'}">
@@ -3128,15 +3127,6 @@ function fleetDecisionsHtml() {
         <button class="btn ghost" data-act="trailer-declined" data-id="${esc(ask.id)}">Not interested</button>
       </div></div>` : ''}
 
-    ${pending.map((p) => `<div class="callout stop">
-      <h4>${esc(p.headline)}</h4>
-      <ul>${p.evidence.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>
-      <p class="hint">It is your company — Safety recommends, you decide.</p>
-      <div class="row-actions">
-        <button class="btn danger" data-act="terminate-driver" data-id="${esc(p.driverId)}"
-          data-name="${esc(p.driverName)}">Terminate ${esc(p.driverName)}</button>
-        <button class="btn ghost" data-act="keep-driver" data-name="${esc(p.driverName)}">Keep them on</button>
-      </div></div>`).join('')}
 
     ${retire.map((r) => `<div class="callout warn">
       <h4>${esc(r.headline)}</h4>
@@ -3273,7 +3263,8 @@ function fleetPmHtml() {
       <p>${esc(p.detail)}</p>
       <div class="meters" style="margin-top:8px">
         ${fkpi('Service', money0(p.cost))}
-        ${fkpi('Past due', num(p.milesPastDue) + ' mi', 'warn')}
+        ${p.checkpoints?.length ? fkpi('Checkpoints due', p.checkpoints.length, 'warn') : ''}
+        ${fkpi('Past due', num(p.milesPastDue) + ' mi', p.milesPastDue > 0 ? 'warn' : 'ok')}
         ${fkpi('Odometer', num(p.odometer) + ' mi')}
         ${fkpi('Shop finds something', p.findChancePct + '%', p.findChancePct >= 25 ? 'warn' : 'ok')}
       </div>
@@ -3655,6 +3646,106 @@ function stubTableHtml(st) {
     enough to file a return from.</p>`;
 }
 
+/* ---- the tax year, and the W-2s behind it
+   Year-to-date used to mean career-to-date, which cannot answer the one question anybody in this job
+   asks: what do I make in a year. A year is 365 game days from the day the career started, it closes
+   on the 365th, and a W-2 comes out per employer — change carrier in June and two of them turn up. */
+function taxYearHtml() {
+  const pr = S.views.payroll || {};
+  const y = pr.taxYear;
+  if (!y) return '';
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Tax year ${y.year}</h2>
+      ${badge(y.daysRemaining <= 14 ? 'warn' : 'info',
+        'day ' + num(y.dayIntoYear) + ' of ' + num(pr.daysInYear || 365))}
+      <div class="spacer"></div>
+      <span class="sub">game days ${num(y.startDay)}–${num(y.endDay)} · ${esc(y.employer)}</span></div>
+
+    <div class="meters">
+      ${fkpi('Gross this year', money0(y.gross))}
+      ${fkpi('Taxable wages', money0(y.taxableWages))}
+      ${fkpi('Federal withheld', money0(y.federal))}
+      ${fkpi('Social Security', money0(y.socialSecurity))}
+      ${fkpi('Medicare', money0(y.medicare))}
+      ${fkpi('State', money0(y.stateTax))}
+      ${fkpi('Net', money0(y.net), 'ok')}
+      ${fkpi('Settlements', y.settlements)}
+    </div>
+
+    <p class="hint">${y.annualisedGross > 0
+      ? `Running at <b>${money0(y.annualisedGross)}</b> a year on the ${num(y.dayIntoYear)} days behind you. `
+      : ''}The year closes on game day ${num(y.endDay)} — ${num(y.daysRemaining)} day(s) away — and a
+      W-2 is issued for it. Everything resets there, which is the point: this is what you make in a
+      year, not what you have made since you started.</p>
+  </div>`;
+}
+
+function w2Html() {
+  const forms = S.views.payroll?.w2s || [];
+  if (!forms.length) return '';
+
+  const box = (n, label, value) => `<div class="w2box">
+    <span class="w2n">${n}</span><span class="w2l">${esc(label)}</span>
+    <span class="w2v">${value}</span></div>`;
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>W-2s</h2>
+      ${badge('info', forms.length + ' form' + (forms.length === 1 ? '' : 's'))}
+      <div class="spacer"></div>
+      <span class="sub">one per employer, per year</span></div>
+
+    ${forms.map((w) => `<div class="loadcard auth">
+      <div class="loadcard-head"><span class="lane">${esc(w.number)}</span>
+        ${badge('violet', 'year ' + w.taxYear)}
+        <div class="spacer"></div>
+        <b style="font-family:var(--mono)">${money(w.box1Wages)}</b><span class="sub">box 1</span></div>
+
+      <div class="kv">
+        <span>employer <b>${esc(w.employerName)}</b></span>
+        <span>EIN <b class="mono">${esc(w.employerEin)}</b></span>
+        ${w.employerAddress ? `<span>${esc(w.employerAddress)}</span>` : ''}
+        <span>employee <b>${esc(w.employeeName)}</b></span>
+        <span>SSN <b class="mono">${esc(w.employeeSsn)}</b></span>
+        <span>control <b class="mono">${esc(w.controlNumber)}</b></span>
+      </div>
+
+      <div class="w2grid">
+        ${box(1, 'Wages, tips, other compensation', money(w.box1Wages))}
+        ${box(2, 'Federal income tax withheld', money(w.box2FederalWithheld))}
+        ${box(3, 'Social Security wages', money(w.box3SocialSecurityWages))}
+        ${box(4, 'Social Security tax withheld', money(w.box4SocialSecurityWithheld))}
+        ${box(5, 'Medicare wages and tips', money(w.box5MedicareWages))}
+        ${box(6, 'Medicare tax withheld', money(w.box6MedicareWithheld))}
+        ${box(12, 'Codes', (w.box12 || []).length
+          ? (w.box12).map((c) => `${esc(c.code)} ${money(c.amount)}`).join(', ') : '—')}
+        ${box(13, 'Statutory / retirement / sick pay',
+          [w.statutoryEmployee ? 'statutory' : '', w.retirementPlan ? 'retirement plan' : '',
+           w.thirdPartySickPay ? 'third-party sick pay' : ''].filter(Boolean).join(', ') || 'none ticked')}
+        ${box(14, 'Other', (w.box14 || []).length
+          ? (w.box14).map((c) => `${esc(c.code)} ${money(c.amount)}`).join(', ') : '—')}
+      </div>
+
+      ${(w.states || []).length ? `<div class="tablewrap" style="margin-top:8px"><table>
+        <thead><tr><th>15 State</th><th>Employer state ID</th>
+          <th class="num">16 State wages</th><th class="num">17 State tax</th></tr></thead>
+        <tbody>${w.states.map((st) => `<tr><td class="mono">${esc(st.state)}</td>
+          <td class="mono">${esc(st.employerStateId)}</td>
+          <td class="num">${money(st.wages)}</td><td class="num">${money(st.withheld)}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+
+      <div class="kv" style="margin-top:8px">
+        <span>gross <b>${money(w.gross)}</b></span>
+        <span>pre-tax medical <b>${money(w.preTaxMedical)}</b></span>
+        <span>net <b>${money(w.net)}</b></span>
+        <span>settlements <b>${w.settlements}</b></span>
+        <span>game days <b>${num(w.yearStartDay)}–${num(w.yearEndDay)}</b></span>
+      </div>
+      <p class="hint">${esc(w.note)}</p>
+    </div>`).join('')}
+  </div>`;
+}
+
 function viewPayroll() {
   const unsettled = S.trips.filter((t) => !t.settlementNumber && (t.status === 'Delivered' || t.status === 'Cancelled') && t.pay.total !== 0);
   const total = unsettled.reduce((a, t) => a + t.pay.total, 0);
@@ -3707,6 +3798,9 @@ function viewPayroll() {
       ${p.notes ? `<p class="hint">${esc(p.notes)}</p>` : ''}
     </div>
   </div>
+
+  ${taxYearHtml()}
+  ${w2Html()}
 
   <div class="panel">
     <div class="panel-head"><h2>Settlement history</h2></div>
@@ -4097,6 +4191,14 @@ function towHtml() {
  * Only shown when that schedule is in force. Off it, there is nothing underneath the game's single
  * condition figure to track, and a page of checkpoints would be bookkeeping about nothing.
  */
+/* Where a unit stands on service, in the words of whichever schedule is in force. Computed on the
+   server — the checkpoint intervals belong in one place, and the tag that used to sit here quoted a
+   single PM interval at a fleet that had been moved onto eight checkpoints. */
+function serviceLine(unit) {
+  const l = (S.views?.serviceLines || []).find((x) => x.unit === unit);
+  return l ? l.line : '—';
+}
+
 function serviceScheduleHtml() {
   const sc = S.views?.serviceSchedule;
   if (!sc) return '';
@@ -4173,7 +4275,9 @@ function viewMaint() {
       ${fkpi('Mandatory review', pct(m.mandatoryReviewPct, 0) + '+', 'warn')}
       ${fkpi('Out of service', pct(m.outOfServicePct, 0) + '+', 'bad')}
       ${fkpi('Total loss (fresh truck)', pct(m.totalLossPct, 0) + '+', 'bad')}
-      ${fkpi('PM interval', num(m.preventiveIntervalMiles) + ' mi')}
+      ${m.useGdcSchedule
+        ? fkpi('Service schedule', 'GDC · ' + (m.severeDuty ? 'severe' : 'standard') + ' duty')
+        : fkpi('PM interval', num(m.preventiveIntervalMiles) + ' mi')}
     </div>
     ${(S.views.writeOffLines || []).length ? `<div class="tablewrap" style="margin-top:12px"><table>
       <thead><tr><th>Unit</th><th class="num">Odometer</th><th class="num">Written off at</th><th class="num">Now</th></tr></thead>
@@ -5659,16 +5763,6 @@ async function handleAction(act, d, ev) {
       return run(async () => { FLEETOPS = await api('/fleetops'); });
     case 'load-fleetops': return run(async () => { FLEETOPS = await api('/fleetops'); });
     case 'reports-all': FLEET_ALL_REPORTS = !FLEET_ALL_REPORTS; return render();
-    case 'terminate-driver': {
-      const why = prompt(`Terminate ${d.name}?\n\nWhat goes on the file?`, 'Sustained poor performance.');
-      if (why === null) return;
-      return run(async () => {
-        const r = absorb(await api('/fleetops/terminate', 'POST', { driverId: d.id, reason: why }));
-        FLEETOPS = await api('/fleetops');
-        toast(`${d.name} terminated. Unit ${r.change.truckUnit || ''} is open.`, 'ok');
-      });
-    }
-    case 'keep-driver': return toast(`${d.name} stays on. It will come up again if the numbers do not improve.`, '');
     case 'retire-unit': {
       const mine = d.mine === '1';
       const rep = prompt(mine

@@ -1830,10 +1830,13 @@
       different set of intervals while trucks are out working to the old ones. Filing a report is when
       the fleet's mileage is current, which is the only moment the change can be applied to real
       readings.</p>
-    <p style="margin-top:6pt">Coming onto the schedule, every unit's clocks start from where it stands.
-      Nothing is backdated &mdash; a fleet does not open its first GDC period already late for work that
-      was never on anyone's list. A used truck is taken to have had its dealer baseline done at purchase,
-      for the same reason.</p>
+    <p style="margin-top:6pt">Coming onto the schedule, every unit's clocks start from <b>the last
+      service it actually had</b> &mdash; the same reading the single PM interval has always counted
+      from. A tractor 160,000 miles past its last PM is overdue under these intervals, and the first
+      report does the work. Expect a bill on it: those miles were run before the setting changed, and
+      the change only makes them visible.</p>
+    <p style="margin-top:6pt">A unit with no service history behind it is taken to have had its dealer
+      baseline done at purchase, which is the guide's own rule for a used truck.</p>
   </div>
 
   <div class="pfoot"><span>18 &middot; Maintenance</span><span>33</span></div>
@@ -2666,27 +2669,32 @@
     <figcaption>A seat standing empty, with the three honest options and the cash position behind them.</figcaption>
   </figure>
 
-  <h3>Drivers leave</h3>
-  <p><b>Termination is recommended, never automatic.</b> A driver whose numbers are bad across three
-    periods gets a case made against them — rate per mile against the fleet average, what they put
-    through the shop, the damage they handed back — and you confirm it. It is your company.</p>
+  <h3>Drivers leave, and you are told &mdash; not asked</h3>
+  <p><b>It is not your company.</b> You are a driver, and sacking somebody is a larger authority than
+    approving a $900 service, which the app already declines to hand you. So the company decides, with
+    the documented case attached, and the report says which way it went.</p>
 
   <div class="warn">
-    <p style="font-family:Consolas,monospace;font-size:8.5pt;margin:0">A. Poor is not carrying their unit.
-      Recommend termination.<br>&nbsp;&nbsp;· Averaged $0.60/mi over 3 periods against a fleet average of $1.54.<br>
-      &nbsp;&nbsp;· Put $4,200 through the shop in that time.<br>
-      &nbsp;&nbsp;· Handed the truck back at 20% damage.</p>
+    <p style="font-family:Consolas,monospace;font-size:8.5pt;margin:0">A. Poor failed probation and has been let go.<br>
+      &nbsp;&nbsp;· Averaged $0.60/mi over 3 periods against a fleet average of $1.54.<br>
+      &nbsp;&nbsp;· Warned on Day 79 and told what had to change.<br>
+      &nbsp;&nbsp;· The next period came in no better.</p>
   </div>
 
-  <p><b>They also just quit.</b> Occasionally, with no notice and often no reason — <i>"family reasons;
-    did not want to discuss it"</i>. That one is not a recommendation; it has already happened. Their
-    filed history stays on the books either way.</p>
+  <p><b>Sometimes they get another period.</b> A driver who has pulled themselves off probation once
+    before has proved they can do it, and somebody who missed the bar by a hair is not the same case as
+    somebody who collapsed. Either way you read the decision rather than make it. A third probation ends
+    it — by then the pattern is the evidence.</p>
 
-  <h3>The empty seat is a decision</h3>
-  <p>Whatever the reason, a truck with nobody in it gets presented with three options and an honest read
-    on each: hire a replacement (with your actual spendable cash quoted), take it yourself if it beats
-    what you are in, or leave it parked. If buying is the answer, the app names the tractor to buy at
-    your carrier's equipment standard.</p>
+  <p><b>They also just quit.</b> Occasionally, with no notice and often no reason — <i>"family reasons;
+    did not want to discuss it"</i>. Their filed history stays on the books either way.</p>
+
+  <h3>What becomes of the seat, said out loud</h3>
+  <p>Whoever leaves, the report tells you to take them off in the ATS driver manager and then says one of
+    two things about their tractor. Either <b>hire a replacement</b> for it — with your actual spendable
+    cash quoted and the unit named — or <b>do not hire anyone for it</b>, because the company is putting
+    <i>you</i> in it when you next reach that yard. Put a driver in that seat and there is nothing to
+    swap into when you arrive.</p>
 
   <div class="pfoot"><span>21 &middot; Hired drivers</span><span>51</span></div>
 </div>

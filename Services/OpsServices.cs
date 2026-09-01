@@ -76,7 +76,25 @@ public static class MaintenanceService
                 if (t.Status is "OutOfService" or "Shop" && wo.DamageAfter < s.Settings.Maintenance.MandatoryReviewPct)
                     t.Status = "InService";
                 if (wo.Kind == "Preventive")
-                    t.LastServiceMiles = wo.OdometerAtService > 0 ? wo.OdometerAtService : t.ServiceMiles;
+                {
+                    // On the books, always. LastServiceMiles is differenced against ServiceMiles, and
+                    // OdometerAtService is what the game read — the two figures never have to agree, and
+                    // mixing them wrote a service clock that could not be counted from. The game reading
+                    // stays on the work order, where it is a record rather than an input.
+                    t.LastServiceMiles = t.ServiceMiles;
+
+                    // Under GDC the driver's own tractor clears its checkpoints here. Nothing else does
+                    // it for them: the yard services hired units at the fleet report, and a truck the
+                    // player drives to a shop themselves would otherwise stay due forever.
+                    if (ServicePlan.GdcActive(s))
+                    {
+                        var covered = ServicePlan.ServiceAll(t, s);
+                        if (covered.Count > 0)
+                            wo.Notes = (string.IsNullOrWhiteSpace(wo.Notes) ? "" : wo.Notes + " | ")
+                                + "Checkpoints covered: "
+                                + string.Join(", ", covered.Select(c => c.Name.ToLowerInvariant())) + ".";
+                    }
+                }
                 if (t.Unit == s.Driver.AssignedTruckUnit) s.Status.TruckDamagePct = wo.DamageAfter;
                 Shop.SyncDamageClock(s, t, null);
             }
@@ -123,21 +141,40 @@ public static class MaintenanceService
 
         bool Tracked(string unit, bool inGarage) => inGarage || openWorkOrderUnits.Contains(unit);
 
+        // The yard's line, appended where a hired driver is in the seat: the player cannot take that
+        // tractor to a shop in ATS, so "overdue" alone would be an instruction they have no way to carry
+        // out — and an alert nobody can act on teaches them to skip the panel where the ones that matter
+        // live. It is a decision the company makes, with a price on it. See FleetMaintenance.
+        string Yard(Truck t) => FleetMaintenance.IsHiredUnit(s, t)
+            ? " The yard does it at the next fleet report."
+            : "";
+
         foreach (var t in s.Trucks.Where(t => Tracked(t.Unit, t.InGameGarage)))
         {
             var (status, directive) = Assess(s.Settings, t.DamagePct, $"Unit {t.Ref}");
             if (status != "Monitor") alerts.Add(directive);
+
+            // Whichever schedule is in force is the one this speaks. Quoting the single PM interval
+            // under GDC meant the alert counted a clock nothing on that schedule ever resets, so it
+            // survived the service that was supposed to clear it.
+            if (ServicePlan.GdcActive(s))
+            {
+                var due = ServicePlan.DueNow(s, t);
+                if (due.Count == 0) continue;
+
+                var worst = due.OrderByDescending(d => d.MilesSince - d.IntervalMiles).First();
+                var over = worst.MilesSince - worst.IntervalMiles;
+                var named = string.Join(", ", due.Take(3).Select(d => d.Name.ToLowerInvariant()))
+                            + (due.Count > 3 ? $", and {due.Count - 3} more" : "");
+                alerts.Add(
+                    $"Unit {t.Ref} is due {due.Count} service checkpoint(s) — {named}." +
+                    (over > 0 ? $" Worst is {over:N0} mi over." : "") + Yard(t));
+                continue;
+            }
+
             var since = t.ServiceMiles - t.LastServiceMiles;
             if (since < t.ServiceIntervalMiles) continue;
-
-            // A hired driver's tractor cannot be taken to a shop in ATS, so "PM overdue" was an
-            // instruction the player had no way to carry out — and an alert nobody can act on teaches
-            // them to skip the panel where the ones that matter live. It is a decision instead, with a
-            // price on it, and it says so here. See FleetMaintenance.
-            alerts.Add(FleetMaintenance.IsHiredUnit(s, t)
-                ? $"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi — the yard will do " +
-                  "it at the next fleet report."
-                : $"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi.");
+            alerts.Add($"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi." + Yard(t));
         }
         foreach (var t in s.Trailers.Where(t => Tracked(t.Unit, t.InGameGarage)))
         {

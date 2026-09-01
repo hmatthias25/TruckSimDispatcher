@@ -88,9 +88,11 @@ async function fileReport(lines) {
     }
   }
 
+  // #146: the company decides. A. Poor has never cleared probation and collapsed rather than
+  // narrowly missing, so the decision is termination and it is applied on the report.
   const term = rep.personnel.find((p) => p.kind === 'Terminated');
-  ok('failing probation recommends termination', !!term, term ? term.headline : '(none)');
-  ok('it is pending, not done', term?.pending === true);
+  ok('failing probation ends it', !!term, term ? term.headline : '(none)');
+  ok('and it is done, not offered', term?.pending === false, `pending=${term?.pending}`);
   ok('the case is evidenced', (term?.evidence || []).length >= 2, (term?.evidence || []).join(' | '));
   ok('and it cites the warning that came first',
     (term?.evidence || []).some((e) => /Warned on/.test(e)), (term?.evidence || []).join(' | '));
@@ -100,24 +102,28 @@ async function fileReport(lines) {
     !rep.personnel.some((p) => p.driverName === 'B. Solid' && p.kind === 'Terminated'),
     rep.personnel.map((p) => `${p.driverName}:${p.kind}`).join(', ') || 'none');
 
-  let fo = await api('/fleetops');
-  ok('surfaced as a pending decision', fo.pendingTerminations.length === 1, `${fo.pendingTerminations.length}`);
-  ok('driver still active until confirmed',
-    fo.drivers.find((d) => d.id === poor.id).status === 'Active');
+  ok('nothing is left hanging for the player to decide',
+    !rep.personnel.some((p) => p.pending), rep.personnel.map((p) => `${p.kind}:${p.pending}`).join(', '));
+  ok('the report tells the driver in plain words',
+    (rep.findings || []).some((f) => /A\. Poor/.test(f) && /let go/i.test(f)),
+    (rep.findings || []).find((f) => /A\. Poor/.test(f))?.slice(0, 120) || '(not said)');
+  ok('and says to fire them in ATS',
+    (rep.instructions || []).some((x) => /driver manager/i.test(x)),
+    (rep.instructions || []).join(' | ').slice(0, 160) || '(no instructions)');
+  ok('the seat is spoken for either way',
+    (rep.instructions || []).some((x) => /hire a driver for unit|do not hire anyone for unit|leave unit|no seat to fill/i.test(x)),
+    (rep.instructions || []).join(' | ').slice(0, 200));
 
-  head('Confirming the termination');
-  const t = await api('/fleetops/terminate', 'POST', { driverId: poor.id, reason: 'Sustained poor performance.' });
-  S = t.snapshot;
-  fo = await api('/fleetops');
+  let fo = await api('/fleetops');
+  ok('nothing pending on the Fleet tab', fo.pendingTerminations.length === 0, `${fo.pendingTerminations.length}`);
   const gone = fo.drivers.find((d) => d.id === poor.id);
   ok('driver terminated', gone.status === 'Terminated', gone.status);
-  ok('reason recorded', /poor performance/i.test(gone.separationReason), gone.separationReason);
+  ok('reason recorded', /probation/i.test(gone.separationReason), gone.separationReason);
   ok('their unit released', gone.assignedTruckUnit === '', `"${gone.assignedTruckUnit}"`);
   ok('history kept', gone.reportsFiled === 3 && gone.periods.length === 3,
     `${gone.reportsFiled} reports, ${gone.periods.length} periods`);
   ok('and the periods carry the game figures', gone.periods.every((x) => x.gameFiguresReported),
     gone.periods.map((x) => `$${x.perDay}/day`).join(', '));
-  ok('no longer pending', fo.pendingTerminations.length === 0);
 
   head('The empty seat becomes a decision');
   const openUnit = fo.openUnits.find((u) => u.unit === units[0]);

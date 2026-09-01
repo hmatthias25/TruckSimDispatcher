@@ -378,9 +378,13 @@ public static class FleetOpsService
     ///
     /// Three ways this goes. A bad period puts a driver on <b>probation</b> — a carrier does not sack
     /// someone over one weak fortnight, it says what has to change and looks again next report. Fail
-    /// probation, or land on it twice, and a <b>termination</b> is recommended with the documented
-    /// history attached; it is the player's company, so they confirm it. And a driver may simply
-    /// <b>resign</b>, which is applied on the spot because nobody asks permission to quit.
+    /// probation and the company decides, with the documented history behind it: usually a
+    /// <b>termination</b>, sometimes one more period where the driver has recovered before or came
+    /// within a hair of the bar. See <see cref="SecondChance"/> — the player is a driver, and is told
+    /// which way it went rather than asked. And a driver may simply <b>resign</b>, which is applied on
+    /// the spot because nobody asks permission to quit.
+    ///
+    /// Every one of the three frees a tractor, and every one of them says what becomes of it.
     ///
     /// The judgement is made on what ATS actually shows: $/day and $/mile. Level and rating are context
     /// for what to expect of them, not the verdict — a level 2 driver earning less than a level 9 is
@@ -467,13 +471,51 @@ public static class FleetOpsService
                     if (repairs >= 3000m)
                         evidence.Add($"Also put ${repairs:N0} through the shop over the last three periods.");
 
+                    // Kept on. The target is restated against this period's figures, because a second
+                    // chance carrying the old number on it is not a second chance.
+                    if (SecondChance(d, latest, fleetPerDay, fleetPerMile, out var mercy))
+                    {
+                        evidence.Add(mercy);
+                        d.ProbationCount++;
+                        d.ProbationSince = report.PeriodEndGame;
+                        d.ProbationReason = why;
+                        d.ProbationTarget = fleetPerDay > 0
+                            ? $"$/day back above the ${fleetPerDay:N0} fleet average by the next report."
+                            : $"$/mi back above the ${fleetPerMile:0.00} fleet average by the next report.";
+
+                        report.Personnel.Add(new PersonnelChange
+                        {
+                            DriverId = d.Id, DriverName = d.Name, Kind = "ProbationExtended", Pending = false,
+                            Headline = $"{d.Name} failed probation and is being kept on.",
+                            Evidence = evidence,
+                            TruckUnit = d.AssignedTruckUnit, TrailerUnit = d.AssignedTrailerUnit
+                        });
+                        report.Findings.Add(
+                            $"{d.Name} failed probation and the company is giving them one more period. " +
+                            $"{mercy} To clear it: {d.ProbationTarget} Nothing for you to do.");
+                        continue;
+                    }
+
+                    // Let go. Done here rather than offered — see SecondChance for why there is no
+                    // button on this.
+                    var seat = d.AssignedTruckUnit;
+                    var warnedOn = GameClock.Pretty(d.ProbationSince);
                     report.Personnel.Add(new PersonnelChange
                     {
-                        DriverId = d.Id, DriverName = d.Name, Kind = "Terminated", Pending = true,
-                        Headline = $"{d.Name} failed probation. Recommend termination.",
+                        DriverId = d.Id, DriverName = d.Name, Kind = "Terminated", Pending = false,
+                        Headline = $"{d.Name} has been let go — failed probation.",
                         Evidence = evidence,
-                        TruckUnit = d.AssignedTruckUnit, TrailerUnit = d.AssignedTrailerUnit
+                        TruckUnit = seat, TrailerUnit = d.AssignedTrailerUnit
                     });
+                    report.Findings.Add(
+                        $"{d.Name} failed probation and has been let go. {why} Warned on {warnedOn} and " +
+                        "told what had to change; the period since came in no better.");
+
+                    var vacated = Separate(s, d, "Terminated", $"Failed probation. {why}");
+                    report.Instructions.Add(
+                        $"Fire {d.Name} in the ATS driver manager. They are off our books either way, and " +
+                        "left in the game their wage keeps coming out of the same account.");
+                    SayWhatBecomesOfTheSeat(s, report, d.Name, seat, vacated);
                     continue;
                 }
             }
@@ -492,8 +534,59 @@ public static class FleetOpsService
             change.Evidence.Add($"{d.ReportsFiled} period(s) with us, {d.LifetimeMiles:N0} mi, ${d.LifetimeRevenue:N0} brought in." +
                                 (d.Level > 0 ? $" Level {d.Level}." : ""));
             report.Personnel.Add(change);
-            Separate(s, d, "Resigned", change.Evidence[0]);
+            report.Findings.Add($"{d.Name} has handed their notice in. {change.Evidence[0]}");
+            var quitSeat = Separate(s, d, "Resigned", change.Evidence[0]);
+            report.Instructions.Add(
+                $"Take {d.Name} off in the ATS driver manager. Nobody asks permission to quit, and the " +
+                "app cannot do it in the game for you.");
+            SayWhatBecomesOfTheSeat(s, report, d.Name, change.TruckUnit, quitSeat);
         }
+    }
+
+    /// <summary>
+    /// Whether the company gives a driver who has failed probation another period.
+    ///
+    /// The player used to be asked this, with a red button and the line <i>it is your company - Safety
+    /// recommends, you decide</i>. It is not their company. They are a driver, and the argument
+    /// <see cref="FleetMaintenance"/> sets out about the company's spending applies harder here: sacking
+    /// somebody is a larger authority than approving a $900 service, and the rest of the app spends its
+    /// time telling this player they have not got that authority — they cannot pick their own freight on
+    /// probation, cannot defer a PM, cannot buy a trailer without being asked.
+    ///
+    /// So the company decides, on what it knows rather than on a roll. Two things a real manager would
+    /// weigh, both already on file: whether this driver has ever pulled themselves out of probation
+    /// before, and how far short they actually came. Somebody who recovered once has proved they can.
+    /// Somebody who missed the bar by a hair is not the same case as somebody who collapsed. A third
+    /// probation ends it either way — by then the pattern is the evidence.
+    /// </summary>
+    private static bool SecondChance(HiredDriver d, DriverPeriodResult p,
+        decimal fleetPerDay, decimal fleetPerMile, out string why)
+    {
+        why = "";
+        if (d.ProbationCount >= 3) return false;
+
+        if (!string.IsNullOrWhiteSpace(d.LastClearedProbationGameTime))
+        {
+            why = "They pulled themselves off probation once already, on " +
+                  $"{GameClock.Pretty(d.LastClearedProbationGameTime)} — somebody who has done it once is " +
+                  "worth another period to do it again.";
+            return true;
+        }
+
+        // How close to the bar they came, where 1.0 is exactly on it. Built off the same allowance
+        // Underperforming judges against, so the mercy cannot drift away from the decision it softens.
+        var allowance = d.Level > 0 && d.Level <= 3 ? 0.55m : 0.70m;
+        decimal Ratio(decimal actual, decimal fleet) =>
+            fleet > 0 && actual > 0 ? actual / (fleet * allowance) : 1m;
+        var worst = Math.Min(Ratio(p.PerDay, fleetPerDay), Ratio(p.PerMile, fleetPerMile));
+
+        if (d.ProbationCount <= 1 && worst >= 0.9m)
+        {
+            why = $"They came within {(1 - worst) * 100:0.#}% of the bar rather than collapsing, and it is " +
+                  "a first probation. That is worth one more period.";
+            return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -620,8 +713,15 @@ public static class FleetOpsService
         return reasons[Hash($"{d.Id}|why|{report.Number}") % (uint)reasons.Length];
     }
 
-    /// <summary>Takes a driver off the roster and frees their equipment, keeping their history.</summary>
-    public static void Separate(AppState s, HiredDriver d, string kind, string reason)
+    /// <summary>
+    /// Takes a driver off the roster and frees their equipment, keeping their history.
+    /// </summary>
+    /// <returns>
+    /// The equipment order raised where the company decided to put the player into the tractor that just
+    /// came free, or null where it did not. The caller needs to know: with an order standing, hiring for
+    /// that seat is the one move that ruins the swap.
+    /// </returns>
+    public static EquipmentOrder? Separate(AppState s, HiredDriver d, string kind, string reason)
     {
         // Resigned is its own status: OnLeave would read as "coming back", and they are not.
         d.Status = kind == "Terminated" ? "Terminated" : "Resigned";
@@ -640,16 +740,67 @@ public static class FleetOpsService
         // A good tractor standing empty and a proven driver in an older one is a move a real carrier
         // makes. Decided here rather than left on the Fleet tab beside a note telling the player to go
         // and hire somebody for the seat.
-        if (EquipmentService.ConsiderSeatVacated(s, freedUnit) is { } moved)
-            s.Events.Insert(0, new LogEvent
-            {
-                Channel = "fleet",
-                GameTime = s.Status.GameTime,
-                Message = $"{moved.Number}: {moved.Instruction}",
-            });
+        if (EquipmentService.ConsiderSeatVacated(s, freedUnit) is not { } moved) return null;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "fleet",
+            GameTime = s.Status.GameTime,
+            Message = $"{moved.Number}: {moved.Instruction}",
+        });
+        return moved;
     }
 
-    /// <summary>Confirming a recommended termination. The player's call, not the app's.</summary>
+    /// <summary>
+    /// What becomes of the tractor a departing driver leaves standing — said out loud, every time.
+    ///
+    /// The company may put the player into it, and if it does, hiring somebody for that seat is the one
+    /// move that ruins the swap: they get to the yard and there is a driver sitting in the truck they
+    /// were told was theirs. Where the company is not doing that, the seat is a real hole in the fleet
+    /// and nobody fills it unless the player hires in ATS.
+    ///
+    /// Both used to be left implicit — an equipment order in the events feed on one hand, a note on the
+    /// Fleet tab on the other — so the report itself said nothing either way, which is the one thing it
+    /// must not do about a truck standing empty.
+    /// </summary>
+    private static void SayWhatBecomesOfTheSeat(AppState s, FleetReport report,
+        string driverName, string unit, EquipmentOrder? moved)
+    {
+        if (string.IsNullOrWhiteSpace(unit)) return;
+        var truck = s.Trucks.FirstOrDefault(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase));
+        var label = truck?.Ref ?? unit;
+
+        if (moved != null)
+        {
+            report.Instructions.Add(
+                $"**Do not hire anyone for unit {label}.** {moved.Number}: the company is putting you in " +
+                $"it, and you swap over when you get to {moved.TerminalLabel}. Put a driver in that seat " +
+                "and there is nothing to swap into when you arrive.");
+            return;
+        }
+
+        if (truck == null || truck.Retired || truck.Status == "OutOfService")
+        {
+            report.Instructions.Add($"Unit {label} goes off the road with {driverName}. No seat to fill.");
+            return;
+        }
+
+        var spendable = LedgerService.Position(s).Spendable;
+        report.Instructions.Add(spendable >= 15_000m
+            ? $"**Hire a driver for unit {label}** in ATS and add them on the Fleet tab. " +
+              $"${spendable:N0} spendable; the real price is in the game. It earns nothing standing at the yard."
+            : $"Leave unit {label} standing for now — only ${spendable:N0} spendable after earmarks and " +
+              "wages owed, and the company cannot carry another driver on that.");
+    }
+
+    /// <summary>
+    /// Records a separation the company has decided on, from outside a fleet report.
+    ///
+    /// No longer the front door for a failed probation — that is decided and applied where the evidence
+    /// is, on the report, and the player is told rather than asked. What is left is roster keeping: a
+    /// driver the player has already let go in ATS for a reason the app never saw, and the migration
+    /// that clears out terminations left hanging by the old confirm-it-yourself flow.
+    /// </summary>
     public static PersonnelChange Terminate(AppState s, string driverId, string reason)
     {
         var d = s.HiredDrivers.FirstOrDefault(x => x.Id == driverId)
@@ -671,6 +822,80 @@ public static class FleetOpsService
             { p.Pending = false; p.Headline = change.Headline; }
 
         return change;
+    }
+
+    /// <summary>
+    /// Resolves terminations the old confirm-it-yourself flow left hanging on the player.
+    ///
+    /// They are sitting in career files as a red button and a question nobody in this app should have
+    /// been asked. Decided here on the same rule the report now uses, applied, and written back over the
+    /// entry that raised them so the player reads an outcome rather than a prompt.
+    ///
+    /// Idempotent: once nothing is pending there is nothing to find.
+    /// </summary>
+    /// <returns>One line per driver, for the event log.</returns>
+    public static List<string> ResolveHangingTerminations(AppState s)
+    {
+        var said = new List<string>();
+        var hanging = s.FleetReports
+            .SelectMany(r => r.Personnel.Select(p => (Report: r, Change: p)))
+            .Where(x => x.Change.Pending && x.Change.Kind == "Terminated")
+            .ToList();
+        if (hanging.Count == 0) return said;
+
+        // The bar is the fleet's own, read the same way the report reads it.
+        var active = s.HiredDrivers.Where(d => d.Status == "Active").ToList();
+        var reported = active.SelectMany(d => d.Periods.Where(x => x.GameFiguresReported)).ToList();
+        var fleetPerDay = reported.Count > 0 ? reported.Average(x => x.PerDay) : 0m;
+        var fleetPerMile = reported.Count > 0 ? reported.Average(x => x.PerMile) : 0m;
+
+        foreach (var (report, change) in hanging)
+        {
+            change.Pending = false;
+
+            var d = s.HiredDrivers.FirstOrDefault(x => x.Id == change.DriverId);
+            if (d == null || d.Status != "Active")
+            {
+                // Already gone, by the roster editor or a resignation. Nothing to decide.
+                change.Headline = $"{change.DriverName} is already off the roster.";
+                continue;
+            }
+
+            var latest = d.Periods.FirstOrDefault();
+            if (latest != null && SecondChance(d, latest, fleetPerDay, fleetPerMile, out var mercy))
+            {
+                change.Kind = "ProbationExtended";
+                change.Headline = $"{d.Name} failed probation and is being kept on.";
+                change.Evidence.Add(mercy);
+
+                d.ProbationCount++;
+                d.ProbationSince = s.Status.GameTime;
+                d.ProbationTarget = fleetPerDay > 0
+                    ? $"$/day back above the ${fleetPerDay:N0} fleet average by the next report."
+                    : "Production back up to the fleet average by the next report.";
+
+                report.Findings.Add(
+                    $"{d.Name} failed probation and the company is giving them one more period. {mercy} " +
+                    $"To clear it: {d.ProbationTarget}");
+                said.Add($"{d.Name} stays on — the company is giving them another period.");
+                continue;
+            }
+
+            var seat = d.AssignedTruckUnit;
+            change.Headline = $"{d.Name} has been let go — failed probation.";
+
+            var reason = change.Evidence.FirstOrDefault() ?? "Failed probation.";
+            var vacated = Separate(s, d, "Terminated", reason);
+
+            report.Findings.Add($"{d.Name} failed probation and has been let go. {reason}");
+            report.Instructions.Add(
+                $"Fire {d.Name} in the ATS driver manager. They are off our books either way, and left in " +
+                "the game their wage keeps coming out of the same account.");
+            SayWhatBecomesOfTheSeat(s, report, d.Name, seat, vacated);
+            said.Add($"{d.Name} has been let go. Fire them in the ATS driver manager.");
+        }
+
+        return said;
     }
 
     /// <summary>

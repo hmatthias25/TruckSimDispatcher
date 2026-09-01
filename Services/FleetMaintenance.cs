@@ -59,7 +59,20 @@ public static class FleetMaintenance
 
     /// <summary>Trucks a hired driver is running that the company owes a service.</summary>
     public static List<Truck> DueUnits(AppState s) =>
-        s.Trucks.Where(t => IsHiredUnit(s, t) && DueBy(s, t) > 0).ToList();
+        s.Trucks.Where(t => IsHiredUnit(s, t) && NeedsService(s, t)).ToList();
+
+    /// <summary>
+    /// Whether a unit owes work at all, on whichever schedule is in force.
+    ///
+    /// Separate from <see cref="DueBy"/>, which measures the <i>overrun</i>. A checkpoint sitting
+    /// exactly on its interval is due and is nought miles past due, and gating the report on the
+    /// overrun let those units through — the alert panel said the work was due, the report never did
+    /// it, and the alert was still there afterwards.
+    /// </summary>
+    public static bool NeedsService(AppState s, Truck t) =>
+        ServicePlan.GdcActive(s)
+            ? ServicePlan.DueNow(s, t).Count > 0
+            : t.ServiceMiles - t.LastServiceMiles >= t.ServiceIntervalMiles;
 
     /// <summary>How far past due a unit is, on whichever schedule is in force.</summary>
     public static double DueBy(AppState s, Truck t) =>
@@ -89,7 +102,7 @@ public static class FleetMaintenance
 
     /// <summary>What the shop wants for the service. Older units cost more; that is not a penalty.</summary>
     public static decimal Cost(Truck t) =>
-        Math.Round(BasePmCost + CostPerHundredThousand * (decimal)(Math.Max(0, t.AtsOdometer) / 100_000), 0);
+        Math.Round(BasePmCost + CostPerHundredThousand * (decimal)(ServicePlan.WearMiles(t) / 100_000), 0);
 
     /// <summary>
     /// The odds a service turns something up, as a percentage.
@@ -99,11 +112,11 @@ public static class FleetMaintenance
     /// this carries no deferrals, because nobody ever had the option — mileage and condition are true
     /// regardless of what the app was tracking, and count as they always would.
     /// </summary>
-    public static int FindChance(Truck t)
+    public static int FindChance(AppState s, Truck t)
     {
-        var fromOverdue = (int)Math.Floor(MilesPastDue(t) / OverdueMilesPerPoint);
+        var fromOverdue = (int)Math.Floor(DueBy(s, t) / OverdueMilesPerPoint);
         var fromDeferrals = t.PmDeferrals * FindChancePerDeferral;
-        var fromAge = (int)Math.Floor(Math.Max(0, t.AtsOdometer) / 200_000);
+        var fromAge = (int)Math.Floor(ServicePlan.WearMiles(t) / 200_000);
         var fromCondition = t.DamagePct >= 20 ? 6 : 0;
         return Math.Clamp(fromOverdue + fromDeferrals + fromAge + fromCondition, 2, MaxFindChance);
     }
@@ -117,12 +130,22 @@ public static class FleetMaintenance
     public static object? Coming(AppState s, Truck t)
     {
         if (!IsHiredUnit(s, t)) return null;
-        var past = MilesPastDue(t);
-        if (past <= 0) return null;
+        if (!NeedsService(s, t)) return null;
+
+        var gdc = ServicePlan.GdcActive(s);
+        var past = DueBy(s, t);
+        var odo = ServicePlan.Odometer(t);
 
         var driver = s.HiredDrivers.FirstOrDefault(
             d => d.Status == "Active" && d.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
-        var chance = FindChance(t);
+        var chance = FindChance(s, t);
+
+        // On the GDC schedule the unit goes in against a list, not against one number, so the panel says
+        // what is on the list. Quoting a single PM interval here while the Service schedule panel showed
+        // eight checkpoints was the app disagreeing with itself on the same page.
+        var checkpoints = gdc ? ServicePlan.DueNow(s, t) : new List<ServiceDue>();
+        var cost = Cost(t) + (gdc ? ServicePlan.CostOf(s, checkpoints) : 0);
+        var work = gdc ? string.Join(", ", checkpoints.Select(c => c.Name.ToLowerInvariant())) : "";
 
         return new
         {
@@ -130,17 +153,24 @@ public static class FleetMaintenance
             unitRef = t.Ref,
             driver = driver?.Name ?? "",
             milesPastDue = Math.Round(past, 0),
-            intervalMiles = t.ServiceIntervalMiles,
-            odometer = Math.Round(t.AtsOdometer, 0),
+            // Off GDC this is the one PM interval. On it there is no single interval to quote, so the
+            // figure that means something is the worst overrun, and the list carries the rest.
+            intervalMiles = gdc ? 0 : t.ServiceIntervalMiles,
+            checkpoints = checkpoints.Select(c => new { c.Key, c.Name, c.IntervalMiles, c.Overrun }).ToList(),
+            odometer = Math.Round(ServicePlan.WearMiles(t), 0),
             deferrals = t.PmDeferrals,
-            cost = Cost(t),
+            cost,
             findChancePct = chance,
-            headline = $"Unit {t.Ref} is {past:N0} mi past its {t.ServiceIntervalMiles:N0}-mile PM.",
-            detail = $"The yard will do it at the next fleet report — about ${Cost(t):N0}. " +
+            headline = gdc
+                ? $"Unit {t.Ref} has {checkpoints.Count} checkpoint(s) due" +
+                  (past > 0 ? $", worst {past:N0} mi over." : ".")
+                : $"Unit {t.Ref} is {past:N0} mi past its {t.ServiceIntervalMiles:N0}-mile PM.",
+            detail = (gdc && work.Length > 0 ? $"Due: {work}. " : "") +
+                     $"The yard will do it at the next fleet report — about ${cost:N0}. " +
                      (driver != null ? $"{driver.Name} keeps running; " : "") +
                      "nothing is being parked for it.",
             risk = chance >= 25
-                ? $"At {t.AtsOdometer:N0} mi and {past:N0} past due, there is a real chance they find " +
+                ? $"At {ServicePlan.WearMiles(t):N0} mi and {past:N0} past due, there is a real chance they find " +
                   "something worth more than the service. Better found in the bay than on the road."
                 : "Routine, on the numbers we have.",
             deferNote = t.PmDeferrals > 0
@@ -163,9 +193,13 @@ public static class FleetMaintenance
     public static Dictionary<string, decimal> ServiceDueUnits(AppState s, FleetReport report)
     {
         var spent = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var gdc = ServicePlan.GdcActive(s);
         foreach (var t in DueUnits(s))
         {
-            var cost = Cost(t);
+            // Costed before the balance is tested, checkpoints included. Quoting the bare intake against
+            // the reserve floor let a unit through on a price the yard was never going to charge.
+            var owed = gdc ? ServicePlan.DueNow(s, t) : new List<ServiceDue>();
+            var cost = Cost(t) + (gdc ? ServicePlan.CostOf(s, owed) : 0);
             var balance = LedgerService.Balance(s, LedgerService.Operating);
 
             // A thin period holds the work over. Said out loud, because an unlogged deferral looks
@@ -174,22 +208,24 @@ public static class FleetMaintenance
             {
                 t.PmDeferrals++;
                 report.Findings.Add(
-                    $"Unit {t.Ref} was due a PM and it is being held over — ${balance:N0} in operating " +
-                    $"will not carry a ${cost:N0} service this period. That is {t.PmDeferrals} time(s) on " +
-                    $"this unit, and the shop is now {FindChance(t)}% to find something when it does go in.");
+                    $"Unit {t.Ref} was due {(gdc ? $"{owed.Count} checkpoint(s)" : "a PM")} and it is being " +
+                    $"held over — ${balance:N0} in operating will not carry a ${cost:N0} service this " +
+                    $"period. That is {t.PmDeferrals} time(s) on this unit, and the shop is now " +
+                    $"{FindChance(s, t)}% to find something when it does go in.");
                 continue;
             }
 
-            var chance = FindChance(t);
+            var chance = FindChance(s, t);
             var found = Hash($"{t.Unit}|pm|{t.ServiceMiles:0}") % 100 < (uint)chance;
 
             // On the GDC schedule a unit goes in and everything due gets done at once. A hired driver's
             // tractor cannot be worked on piece by piece — the player is not there, and ATS offers no
             // such control — so the report says which checkpoints were covered rather than pretending
             // somebody chose.
-            var checkpoints = ServicePlan.GdcActive(s) ? ServicePlan.ServiceAll(t, s) : new List<ServiceDue>();
-            if (checkpoints.Count > 0) cost += ServicePlan.CostOf(s, checkpoints);
+            var checkpoints = gdc ? ServicePlan.ServiceAll(t, s) : new List<ServiceDue>();
 
+            // The single-interval clock is reset on either schedule. Leaving it stale under GDC left the
+            // maintenance panel repeating "PM overdue" on a unit that had just come out of the shop.
             t.LastServiceMiles = t.ServiceMiles;
             t.PmDeferrals = 0;
 
@@ -201,12 +237,12 @@ public static class FleetMaintenance
                     ? $"Unit {t.Ref} went through the shop, ${cost:N0} — " +
                       string.Join(", ", checkpoints.Select(c => c.Name.ToLowerInvariant())) + "."
                     : $"Unit {t.Ref} was due a PM. Done at the yard, ${cost:N0}. " +
-                      $"Next one at {t.ServiceIntervalMiles:N0} mi.");
+                      $"Next one at {t.ServiceMiles + t.ServiceIntervalMiles:N0} mi on our books.");
                 spent[t.Unit] = spent.GetValueOrDefault(t.Unit) + cost;
                 continue;
             }
 
-            if (t.AtsOdometer >= HighMileage)
+            if (ServicePlan.WearMiles(t) >= HighMileage)
             {
                 // They stop when they find it, so the bill is the strip-down rather than the service.
                 var billed = Math.Round(cost / 2, 0);
@@ -218,18 +254,18 @@ public static class FleetMaintenance
                          && d.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
 
                 report.Findings.Add(
-                    $"Unit {t.Ref} went in for a PM and is not coming out. At {t.AtsOdometer:N0} mi the " +
-                    $"shop will not put it back on the road. Billed ${billed:N0} for the strip-down.");
+                    $"Unit {t.Ref} went in for a PM and is not coming out. At {ServicePlan.WearMiles(t):N0} mi " +
+                    $"the shop will not put it back on the road. Billed ${billed:N0} for the strip-down.");
 
                 // The existing retirement path takes it from here: trade instructions by make and spec.
                 report.Retirements.Add(new RetirementRecommendation
                 {
                     Unit = t.Unit,
                     UnitKind = "Truck",
-                    Headline = $"Unit {t.Ref} condemned at PM — {t.AtsOdometer:N0} mi.",
+                    Headline = $"Unit {t.Ref} condemned at PM — {ServicePlan.WearMiles(t):N0} mi.",
                     Evidence =
                     {
-                        $"Went in for a routine service at {t.AtsOdometer:N0} mi.",
+                        $"Went in for a routine service at {ServicePlan.WearMiles(t):N0} mi.",
                         "The shop stopped rather than rebuilding it.",
                         "Wear, not a wreck — there is no insurance claim here.",
                     },

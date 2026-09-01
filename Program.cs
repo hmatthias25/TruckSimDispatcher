@@ -120,10 +120,10 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     if (redeemed != null) store.Log(s, "career", redeemed);
 
     // Payday is Friday. The app cannot see the game, so it settles the moment it is told the clock has
-    // crossed one — and pays each Friday in turn if several have gone by.
-    var paid = PayEngine.RunDuePaydays(s);
-    foreach (var st in paid)
-        store.Log(s, "pay", $"{st.Number} paid — ${st.Gross:N2} gross, ${st.Stub?.Net ?? st.Gross:N2} net.", st.Number);
+    // crossed one — and pays each Friday in turn if several have gone by. Reporting the clock is also
+    // the commonest way a tax year gets crossed, which is why this goes through the same routine as
+    // everywhere else rather than keeping its own copy of it.
+    var paid = SettleDue(s);
 
     // Either the yard review just cleared probation, or the driver has earned the next rung. Both are
     // the company acting on its own, and both get said out loud.
@@ -727,6 +727,14 @@ List<Settlement> SettleDue(AppState s)
     var due = PayEngine.RunDuePaydays(s);
     foreach (var st in due)
         store.Log(s, "pay", $"{st.Number} paid — ${st.Gross:N2} gross, ${st.Stub?.Net ?? st.Gross:N2} net.", st.Number);
+
+    // The year closes on the 365th day. Issued here rather than on its own timer because the last
+    // cheque of the year has just run, and a W-2 that is a week behind the stubs is no use to anyone.
+    foreach (var w2 in W2Service.IssueDue(s))
+        store.Log(s, "pay",
+            $"{w2.Number} issued — year {w2.TaxYear} at {w2.EmployerName}: ${w2.Box1Wages:N2} in box 1, " +
+            $"${w2.Box2FederalWithheld:N2} federal withheld.", w2.Number);
+
     return due;
 }
 
@@ -809,9 +817,16 @@ app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
 {
     var existing = s.Trucks.FirstOrDefault(x => x.Unit == t.Unit);
     // Where this unit's service clocks count from. GDC's guide takes the dealer baseline as complete at
-    // purchase, so a truck bought at 600,000 mi does not owe every review ever published.
+    // purchase, so a truck bought at 600,000 mi does not owe every review ever published — but that rule
+    // is about a unit with NO service history. Where the form carries a last-service reading, that is
+    // history, and starting the clocks at today's odometer instead would throw it away and call a
+    // tractor 180,000 mi past its last PM freshly serviced.
     if (t.BaselineOdometer <= 0)
-        t.BaselineOdometer = existing?.BaselineOdometer > 0 ? existing.BaselineOdometer : Math.Max(0, t.AtsOdometer);
+        t.BaselineOdometer = existing?.BaselineOdometer > 0
+            ? existing.BaselineOdometer
+            : t.LastServiceMiles > 0 && t.LastServiceMiles <= ServicePlan.Odometer(t)
+                ? t.LastServiceMiles
+                : ServicePlan.Odometer(t);
     // One game ID per unit, or the label is ambiguous in exactly the case it exists to resolve.
     Equip.GuardGameId(s, t.GameId, t.Unit);
 
@@ -859,6 +874,12 @@ app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
 
         store.Log(s, "career", $"Unit {t.Ref} added and assigned — you had no tractor.");
     }
+
+    // A unit joining a fleet already on the GDC schedule gets its checkpoints started the same way
+    // every other unit's were: from its last real service. Without this it arrives with an empty log,
+    // which reads as the dealer baseline being complete today, and the tractor owes nothing however far
+    // past its last PM it actually is.
+    if (ServicePlan.GdcActive(s) && t.ServiceLog.Count == 0) ServicePlan.SeedFromHistory(t);
 
     CareerService.Recalculate(s);
     return Snapshot(s);
@@ -1879,7 +1900,11 @@ object Snapshot(AppState? given = null)
                 healthPremium = s.Settings.HealthPremiumPerPeriod,
                 stateCode = (HomeTime.HomeTerminal(s)?.State ?? s.Company.TerminalState ?? "").ToUpperInvariant(),
                 stateRate = PayrollTax.StateRate(HomeTime.HomeTerminal(s)?.State ?? s.Company.TerminalState),
-                ytdGross = PayrollTax.YtdGross(s)
+                ytdGross = PayrollTax.YtdGross(s),
+                // The tax year the driver is actually in, and every W-2 closed off behind it.
+                taxYear = W2Service.Standing(s),
+                daysInYear = W2Service.DaysInYear,
+                w2s = s.W2s
             },
             // The arrangement, when the driver is on it: which ATS market to pull from, and whether it
             // is tied to one account.
@@ -2014,6 +2039,16 @@ object Snapshot(AppState? given = null)
             tow = s.Tow,
             // Condition of the equipment and what the company wants done about it, quoted in hours.
             shopOrder = Shop.Assess(s, truck, trailer),
+            // Where every unit stands on service, phrased by the schedule actually in force. One line
+            // from one place, so the Fleet tab cannot quote a PM interval at a fleet running checkpoints.
+            serviceLines = s.Trucks.Where(t => !t.Retired)
+                .Select(t => new
+                {
+                    unit = t.Unit,
+                    line = ServicePlan.StandingLine(s, t),
+                    due = FleetMaintenance.NeedsService(s, t),
+                    overrun = FleetMaintenance.DueBy(s, t) > 0,
+                }).ToList(),
             // The write-off line for every unit we can actually read, since it moves with the odometer.
             writeOffLines = s.Trucks.Where(t => !t.Retired && t.InGameGarage)
                 .Select(t => new

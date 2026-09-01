@@ -4,8 +4,8 @@ Two PDFs ship in the release zip, and both are generated from one source:
 
 | | |
 |---|---|
-| **TruckSim-Dispatcher-User-Manual.pdf** | ~37pp. Somebody who wants to play: get set up, run the loop, know what to type. |
-| **TruckSim-Dispatcher-Operations-Manual.pdf** | ~65pp. Somebody who wants to know how it works: every threshold, every mechanism, and the reasoning. |
+| **TruckSim-Dispatcher-User-Manual.pdf** | ~44pp. Somebody who wants to play: get set up, run the loop, know what to type. |
+| **TruckSim-Dispatcher-Operations-Manual.pdf** | ~68pp. Somebody who wants to know how it works: every threshold, every mechanism, and the reasoning. |
 
 **`manual-full.html` is the source. Edit that.** `manual.html` and `operations.html` are both written
 by `split.py` and any change made to them directly is lost on the next split.
@@ -38,9 +38,12 @@ python paginate.py operations.html
 python render.py   operations.html  # -> pages-operations/page-NN.png
 ```
 
-`split.py` holds the page classification as an explicit set of source page numbers, `PLAYER`. Moving a
-page between the books is a one-line edit to that set — which is the point of keeping it as a list
-rather than a rule over titles.
+`split.py` holds the page classification as an explicit set of page HEADINGS, `PLAYER_TITLES`. It used
+to key on the page's index in the source, and every page inserted afterwards shifted everything below
+it — the two books drifted apart and shipped wrong for several versions. A heading survives an
+insertion above it. Moving a page between the books is still a one-line edit to that set, and adding a
+page to the User Manual means adding its `<h2>` to it; split.py fails loudly on a heading it cannot
+find rather than quietly building the wrong book.
 
 `paginate.py` derives every page number by counting the `.page` divs that precede it, so inserting a
 page cannot leave the contents stale. Run it after any edit that adds or removes a page. It also

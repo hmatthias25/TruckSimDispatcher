@@ -98,8 +98,11 @@ const find = (list, key) => (list || []).find((x) => x.key === key);
   ok('and the report says so',
     (rep.findings || []).some((f) => /GDC service schedule/i.test(f)),
     (rep.findings || []).find((f) => /GDC/i.test(f))?.slice(0, 100) || '(not said)');
-  ok('nothing is backdated into being overdue',
-    (rep.findings || []).some((f) => /nothing is backdated/i.test(f)), 'said');
+  // #145: clocks start from each unit's last real service, not from the day the setting changed.
+  // T500 was set up with lastServiceMiles at its odometer, so it owes nothing yet and the report says so.
+  ok('clocks start from the last service each unit actually had',
+    (rep.findings || []).some((f) => /last service each (unit|one) actually had/i.test(f)),
+    (rep.findings || []).find((f) => /GDC service schedule/i.test(f))?.slice(0, 120) || '(not said)');
 
   head('3. #142 The driver\'s own tractor shows every checkpoint');
   await place(25, 150000);

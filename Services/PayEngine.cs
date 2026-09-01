@@ -232,8 +232,17 @@ public static class PayEngine
 
         foreach (var t in unsettled) t.SettlementNumber = st.Number;
 
-        // Gross to net. Computed before the settlement is filed so year-to-date does not count itself.
-        st.Stub = PayrollTax.Compute(s, st, PayrollTax.YtdGross(s), PayrollTax.YtdSocialSecurityWages(s));
+        // Who paid it. Stamped now, because at year end the current company is whoever the driver works
+        // for then — which is not necessarily who owes them a W-2 for this week.
+        st.EmployerCode = s.Company.Code;
+        st.EmployerName = s.Company.Name;
+
+        // Gross to net. Computed before the settlement is filed so year-to-date does not count itself,
+        // and read against THIS settlement's year rather than today's — catching up several missed
+        // paydays can cross a year boundary, and each one answers to its own year.
+        st.Stub = PayrollTax.Compute(s, st,
+            PayrollTax.YtdGross(s, st.PeriodEndGame),
+            PayrollTax.YtdSocialSecurityWages(s, st.PeriodEndGame));
 
         s.Settlements.Insert(0, st);
         s.Driver.UnsettledPay = Math.Round(Math.Max(0, s.Driver.UnsettledPay - unsettled.Sum(t => t.Pay.Total)), 2);

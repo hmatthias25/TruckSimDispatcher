@@ -147,8 +147,11 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   roster = (await api('/fleetops')).drivers;
   ok('the recovery is on the record', !!roster.find((d) => d.id === weak.id).lastClearedProbationGameTime);
 
-  head('6. Failing probation is what produces a termination');
-  for (let i = 0; i < 2; i++) {
+  head('6. Failing probation is what ends it — and this driver recovered once, so it takes longer');
+  // #146: the company decides, and somebody who has pulled themselves off probation before is worth
+  // one more period. This driver did exactly that in step 5, so the run is warning, second chance,
+  // then out — and the third probation is where the pattern becomes the evidence.
+  for (let i = 0; i < 3; i++) {
     rep = await fileReport([
       { driverId: weak.id, truckUnit: weak.assignedTruckUnit, trailerUnit: weak.assignedTrailerUnit,
         level: 3, rating: 3.0, perMile: 0.30, perDay: 70, revenue: 1500, miles: 5000,
@@ -159,13 +162,28 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
     ]);
     if (i === 0) ok('second failure re-opens probation', personnelOf(rep, 'Probation').length === 1,
       personnelOf(rep, 'Probation')[0]?.headline || 'none');
+    if (i === 1) {
+      const kept = personnelOf(rep, 'ProbationExtended');
+      ok('a driver who once recovered is kept on for one more period', kept.length === 1,
+        kept[0]?.headline || 'none');
+      ok('and is told nothing is being asked of the player',
+        (rep.findings || []).some((f) => /Nothing for you to do|one more period/i.test(f)),
+        (rep.findings || []).find((f) => /one more period/i.test(f))?.slice(0, 120) || 'none');
+      ok('no termination while the chance stands', personnelOf(rep, 'Terminated').length === 0);
+    }
   }
   const term = personnelOf(rep, 'Terminated');
-  ok('now recommended for termination', term.length === 1, term[0]?.headline || 'none');
-  ok('still pending the player confirming', term[0]?.pending === true);
+  ok('the third probation ends it', term.length === 1, term[0]?.headline || 'none');
+  ok('and it is done, not put to the player', term[0]?.pending === false, `pending=${term[0]?.pending}`);
   ok('the case cites the probation history',
     (term[0]?.evidence || []).some((e) => /Warned on|probation number/.test(e)),
     (term[0]?.evidence || []).join(' | '));
+  ok('the report says to fire them in ATS',
+    (rep.instructions || []).some((x) => /driver manager/i.test(x)),
+    (rep.instructions || []).join(' | ').slice(0, 160) || 'none');
+  ok('and says what becomes of the seat',
+    (rep.instructions || []).some((x) => /hire a driver for unit|do not hire anyone for unit|leave unit|no seat to fill/i.test(x)),
+    (rep.instructions || []).join(' | ').slice(0, 200));
 
   head('7. A truck at three stars is recommended for replacement');
   rep = await fileReport([

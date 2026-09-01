@@ -54,7 +54,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 13;
+    public const int Current = 14;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -103,6 +103,9 @@ public class AppState
     public List<PeriodicReviewRecord> PeriodicReviews { get; set; } = new();
     /// <summary>Trailer types the driver has asked to be re-rigged onto.</summary>
     public List<TrailerTypeRequest> TrailerTypeRequests { get; set; } = new();
+
+    /// <summary>W-2s issued at the close of each career year. Newest first.</summary>
+    public List<W2Form> W2s { get; set; } = new();
 
     public Counters Counters { get; set; } = new();
 
@@ -1413,6 +1416,17 @@ public class Settlement
     public string Trigger { get; set; } = "Payday";
 
     /// <summary>
+    /// The carrier that paid this settlement, stamped when it was raised.
+    ///
+    /// A driver who changes employers mid-year gets a W-2 from each of them, so the money has to
+    /// remember who paid it. Reading it off the current company at year end would put a whole year's
+    /// wages on whoever the driver happens to work for in December.
+    /// </summary>
+    public string EmployerCode { get; set; } = "";
+    public string EmployerName { get; set; } = "";
+
+
+    /// <summary>
     /// Whether the driver has actually been shown this settlement.
     ///
     /// Paydays settle on whatever call happens to move the clock across a Friday — a status report, a
@@ -1454,6 +1468,99 @@ public class PayStub
     public decimal YtdGross { get; set; }
     /// <summary>Periods the pay was annualised over to find the federal rate.</summary>
     public int PeriodsPerYear { get; set; } = 52;
+}
+
+/// <summary>
+/// A W-2 for one career year at one employer.
+///
+/// The boxes are the real form's, in the real order, because that is the whole point of the thing: a
+/// driver who has seen a W-2 should recognise this one. What it cannot be is tax software — the
+/// withholding underneath it is <see cref="TruckSimDispatcher.Services.PayrollTax"/>'s approximation
+/// and the form says so.
+///
+/// One per employer per year. Change carrier in June and two of these turn up, which is exactly what
+/// happens to a real driver who does the same thing.
+/// </summary>
+public class W2Form
+{
+    public string Number { get; set; } = "";
+    /// <summary>Career year: 1 for the first 365 days, 2 for the next, and so on.</summary>
+    public int TaxYear { get; set; }
+    /// <summary>Game day the year opened and the day it closed — the period these figures cover.</summary>
+    public int YearStartDay { get; set; }
+    public int YearEndDay { get; set; }
+    public string IssuedGameTime { get; set; } = "";
+
+    // ---- boxes b, c: the employer
+    /// <summary>Box b. Derived from the carrier code the same way the DOT number is.</summary>
+    public string EmployerEin { get; set; } = "";
+    public string EmployerName { get; set; } = "";
+    public string EmployerCode { get; set; } = "";
+    public string EmployerAddress { get; set; } = "";
+
+    // ---- boxes a, e, f: the employee
+    /// <summary>Box a, masked the way an employee copy is.</summary>
+    public string EmployeeSsn { get; set; } = "";
+    public string EmployeeName { get; set; } = "";
+    public string EmployeeAddress { get; set; } = "";
+    /// <summary>Box d.</summary>
+    public string ControlNumber { get; set; } = "";
+
+    // ---- boxes 1-6
+    /// <summary>Box 1 — wages, tips, other compensation. Gross less pre-tax medical.</summary>
+    public decimal Box1Wages { get; set; }
+    /// <summary>Box 2 — federal income tax withheld.</summary>
+    public decimal Box2FederalWithheld { get; set; }
+    /// <summary>Box 3 — Social Security wages, capped at the year's wage base.</summary>
+    public decimal Box3SocialSecurityWages { get; set; }
+    /// <summary>Box 4 — Social Security tax withheld.</summary>
+    public decimal Box4SocialSecurityWithheld { get; set; }
+    /// <summary>Box 5 — Medicare wages and tips. Uncapped, so it can exceed box 3.</summary>
+    public decimal Box5MedicareWages { get; set; }
+    /// <summary>Box 6 — Medicare tax withheld.</summary>
+    public decimal Box6MedicareWithheld { get; set; }
+
+    /// <summary>Box 12 — coded amounts. Empty where the career has nothing to report in one.</summary>
+    public List<W2CodedAmount> Box12 { get; set; } = new();
+
+    // ---- box 13
+    public bool StatutoryEmployee { get; set; }
+    public bool RetirementPlan { get; set; }
+    public bool ThirdPartySickPay { get; set; }
+
+    /// <summary>Box 14 — other. Where the section 125 medical goes, since it explains box 1.</summary>
+    public List<W2CodedAmount> Box14 { get; set; } = new();
+
+    /// <summary>Boxes 15-17. One line per state, because a driver can re-domicile mid-year.</summary>
+    public List<W2StateLine> States { get; set; } = new();
+
+    /// <summary>Settlements this form was built from.</summary>
+    public int Settlements { get; set; }
+    public decimal Gross { get; set; }
+    public decimal PreTaxMedical { get; set; }
+    public decimal Net { get; set; }
+    /// <summary>Anything the driver should know about how this one was put together.</summary>
+    public string Note { get; set; } = "";
+}
+
+/// <summary>A box 12 or box 14 line: a code and an amount.</summary>
+public class W2CodedAmount
+{
+    public string Code { get; set; } = "";
+    public string Label { get; set; } = "";
+    public decimal Amount { get; set; }
+}
+
+/// <summary>Boxes 15-17 for one state.</summary>
+public class W2StateLine
+{
+    /// <summary>Box 15.</summary>
+    public string State { get; set; } = "";
+    public string EmployerStateId { get; set; } = "";
+    /// <summary>Box 16.</summary>
+    public decimal Wages { get; set; }
+    /// <summary>Box 17.</summary>
+    public decimal Withheld { get; set; }
 }
 
 // ---------------------------------------------------------------- ops records
@@ -1674,16 +1781,22 @@ public class DriverPeriodResult
 }
 
 /// <summary>
-/// A driver leaving the company, resolved on the fleet report after the period's numbers are in.
-/// Terminations are recommended and confirmed; resignations simply happen.
+/// Something happening to a driver, resolved on the fleet report once the period's numbers are in.
+///
+/// All of it is decided by the company and applied on the spot. The player is an employee here, not the
+/// owner, so a termination is news to them in exactly the way a resignation is — see
+/// <see cref="TruckSimDispatcher.Services.FleetOpsService"/>.
 /// </summary>
 public class PersonnelChange
 {
     public string DriverId { get; set; } = "";
     public string DriverName { get; set; } = "";
-    /// <summary>Terminated | Resigned</summary>
+    /// <summary>Terminated | Resigned | Probation | ProbationExtended | ProbationLifted</summary>
     public string Kind { get; set; } = "Resigned";
-    /// <summary>Recommended but not yet actioned — the player confirms a termination.</summary>
+    /// <summary>
+    /// Was: raised but waiting on the player to confirm a sacking. Nothing sets it now — the company
+    /// decides — and the migration clears the last of them. Kept only so older career files still load.
+    /// </summary>
     public bool Pending { get; set; }
     public string Headline { get; set; } = "";
     public List<string> Evidence { get; set; } = new();

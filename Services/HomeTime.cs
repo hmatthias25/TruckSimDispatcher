@@ -1081,9 +1081,25 @@ public static class HomeTime
         {
             if (truck.DamagePct >= m.ReportPct)
                 jobs.Add($"Unit {truck.Ref} is at {truck.DamagePct:0.#}% — get it repaired.");
-            var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
-            if (sinceService >= truck.ServiceIntervalMiles * 0.85)
-                jobs.Add($"Unit {truck.Ref} is {sinceService:N0} mi into a {truck.ServiceIntervalMiles:N0}-mile PM cycle — do the service now rather than on the road.");
+            // Whichever schedule is in force says whether there is work to book in for. Quoting the
+            // single PM cycle under GDC named a clock nothing on that schedule ever moves.
+            if (ServicePlan.GdcActive(s))
+            {
+                var owing = ServicePlan.DueNow(s, truck);
+                var soon = ServicePlan.Next(s, truck);
+                if (owing.Count > 0)
+                    jobs.Add($"Unit {truck.Ref} is due {owing.Count} service checkpoint(s) — " +
+                             string.Join(", ", owing.Select(d => d.Name.ToLowerInvariant())) +
+                             ". Do them now rather than on the road.");
+                else if (soon != null && soon.MilesUntilDue <= soon.IntervalMiles * 0.15)
+                    jobs.Add($"Unit {truck.Ref} is {soon.MilesUntilDue:N0} mi off its {soon.Name.ToLowerInvariant()} — do it now rather than on the road.");
+            }
+            else
+            {
+                var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
+                if (sinceService >= truck.ServiceIntervalMiles * 0.85)
+                    jobs.Add($"Unit {truck.Ref} is {sinceService:N0} mi into a {truck.ServiceIntervalMiles:N0}-mile PM cycle — do the service now rather than on the road.");
+            }
         }
         // Nothing to book in for a trailer we do not own. Whatever was hooked went back to the shipper.
         if (trailer is { InGameGarage: true } && !DropHook.Is(trailer.Type) && trailer.DamagePct >= m.ReportPct)
@@ -1195,11 +1211,24 @@ public static class HomeTime
             else
                 b.Shop.Add($"Unit {truck.Ref} is fine at {truck.DamagePct:0.#}% — nothing needed.");
 
-            var since = truck.ServiceMiles - truck.LastServiceMiles;
-            if (since >= truck.ServiceIntervalMiles)
-                b.Shop.Add($"Unit {truck.Ref} is {since - truck.ServiceIntervalMiles:N0} mi PAST its {truck.ServiceIntervalMiles:N0}-mile PM. Do it now.");
-            else if (since >= truck.ServiceIntervalMiles * 0.85)
-                b.Shop.Add($"PM due on unit {truck.Ref} in {truck.ServiceIntervalMiles - since:N0} mi. Cheaper to do it here than on the road.");
+            if (ServicePlan.GdcActive(s))
+            {
+                var owing = ServicePlan.DueNow(s, truck);
+                var soon = ServicePlan.Next(s, truck);
+                if (owing.Count > 0)
+                    b.Shop.Add($"Unit {truck.Ref} is due {owing.Count} service checkpoint(s) — " +
+                               string.Join(", ", owing.Select(d => d.Name.ToLowerInvariant())) + ". Do them now.");
+                else if (soon != null && soon.MilesUntilDue <= soon.IntervalMiles * 0.15)
+                    b.Shop.Add($"{soon.Name} due on unit {truck.Ref} in {soon.MilesUntilDue:N0} mi. Cheaper to do it here than on the road.");
+            }
+            else
+            {
+                var since = truck.ServiceMiles - truck.LastServiceMiles;
+                if (since >= truck.ServiceIntervalMiles)
+                    b.Shop.Add($"Unit {truck.Ref} is {since - truck.ServiceIntervalMiles:N0} mi PAST its {truck.ServiceIntervalMiles:N0}-mile PM. Do it now.");
+                else if (since >= truck.ServiceIntervalMiles * 0.85)
+                    b.Shop.Add($"PM due on unit {truck.Ref} in {truck.ServiceIntervalMiles - since:N0} mi. Cheaper to do it here than on the road.");
+            }
 
             // Past servicing it. The yard is where a swap actually happens — the driver is standing on
             // the property and the spare, if there is one, is parked on it — so this is the right place

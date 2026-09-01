@@ -891,12 +891,29 @@ public static class EquipmentService
         var truck = DispatchEngine.AssignedTruck(s);
         if (truck == null) return advice;
 
-        var since = truck.ServiceMiles - truck.LastServiceMiles;
-        advice.MilesSinceService = since;
-        advice.IntervalMiles = truck.ServiceIntervalMiles;
-        advice.MilesRemaining = truck.ServiceIntervalMiles - since;
-        advice.Due = since >= truck.ServiceIntervalMiles;
-        advice.Soon = !advice.Due && since >= truck.ServiceIntervalMiles * 0.9;
+        // Whichever schedule is in force. Off GDC that is the one PM interval; on it there is no single
+        // interval to quote, and the app was printing one anyway on the same tab as the checkpoint list.
+        var gdc = ServicePlan.GdcActive(s);
+        var due = gdc ? ServicePlan.DueNow(s, truck) : new List<ServiceDue>();
+        var next = gdc ? ServicePlan.Next(s, truck) : null;
+
+        if (gdc)
+        {
+            advice.Due = due.Count > 0;
+            advice.IntervalMiles = next?.IntervalMiles ?? 0;
+            advice.MilesSinceService = next?.MilesSince ?? 0;
+            advice.MilesRemaining = advice.Due ? 0 : Math.Max(0, next?.MilesUntilDue ?? 0);
+            advice.Soon = !advice.Due && next != null && next.MilesUntilDue <= next.IntervalMiles * 0.1;
+        }
+        else
+        {
+            var since = truck.ServiceMiles - truck.LastServiceMiles;
+            advice.MilesSinceService = since;
+            advice.IntervalMiles = truck.ServiceIntervalMiles;
+            advice.MilesRemaining = truck.ServiceIntervalMiles - since;
+            advice.Due = since >= truck.ServiceIntervalMiles;
+            advice.Soon = !advice.Due && since >= truck.ServiceIntervalMiles * 0.9;
+        }
 
         if (!advice.Due && !advice.Soon) return advice;
 
@@ -907,18 +924,25 @@ public static class EquipmentService
         // The authority question that shaped FleetMaintenance does not arise here. Taking the truck you
         // are sitting in to a shop is a driver's job, not the company's capital spending, so this stays
         // advice and a warning rather than something done to the player.
-        advice.FindChancePct = FleetMaintenance.FindChance(truck);
+        var over = FleetMaintenance.DueBy(s, truck);
+        advice.FindChancePct = FleetMaintenance.FindChance(s, truck);
         if (advice.Due && advice.FindChancePct >= 25)
             advice.Warning =
-                $"At {since - truck.ServiceIntervalMiles:N0} mi over and {truck.AtsOdometer:N0} on the " +
+                $"At {over:N0} mi over and {ServicePlan.WearMiles(truck):N0} on the " +
                 "clock, you are not booking a service any more — you are booking whatever they find. " +
                 "Expect it well above the usual, and do not let it go further.";
 
         var shops = ShopOptions(s);
         advice.ShopYards = shops.Select(t => $"{t.City}, {t.State} ({t.ShopLabourDiscount * 100:0}% off labour)").ToList();
-        advice.Message = advice.Due
-            ? $"Unit {truck.Ref} is {since - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM."
-            : $"Unit {truck.Ref} is due a PM in {advice.MilesRemaining:N0} mi.";
+        advice.Message = gdc
+            ? advice.Due
+                ? $"Unit {truck.Ref} is due {due.Count} service checkpoint(s): " +
+                  string.Join(", ", due.Select(d => d.Name.ToLowerInvariant())) + "." +
+                  (over > 0 ? $" Worst is {over:N0} mi over." : "")
+                : $"Unit {truck.Ref} is due its {next!.Name.ToLowerInvariant()} in {advice.MilesRemaining:N0} mi."
+            : advice.Due
+                ? $"Unit {truck.Ref} is {over:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM."
+                : $"Unit {truck.Ref} is due a PM in {advice.MilesRemaining:N0} mi.";
         if (shops.Count > 0)
             advice.Message += $" Our own shops: {string.Join("; ", advice.ShopYards)}.";
         else

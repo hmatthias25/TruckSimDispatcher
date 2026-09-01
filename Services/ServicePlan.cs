@@ -77,6 +77,30 @@ public static class ServicePlan
     /// <summary>Whether the GDC schedule is the one in force right now.</summary>
     public static bool GdcActive(AppState s) => s.Settings.Maintenance.UseGdcSchedule;
 
+    /// <summary>
+    /// The odometer every service decision counts against.
+    ///
+    /// <see cref="Truck.ServiceMiles"/>, because that is what the model says it is: the company's books,
+    /// and the only figure any decision reads. <see cref="Truck.AtsOdometer"/> is a tape measure kept so
+    /// the next game reading can be differenced against the last — it is optional on a fleet report
+    /// line, and on a hired driver's tractor the player may never have entered one at all. Counting
+    /// checkpoints against it read every such unit as zero miles since service, so nothing was ever due.
+    /// </summary>
+    public static double Odometer(Truck t) =>
+        t.ServiceMiles > 0 ? t.ServiceMiles : Math.Max(0, t.AtsOdometer);
+
+    /// <summary>
+    /// What the tractor itself has on it: the game reading where there is one, the books otherwise.
+    ///
+    /// Deliberately not <see cref="Odometer"/>. Wear is a fact about the physical unit — a tractor
+    /// bought used at 900,000 mi is worn out however few of those miles were run for us, and it is that
+    /// one the shop refuses to rebuild. Miles <i>since a service</i> are a different question, and that
+    /// one has to be counted on the books: they are the only continuous series, and a hired driver's
+    /// unit may carry no game reading at all.
+    /// </summary>
+    public static double WearMiles(Truck t) =>
+        t.AtsOdometer > 0 ? t.AtsOdometer : Math.Max(0, t.ServiceMiles);
+
     /// <summary>The interval for a checkpoint on a given unit's duty cycle.</summary>
     public static double IntervalFor(Checkpoint c, bool severe) => severe ? c.SevereMiles : c.StandardMiles;
 
@@ -97,7 +121,7 @@ public static class ServicePlan
     public static List<ServiceDue> Status(AppState s, Truck t)
     {
         var severe = s.Settings.Maintenance.SevereDuty;
-        var odo = Math.Max(0, t.AtsOdometer);
+        var odo = Odometer(t);
         var outp = new List<ServiceDue>();
 
         foreach (var c in Gdc)
@@ -165,11 +189,48 @@ public static class ServicePlan
     /// clock starts where the truck came onto the fleet rather than at zero.
     /// </summary>
     private static double Baseline(Truck t) =>
-        t.BaselineOdometer > 0 ? t.BaselineOdometer : Math.Max(0, t.AtsOdometer);
+        t.BaselineOdometer > 0 && t.BaselineOdometer <= Odometer(t) ? t.BaselineOdometer : Odometer(t);
 
     /// <summary>Checkpoints a unit is at or past.</summary>
     public static List<ServiceDue> DueNow(AppState s, Truck t) =>
         Status(s, t).Where(x => x.Due && !x.Done).ToList();
+
+    /// <summary>The checkpoint falling due soonest, or null when every one is behind this unit.</summary>
+    public static ServiceDue? Next(AppState s, Truck t) =>
+        Status(s, t).Where(x => !x.Done).OrderBy(x => x.MilesUntilDue).FirstOrDefault();
+
+    /// <summary>
+    /// Where a unit stands on service, in one line, in the language of the schedule actually in force.
+    ///
+    /// Everywhere the app used to print "every 25,000 mi (3,200 mi to go)" it was quoting a clock that
+    /// nothing under GDC resets, on a page that might be showing eight checkpoints beside it. One line,
+    /// one source, so the Fleet tab, the yard brief and the trip audit cannot disagree.
+    /// </summary>
+    public static string StandingLine(AppState s, Truck t)
+    {
+        if (!GdcActive(s))
+        {
+            var since = t.ServiceMiles - t.LastServiceMiles;
+            var left = t.ServiceIntervalMiles - since;
+            return left <= 0
+                ? $"PM overdue by {-left:N0} mi — every {t.ServiceIntervalMiles:N0} mi"
+                : $"PM in {left:N0} mi — every {t.ServiceIntervalMiles:N0} mi";
+        }
+
+        var due = DueNow(s, t);
+        if (due.Count > 0)
+        {
+            var worst = due.OrderByDescending(d => d.MilesSince - d.IntervalMiles).First();
+            var over = worst.MilesSince - worst.IntervalMiles;
+            return $"{due.Count} checkpoint(s) due — {worst.Name.ToLowerInvariant()}" +
+                   (over > 0 ? $", {over:N0} mi over" : "");
+        }
+
+        var next = Next(s, t);
+        return next == null
+            ? "Every checkpoint on the GDC schedule is behind this unit."
+            : $"{next.Name} in {next.MilesUntilDue:N0} mi";
+    }
 
     /// <summary>
     /// Records a checkpoint as done at an odometer reading.
@@ -195,7 +256,7 @@ public static class ServicePlan
     public static List<ServiceDue> ServiceAll(Truck t, AppState s)
     {
         var did = DueNow(s, t);
-        foreach (var d in did) MarkDone(t, d.Key, t.AtsOdometer);
+        foreach (var d in did) MarkDone(t, d.Key, Odometer(t));
         return did;
     }
 
@@ -218,22 +279,64 @@ public static class ServicePlan
         m.UseGdcSchedule = wanted;
         m.PendingGdcSchedule = null;
 
-        // Coming onto the GDC schedule, every unit's clocks start from where it stands. Backdating them
-        // would open the new schedule by declaring the whole fleet tens of thousands of miles overdue
-        // for work that was never on anybody's list.
-        if (wanted)
-            foreach (var t in s.Trucks.Where(x => !x.Retired))
-            {
-                if (t.BaselineOdometer <= 0) t.BaselineOdometer = Math.Max(0, t.AtsOdometer);
-                foreach (var c in Gdc)
-                    if (!c.Milestone) MarkDone(t, c.Key, Math.Max(0, t.AtsOdometer));
-            }
+        if (!wanted)
+            return "Maintenance is back on the single PM interval. The per-checkpoint history is kept in " +
+                   "case you switch again.";
 
-        return wanted
-            ? "Maintenance is now on the GDC service schedule. Every unit's checkpoints start from its " +
-              "current odometer — nothing is backdated, so the fleet is not opening this period already late."
-            : "Maintenance is back on the single PM interval. The per-checkpoint history is kept in case " +
-              "you switch again.";
+        var seeded = 0;
+        var owing = 0;
+        foreach (var t in s.Trucks.Where(x => !x.Retired))
+        {
+            SeedFromHistory(t);
+            seeded++;
+            if (DueNow(s, t).Count > 0) owing++;
+        }
+
+        return owing == 0
+            ? $"Maintenance is now on the GDC service schedule. All {seeded} unit(s) start from the last " +
+              "service each one actually had, and none of them owes anything yet."
+            : $"Maintenance is now on the GDC service schedule. Clocks start from the last service each " +
+              $"unit actually had, not from today — {owing} of {seeded} unit(s) already owe work, and the " +
+              "yard does it on this report. That mileage was run before the schedule changed; the change " +
+              "only makes it visible.";
+    }
+
+    /// <summary>
+    /// Starts a unit's checkpoint clocks from the last service it actually had.
+    ///
+    /// The first cut started every clock at the current odometer instead, on the argument that nothing
+    /// should be backdated into instant overdue. That was wrong, and wrong in the direction that hides
+    /// work. The app already knows when each unit was last serviced — it is the same
+    /// <see cref="Truck.LastServiceMiles"/> the single-interval schedule has always counted from — and
+    /// throwing it away to declare every tractor freshly serviced is not declining to backdate, it is
+    /// writing a service that never happened. A truck 160,000 mi past its last PM is overdue under
+    /// GDC's intervals, and no reading of the guide makes it otherwise.
+    ///
+    /// Where there is no usable last service, the unit's baseline stands in, which is the guide's own
+    /// rule about a used purchase carrying the dealer service as complete.
+    /// </summary>
+    /// <param name="overwrite">
+    /// Replace checkpoint records that are already there. For the migration, whose whole job is to
+    /// undo records written by the switch this replaces. Off for a live switch, so genuine history
+    /// recorded since is left alone.
+    /// </param>
+    public static void SeedFromHistory(Truck t, bool overwrite = false)
+    {
+        var odo = Odometer(t);
+
+        // A reading ahead of the odometer cannot be true of this unit — most often because it was taken
+        // off the game rather than off the books, and the two never have to agree.
+        var lastPm = t.LastServiceMiles > 0 && t.LastServiceMiles <= odo ? t.LastServiceMiles : 0;
+        if (t.BaselineOdometer <= 0 || t.BaselineOdometer > odo)
+            t.BaselineOdometer = lastPm > 0 ? lastPm : odo;
+
+        var from = lastPm > 0 ? lastPm : Baseline(t);
+        foreach (var c in Gdc.Where(c => !c.Milestone))
+        {
+            var have = t.ServiceLog.Any(x => x.Key.Equals(c.Key, StringComparison.OrdinalIgnoreCase));
+            if (have && !overwrite) continue;
+            MarkDone(t, c.Key, from);
+        }
     }
 
     /// <summary>What a set of checkpoints costs, over and above the shop's intake.</summary>

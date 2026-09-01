@@ -51,6 +51,119 @@ public static class Migrations
         FlagImplausibleWindows(s);
         EnsureCarrierStanding(s);
         EnsureFleetStars(s);
+        ReissueGdcServiceFromHistory(s);
+        ResolveTerminationsLeftToThePlayer(s);
+        EnsureSettlementEmployer(s);
+        EnsureW2sForYearsAlreadyRun(s);
+    }
+
+    /// <summary>
+    /// Names the carrier that paid each settlement, on careers written before the stamp existed.
+    ///
+    /// A driver who changes employers gets a W-2 from each, so a year's wages have to remember who paid
+    /// them. Worked back off the employment record: anything on or after the current hire date belongs
+    /// to the present employer, anything earlier to whichever stint covers the day it was paid.
+    /// </summary>
+    private static void EnsureSettlementEmployer(AppState s)
+    {
+        var hired = GameClock.DayOf(s.Driver.HiredGameDate);
+
+        foreach (var st in s.Settlements)
+        {
+            if (!string.IsNullOrWhiteSpace(st.EmployerCode)) continue;
+
+            var day = GameClock.DayOf(st.PeriodEndGame);
+            if (day is { } paid && hired is { } from && paid < from)
+            {
+                var stint = s.Driver.EmploymentHistory.FirstOrDefault(h =>
+                    GameClock.DayOf(h.StartedGameDate) is { } started && paid >= started &&
+                    (GameClock.DayOf(h.EndedGameDate) is not { } ended || paid <= ended));
+
+                if (stint != null && !string.IsNullOrWhiteSpace(stint.CarrierCode))
+                {
+                    st.EmployerCode = stint.CarrierCode;
+                    st.EmployerName = stint.CarrierName;
+                    continue;
+                }
+            }
+
+            // No history that covers it, or no date to place it by. The present employer is the only
+            // answer the file supports, and it is the right one for every career that never moved.
+            st.EmployerCode = s.Company.Code;
+            st.EmployerName = s.Company.Name;
+        }
+    }
+
+    /// <summary>
+    /// Issues W-2s for career years that have already run their course.
+    ///
+    /// Careers predating the tax year have no forms at all, and a driver three years in should not have
+    /// to wait until day 1,460 to see one. Runs on every load rather than once: it only ever fills gaps,
+    /// and it is also what keeps a form in step when a settlement lands inside a year already closed.
+    /// </summary>
+    private static void EnsureW2sForYearsAlreadyRun(AppState s) => W2Service.IssueDue(s);
+
+    /// <summary>
+    /// Puts the GDC service clocks back on a career that was switched onto the schedule before the
+    /// switch worked.
+    ///
+    /// Turning the schedule on used to mark every recurring checkpoint done at the unit's current
+    /// odometer — the argument being that nothing should be backdated into instant overdue. What it
+    /// actually did was write a service on every tractor in the fleet that nobody had performed, and
+    /// with the clocks reading zero miles since, the first fleet report found nothing due, serviced
+    /// nothing, and left the old PM alerts standing over units it had just declined to touch.
+    ///
+    /// The clocks are re-seeded from <see cref="Truck.LastServiceMiles"/> — when each unit was last
+    /// actually serviced, which the app has had all along. Work that was genuinely overdue when the
+    /// setting was flipped is due again straight away rather than a period from now, which is the point:
+    /// those miles were run, and the schedule change only decides how they are counted.
+    /// </summary>
+    private static void ReissueGdcServiceFromHistory(AppState s)
+    {
+        if (s.SchemaVersion >= 14) return;
+        s.SchemaVersion = 14;
+        if (!s.Settings.Maintenance.UseGdcSchedule) return;
+
+        var owing = 0;
+        var units = 0;
+        foreach (var t in s.Trucks.Where(x => !x.Retired))
+        {
+            ServicePlan.SeedFromHistory(t, overwrite: true);
+            units++;
+            if (ServicePlan.DueNow(s, t).Count > 0) owing++;
+        }
+        if (units == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "maintenance",
+            GameTime = s.Status.GameTime,
+            Message = owing > 0
+                ? $"Service schedule corrected. Switching onto the GDC intervals had marked every unit " +
+                  $"freshly serviced; the clocks now run from each one's last real service, and {owing} of " +
+                  $"{units} unit(s) owe work as of today. The yard does the hired units at the next fleet " +
+                  "report — yours is on the Maintenance tab."
+                : $"Service schedule corrected. The GDC clocks now run from each unit's last real service " +
+                  $"rather than from the day the setting changed. None of the {units} unit(s) owes anything yet.",
+        });
+    }
+
+    /// <summary>
+    /// Clears out terminations the app left hanging on the player as a decision to make.
+    ///
+    /// A company driver does not decide who gets sacked. The company decides now and says which way it
+    /// went; these are the ones raised before it did. Idempotent, and it touches nothing else — a driver
+    /// already off the roster is left as they are.
+    /// </summary>
+    private static void ResolveTerminationsLeftToThePlayer(AppState s)
+    {
+        foreach (var line in FleetOpsService.ResolveHangingTerminations(s))
+            s.Events.Insert(0, new LogEvent
+            {
+                Channel = "career",
+                GameTime = s.Status.GameTime,
+                Message = line,
+            });
     }
 
     /// <summary>

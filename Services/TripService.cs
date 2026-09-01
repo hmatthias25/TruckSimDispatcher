@@ -1519,11 +1519,25 @@ public static class TripService
                                             ? $" (your game reads {truck.AtsOdometer:N0} — the books are what we judge on)."
                                             : "."));
 
-            var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
-            if (sinceService >= truck.ServiceIntervalMiles)
-                audit.Directives.Add($"Unit {truck.Ref} is {sinceService - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM. Schedule the service at the next terminal.");
-            else if (sinceService >= truck.ServiceIntervalMiles * 0.9)
-                audit.EquipmentFindings.Add($"PM due in {truck.ServiceIntervalMiles - sinceService:N0} mi on unit {truck.Ref}.");
+            if (ServicePlan.GdcActive(s))
+            {
+                var owing = ServicePlan.DueNow(s, truck);
+                var soon = ServicePlan.Next(s, truck);
+                if (owing.Count > 0)
+                    audit.Directives.Add($"Unit {truck.Ref} is due {owing.Count} service checkpoint(s) — " +
+                                         string.Join(", ", owing.Select(d => d.Name.ToLowerInvariant())) +
+                                         ". Schedule them at the next terminal.");
+                else if (soon != null && soon.MilesUntilDue <= soon.IntervalMiles * 0.1)
+                    audit.EquipmentFindings.Add($"{soon.Name} due in {soon.MilesUntilDue:N0} mi on unit {truck.Ref}.");
+            }
+            else
+            {
+                var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
+                if (sinceService >= truck.ServiceIntervalMiles)
+                    audit.Directives.Add($"Unit {truck.Ref} is {sinceService - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM. Schedule the service at the next terminal.");
+                else if (sinceService >= truck.ServiceIntervalMiles * 0.9)
+                    audit.EquipmentFindings.Add($"PM due in {truck.ServiceIntervalMiles - sinceService:N0} mi on unit {truck.Ref}.");
+            }
         }
 
         if (trailer != null)
