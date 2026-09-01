@@ -1090,7 +1090,8 @@ public static class HomeTime
                 if (owing.Count > 0)
                     jobs.Add($"Unit {truck.Ref} is due {owing.Count} service checkpoint(s) — " +
                              string.Join(", ", owing.Select(d => d.Name.ToLowerInvariant())) +
-                             ". Do them now rather than on the road.");
+                             ". Do them now rather than on the road, and record it as a Preventive work " +
+                             "order on the Maintenance tab — that is what clears the schedule.");
                 else if (soon != null && soon.MilesUntilDue <= soon.IntervalMiles * 0.15)
                     jobs.Add($"Unit {truck.Ref} is {soon.MilesUntilDue:N0} mi off its {soon.Name.ToLowerInvariant()} — do it now rather than on the road.");
             }
@@ -1217,7 +1218,10 @@ public static class HomeTime
                 var soon = ServicePlan.Next(s, truck);
                 if (owing.Count > 0)
                     b.Shop.Add($"Unit {truck.Ref} is due {owing.Count} service checkpoint(s) — " +
-                               string.Join(", ", owing.Select(d => d.Name.ToLowerInvariant())) + ". Do them now.");
+                               string.Join(", ", owing.Select(d => d.Name.ToLowerInvariant())) +
+                               $". Do them now; the yard reckons ${ServicePlan.EstimateFor(s, truck):N0}. " +
+                               "Record it as a Preventive work order on the Maintenance tab and the " +
+                               "checkpoints clear.");
                 else if (soon != null && soon.MilesUntilDue <= soon.IntervalMiles * 0.15)
                     b.Shop.Add($"{soon.Name} due on unit {truck.Ref} in {soon.MilesUntilDue:N0} mi. Cheaper to do it here than on the road.");
             }

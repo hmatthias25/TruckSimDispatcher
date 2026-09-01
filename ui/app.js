@@ -4120,6 +4120,12 @@ function writeOffHtml() {
 // Which kind of unit the work order form is on, so the unit list and the damage reading follow it.
 let WO_KIND = 'Truck';
 
+/* A service the driver has been told to record, waiting to fill the work order form in.
+   The schedule panel lists what is due and then used to stop there, leaving the one step that actually
+   clears a checkpoint — a work order of type Preventive — for the driver to deduce. Set by
+   'book-service', cleared once the order is raised. */
+let WO_PREFILL = null;
+
 /**
  * The units a work order can actually be raised against.
  *
@@ -4227,6 +4233,19 @@ function serviceScheduleHtml() {
     <div class="tablewrap"><table>
       <thead><tr><th>Checkpoint</th><th class="num">Every</th><th class="num">Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>
+
+    ${(sc.due || []).length ? `<div class="callout warn" style="margin-top:12px">
+      <h4>${sc.due.length} due on unit ${esc(sc.unit)}</h4>
+      <p>${sc.due.map((d) => esc(d)).join(', ')}.</p>
+      <p><b>Your tractor is yours to take in.</b> Drive it to a shop in ATS and pay for the work there,
+        then record it here as a <b>Preventive</b> work order — that is the one that clears these
+        checkpoints. Any other type posts the money and leaves them due.</p>
+      ${sc.estimate > 0 ? `<p class="hint">The yard reckons about <b>${money0(sc.estimate)}</b> for a set
+        this size. What the shop in ATS asks is what you actually pay — this is only so you can tell
+        whether the number on the screen is sane before you commit.</p>` : ''}
+      <div class="row-actions">
+        <button class="btn primary" data-act="book-service">Record this service</button>
+      </div></div>` : ''}
   </div>`;
 }
 
@@ -4239,8 +4258,10 @@ function woUnitPickHtml() {
 /** Just the options, so switching Truck/Trailer can refill the list without rebuilding the panel. */
 function woUnitOptionsHtml() {
   const mine = WO_KIND === 'Trailer' ? S.driver.assignedTrailerUnit : S.driver.assignedTruckUnit;
+  // The prefilled unit wins over the driver's own, so booking a service on a unit picks that unit.
+  const want = (WO_PREFILL && WO_PREFILL.unit) || mine;
   return woFleet().map((u) => `<option value="${esc(u.unit)}"${
-    u.unit === mine ? ' selected' : ''}>${esc(u.ref || u.unit)}${
+    u.unit === want ? ' selected' : ''}>${esc(u.ref || u.unit)}${
     u.unit === mine ? ' — yours' : ''} · ${pct(u.damagePct)}</option>`).join('');
 }
 
@@ -4303,15 +4324,22 @@ function viewMaint() {
           <option${WO_KIND === 'Truck' ? ' selected' : ''}>Truck</option>
           <option${WO_KIND === 'Trailer' ? ' selected' : ''}>Trailer</option></select></label>
         <label>Unit${woUnitPickHtml()}</label>
-        <label>Type<select id="wo-type">${['Repair', 'Preventive', 'Damage', 'Inspection', 'Tires', 'Recall'].map((x) => `<option>${x}</option>`).join('')}</select></label>
+        <label>Type<select id="wo-type">${['Repair', 'Preventive', 'Damage', 'Inspection', 'Tires', 'Recall'].map((x) =>
+          `<option${(WO_PREFILL && WO_PREFILL.kind) === x ? ' selected' : ''}>${x}</option>`).join('')}</select></label>
         <label>Vendor<input id="wo-vendor" placeholder="e.g. TA Truck Service"></label>
         <label>City<input id="wo-city" value="${esc(S.status.locationCity)}"></label>
         <label>State<input id="wo-state" class="up" maxlength="2" value="${esc(S.status.locationState)}"></label>
         <label>Damage before %<input id="wo-dmgb" type="number" step="0.1" value="${woDamageBefore()}"></label>
         <label>Odometer<input id="wo-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
       </div>
-      <label>Description<input id="wo-desc" placeholder="what needs doing"></label>
-      <label class="chk"><input type="checkbox" id="wo-open" checked> Leave it open — the work has not been done yet</label>
+      ${(S.views?.serviceSchedule?.due || []).length ? `<p class="hint" style="margin-top:8px">
+        <b>Recording a scheduled service?</b> Set <b>Type</b> to <b>Preventive</b>. That is the one that
+        clears the checkpoints on the service schedule below; any other type posts the cost and leaves
+        them due.</p>` : ''}
+      <label>Description<input id="wo-desc" placeholder="what needs doing"
+        value="${esc((WO_PREFILL && WO_PREFILL.description) || '')}"></label>
+      <label class="chk"><input type="checkbox" id="wo-open"${WO_PREFILL ? '' : ' checked'}>
+        Leave it open — the work has not been done yet</label>
       <div class="grid2" style="margin-top:8px">
         <label>Cost $<input id="wo-cost" type="number" step="0.01" placeholder="0.00"></label>
         <label>Damage after %<input id="wo-dmga" type="number" step="0.1" placeholder="0"></label>
@@ -6149,6 +6177,9 @@ async function handleAction(act, d, ev) {
     case 'create-wo': {
       if (!sv('wo-desc')) return toast('Describe what needs doing.', 'bad');
       const leaveOpen = bv('wo-open');
+      if (!leaveOpen && fv('wo-cost') <= 0 && !confirm('Record this as done with no cost?\n\n'
+        + 'Nothing will be posted to the books and the work will read as free. Cancel and enter what '
+        + 'the shop charged if that is not right.')) return;
       // Send the cost either way. The server keeps it as an estimate on an open order rather than
       // throwing it away, so what was typed is never silently lost.
       return run(async () => {
@@ -6162,10 +6193,28 @@ async function handleAction(act, d, ev) {
           status: leaveOpen ? 'Open' : 'Completed',
         }));
         const w = r.workOrder;
+        WO_PREFILL = null;
         toast(leaveOpen
           ? `${w.number} opened${w.estimatedCost > 0 ? ` — ${money(w.estimatedCost)} quoted, not yet posted` : ''}.`
           : `${w.number} closed — ${money(w.cost)} posted.`, 'ok');
       });
+    }
+    /* Told to service the truck, and taken straight to the one form that records it — set to the type
+       that actually clears a checkpoint, on the right unit, with the work already named. */
+    case 'book-service': {
+      const sc = S.views && S.views.serviceSchedule;
+      if (!sc || !(sc.due || []).length) return;
+      WO_KIND = 'Truck';
+      WO_PREFILL = {
+        unit: sc.unitId,
+        kind: 'Preventive',
+        description: `Scheduled service — ${sc.due.join(', ')}.`,
+      };
+      TAB = 'maint';
+      render();
+      const form = document.getElementById('wo-desc');
+      if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return toast('Set to Preventive. Enter what the shop charged and close it out.', 'ok');
     }
     case 'close-wo': {
       const cost = fv('cw-cost-' + d.num);

@@ -2030,7 +2030,14 @@ object Snapshot(AppState? given = null)
                 {
                     severe = s.Settings.Maintenance.SevereDuty,
                     unit = truck.Ref,
+                    // The key, not the display name. A work order is filed against Unit, and a game ID
+                    // in that field books the repair against nothing at all.
+                    unitId = truck.Unit,
                     checkpoints = ServicePlan.Status(s, truck),
+                    // What is owed right now, named, so the panel can offer to record it rather than
+                    // listing eight rows and leaving the driver to work out what happens next.
+                    due = ServicePlan.DueNow(s, truck).Select(d => d.Name).ToList(),
+                    estimate = ServicePlan.EstimateFor(s, truck),
                 }
                 : null,
             pendingScheduleChange = s.Settings.Maintenance.PendingGdcSchedule,

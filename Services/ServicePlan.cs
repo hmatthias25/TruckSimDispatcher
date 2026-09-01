@@ -339,6 +339,21 @@ public static class ServicePlan
         }
     }
 
+    /// <summary>
+    /// What the company reckons a unit's outstanding checkpoints run to, all in.
+    ///
+    /// Guidance, not a bill. The driver takes their own tractor to a shop in ATS and pays whatever it
+    /// asks — the app cannot see that and must not pretend to. What it can do is give them a figure to
+    /// weigh the shop's against before they commit, built off the same numbers a hired unit is costed
+    /// at, because two different answers to "what does this service cost" would be the app arguing with
+    /// itself on the same page.
+    /// </summary>
+    public static decimal EstimateFor(AppState s, Truck t)
+    {
+        var owed = DueNow(s, t);
+        return owed.Count == 0 ? 0m : FleetMaintenance.Cost(t) + CostOf(s, owed);
+    }
+
     /// <summary>What a set of checkpoints costs, over and above the shop's intake.</summary>
     public static decimal CostOf(AppState s, IEnumerable<ServiceDue> items)
     {
