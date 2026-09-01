@@ -394,6 +394,9 @@ const stars = (n) => '★'.repeat(n) + '<span style="color:var(--line3)">' + '�
 
 /** The job market: who is hiring, who would take you, and who to come back to later. */
 function renderMarket(market, { onboarding }) {
+  // Applying out from an unfinished probation is the one thing that overrides a good record, so it is
+  // said once and loudly rather than in small print on thirty cards.
+  const onProbation = !onboarding && S?.driver?.rank === 'probationary';
   const open = market.filter((c) => c.wouldHire && !c.isCurrentEmployer);
   const shut = market.filter((c) => !c.wouldHire && !c.isCurrentEmployer);
   const anyReal = market.some((c) => c.isRealCompany);
@@ -402,6 +405,9 @@ function renderMarket(market, { onboarding }) {
     <div class="loadcard ${c.wouldHire ? 'auth' : 'reject'}">
       <div class="loadcard-head">
         ${c.wouldHire ? badge('ok', 'would hire you') : badge('bad', 'not yet')}
+        ${c.standing === 'Strong' ? badge('ok', 'clear margin')
+          : c.standing === 'Marginal' ? badge('warn', `${c.chancePct}%`)
+          : ''}
         <span class="lane">${esc(c.name)}</span>
         <span class="sub">${esc(c.hqCity)}, ${esc(c.hqState)} · ${esc(c.size)}</span>
         <div class="spacer"></div>
@@ -409,6 +415,7 @@ function renderMarket(market, { onboarding }) {
         ${c.postedLoadedCpm && Math.abs(c.loadedCpm - c.postedLoadedCpm) > 0.0005
           ? `<span class="hint" style="margin:0">posted $${(+c.postedLoadedCpm).toFixed(3)}</span>` : ''}
       </div>
+      ${c.standingNote ? `<p class="hint" style="margin:6px 0 0">${esc(c.standingNote)}</p>` : ''}
       <div class="kv">
         <span>${badge(
           c.condition?.state === 'Expanding' ? 'ok'
@@ -465,6 +472,14 @@ function renderMarket(market, { onboarding }) {
     <div class="panel">
       <div class="panel-head"><h2>Carriers hiring</h2>
         <span class="sub">${open.length} would take you now · ${shut.length} to work toward</span></div>
+      ${onProbation ? `<div class="callout stop">
+        <h4>You are still on probation</h4>
+        <p>Almost nobody will take on a driver who has not finished the last place. Whatever your record
+          looks like, an application out of an unfinished probation is <b>about a one-in-ten chance</b>
+          anywhere on this board &mdash; and a refusal stands until the carrier's month turns, so you
+          cannot keep trying until it lands.</p>
+        <p><b>Clear your probation first.</b> It costs you a few reviews and it is the single thing
+          standing between you and being taken seriously here.</p></div>` : ''}
       ${anyReal ? `<div class="callout mute">
         <p><b>About these companies.</b> These are real US carriers, and their headquarters and the
           freight they haul are factual. The <b>pay rates, hiring standards and star ratings are made up

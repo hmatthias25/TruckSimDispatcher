@@ -672,6 +672,9 @@ public static class Seed
                     ? "Extended — developing driver. Expect closer coaching early."
                     : "Standard probation."
         };
+        // Same slack rule as a changeover: the window has to outlast the passes, or one bad review
+        // leaves the driver needing a clean run they no longer have the fortnights for.
+        ProbationPlanner.EnsureSlack(probation);
 
         var quals = new List<string> { "Class A CDL" };
         if (app.HasHazmat) quals.Add("Hazmat");

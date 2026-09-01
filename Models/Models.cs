@@ -153,6 +153,12 @@ public class DriverApplication
 
 public class HireDecision
 {
+    /// <summary>Strong | Marginal | Short. See <see cref="TruckSimDispatcher.Services.HiringStanding"/>.</summary>
+    public string Standing { get; set; } = "";
+
+    /// <summary>Odds this application was ever going to land, where the call was close.</summary>
+    public int ChancePct { get; set; }
+
     public bool Hired { get; set; }
     public string Decision { get; set; } = "";
     public List<string> Reasons { get; set; } = new();
@@ -634,6 +640,17 @@ public class ProbationPlan
     public double MaxAvgDamagePct { get; set; } = 5;
     public int MaxDriverFaultIncidents { get; set; } = 1;
     public int DurationDays { get; set; } = 90;
+
+    /// <summary>
+    /// Consecutive good reviews this probation takes.
+    ///
+    /// Was a constant 3 for everybody. Scaled now — see
+    /// <see cref="TruckSimDispatcher.Services.ProbationPlanner"/> — because it was the one dimension
+    /// that did not move with history and so became the binding one, and it bound backwards: the
+    /// veteran's shortened 45-day window allowed exactly three reviews for the three it required, so a
+    /// single bad fortnight made the plan impossible while the rookie had two spare.
+    /// </summary>
+    public int PassesRequired { get; set; } = 3;
     public string StartedGameDate { get; set; } = "";
     public string ClearedGameDate { get; set; } = "";
     public string Notes { get; set; } = "";

@@ -769,7 +769,7 @@ public static class CareerService
             // entirely — so the tab reported "requirements met" to a driver who had never sat three good
             // reviews, and lit the button that cleared them on the strength of it.
             review.ProbationProgress.Add(Req("Good reviews in a row",
-                Probation.ConsecutivePasses(s), Probation.PassesToClear));
+                Probation.ConsecutivePasses(s), Probation.PassesFor(s)));
             review.ProbationMet = review.ProbationProgress.All(r => r.Met);
 
             review.Findings.Add(review.ProbationMet
@@ -849,9 +849,10 @@ public static class CareerService
             // Checked on its own rather than leaning on ProbationMet, so this holds even if the progress
             // list is ever rearranged. Probation is not served on numbers alone.
             var passes = Probation.ConsecutivePasses(s);
-            if (passes < Probation.PassesToClear)
+            var want = Probation.PassesFor(s);
+            if (passes < want)
                 throw new InvalidOperationException(
-                    $"{passes} good review(s) in a row against {Probation.PassesToClear} required. The numbers are only " +
+                    $"{passes} good review(s) in a row against {want} required. The numbers are only " +
                     "half of it — the reviews are the other half.");
             if (!review.ProbationMet)
                 throw new InvalidOperationException("Probation requirements are not met. Override explicitly if operations is clearing it early.");
@@ -1337,7 +1338,7 @@ public static class CareerService
             : $"Promoted to {s.Driver.RankTitle}.";
 
         if (kind == "probation")
-            n.Detail.Add($"{Probation.PassesToClear} good reviews in a row and every threshold met. " +
+            n.Detail.Add($"{Probation.PassesFor(s)} good reviews in a row and every threshold met. " +
                          "That is the probationary period served — nothing hanging over the job now.");
         else
             n.Detail.Add("Earned on the record: the loads, the miles, the service and the safety file. " +

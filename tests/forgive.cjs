@@ -63,8 +63,11 @@ async function runLoad() {
   ok('some carriers demand zero', strict.length > 0, `${strict.length}: ${strict.map((c) => c.name).join(', ')}`);
   ok('and they will not take us', strict.every((c) => !c.wouldHire));
   const oneFault = mk.filter((c) => c.maxDriverFaultIncidents === 1);
-  ok('carriers allowing one still would', oneFault.some((c) => c.wouldHire),
-    `${oneFault.filter((c) => c.wouldHire).length} of ${oneFault.length} still open`);
+  ok('carriers allowing one do not cite the incident',
+    oneFault.every((c) => !(c.screening.reasons || []).some((r) => /incident/i.test(r))),
+    `${oneFault.length} carrier(s) checked`);
+  ok('and at least one of them clears every bar', oneFault.some((c) => c.standing !== 'Short'),
+    oneFault.filter((c) => c.standing !== 'Short').map((c) => c.code).join(', ') || 'all short on something');
 
   head('Early review is refused without clean work behind it');
   let refused = null;

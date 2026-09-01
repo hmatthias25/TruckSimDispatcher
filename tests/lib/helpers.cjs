@@ -83,6 +83,20 @@ async function clearDiscipline(api) {
   return actions.length;
 }
 
+/**
+ * Takes the driver off probation.
+ *
+ * Applying to another carrier while still serving one is about a one-in-ten shot by design — see
+ * HiringStanding.OnProbationChancePct — so any suite that is about what happens AFTER a move has to
+ * finish the probation first, or it is really testing that rule instead of its own subject.
+ */
+async function clearProbation(api) {
+  const boot = await api('/bootstrap');
+  if (boot.driver.rank !== 'probationary') return false;
+  await api('/career/clear-probation', 'POST', { force: true, note: 'test setup' });
+  return true;
+}
+
 module.exports = {
-  sitRestartIfOrdered, authorize, activeDrivers, isActive, clearDiscipline,
+  sitRestartIfOrdered, authorize, activeDrivers, isActive, clearDiscipline, clearProbation,
 };

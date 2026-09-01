@@ -41,6 +41,7 @@ PLAYER_TITLES = {
     "What this app is, and the rules it holds itself to",
     "Running it, and where your career file lives",
     "Getting hired \u2014 the application and the carrier market",
+    "Where you stand, and when to apply",
     "Who is worth keeping, and what is worth running",
     "Probation, and who decides a sacking",
     "Your first day: what to buy and set up",

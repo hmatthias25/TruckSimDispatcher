@@ -58,6 +58,9 @@ const kinds = (c, k) => (c.steps || []).filter((x) => x.kind === k);
   ok('and the driver is standing in Springfield', /Springfield/i.test(S.status.locationCity), S.status.locationCity);
 
   head('1. Resign to Werner — Omaha, and a garage nobody owns there');
+  // Applying out of an unfinished probation is a one-in-ten shot by design (#157). This suite is
+  // about what the changeover DOES, so the probation is finished first.
+  await api('/career/clear-probation', 'POST', { force: true, note: 'test setup' });
   const moved = await api('/market/apply', 'POST', { code: 'WER', reason: 'better lanes' });
   ok('hired', moved.hired === true, moved.decision?.decision || '');
   ok('the instruction comes back with the offer', !!moved.changeover, moved.changeover?.number || 'none');
@@ -148,6 +151,7 @@ const kinds = (c, k) => (c.steps || []).filter((x) => x.kind === k);
     (await api('/bootstrap')).events.some((e) => /changeover done|CHG-/i.test(e.message || '')), 'logged');
 
   head('10. A move to a carrier you already have a garage for asks for no drive');
+  await api('/career/clear-probation', 'POST', { force: true, note: 'test setup' });   // see #157
   await api('/market/apply', 'POST', { code: 'ROE', reason: 'flatbed' });   // Marshfield, WI — never been
   c = await chg();
   ok('a fresh instruction for the next move', !!c, c ? c.number : 'none');

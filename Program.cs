@@ -303,15 +303,11 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     s.Driver.Rank = "probationary";
     s.Driver.RankTitle = "Probationary Company Driver";
     s.Driver.HiredGameDate = s.Status.GameTime;
-    s.Driver.Probation = new ProbationPlan
-    {
-        Active = true,
-        RequiredLoads = s.Driver.PriorLoads >= 40 ? 5 : 10,
-        RequiredMiles = s.Driver.PriorLoads >= 40 ? 3000 : 6000,
-        DurationDays = s.Driver.PriorLoads >= 40 ? 45 : 90,
-        StartedGameDate = s.Status.GameTime,
-        Notes = s.Driver.PriorLoads >= 40 ? "Shortened on verified history from previous carriers." : "Standard probation."
-    };
+    // Scaled to the move: reaching above your record buys a longer look, clearing the new bar with
+    // room buys a shorter one, and the window always outlasts the passes it asks for. The old pair of
+    // ternaries shortened the days for an experienced driver while leaving the passes at three, which
+    // left them exactly three reviews for three passes and no way to survive a bad one.
+    s.Driver.Probation = ProbationPlanner.For(s, req.Code, s.Status.GameTime);
     s.Driver.EmployeeId = $"{s.Company.Code}-{1000 + Math.Abs(s.Driver.Name.GetHashCode() % 9000)}";
     s.Driver.UnsettledPay = 0;
     // Starting at the new yard assumes the driver can get to it, which is only true if they have been
@@ -2022,7 +2018,7 @@ object Snapshot(AppState? given = null)
                 on = Probation.IsOn(s),
                 standing = Probation.Standing(s),
                 intervalDays = Probation.ReviewIntervalDays,
-                passesNeeded = Probation.PassesToClear,
+                passesNeeded = Probation.PassesFor(s),
                 passesInARow = Probation.ConsecutivePasses(s),
                 reviews = s.ProbationReviews.Take(6).ToList(),
                 thresholds = Probation.MeetsCompanyThresholds(s).Shortfall

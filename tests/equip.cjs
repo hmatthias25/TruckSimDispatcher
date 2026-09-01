@@ -97,6 +97,7 @@ async function hireAt(code, over) {
   }));
   const before = S.company.terminals.map((t) => t.city).sort();
   ok('two yards now', before.length === 2, before.join(', '));
+  await api('/career/clear-probation', 'POST', { force: true, note: 'test setup' });   // see #157 — a probationary driver is a one-in-ten application
   const moved = await api('/market/apply', 'POST', { code: low.code, reason: 'Better home time' });
   S = un(moved);
   const after = S.company.terminals.map((t) => t.city).sort();

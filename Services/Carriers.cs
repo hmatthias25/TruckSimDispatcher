@@ -223,33 +223,43 @@ public static class Carriers
     /// are shown. Nothing here characterises a real employer's equipment, safety or treatment of
     /// drivers — only the publicly known facts of what they haul and where they are based.
     /// </summary>
+    /// <summary>
+    /// The real carriers.
+    ///
+    /// <b>MaxFaults 99 / MaxAvgDamage 100 / MinOnTime 0 is a "no gate" sentinel, not a standard.</b> It
+    /// belongs to the second-chance and bottom-of-market outfits, whose whole business is taking drivers
+    /// nobody else will. Schneider, Werner, Knight-Swift and C.R. England carried it for a while, which
+    /// modelled four of the largest carriers in North America as having no hiring standards at all and
+    /// put them on the same rung as the invented filler. Taking rookies and having standards are
+    /// independent — Prime and Roehl do both — and the data had conflated them.
+    /// </summary>
     private static readonly Spec[] RealWorld =
     {
         new("Schneider National", "SNI",
             new[] { "Dry Van", "Intermodal", "Dedicated", "Tanker" }, "Large",
             "Green Bay", "WI", new[] { "Dallas,TX", "Charlotte,NC", "Phoenix,AZ", "Chicago,IL" },
-            0.52m, 0.42m, 0, 0, 0, 99, 100, NoHaz, true, false, 2, 2, 2,
+            0.52m, 0.42m, 0, 0, 86, 4, 11, NoHaz, true, false, 4, 3, 3,
             "One of the largest carriers in North America, running dry van, intermodal drayage and dedicated fleets out of Green Bay. Runs one of the industry's biggest driver-training programmes and regularly hires drivers straight out of CDL school.",
             "Hires inexperienced drivers through their training programme."),
 
         new("Werner Enterprises", "WER",
             new[] { "Dry Van", "Dedicated", "Reefer", "Intermodal" }, "Large",
             "Omaha", "NE", new[] { "Dallas,TX", "Atlanta,GA", "Phoenix,AZ" },
-            0.50m, 0.40m, 0, 0, 0, 99, 100, NoHaz, true, false, 2, 2, 2,
+            0.50m, 0.40m, 0, 0, 85, 4, 12, NoHaz, true, false, 3, 3, 2,
             "Omaha-based nationwide truckload carrier running van, dedicated, temperature-controlled and intermodal freight. Long-standing entry point for new drivers.",
             "Takes recent CDL graduates."),
 
         new("Knight-Swift Transport", "KNX",
             new[] { "Dry Van", "Intermodal", "Reefer", "Dedicated" }, "Large",
             "Phoenix", "AZ", new[] { "Dallas,TX", "Atlanta,GA", "Memphis,TN", "Denver,CO" },
-            0.51m, 0.41m, 0, 0, 0, 99, 100, NoHaz, true, false, 2, 2, 2,
+            0.51m, 0.41m, 0, 0, 87, 4, 11, NoHaz, true, false, 4, 3, 3,
             "The largest truckload carrier in the United States after the Knight and Swift merger, headquartered in Phoenix. Van, reefer, intermodal and dedicated across the whole country.",
             "Hires new CDL holders."),
 
         new("C.R. England", "CRE",
             new[] { "Reefer", "Dedicated", "Dry Van" }, "Large",
             "Salt Lake City", "UT", new[] { "Dallas,TX", "Indianapolis,IN", "Phoenix,AZ" },
-            0.53m, 0.43m, 0, 0, 0, 99, 100, NoHaz, true, false, 2, 2, 2,
+            0.53m, 0.43m, 0, 0, 89, 3, 9, NoHaz, true, false, 3, 2, 3,
             "Salt Lake City refrigerated carrier, one of the biggest reefer fleets in the country, with dedicated and van divisions alongside. Operates large driver-training and hiring programmes for people entering the industry.",
             "Trains and hires inexperienced drivers."),
 
@@ -610,11 +620,17 @@ public static class Carriers
                 MinExperienceYears = Math.Max(0, spec.MinYears + cond.YearsShift),
                 MinLoads = (int)Math.Round(spec.MinLoads * cond.LoadsFactor),
                 MinOnTimePct = Math.Clamp(spec.MinOnTime + cond.OnTimeShift, 0, 100),
+                MaxAvgDamage = spec.MaxAvgDamage,
+                IsSecondChance = spec.SecondChance,
                 PostedMinExperienceYears = spec.MinYears,
                 PostedMinLoads = spec.MinLoads,
                 PostedMinOnTimePct = spec.MinOnTime,
                 MaxDriverFaultIncidents = spec.MaxFaults,
                 WouldHire = screening.Hired,
+                Standing = screening.Standing,
+                ChancePct = screening.ChancePct,
+                StandingNote = HiringStanding.Explain(screening.Standing, ConditionOf(s, spec.Code).State,
+                    screening.ChancePct, s.Onboarded && Probation.IsOn(s) && !spec.SecondChance),
                 Screening = screening,
                 IsCurrentEmployer = spec.Code == s.Company.Code,
                 IsRealCompany = IsRealCompany(spec.Code),
@@ -740,6 +756,7 @@ public static class Carriers
         if (!cond.Hiring && !spec.SecondChance)
         {
             d.Hired = false;
+            d.Standing = HiringStanding.Closed;
             d.Decision = $"{spec.Name} — not hiring";
             d.Reasons.Add($"{cond.State}. {cond.Note}");
             d.Conditions.Add($"Their hiring is reviewed around {GameClock.Pretty(cond.ReviewedOn)}. " +
@@ -843,14 +860,90 @@ public static class Carriers
                 notes.Add($"They also run {string.Join(" and ", blockedSide)}, which you will not haul — you would be kept off that division.");
         }
 
+        // ---- how the driver reads against the bar, and what that is worth this month.
+        //
+        // Clearing every bar used to BE the offer. It is now the price of entry, and the margin above
+        // it is what decides a close call — see HiringStanding.
+        var skillsClear = skillGaps.Count == 0;
+        var comfortable = HiringStanding.ClearsComfortably(
+            credited, minYears, totalLoads, minLoads, onTime, minOnTime,
+            faults, spec.MaxFaults, stats.AvgDamagePerTrip, spec.MaxAvgDamage, skillsClear);
+
+        d.Standing = fails.Count == 0
+            ? (comfortable ? HiringStanding.Strong : HiringStanding.Marginal)
+            : HiringStanding.Short;
+
         if (fails.Count > 0)
         {
+            // Short of the bar. One near miss is still a door while they are short of seated trucks —
+            // a carrier winning freight takes a chance it would not take in a flat quarter.
+            var reach = HiringStanding.ReachChanceFor(cond.State);
+            var nearMiss = fails.Count == 1 && skillsClear && s.Driver.Status != "Terminated";
+            d.ChancePct = nearMiss ? reach : 0;
+
+            if (nearMiss && reach > 0 && HiringStanding.Roll(s, spec.Code, cond.Period, reach))
+            {
+                d.Hired = true;
+                d.Decision = $"{spec.Name} — offer extended";
+                d.Reasons.Add($"{cond.State}. {cond.Note}");
+                d.Reasons.Add("You are short of what they normally want: " + fails[0] +
+                              " They are taking you anyway — they need the seat filled more than they " +
+                              "need the record, and that will not be true every month.");
+                d.Conditions.Add("Taken on a stretch. Expect them to watch you closely.");
+                d.Standing = HiringStanding.Marginal;
+                FinishOffer(s, d, spec, cond, app, totalLoads, notes);
+                return d;
+            }
+
             d.Hired = false;
             d.Decision = $"{spec.Name} — application declined";
             d.Reasons.AddRange(fails);
+            if (nearMiss && cond.State != "Expanding")
+                d.Conditions.Add("Only one thing is short. Carriers that are expanding will sometimes take " +
+                                 "a driver on that — worth watching this one when their quarter turns.");
             d.Conditions.Add("Build the record they are asking for and apply again. Carriers reconsider.");
             return d;
         }
+
+        // Clears the bar. Comfortably is an offer; by a hair is a decision they get to make.
+        d.ChancePct = comfortable ? 100 : HiringStanding.ChanceFor(cond.State);
+
+        // Still on probation somewhere else. Recruiters read that as somebody who has not finished
+        // anything, and it outranks the record — a strong application from a driver three weeks into a
+        // probation they are already trying to leave is still an application nobody wants. Second-chance
+        // carriers are exempt, because looking past exactly this is what they are for.
+        var jumpingProbation = s.Onboarded && Probation.IsOn(s) && !spec.SecondChance;
+        if (jumpingProbation)
+        {
+            d.ChancePct = Math.Min(d.ChancePct, HiringStanding.OnProbationChancePct);
+            d.Standing = HiringStanding.Marginal;
+        }
+
+        if (d.ChancePct < 100 && !HiringStanding.Roll(s, spec.Code, cond.Period, d.ChancePct))
+        {
+            if (jumpingProbation)
+            {
+                d.Hired = false;
+                d.Decision = $"{spec.Name} — application declined";
+                d.Reasons.Add("You are still on probation where you are. Nobody here is going to take on a " +
+                              "driver who has not finished the last place — clear it first and this is a " +
+                              "different conversation.");
+                d.Conditions.Add("Finish your probation. It is the single thing standing between you and " +
+                                 "this application being taken seriously.");
+                return d;
+            }
+
+            d.Hired = false;
+            d.Decision = $"{spec.Name} — application declined";
+            d.Reasons.Add($"{cond.State}. {cond.Note}");
+            d.Reasons.Add("You meet what they ask for, but only just, and this month they had people in " +
+                          "front of them who cleared it by more. Nothing on your record is disqualifying — " +
+                          "you were simply not the strongest application on the desk.");
+            d.Conditions.Add($"Their hiring is reviewed around {GameClock.Pretty(cond.ReviewedOn)}. " +
+                             "More loads behind you, or a better month for them, and this goes the other way.");
+            return d;
+        }
+
 
         d.Hired = true;
         d.Decision = $"{spec.Name} — offer extended";
@@ -875,6 +968,52 @@ public static class Carriers
         if (totalLoads > 0) d.Conditions.Add($"Starting rate reflects your {totalLoads} loads of history.");
         return d;
     }
+
+    /// <summary>
+    /// The parts of an offer that do not depend on how close the call was. Shared so a driver taken on
+    /// a stretch gets the same briefing as one who walked in — the freight, the divisions, the
+    /// probation note.
+    /// </summary>
+    private static void FinishOffer(AppState s, HireDecision d, Spec spec, CarrierCondition cond,
+        DriverApplication? app, int totalLoads, List<string> notes)
+    {
+        if (notes.Count > 0) d.Reasons.AddRange(notes);
+        d.Reasons.Add(spec.Blurb);
+        if (cond.PayFactor > 1m)
+            d.Conditions.Add($"They are paying {(cond.PayFactor - 1m) * 100:0}% over their posted scale while they are short of drivers.");
+
+        if (app != null)
+        {
+            if (spec.Divisions[0].Equals(app.PreferredDivision, StringComparison.OrdinalIgnoreCase))
+                d.Reasons.Add($"Their main division is {spec.Divisions[0]}, which is exactly what you asked for.");
+            else if (spec.Divisions.Any(dv => dv.Equals(app.PreferredDivision, StringComparison.OrdinalIgnoreCase)))
+                d.Reasons.Add($"They run {app.PreferredDivision} alongside {spec.Divisions[0]}, so you will see the freight you wanted.");
+        }
+
+        d.Conditions.Add("Every driver starts on probation here.");
+        if (spec.Specialized) d.Conditions.Add("Specialised freight — expect a longer orientation before they turn you loose.");
+        if (totalLoads > 0) d.Conditions.Add($"Starting rate reflects your {totalLoads} loads of history.");
+    }
+
+    /// <summary>A carrier's hiring bar, condition-adjusted, for anything that needs to reason about it.</summary>
+    public static (double MinYears, int MinLoads, double MinOnTime, int MaxFaults, double MaxAvgDamage)
+        StandardsOf(AppState s, string code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code ?? "", StringComparison.OrdinalIgnoreCase));
+        if (spec == null) return (0, 0, 0, 99, 100);
+        var cond = ConditionOf(s, spec.Code);
+        return (Math.Max(0, spec.MinYears + cond.YearsShift),
+                (int)Math.Round(spec.MinLoads * cond.LoadsFactor),
+                Math.Clamp(spec.MinOnTime + cond.OnTimeShift, 0, 100),
+                spec.MaxFaults, spec.MaxAvgDamage);
+    }
+
+    /// <summary>Declared years plus time served, which is what every bar is actually measured against.</summary>
+    public static double CreditedExperienceFor(AppState s) =>
+        CreditedExperience(s, s.Application?.ExperienceYears ?? 0);
+
+    /// <summary>Whether the driver is under this carrier's skill requirement on anything.</summary>
+    public static bool HasSkillShortfall(AppState s, string code) => SkillShortfalls(s, code).Count > 0;
 
     /// <summary>A carrier's equipment standard by code, for careers written before it was stored.</summary>
     public static int EquipmentStarsFor(string? code)
@@ -1263,7 +1402,24 @@ public class CarrierListing
     public int MinLoads { get; set; }
     public double MinOnTimePct { get; set; }
     public int MaxDriverFaultIncidents { get; set; }
+    public double MaxAvgDamage { get; set; }
+
+    /// <summary>
+    /// Looks past a termination, and past an unfinished probation. Exposed so the driver can see which
+    /// doors stay open when the rest of the board closes — that is the whole point of these carriers,
+    /// and it was only knowable from inside the screening.
+    /// </summary>
+    public bool IsSecondChance { get; set; }
     public bool WouldHire { get; set; }
+
+    /// <summary>Strong | Marginal | Short — how the driver reads against this carrier's bar.</summary>
+    public string Standing { get; set; } = "";
+
+    /// <summary>The odds, where it was a close call. 100 when the margin makes it certain.</summary>
+    public int ChancePct { get; set; }
+
+    /// <summary>What that means, said before the driver applies rather than after they are refused.</summary>
+    public string StandingNote { get; set; } = "";
     public bool IsCurrentEmployer { get; set; }
     /// <summary>A real company — its name, headquarters and freight are factual; pay is not.</summary>
     public bool IsRealCompany { get; set; }

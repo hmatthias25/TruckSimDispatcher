@@ -109,6 +109,7 @@ const addLoad = (o) => api('/board/add', 'POST', {
   head('A carrier without a dedicated division refuses the arrangement');
   let refused = null;
   // Changing employer settles the old one automatically now — nothing to press first.
+  await api('/career/clear-probation', 'POST', { force: true, note: 'test setup' });   // see #157 — a probationary driver is a one-in-ten application
   const moved = await api('/market/apply', 'POST', { code: 'MEL', reason: 'flatbed' });  // Melton: flatbed only
   ok('leaving paid out the old employer', !!moved.finalPay,
     moved.finalPay ? `${moved.finalPay.number} ${money(moved.finalPay.gross)}` : '(nothing owed)');

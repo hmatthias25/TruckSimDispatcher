@@ -21,8 +21,15 @@ public static class Probation
     /// <summary>How often a probationary driver reports to the yard. Not negotiable while on it.</summary>
     public const int ReviewIntervalDays = 14;
 
-    /// <summary>Consecutive passes needed. A fail breaks the run — that is what makes each one matter.</summary>
+    /// <summary>
+    /// The default, and what every career written before the plan carried its own figure used.
+    /// Ask <see cref="PassesFor"/> rather than this — the number is per-career now.
+    /// </summary>
     public const int PassesToClear = 3;
+
+    /// <summary>Consecutive passes THIS driver's probation takes. A fail breaks the run.</summary>
+    public static int PassesFor(AppState s) =>
+        s.Driver.Probation.PassesRequired > 0 ? s.Driver.Probation.PassesRequired : PassesToClear;
 
     /// <summary>Days past the fortnight before the overrun is worth writing down.</summary>
     private const double OverrunGraceDays = 3;
@@ -57,9 +64,10 @@ public static class Probation
                 : "Not on probation.";
 
         var run = ConsecutivePasses(s);
-        var need = PassesToClear - run;
+        var want = PassesFor(s);
+        var need = want - run;
         return s.ProbationReviews.Count == 0
-            ? $"On probation. Report to the yard every {ReviewIntervalDays} days — {PassesToClear} good reviews in a row clears it."
+            ? $"On probation. Report to the yard every {ReviewIntervalDays} days — {want} good reviews in a row clears it."
             : $"On probation. {run} pass(es) in a row, {need} more to go.";
     }
 

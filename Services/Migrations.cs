@@ -741,18 +741,18 @@ public static class Migrations
         if (s.Driver.CareerOver || s.Driver.TerminatedForCause) return;
 
         var passes = Probation.ConsecutivePasses(s);
-        if (passes >= Probation.PassesToClear) return;          // earned it properly
+        if (passes >= Probation.PassesFor(s)) return;           // earned it properly, on this career's plan
 
         CareerService.RestoreProbation(s,
             $"Probation restored: cleared on thresholds alone with {passes} good review(s) in a row against " +
-            $"{Probation.PassesToClear} required.");
+            $"{Probation.PassesFor(s)} required.");
 
         s.Events.Insert(0, new LogEvent
         {
             Channel = "career",
             GameTime = s.Status.GameTime,
             Message = $"Probation put back: it had been cleared without the reviews ({passes} of " +
-                      $"{Probation.PassesToClear} good reviews in a row). Back on the probationary scale until " +
+                      $"{Probation.PassesFor(s)} good reviews in a row). Back on the probationary scale until " +
                       "you have sat them. Settlements already paid are untouched.",
         });
     }

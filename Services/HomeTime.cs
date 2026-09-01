@@ -439,7 +439,7 @@ public static class HomeTime
         // writes a verdict; three good ones in a row is what ends it.
         var review = Probation.ReviewOnArrival(s);
         if (review is { ClearedProbation: true })
-            CareerService.ClearProbation(s, force: true, note: $"Cleared on {review.Number} — {Probation.PassesToClear} good reviews in a row.");
+            CareerService.ClearProbation(s, force: true, note: $"Cleared on {review.Number} — {Probation.PassesFor(s)} good reviews in a row.");
 
         // Off probation the reviewing carries on, just less often. Filed here for the same reason: the
         // driver is standing at the yard, which is the only place this conversation happens.
