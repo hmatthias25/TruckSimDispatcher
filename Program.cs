@@ -713,6 +713,51 @@ app.MapPost("/api/moves", (MoveRequest req) => Results.Ok(store.Mutate(s =>
     return new { trip, snapshot = Snapshot(s) };
 })));
 
+/// Booking empty running that nothing was dispatched against — the run home, most often.
+///
+/// One press, because the app already has every number: where the last load closed, where the driver
+/// is now, and the two odometer readings between them. Telling somebody the figure and then making
+/// them retype it into a form is the same mistake as making them work the mileage out in the first
+/// place — see Repositioning.Unbooked.
+app.MapPost("/api/moves/book-empty", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var leg = Repositioning.Unbooked(s)
+              ?? throw new InvalidOperationException(
+                  "Nothing to book — no empty running since the last load closed, or no odometer reading to measure it with.");
+
+    var from = s.Trips
+        .Where(t => t.EndOdometer > 0 && t.Status == "Delivered")
+        .OrderByDescending(t => GameClock.TryParse(t.DeliveredGameTime) ?? DateTime.MinValue)
+        .First();
+
+    var trip = DispatchEngine.CreateEmptyMove(s, s.Status.LocationCity, s.Status.LocationState,
+        leg.Miles, $"Empty running after {from.Number}, measured off the odometer.");
+
+    // Already driven, so it closes the moment it opens. The odometer readings ARE the record — there is
+    // nothing for the driver to report that they have not already reported.
+    trip.OriginCity = from.DestCity;
+    trip.OriginState = from.DestState;
+    trip.StartOdometer = leg.FromOdometer;
+    trip.EndOdometer = leg.ToOdometer;
+    trip.ActualMiles = leg.Miles;
+    trip.DeliveredGameTime = s.Status.GameTime;
+    trip.Status = "Delivered";
+    trip.Events.Add(new TripEvent
+    {
+        GameTime = s.Status.GameTime, Kind = "Note", Detail = leg.Explanation
+    });
+
+    // Settlement reads the pay stored ON the trip, not recomputed from it — so a delivered trip with no
+    // Pay block is a trip that quietly pays nothing, which is the whole bug this button exists to fix.
+    trip.Pay = PayEngine.ComputeTripPay(s, trip);
+
+    store.Log(s, "dispatch",
+        $"{trip.Number} — {leg.Miles:N0} empty mi from {DispatchEngine.Place(from.DestCity, from.DestState)} " +
+        $"booked off the odometer ({leg.FromOdometer:N0} → {leg.ToOdometer:N0}).", trip.Number);
+
+    return new { trip, miles = leg.Miles, snapshot = Snapshot(s) };
+})));
+
 // ---------------------------------------------------------------- trips
 
 // Payday is Friday, and the app only learns the date when the driver tells it. Anything that moves the

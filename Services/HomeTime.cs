@@ -1364,9 +1364,8 @@ public static class HomeTime
         if (Repositioning.Unbooked(s) is { } empty && empty.Miles > 0)
         {
             var rate = s.Driver.Pay.DeadheadCpm;
-            b.Paperwork.Add($"{empty.Explanation} Raise it as an empty move" +
-                            (rate > 0 ? $" and it pays about ${empty.Miles * (double)rate:N0}" : "") +
-                            " — Dispatch, then Empty move.");
+            b.Paperwork.Add($"{empty.Explanation} Book it on the Dispatch tab in one press" +
+                            (rate > 0 ? $" — about ${empty.Miles * (double)rate:N0}" : "") + ".");
         }
 
         // What the company decided about the trailer, whichever way it went.

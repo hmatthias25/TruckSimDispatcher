@@ -134,6 +134,29 @@ async function report(city, st, day, kind = 'TruckStop', moved = 0) {
   ok('from two readings, not an estimate', owed && owed.toOdometer > owed.fromOdometer,
     owed ? `${owed.fromOdometer} -> ${owed.toOdometer}` : '');
 
+  head('7. #161 And one press books it, at the figure it quoted');
+  const before = (await api('/bootstrap')).trips.length;
+  const booked = await api('/moves/book-empty', 'POST', {});
+  ok('a trip is raised for it', (await api('/bootstrap')).trips.length === before + 1,
+    booked.trip?.number || '(none)');
+  ok('for the miles that were quoted, not a retyped number', booked.miles === owed.miles,
+    `${booked.miles} vs ${owed.miles}`);
+  ok('already closed, because it has been driven', booked.trip.status === 'Delivered', booked.trip.status);
+  ok('it runs from where the last load closed', (booked.trip.originCity || '').length > 0,
+    `${booked.trip.originCity}, ${booked.trip.originState} -> ${booked.trip.destCity}`);
+
+  // Settlement reads the pay stored ON the trip. A delivered trip with no Pay block pays nothing,
+  // which would have made the button worse than the manual route it replaces.
+  ok('and it carries pay, at the empty rate', (booked.trip.pay?.deadheadPay || 0) > 0,
+    `$${booked.trip.pay?.deadheadPay} on ${booked.trip.pay?.deadheadMiles} mi`);
+
+  ok('nothing is owed once it is booked', !(await views()).unbookedEmpty,
+    JSON.stringify((await views()).unbookedEmpty || null));
+
+  let second = '';
+  try { await api('/moves/book-empty', 'POST', {}); } catch (e) { second = e.message; }
+  ok('and it cannot be booked twice', second.length > 0, second.slice(0, 80) || '(booked again!)');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR', e.message); process.exit(1); });

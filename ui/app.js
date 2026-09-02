@@ -922,6 +922,7 @@ function viewDispatch() {
   const t = v.truck, tr = v.trailer;
 
   return `
+  ${unbookedEmptyHtml()}
   <div class="cols">
     <div>
       <div class="panel">
@@ -2872,6 +2873,24 @@ function terminalsHtml() {
  * The briefing used to be a field on one HTTP response rendered into one modal — dismiss it, miss it,
  * or arrive by a route that did not build it, and the review filed on you and the instruction about
  * your trailer were gone with no way back. It sits here until marked read. */
+/* Empty running with nothing dispatched against it, and the button that books it.
+ *
+ * Every figure here came off two odometer readings the driver already gave the game, so there is
+ * nothing to type — being told "380 empty miles are owed, now go and enter 380 in a form" is the same
+ * mistake as making them work the mileage out themselves. */
+function unbookedEmptyHtml() {
+  const u = S.views?.unbookedEmpty;
+  if (!u || !(u.miles > 0)) return '';
+  const rate = +(S.driver?.pay?.deadheadCpm || 0);
+  return `<div class="callout warn">
+    <h4>${num(u.miles)} empty miles not booked to anything</h4>
+    <p>${esc(u.explanation)}</p>
+    <div class="row-actions">
+      <button class="btn primary" data-act="book-empty">Book ${num(u.miles)} empty miles${
+        rate > 0 ? ` — ${money(u.miles * rate)}` : ''}</button>
+    </div></div>`;
+}
+
 function lastArrivalHtml() {
   const b = S.views?.lastArrival;
   if (!b) return '';
@@ -2892,6 +2911,7 @@ function lastArrivalHtml() {
     ${b.reviewNotice ? `<p class="hint">${esc(b.reviewNotice)}</p>` : ''}
     ${sec('Equipment', b.equipment)}
     ${sec('Shop', b.shop)}
+    ${unbookedEmptyHtml()}
     ${sec('Paperwork', b.paperwork)}
     ${sec('Parking and your reset', b.parking)}
   </div>`;
@@ -5966,6 +5986,12 @@ async function handleAction(act, d, ev) {
     /* ---- hired fleet */
     case 'goto-fleet': TAB = 'fleet';
       return run(async () => { FLEETOPS = await api('/fleetops'); });
+    case 'book-empty':
+      return run(async () => {
+        const r = absorb(await api('/moves/book-empty', 'POST', {}));
+        toast(`${r.trip.number}: ${num(r.miles)} empty mi booked.`, 'ok');
+      });
+
     case 'arrival-read':
       return run(async () => absorb(await api('/career/arrival-read', 'POST', {})), 'Marked read.');
 
