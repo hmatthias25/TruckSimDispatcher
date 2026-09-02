@@ -454,7 +454,18 @@ public static class HomeTime
             s.Driver.Status = "Terminated";
         }
 
-        ConsiderTrailerReassignment(s);
+        // Either way. "No change" is a decision the company made about your equipment, and saying
+        // nothing about it is indistinguishable from the message having been swallowed — which is
+        // exactly how it was read in play. Recorded here rather than in the brief because this is the
+        // moment the roll happens; the brief only reports it.
+        var rig = ConsiderTrailerReassignment(s);
+        var box = DispatchEngine.AssignedTrailer(s);
+        s.Driver.LastTrailerDecision = rig != null
+            ? $"Re-rigged: {rig.Instruction} See order {rig.Number}."
+            : box == null
+                ? "Nothing hooked to you, and no trailer issued this time."
+                : $"Staying on {TrailerSpec.Describe(box.Type, box.Subtype)} {box.Ref} — no re-rig this time.";
+        s.Driver.LastTrailerDecisionGameTime = s.Status.GameTime;
         return true;
     }
 
@@ -1174,6 +1185,16 @@ public static class HomeTime
     /// road. This pulls what is scattered across Maintenance, Fleet and Equipment into one place, at
     /// the one time it all applies — and says so plainly when the answer is "nothing, take your days".
     /// </summary>
+    /// <summary>
+    /// Files the brief so it can be read again, rather than dying with the response that carried it.
+    /// </summary>
+    public static void KeepBrief(AppState s, ArrivalBriefing b)
+    {
+        s.Driver.LastArrivalBrief = b;
+        s.Driver.LastArrivalBriefGameTime = s.Status.GameTime;
+        s.Driver.LastArrivalBriefRead = false;
+    }
+
     public static ArrivalBriefing ArrivalBrief(AppState s)
     {
         var home = HomeTerminal(s);
@@ -1331,6 +1352,27 @@ public static class HomeTime
 
         // And notice of the next one, so it is never a surprise — particularly once a bad one can end it.
         b.ReviewNotice = PeriodicReview.Notice(s) ?? "";
+
+        // A quiet arrival and a broken one used to read the same. If no review was filed on this
+        // arrival, say so and say when the next one lands, rather than showing nothing.
+        if (b.Review == null && Probation.IsOn(s))
+            b.ReviewNotice = $"No review filed this arrival — {Probation.Standing(s)}" +
+                             (b.ReviewNotice.Length > 0 ? " " + b.ReviewNotice : "");
+
+        // Empty miles nobody has booked. A driver told to deadhead home and then paid for none of it
+        // is the app losing its own arithmetic — see Repositioning.Unbooked.
+        if (Repositioning.Unbooked(s) is { } empty && empty.Miles > 0)
+        {
+            var rate = s.Driver.Pay.DeadheadCpm;
+            b.Paperwork.Add($"{empty.Explanation} Raise it as an empty move" +
+                            (rate > 0 ? $" and it pays about ${empty.Miles * (double)rate:N0}" : "") +
+                            " — Dispatch, then Empty move.");
+        }
+
+        // What the company decided about the trailer, whichever way it went.
+        if (!string.IsNullOrWhiteSpace(s.Driver.LastTrailerDecision)
+            && s.Driver.LastTrailerDecisionGameTime == s.Status.GameTime)
+            b.Equipment.Add(s.Driver.LastTrailerDecision);
 
         // Company trailers we have nothing recent on. Asked per BOX rather than per driver, because the
         // driver the app has down for a trailer is the part that goes stale.

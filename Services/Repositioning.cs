@@ -133,4 +133,48 @@ public static class Repositioning
                           $"(odometer {previous.EndOdometer:N0} → {odometerAtDispatch:N0}).";
         return leg;
     }
+
+    /// <summary>
+    /// Empty running that has nothing to attach itself to, because no load was dispatched after it.
+    ///
+    /// <see cref="Measure"/> only ever runs when the NEXT load is authorised — it needs a trip to hang
+    /// the miles on. The run home is terminal: the driver delivers, is told to deadhead to the yard,
+    /// drives it, and there is no next dispatch. So the miles fall on the floor, and a driver who did
+    /// exactly as they were told is paid for none of them unless they think to raise an empty move by
+    /// hand. That is the app's arithmetic, not theirs.
+    ///
+    /// Same two readings as everywhere else — last close-out to the odometer now — and the same refusal
+    /// to guess when they cannot be trusted. Null when there is nothing owed.
+    /// </summary>
+    public static Leg? Unbooked(AppState s)
+    {
+        var odometer = Math.Max(0, s.Status.AtsOdometer);
+        if (odometer <= 0) return null;
+
+        var previous = s.Trips
+            .Where(t => t.EndOdometer > 0 && t.Status == "Delivered")
+            .OrderByDescending(t => GameClock.TryParse(t.DeliveredGameTime) ?? DateTime.MinValue)
+            .FirstOrDefault();
+        if (previous == null) return null;
+
+        // Anything dispatched since that close-out already measured this leg and paid it.
+        var closedAt = GameClock.TryParse(previous.DeliveredGameTime);
+        if (closedAt != null && s.Trips.Any(t => t.Id != previous.Id
+                && GameClock.TryParse(t.DispatchedGameTime) is { } d && d >= closedAt.Value))
+            return null;
+
+        var delta = odometer - previous.EndOdometer;
+        if (delta < 0.5 || delta > ImplausibleMiles) return null;
+
+        return new Leg
+        {
+            Miles = Math.Round(delta, 0),
+            FromOdometer = previous.EndOdometer,
+            ToOdometer = odometer,
+            AfterTrip = previous.Number,
+            Explanation = $"{Math.Round(delta, 0):N0} empty mi since {previous.Number} closed in " +
+                          $"{previous.DestCity}, {previous.DestState} (odometer {previous.EndOdometer:N0} → " +
+                          $"{odometer:N0}). Nothing has been dispatched against it, so none of it is paid yet.",
+        };
+    }
 }

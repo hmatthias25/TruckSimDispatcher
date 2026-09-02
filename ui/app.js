@@ -2867,6 +2867,36 @@ function terminalsHtml() {
  * next to tractor capacity, which is where the mismatch finally showed. They belong with the other
  * things you ask operations for.
  */
+/* The last time you came in, still readable.
+ *
+ * The briefing used to be a field on one HTTP response rendered into one modal — dismiss it, miss it,
+ * or arrive by a route that did not build it, and the review filed on you and the instruction about
+ * your trailer were gone with no way back. It sits here until marked read. */
+function lastArrivalHtml() {
+  const b = S.views?.lastArrival;
+  if (!b) return '';
+  const sec = (title, items) => items && items.length
+    ? `<p class="hint" style="margin:6px 0 0"><b>${title}</b></p>
+       <ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+
+  return `<div class="panel">
+    <div class="panel-head"><h2>Last time you came in</h2>
+      <span class="sub">${esc(gt(S.views.lastArrivalGameTime))}</span>
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="arrival-read">Mark read</button></div>
+    <div class="callout info"><p style="margin:0">${esc(b.headline || '')}</p></div>
+    ${b.review ? `<div class="callout ${b.review.verdict === 'Pass' ? 'go' : 'warn'}">
+      <h4>${esc(b.review.number || 'Review')} — ${esc(b.review.verdict || '')}</h4>
+      <p style="margin:0">${esc(b.review.summary || '')}</p>
+      ${b.review.whatNext ? `<p class="hint">${esc(b.review.whatNext)}</p>` : ''}</div>` : ''}
+    ${b.reviewNotice ? `<p class="hint">${esc(b.reviewNotice)}</p>` : ''}
+    ${sec('Equipment', b.equipment)}
+    ${sec('Shop', b.shop)}
+    ${sec('Paperwork', b.paperwork)}
+    ${sec('Parking and your reset', b.parking)}
+  </div>`;
+}
+
 /* What this rung actually lets you do.
  *
  * Every line comes off the server, which builds it from the rule that enforces it — the refusal
@@ -4757,6 +4787,7 @@ function viewCareer() {
     </div>
   </div>
 
+  ${lastArrivalHtml()}
   ${rankMeaningHtml()}
 
   <div class="panel">
@@ -5856,6 +5887,9 @@ async function handleAction(act, d, ev) {
       const tu = pendingTrueUp();
       queueModals([
         () => auditModal(r.audit),
+        // Closing out AT the yard is arriving home, and now says so — the review and the trailer
+        // instruction used to be skipped entirely on this path.
+        r.homeBrief ? () => homeBriefModal(r.homeBrief) : null,
         paid.length ? () => paydayModal(paid) : null,
         tu ? () => trueUpModal(tu) : null,
       ]);
@@ -5932,6 +5966,9 @@ async function handleAction(act, d, ev) {
     /* ---- hired fleet */
     case 'goto-fleet': TAB = 'fleet';
       return run(async () => { FLEETOPS = await api('/fleetops'); });
+    case 'arrival-read':
+      return run(async () => absorb(await api('/career/arrival-read', 'POST', {})), 'Marked read.');
+
     case 'load-fleetops': return run(async () => { FLEETOPS = await api('/fleetops'); });
     case 'reports-all': FLEET_ALL_REPORTS = !FLEET_ALL_REPORTS; return render();
     case 'retire-unit': {

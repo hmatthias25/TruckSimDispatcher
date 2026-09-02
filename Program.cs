@@ -113,6 +113,7 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     if (wentHome)
         store.Log(s, "career", $"Home time taken at {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)}.");
     var homeBrief = wentHome ? HomeTime.ArrivalBrief(s) : null;
+    if (homeBrief != null) HomeTime.KeepBrief(s, homeBrief);
 
     // Earning the ordinary market back happens on its own as the clock advances, rather than being
     // something the driver has to remember to claim.
@@ -786,9 +787,33 @@ app.MapPost("/api/trips/{id}/complete", (string id, CompleteTripRequest req) => 
 {
     var audit = TripService.Complete(s, id, req);
     store.Log(s, "trip", audit.Headline, audit.Trip.Number);
+
+    // Closing out AT the home yard is arriving home. It was not, so the review just filed on the
+    // driver, the trailer instruction, parking and paperwork were all skipped — while the maintenance
+    // directives came through on the audit, which is why it looked half-broken rather than broken.
+    //
+    // Gated on where the TRIP ended rather than on the location kind, which the client hard-codes to
+    // Receiver on every close-out. Delivering a load to a customer that happens to be in your home city
+    // is not taking home time — you are at a dock. Running the empty move home and closing it out at
+    // the yard is, and that is the case this exists for.
+    //
+    // Touch latches on AtHomeYard, so this cannot double-count with a status report: whichever the
+    // driver does first fires it and the second is a no-op. That matters — Touch bumps HomeTimesTaken
+    // and re-rolls the trailer decision, which is seeded on it.
+    var yard = HomeTime.HomeTerminal(s);
+    var endedAtYard = yard != null
+                      && audit.Trip.DestCity.Equals(yard.City, StringComparison.OrdinalIgnoreCase)
+                      && audit.Trip.DestState.Equals(yard.State, StringComparison.OrdinalIgnoreCase)
+                      && !audit.Trip.Kind.Equals("Freight", StringComparison.OrdinalIgnoreCase);
+    var wentHome = endedAtYard && HomeTime.Touch(s);
+    if (wentHome) store.Log(s, "career",
+        $"Home time taken at {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)}.");
+    var homeBrief = wentHome ? HomeTime.ArrivalBrief(s) : null;
+    if (homeBrief != null) HomeTime.KeepBrief(s, homeBrief);
+
     // The commonest way the clock crosses a Friday, and the one that never used to pay.
     var paid = SettleDue(s);
-    return new { audit, paid, snapshot = Snapshot(s) };
+    return new { audit, paid, wentHome, homeBrief, snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/trips/{id}/cancel", (string id, CancelRequest req) => Results.Ok(store.Mutate(s =>
@@ -1527,6 +1552,14 @@ app.MapPost("/api/finance/reconcile/apply", (ReconcileRequest req) => Results.Ok
 
 app.MapGet("/api/career", () => Results.Ok(CareerService.Review(store.State)));
 
+/// Marking the arrival briefing read. It stays on the Career tab until this is called, so missing the
+/// modal is not the same as losing what it said.
+app.MapPost("/api/career/arrival-read", () => Results.Ok(store.Mutate(s =>
+{
+    s.Driver.LastArrivalBriefRead = true;
+    return Snapshot(s);
+})));
+
 app.MapPost("/api/career/clear-probation", (CareerActionRequest req) => Results.Ok(store.Mutate(s =>
 {
     var message = CareerService.ClearProbation(s, req.Force, req.Note ?? "");
@@ -2023,6 +2056,15 @@ object Snapshot(AppState? given = null)
                 reviews = s.ProbationReviews.Take(6).ToList(),
                 thresholds = Probation.MeetsCompanyThresholds(s).Shortfall
             },
+            // The last arrival briefing, until the driver marks it read. It used to live and die inside
+            // one modal on one response, so a dismissed or never-built one took the review and the
+            // trailer instruction with it and left no way back.
+            lastArrival = s.Driver.LastArrivalBriefRead ? null : s.Driver.LastArrivalBrief,
+            lastArrivalGameTime = s.Driver.LastArrivalBriefGameTime,
+            // Empty running with nothing dispatched against it. Visible whenever it is owed rather than
+            // only in the arrival brief — the miles are owed either way, and a driver who missed the
+            // brief should not lose them.
+            unbookedEmpty = Repositioning.Unbooked(s),
             maintenanceAlerts = MaintenanceService.FleetAlerts(s),
             dispatchBlockers = DispatchEngine.DispatchBlockers(s, truck, trailer),
             // How long the truck has been over the run-home line, so the squeeze on the board is

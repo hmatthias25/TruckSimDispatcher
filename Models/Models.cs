@@ -417,6 +417,30 @@ public class Driver
     /// </summary>
     public object? LastRankBriefing { get; set; }
 
+    /// <summary>
+    /// What the company decided about this driver's trailer at the last arrival, either way.
+    ///
+    /// A re-rig becomes an equipment order and shows on the banner. "No change" produced nothing at
+    /// all, so from the driver's seat a quiet arrival and a message the app had swallowed looked
+    /// identical — which is how it was read in play. The decision is recorded now whichever way it
+    /// went, because a company that decides something about your equipment and tells you nothing has
+    /// not finished the decision.
+    /// </summary>
+    public string LastTrailerDecision { get; set; } = "";
+    public string LastTrailerDecisionGameTime { get; set; } = "";
+
+    /// <summary>
+    /// The last arrival briefing, kept until the driver marks it read.
+    ///
+    /// It used to exist only as a field on one HTTP response, rendered into one modal. Dismiss it, miss
+    /// it, or arrive by a route that did not build it, and the review filed on you and the instruction
+    /// about your trailer were simply gone — with no way back to them. "Not sure if it bugged out and
+    /// forgot" is the reasonable conclusion, and it was reached.
+    /// </summary>
+    public object? LastArrivalBrief { get; set; }
+    public string LastArrivalBriefGameTime { get; set; } = "";
+    public bool LastArrivalBriefRead { get; set; }
+
     public bool TerminatedForCause { get; set; }
 
     /// <summary>Why, in the company's words. Shown to the driver and to whoever hires them next.</summary>

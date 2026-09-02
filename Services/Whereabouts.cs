@@ -146,16 +146,39 @@ public static class Whereabouts
     /// <summary>
     /// Company trailers whose position is worth asking about on arrival.
     ///
-    /// Only asked where it could matter — a real trailer that is not the one under the driver's own
-    /// truck, with the answer either missing or old enough to be useless. The drop-and-hook slot is not
-    /// a box that exists anywhere, so it is never asked about.
+    /// <b>Only boxes the driver can actually see.</b> This used to ask about every trailer on the
+    /// company's books, so a driver standing at Springfield was asked to account for one in Denver.
+    /// They cannot know. Asking anyway is the thing the app refuses to do everywhere else — it will not
+    /// invent a damage figure for a truck the game does not report, and it must not ask a driver to
+    /// invent a trailer's position either. Given ten rows where eight honest answers are a shrug, the
+    /// prompt teaches them it is noise, and the two rows that mattered go with it.
+    ///
+    /// So: based at the yard being reported from, and nobody else's. A trailer under an active hired
+    /// driver is accounted for on the fleet report, which asks the person who actually has it, and the
+    /// drop-and-hook slot is not a box that exists anywhere.
     /// </summary>
     public static List<Trailer> WorthAsking(AppState s)
     {
         var now = GameClock.TryParse(s.Status.GameTime);
+
+        // The yard the driver is standing on. Matched by name where they are reporting from one, and
+        // falling back to their home yard — HomeTime.Touch counts an arrival on a RADIUS, so a driver
+        // can legitimately be "at the yard" while the city on the report is the town next to it, and an
+        // exact-name lookup would then ask about nothing at all.
+        var here = s.Company.Terminals.FirstOrDefault(y =>
+                       y.City.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)
+                       && y.State.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase))
+                   ?? (s.Driver.AtHomeYard ? HomeTime.HomeTerminal(s) : null);
+        if (here == null) return new List<Trailer>();
+
+        // A box under a hired driver is NOT excluded, deliberately. That record is the part that goes
+        // stale — an AI driver hooks something else and the app's idea of who has what is wrong from
+        // then on, which is the whole reason #102 made this a question about the BOX rather than about
+        // whoever we think is pulling it.
         return s.Trailers
             .Where(t => !t.Retired && !DropHook.Is(t.Type))
             .Where(t => !t.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase))
+            .Where(t => t.HomeTerminalId.Equals(here.Id, StringComparison.OrdinalIgnoreCase))
             .Where(t =>
             {
                 if (string.IsNullOrWhiteSpace(t.Whereabouts)) return true;
