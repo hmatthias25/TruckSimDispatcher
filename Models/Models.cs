@@ -87,6 +87,7 @@ public class AppState
     public List<EquipmentOrder> EquipmentOrders { get; set; } = new();
     /// <summary>Trailers the company has asked for. The player buys them in ATS and reports the price.</summary>
     public List<TrailerRequest> TrailerRequests { get; set; } = new();
+    public List<TrailerSwapOrder> TrailerSwaps { get; set; } = new();
     /// <summary>34-hour restarts ordered, in progress and completed.</summary>
     public List<RestartOrder> RestartOrders { get; set; } = new();
     /// <summary>Home time the driver has asked for, and what operations said.</summary>
@@ -186,6 +187,14 @@ public class Terminal
     /// How many trailers this yard can hold. ATS garages take more trailers than tractors, so this is
     /// deliberately roomier than <see cref="TruckCapacity"/>.
     /// </summary>
+    /// <summary>
+    /// Retained so older career files load, and no longer enforced anywhere.
+    ///
+    /// ATS puts no limit on how many trailers a garage holds — only on tractors — so refusing a
+    /// purchase because a yard was "full at 6" was telling the player to buy a garage upgrade to solve
+    /// a problem the game does not have.
+    /// </summary>
+    [Obsolete("ATS has no trailer limit per garage. Tractor capacity is real; this never was.")]
     public int TrailerCapacity { get; set; } = 3;
     public bool IsHeadquarters { get; set; }
 
@@ -2069,6 +2078,42 @@ public class TrailerTypeRequest
     public string EquipmentOrderNumber { get; set; } = "";
 }
 
+/// <summary>
+/// A re-rig ordered while the driver is out on the road, at a yard they are passing.
+///
+/// Distinct from the home-time reassignment because the driver has to go somewhere and the box may not
+/// be there when they arrive — the app cannot see whether an AI driver still has it. See
+/// <see cref="TruckSimDispatcher.Services.TrailerSwap"/>.
+/// </summary>
+public class TrailerSwapOrder
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Number { get; set; } = "";
+    public string TerminalId { get; set; } = "";
+    public string TerminalLabel { get; set; } = "";
+    /// <summary>The box to hook, and the one to leave there.</summary>
+    public string TakeUnit { get; set; } = "";
+    public string TakeDescription { get; set; } = "";
+    public string DropUnit { get; set; } = "";
+    public double Miles { get; set; }
+    /// <summary>Whether a restart was close enough to be worth pairing with the detour.</summary>
+    public bool NearRestart { get; set; }
+    public string Instruction { get; set; } = "";
+    /// <summary>Where each box ends up on the books once the swap is done.</summary>
+    public string Bookkeeping { get; set; } = "";
+    public string AfterTrip { get; set; } = "";
+    public string RaisedGameTime { get; set; } = "";
+    public string ResolvedGameTime { get; set; } = "";
+    /// <summary>Open | Waiting | Done | Cancelled</summary>
+    public string Status { get; set; } = "Open";
+
+    /// <summary>How long until the box is back, when the driver got there and it was gone.</summary>
+    public double HoursUntilBack { get; set; }
+    public string MissingNote { get; set; } = "";
+    /// <summary>Sit it out, or take the 34 — worked out from the wait against the cycle.</summary>
+    public string WaitAdvice { get; set; } = "";
+}
+
 public class TrailerRequest
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
@@ -2087,6 +2132,16 @@ public class TrailerRequest
     public string RaisedGameTime { get; set; } = "";
     /// <summary>Open | Bought | Declined</summary>
     public string Status { get; set; } = "Open";
+    /// <summary>
+    /// The backdrop box put on the yard when this was raised.
+    ///
+    /// The company adds it to its own books immediately — real for planning, not yet bought in the
+    /// game — and the driver ticks <b>in garage</b> once they have bought it, exactly as they do for
+    /// every other unit. Raising an ask with no equipment behind it meant the fleet did not know about
+    /// a trailer the company had already decided it wanted.
+    /// </summary>
+    public string Unit { get; set; } = "";
+
     /// <summary>What the player actually paid, once they confirm. Never estimated.</summary>
     public decimal PaidPrice { get; set; }
     public string ResolvedGameTime { get; set; } = "";
@@ -2617,6 +2672,22 @@ public class MaintenanceThresholds
     /// sell a good trailer.
     /// </summary>
     public double TrailerLowUtilisationPct { get; set; } = 35;
+
+    /// <summary>
+    /// Utilisation across a yard's boxes at which the company starts looking for another one.
+    ///
+    /// The signal used to be headcount — drivers times 1.5 — which is not what decides how many
+    /// trailers a fleet needs. The work does, and utilisation is the app's only honest reading of it.
+    /// </summary>
+    public double TrailerBusyPct { get; set; } = 75;
+
+    /// <summary>
+    /// Utilisation across a yard's boxes below which it plainly has too many.
+    ///
+    /// Surplus in its own right, alongside condition, age and nobody pulling a particular box: a yard
+    /// whose whole set is idling does not have a bad trailer, it has one trailer too many.
+    /// </summary>
+    public double TrailerSurplusPct { get; set; } = 20;
 
     /// <summary>
     /// How far ahead another trailer type has to be, in utilisation points, before operations replaces a

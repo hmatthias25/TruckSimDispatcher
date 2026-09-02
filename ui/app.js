@@ -922,6 +922,7 @@ function viewDispatch() {
   const t = v.truck, tr = v.trailer;
 
   return `
+  ${rerigHtml()}
   ${unbookedEmptyHtml()}
   <div class="cols">
     <div>
@@ -2878,6 +2879,34 @@ function terminalsHtml() {
  * Every figure here came off two odometer readings the driver already gave the game, so there is
  * nothing to type — being told "380 empty miles are owed, now go and enter 380 in a form" is the same
  * mistake as making them work the mileage out themselves. */
+/* A re-rig ordered out on the road, and the three things the driver can tell us about it.
+ *
+ * The app cannot see whether an AI driver still has the box — they swap constantly and nothing reports
+ * it — so "it was not there" is a first-class answer, and how long until it is back is the question
+ * that turns an unknown into a decision worth making. */
+function rerigHtml() {
+  const o = S.views?.rerig;
+  if (!o) return '';
+  const waiting = o.status === 'Waiting';
+
+  return `<div class="callout ${waiting ? 'info' : 'warn'}">
+    <h4>${esc(o.number)} — ${waiting ? `waiting on ${esc(o.takeUnit)}` : 'trailer swap on the road'}</h4>
+    <p>${esc(o.instruction)}</p>
+    ${o.nearRestart ? `<p class="hint">Your cycle is short enough that the 34 and the detour pay for each
+      other — that is why this one came up now.</p>` : ''}
+    <p class="hint">${esc(o.bookkeeping)}</p>
+    ${waiting ? `<div class="callout ${/take the 34|take the restart/i.test(o.waitAdvice || '') ? 'warn' : 'info'}"
+      style="margin:8px 0 0"><p style="margin:0">${esc(o.waitAdvice)}</p></div>` : ''}
+    <div class="row-actions">
+      <button class="btn go" data-act="rerig-done">Swapped — I am on ${esc(o.takeUnit)}</button>
+      ${waiting ? '' : `<button class="btn" data-act="rerig-missing">It is not here</button>`}
+      <button class="btn ghost" data-act="rerig-cancel">Call it off</button>
+    </div>
+    ${waiting ? '' : `<p class="hint" style="margin:8px 0 0">If an AI driver has it, say when it is back and
+      I will tell you whether to sit it out or take your 34 while you wait.</p>`}
+  </div>`;
+}
+
 function unbookedEmptyHtml() {
   const u = S.views?.unbookedEmpty;
   if (!u || !(u.miles > 0)) return '';
@@ -5986,6 +6015,27 @@ async function handleAction(act, d, ev) {
     /* ---- hired fleet */
     case 'goto-fleet': TAB = 'fleet';
       return run(async () => { FLEETOPS = await api('/fleetops'); });
+    case 'rerig-done':
+      return run(async () => {
+        const r = absorb(await api('/rerig/done', 'POST', { number: S.views.rerig.number }));
+        toast(`On ${r.order.takeUnit}; ${r.order.dropUnit} left at ${r.order.terminalLabel}.`, 'ok');
+      });
+
+    case 'rerig-missing': {
+      const hrs = parseFloat(prompt('It is not there. How many hours until it is back?', '10'));
+      if (!(hrs >= 0)) return;
+      return run(async () => {
+        const r = absorb(await api('/rerig/missing', 'POST', { hoursUntilBack: hrs, note: '' }));
+        toast(r.order.waitAdvice, 'ok');
+      });
+    }
+
+    case 'rerig-cancel':
+      if (!confirm('Call the swap off? You stay on the trailer you are on and freight starts moving again.')) return;
+      return run(async () => {
+        absorb(await api('/rerig/cancel', 'POST', { number: S.views.rerig.number, note: 'Called off by the driver.' }));
+      }, 'Swap called off.');
+
     case 'book-empty':
       return run(async () => {
         const r = absorb(await api('/moves/book-empty', 'POST', {}));

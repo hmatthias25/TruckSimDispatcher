@@ -758,6 +758,32 @@ app.MapPost("/api/moves/book-empty", () => Results.Ok(store.Mutate<object>(s =>
     return new { trip, miles = leg.Miles, snapshot = Snapshot(s) };
 })));
 
+/// The box was not there. The driver says how long until it is back, and the app works out whether
+/// that is dead time or a restart they were going to need anyway.
+app.MapPost("/api/rerig/missing", (RerigMissingRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var order = TrailerSwap.ReportMissing(s, req.HoursUntilBack, req.Note ?? "");
+    store.Log(s, "dispatch", $"{order.Number}: {order.TakeUnit} not at {order.TerminalLabel}. {order.WaitAdvice}");
+    return new { order, snapshot = Snapshot(s) };
+})));
+
+/// Swapped. The books follow the equipment.
+app.MapPost("/api/rerig/done", (RerigRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var order = TrailerSwap.Complete(s, req.Number ?? "");
+    store.Log(s, "dispatch",
+        $"{order.Number}: on {order.TakeUnit}; {order.DropUnit} left at {order.TerminalLabel}.");
+    return new { order, snapshot = Snapshot(s) };
+})));
+
+/// Called off — the box is gone for good, or operations changed its mind.
+app.MapPost("/api/rerig/cancel", (RerigRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var order = TrailerSwap.Cancel(s, req.Number ?? "", req.Note ?? "");
+    store.Log(s, "dispatch", $"{order.Number} called off. {order.MissingNote}");
+    return new { order, snapshot = Snapshot(s) };
+})));
+
 // ---------------------------------------------------------------- trips
 
 // Payday is Friday, and the app only learns the date when the driver tells it. Anything that moves the
@@ -833,6 +859,16 @@ app.MapPost("/api/trips/{id}/complete", (string id, CompleteTripRequest req) => 
     var audit = TripService.Complete(s, id, req);
     store.Log(s, "trip", audit.Headline, audit.Trip.Number);
 
+    // A yard they are passing may have the box the next month's freight wants. Decided here because
+    // this is the one moment the driver is standing somewhere with nothing hooked to them.
+    var rerig = TrailerSwap.Consider(s, audit.Trip);
+    if (rerig != null)
+    {
+        audit.Directives.Add($"{rerig.Number}: {rerig.Instruction}");
+        audit.WhatsNext.Add(rerig.Bookkeeping);
+        store.Log(s, "dispatch", $"{rerig.Number} — {rerig.Instruction}");
+    }
+
     // Closing out AT the home yard is arriving home. It was not, so the review just filed on the
     // driver, the trailer instruction, parking and paperwork were all skipped — while the maintenance
     // directives came through on the audit, which is why it looked half-broken rather than broken.
@@ -858,7 +894,7 @@ app.MapPost("/api/trips/{id}/complete", (string id, CompleteTripRequest req) => 
 
     // The commonest way the clock crosses a Friday, and the one that never used to pay.
     var paid = SettleDue(s);
-    return new { audit, paid, wentHome, homeBrief, snapshot = Snapshot(s) };
+    return new { audit, paid, wentHome, homeBrief, rerig, snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/trips/{id}/cancel", (string id, CancelRequest req) => Results.Ok(store.Mutate(s =>
@@ -2110,6 +2146,7 @@ object Snapshot(AppState? given = null)
             // only in the arrival brief — the miles are owed either way, and a driver who missed the
             // brief should not lose them.
             unbookedEmpty = Repositioning.Unbooked(s),
+            rerig = TrailerSwap.Open(s),
             maintenanceAlerts = MaintenanceService.FleetAlerts(s),
             dispatchBlockers = DispatchEngine.DispatchBlockers(s, truck, trailer),
             // How long the truck has been over the run-home line, so the squeeze on the board is
@@ -2366,6 +2403,8 @@ record WindowReadRequest(string? Text);
 record WindowFixRequest(double DeadlineHours, string? Note);
 record AskHomeRequest(string? Reason);
 record AskTrailerRequest(string TrailerType);
+record RerigRequest(string? Number, string? Note);
+record RerigMissingRequest(double HoursUntilBack, string? Note);
 record EndorsementRequest(string Kind, bool Has, string? GameTime);
 record DedicatedRequest(bool OnDedicated, string? Account);
 record FacilityTimeRequest(string TrailerType, double LoadingHours, double UnloadingHours, bool Manual);

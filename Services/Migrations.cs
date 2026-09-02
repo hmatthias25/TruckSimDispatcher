@@ -1297,6 +1297,21 @@ public static class Migrations
     public static int TrucksBasedAt(AppState s, string terminalId) =>
         s.Trucks.Count(t => t.HomeTerminalId == terminalId && HoldsASlot(s, t));
 
+    /// <summary>
+    /// Whether this yard exists in the driver's game, rather than only on the company's books.
+    ///
+    /// There is no flag for it and there should not be one — the app cannot see ATS. What it can see is
+    /// whether anything the player has actually BOUGHT is based there: a garage nobody has purchased
+    /// holds nothing, so a yard with no in-game unit on it is a yard that does not exist yet.
+    ///
+    /// It matters because both the trailer fleet and the on-road re-rig would otherwise send a driver
+    /// to a garage that is not there, or buy equipment for one.
+    /// </summary>
+    public static bool Populated(AppState s, string terminalId) =>
+        !string.IsNullOrWhiteSpace(terminalId)
+        && (s.Trucks.Any(t => !t.Retired && t.InGameGarage && t.HomeTerminalId == terminalId)
+            || s.Trailers.Any(t => !t.Retired && t.InGameGarage && t.HomeTerminalId == terminalId));
+
     /// <summary>Whether this tractor is part of the working fleet at its yard.</summary>
     private static bool HoldsASlot(AppState s, Truck t)
     {

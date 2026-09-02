@@ -629,6 +629,10 @@ public static class DispatchEngine
         var stops = new List<string>();
         var m = s.Settings.Maintenance;
 
+        // Halfway between two yards is not a state freight can be planned around: which box is under
+        // the truck is the input to every routing decision this engine makes.
+        if (TrailerSwap.DispatchBlocker(s) is { } rerig) stops.Add(rerig);
+
         if (s.Driver.Status is "Terminated" or "Resigned")
             stops.Add($"Driver status is {s.Driver.Status} — no dispatch authority.");
         if (s.Driver.Status == "Suspended")

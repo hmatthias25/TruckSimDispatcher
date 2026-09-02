@@ -32,19 +32,32 @@ public static class TrailerFleet
         // One ask at a time. Two open requests is a shopping list nobody actions.
         if (Open(s) != null) return null;
 
-        var candidates = new List<(Terminal Yard, int Drivers, int Trailers, int Capacity)>();
+        // How hard the boxes at a yard are actually working. Headcount used to decide this — drivers
+        // times 1.5 — and headcount is the wrong signal: two drivers on short turns need fewer boxes
+        // than two on drop and hook, and the app already has the figures that say which. A yard whose
+        // trailers are running hot is a yard that is short one, whoever is based there.
+        var candidates = new List<(Terminal Yard, int Drivers, int Trailers, double Util)>();
 
         foreach (var yard in s.Company.Terminals)
         {
-            var drivers = s.HiredDrivers.Count(d => d.Status == "Active" && d.HomeTerminalId == yard.Id);
-            var trailers = s.Trailers.Count(t => !t.Retired && t.HomeTerminalId == yard.Id);
-            if (drivers == 0) continue;
+            // A yard the player has not actually bought in ATS holds nothing, so there is nowhere to
+            // put a trailer and no point asking them to buy one for it.
+            if (!Migrations.Populated(s, yard.Id)) continue;
 
-            // A yard wants roughly three boxes for every two drivers, so there is always one loading
-            // while another is rolling. Matching them one for one means a driver waits every time.
-            var wanted = (int)Math.Ceiling(drivers * 1.5);
-            if (trailers >= wanted) continue;             // enough slack, no case to make
-            candidates.Add((yard, drivers, trailers, yard.TrailerCapacity));
+            var here = s.Trailers.Where(t => !t.Retired && !DropHook.Is(t.Type)
+                                             && t.HomeTerminalId == yard.Id).ToList();
+            if (here.Count == 0) continue;
+
+            // Only real readings. An unreported box says nothing about how busy the yard is, and
+            // treating silence as either busy or idle would be inventing the answer.
+            var read = here.Where(t => t.UtilisationPct >= 0).ToList();
+            if (read.Count == 0) continue;
+
+            var util = read.Average(t => t.UtilisationPct);
+            if (util < s.Settings.Maintenance.TrailerBusyPct) continue;   // not stretched, no case
+
+            var drivers = s.HiredDrivers.Count(d => d.Status == "Active" && d.HomeTerminalId == yard.Id);
+            candidates.Add((yard, drivers, here.Count, util));
         }
 
         if (candidates.Count == 0) return null;
@@ -73,31 +86,56 @@ public static class TrailerFleet
             Status = "Open"
         };
 
-        // A yard already full cannot take another box. Say that instead of asking for the impossible.
-        if (pick.Trailers >= pick.Capacity)
-        {
-            req.Reason = $"{label} has {pick.Drivers} driver(s) and only {pick.Trailers} trailer(s), but the yard is " +
-                         $"full at {pick.Capacity}. Upgrading the yard is the answer here, not another trailer.";
-            req.Instruction = $"Upgrade {label} in ATS if you want more equipment based there. Nothing to buy until then.";
-            s.TrailerRequests.Insert(0, req);
-            report.Findings.Add(req.Reason);
-            return req;
-        }
-
         var spendable = LedgerService.Position(s).Spendable;
         req.Unaffordable = spendable < TypicalTrailerCost;
 
         var what = TrailerSpec.Describe(type.Type, type.Subtype);
-        req.Reason = $"{label} has {pick.Drivers} driver(s) and only {pick.Trailers} trailer(s) based there — " +
-                     $"a yard that size wants about {(int)Math.Ceiling(pick.Drivers * 1.5)} so somebody is not waiting on a box. {type.Why}";
+        req.Reason = $"The {pick.Trailers} trailer(s) at {label} are running at {pick.Util:0.#}% of the week, over the " +
+                     $"{s.Settings.Maintenance.TrailerBusyPct:0}% where we start looking for another one" +
+                     (pick.Drivers > 0 ? $" — {pick.Drivers} driver(s) based there" : "") + ". " + type.Why;
         req.Instruction = req.Unaffordable
             ? $"Buy {what} for {label} when the money is there — spendable cash is ${spendable:N0} and a trailer runs " +
               $"around ${TypicalTrailerCost:N0}. I am not going to pretend this is free."
             : $"Buy {what} in ATS and base it at {label}, then confirm it here with what you paid.";
 
+        // The box goes on the books now, as backdrop. It is the company's decision and the company has
+        // made it; what is outstanding is the driver buying it in ATS and ticking it in garage, which is
+        // the same flow every other unit uses. An ask with no equipment behind it left the fleet not
+        // knowing about a trailer it had already decided to run.
+        req.Unit = AddBackdrop(s, req, pick.Yard);
+        req.Instruction = $"{what} added to {label} — unit {req.Unit}. " + (req.Unaffordable
+            ? $"Buy it in ATS when the money is there and tick 'in garage' on the Equipment tab."
+            : "Buy it in ATS, base it there, and tick 'in garage' on the Equipment tab.");
+
         s.TrailerRequests.Insert(0, req);
         report.Findings.Add($"{req.Number}: {req.Reason}");
         return req;
+    }
+
+    /// <summary>Puts the decided box on the yard as backdrop, and returns its unit number.</summary>
+    private static string AddBackdrop(AppState s, TrailerRequest req, Terminal yard)
+    {
+        var n = 500;
+        while (s.Trailers.Any(t => t.Unit.Equals($"T{n}", StringComparison.OrdinalIgnoreCase))) n++;
+        var unit = $"T{n}";
+
+        s.Trailers.Insert(0, new Trailer
+        {
+            Unit = unit,
+            Type = req.TrailerType,
+            Subtype = req.Subtype,
+            Division = TrailerSpec.DivisionFor(req.TrailerType),
+            HomeTerminalId = yard.Id,
+            CurrentLocation = $"{yard.City}, {yard.State}",
+            // Backdrop until the driver buys it. Damage and utilisation stay unreported rather than
+            // invented — the app has never seen this box in the game.
+            InGameGarage = false,
+            IsCompanyOwned = true,
+            AcquiredGameTime = req.RaisedGameTime,
+            Notes = $"{req.Number}: the company wants this at {yard.City}. " +
+                    "Buy it in ATS and tick 'in garage' once you have.",
+        });
+        return unit;
     }
 
     /// <summary>
@@ -140,6 +178,33 @@ public static class TrailerFleet
                   ?? throw new InvalidOperationException("No such trailer request.");
         if (req.Status != "Open")
             throw new InvalidOperationException($"{req.Number} is already {req.Status.ToLowerInvariant()}.");
+        // The box raised with this request is already on the books as backdrop, so confirming means
+        // marking THAT one bought rather than adding a second copy of the same trailer.
+        var standing = s.Trailers.FirstOrDefault(t => !string.IsNullOrWhiteSpace(req.Unit)
+            && t.Unit.Equals(req.Unit, StringComparison.OrdinalIgnoreCase));
+        if (standing != null)
+        {
+            if (!string.IsNullOrWhiteSpace(unit) && !unit.Trim().Equals(standing.Unit, StringComparison.OrdinalIgnoreCase))
+            {
+                if (s.Trailers.Any(t => t.Unit.Equals(unit.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidOperationException($"Trailer {unit} is already on the books.");
+                standing.Unit = unit.Trim();
+            }
+            Equip.GuardGameId(s, gameId, standing.Unit);
+            if (!string.IsNullOrWhiteSpace(gameId)) standing.GameId = gameId.Trim();
+            standing.InGameGarage = true;
+            standing.Stars = 5;
+            standing.PurchasePrice = paidPrice;
+            standing.AcquiredGameTime = string.IsNullOrWhiteSpace(gameTime) ? s.Status.GameTime : gameTime;
+            standing.Notes = "";
+
+            req.Status = "Bought";
+            req.PaidPrice = paidPrice;
+            req.Unit = standing.Unit;
+            req.ResolvedGameTime = standing.AcquiredGameTime;
+            return standing;
+        }
+
         if (string.IsNullOrWhiteSpace(unit))
             throw new InvalidOperationException("Give the trailer a unit number so the fleet can track it.");
         if (s.Trailers.Any(t => t.Unit.Equals(unit.Trim(), StringComparison.OrdinalIgnoreCase)))
@@ -187,6 +252,13 @@ public static class TrailerFleet
                   ?? throw new InvalidOperationException("No such trailer request.");
         req.Status = "Declined";
         req.ResolvedGameTime = string.IsNullOrWhiteSpace(gameTime) ? s.Status.GameTime : gameTime;
+
+        // The backdrop box went on the books when the company decided it wanted one. Saying no takes it
+        // straight back off — leaving it there would put a trailer on the fleet that nobody agreed to
+        // and that will never be bought.
+        if (!string.IsNullOrWhiteSpace(req.Unit))
+            s.Trailers.RemoveAll(x => x.Unit.Equals(req.Unit, StringComparison.OrdinalIgnoreCase)
+                                      && !x.InGameGarage);
         return req;
     }
 
