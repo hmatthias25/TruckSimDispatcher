@@ -218,6 +218,55 @@ async function report(day) {
   ok('the days are days, not a load count',
     vanAfter - vanBefore > 0.005, `${((vanAfter - vanBefore) * 365).toFixed(1)} day(s) credited`);
 
+  head('5d. THE REPORTED CASE, second half: seventy days is not "nothing on your record"');
+  // Reported twice. The first was attribution (5c); this is the sentence. SomeYears is half a year, and
+  // everything under it fell into the "none at all" branch — so ten weeks of a carrier's own freight
+  // read as never having touched it, and earned no credit either. Seventy days is 0.19 years.
+  await api('/onboarding/market', 'POST', app);
+  await api('/onboarding/hire', 'POST', { application: app, force: true, code: 'MEL', gameTime: at(400) });
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+  await api('/status', 'POST', {
+    locationCity: 'Tulsa', locationState: 'OK', locationKind: 'Terminal', gameTime: at(402),
+    fuelPct: 80, atsOdometer: 70000, truckDamagePct: 3, trailerDamagePct: 2,
+    dutyStatus: 'OffDuty', atsBankBalance: 80000,
+  });
+  S = un(await api('/bootstrap'));
+  day = 403;
+  ok('the driver is rigged for open deck', /Flatbed|Step Deck/i.test(S.trailers[0].type),
+    S.trailers[0].type);
+
+  await runLoad('Oklahoma City', 'OK', S.trailers[0].type);
+  await api('/status', 'POST', {
+    locationCity: 'Tulsa', locationState: 'OK', locationKind: 'Terminal', gameTime: at(470),
+    fuelPct: 80, atsOdometer: 80000, truckDamagePct: 3, trailerDamagePct: 2,
+    dutyStatus: 'OffDuty', atsBankBalance: 80000,
+  });
+
+  // Read off ANOTHER open-deck carrier: the market does not list the employer you are already at.
+  const mav = find(await market(), 'MAV');       // Maverick — Flatbed first
+  const served = (await api('/bootstrap')).views.career.stats.daysEmployed;
+  ok('every day at an open-deck carrier is a day of open deck',
+    Math.abs(mav.divisionYears * 365 - served) < 1.5,
+    `${(mav.divisionYears * 365).toFixed(0)} day(s) credited of ${served} served`);
+  ok('and that is a real figure well under the half-year the wording used to need',
+    mav.divisionYears > 0 && mav.divisionYears < 0.5, `${mav.divisionYears} yr`);
+  ok('and the card does NOT say there is nothing there',
+    !/Nothing on your record/i.test(mav.divisionNote || ''),
+    (mav.divisionNote || '(none)').slice(0, 150));
+  ok('it says it in days, which is how it reads to somebody living it',
+    /[0-9]+ days on flatbed/i.test(mav.divisionNote || ''), (mav.divisionNote || '').slice(0, 90));
+  ok('it is honest that this is early rather than deep',
+    /early/i.test(mav.divisionNote || ''), (mav.divisionNote || '').slice(0, 120));
+  ok('and it counts for something rather than nothing',
+    /on the record|beats an application/i.test(mav.divisionNote || ''),
+    (mav.divisionNote || '').slice(-90));
+
+  // The invariant behind both reports: only a genuine nought may be described as nothing.
+  const lying = (await market()).filter(
+    (c) => c.divisionYears > 0 && /Nothing on your record/i.test(c.divisionNote || ''));
+  ok('no carrier anywhere calls a measured figure nothing', lying.length === 0,
+    lying.map((c) => `${c.code}:${c.divisionYears}`).join(', ') || 'clean across the board');
+
   head('6. Specialised freight buys a real orientation, not a sentence about one');
   ok('Bennett is flagged specialised', find(m0, 'BEN').specialized === true);
   const offer = un(await api('/onboarding/hire', 'POST',

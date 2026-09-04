@@ -34,9 +34,21 @@ public static class DivisionExperience
     /// <summary>Enough to show you have done the work at all.</summary>
     public const double SomeYears = 0.5;
 
+    /// <summary>
+    /// Enough to have started. About a month.
+    ///
+    /// There were two states where there are three, and the missing one is where most drivers actually
+    /// live: nobody accrues six months of a thing without ten weeks of it first. Below
+    /// <see cref="SomeYears"/> everything fell into the "none at all" branch, so a driver who had hauled
+    /// almost nothing but flatbed for seventy days was told there was nothing on their record for it,
+    /// and got no credit for it either.
+    /// </summary>
+    public const double StartedYears = 0.08;
+
     /// <summary>Points added to a marginal application by real time on their freight.</summary>
     public const int StrongBonusPct = 20;
     public const int SomeBonusPct = 10;
+    public const int StartedBonusPct = 5;
 
     /// <summary>
     /// The canonical division name. Lives here rather than in the seeder because two places spelling
@@ -128,8 +140,16 @@ public static class DivisionExperience
         var served = CareerService.Compute(s).DaysEmployed;
         if (served <= 0) return split;
 
+        // Only work done in THIS seat. DaysEmployed counts from the hire date, so splitting it across
+        // trips that predate the hire divides the current job's days among a previous employer's
+        // freight — seventy days at an open-deck carrier came out as fifteen because four dry van
+        // loads from the last job were still sitting in the list.
+        var since = GameClock.TryParse(s.Driver.HiredGameDate);
+
         var hauled = s.Trips
             .Where(t => t.Status == "Delivered" && t.Kind == "Freight")
+            .Where(t => since == null
+                        || (GameClock.TryParse(t.DeliveredGameTime) is { } d && d >= since.Value))
             .Select(t => Norm(t.Division))
             .Where(d => !string.IsNullOrWhiteSpace(d))
             .GroupBy(d => d, StringComparer.OrdinalIgnoreCase)
@@ -180,8 +200,18 @@ public static class DivisionExperience
                 $"{y:0.#} years on {what}. Not deep, but you have done the work, and they would rather " +
                 "have that than not.");
 
+        // Said in days, because that is how it reads to somebody living it. "0.2 years on flatbed" is
+        // a figure; "seventy days" is a job they have been doing.
+        if (y >= StartedYears)
+            return (StartedBonusPct,
+                $"{Days(y)} days on {what}. Early, but it is their freight and it is on the record — " +
+                "which beats an application that has never seen it.");
+
         return (0, null);
     }
+
+    /// <summary>Years back into whole days, for the amounts too small to say in years.</summary>
+    private static int Days(double years) => (int)Math.Round(years * Carriers.DaysPerYear);
 
     /// <summary>The line the market shows about a carrier's freight, whether or not it helps.</summary>
     public static string? MarketNote(AppState s, string code)
@@ -190,7 +220,15 @@ public static class DivisionExperience
         if (string.IsNullOrWhiteSpace(division)) return null;
 
         var y = YearsOn(s, division);
-        if (y >= SomeYears) return Weigh(s, code).Note;
+        if (y >= StartedYears) return Weigh(s, code).Note;
+
+        // Only when it really is nothing. This branch used to catch everything under six months and
+        // tell a driver ten weeks into their carrier's own freight that they had never touched it.
+        if (y > 0)
+            return $"{Days(y)} days on {division.ToLowerInvariant()}, which is a start rather than a " +
+                   "record. Not a bar here — they hire on years and a record, and both count whatever " +
+                   "you pulled to get them — but a driver with more of their freight behind them goes " +
+                   "in front of you when it is close.";
 
         return $"Nothing on your record is {division.ToLowerInvariant()}. Not a bar here — they hire on " +
                "years and a record, and both count whatever you pulled to get them — but a driver with " +
