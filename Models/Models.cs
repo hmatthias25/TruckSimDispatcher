@@ -669,7 +669,25 @@ public class ProbationPlan
     public bool Active { get; set; } = true;
     public int RequiredLoads { get; set; } = 10;
     public double RequiredMiles { get; set; } = 6000;
+    /// <summary>
+    /// Service standard shown as context. <b>No longer the gate</b> — see <see cref="MaxLateStrikes"/>.
+    ///
+    /// It was the gate, computed over the whole period with no fault filter and nothing ageing off, so
+    /// a shipper who loaded you late on day three still counted on day ninety. At 95% over roughly
+    /// thirty loads a single late delivery was the entire allowance.
+    /// </summary>
     public double RequiredOnTimePct { get; set; } = 95;
+
+    /// <summary>
+    /// Driver-fault late deliveries the period allows, counted the way the career ladder counts them:
+    /// inside a recent window, so clean work walks them off.
+    ///
+    /// The same shape as the damage rule — a countable allowance rather than a percentage that one bad
+    /// load exhausts — and the same principle as everywhere else: lateness nobody blamed the driver for
+    /// is not evidence about the driver. A bad first fortnight followed by eighty clean days is a driver
+    /// who improved, which is the thing a probationary period exists to find out.
+    /// </summary>
+    public int MaxLateStrikes { get; set; } = 3;
     public double MaxAvgDamagePct { get; set; } = 5;
     /// <summary>
     /// Preventable "weight" the period allows, where a light bump is worth less than a wreck.

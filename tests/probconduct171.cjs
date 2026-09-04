@@ -183,6 +183,33 @@ async function incident(o) {
     row && Number(String(row.required).replace(/[^0-9.]/g, '')) >= 2,
     row ? `${row.label}: ${row.current} of ${row.required}` : '(no row)');
 
+  head('6. Lateness that was not the driver doing does not count against the period');
+  // The review gated on a whole-period on-time percentage with NO fault filter and nothing ageing off,
+  // so a shipper loading late on day three still counted on day ninety — the one thing the career
+  // ladder was careful never to do.
+  await api('/onboarding/market', 'POST', app);
+  await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: at(200) });
+  await report('Kansas City', 'MO', 202);
+
+  const plan = (await boot()).driver.probation;
+  ok('the period allows a countable number of late loads', plan.maxLateStrikes >= 2,
+    `${plan.maxLateStrikes} allowed`);
+
+  const rows = () => api('/bootstrap').then((b) => b.views.career?.probationProgress || []);
+  const lateRow = (await rows()).find((r) => /late/i.test(r.label || ''));
+  ok('and the panel shows that, not a percentage', !!lateRow,
+    lateRow ? `${lateRow.label}: ${lateRow.current} of ${lateRow.required}` : '(no row)');
+  ok('it names the window it is counted over', /last [0-9]+ loads/i.test(lateRow?.label || ''),
+    lateRow?.label || '');
+  ok('nothing is against the driver yet', lateRow && Number(lateRow.current) === 0,
+    lateRow ? `${lateRow.current}` : '');
+
+  const service = (await rows()).find((r) => /on-time service/i.test(r.label || ''));
+  ok('the raw service figure is still shown, as information', !!service,
+    service ? `${service.label}: ${service.current}` : '(missing)');
+  ok('and is marked as not being the bar', /information/i.test(service?.label || ''),
+    service?.label || '');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR', e.message); process.exit(1); });

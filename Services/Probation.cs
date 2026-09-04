@@ -105,8 +105,13 @@ public static class Probation
             .Where(t => GameClock.TryParse(t.DeliveredGameTime) is { } d && d > since.Value && d <= now.Value)
             .ToList();
 
+        // Only lateness the driver was blamed for. This counted every load that was not "OnTime",
+        // so a shipper loading late, a receiver refusing the truck, or weather all read back to the
+        // driver as their own failure — the one thing the career ladder was careful never to do.
+        var lateOnThem = trips.Count(t => t.ServiceResult == "Late"
+                                          && t.DelayFault.Equals("Driver", StringComparison.OrdinalIgnoreCase));
         var onTime = trips.Count == 0 ? 0
-            : trips.Count(t => t.ServiceResult == "OnTime") * 100.0 / trips.Count;
+            : (trips.Count - lateOnThem) * 100.0 / trips.Count;
 
         var faults = s.Incidents
             .Where(i => GameClock.TryParse(i.GameTime) is { } d && d > since.Value && d <= now.Value)
@@ -138,9 +143,15 @@ public static class Probation
 
         if (trips.Count > 0)
         {
-            if (onTime >= 95) forThem.Add($"{onTime:0.#}% on time.");
-            else if (onTime >= 80) against.Add($"{onTime:0.#}% on time — under the 95% we expect.");
-            else against.Add($"{onTime:0.#}% on time. That is not close.");
+            // Worded as what it now measures. "On time" beside a service figure that counts every
+            // late load however it happened would read as two different answers to one question.
+            if (lateOnThem == 0)
+                forThem.Add($"{trips.Count} load(s) and nothing late that was on you.");
+            else if (onTime >= 80)
+                against.Add($"{lateOnThem} load(s) late on you out of {trips.Count}. Delays that were " +
+                            "not your doing are not counted here.");
+            else
+                against.Add($"{lateOnThem} of {trips.Count} load(s) late on you. That is not close.");
         }
 
         if (faults.Count == 0) forThem.Add("Nothing preventable on the safety record this period.");
@@ -257,8 +268,12 @@ public static class Probation
         var missing = new List<string>();
         if (delivered < plan.RequiredLoads) missing.Add($"{delivered} of {plan.RequiredLoads} loads");
         if (miles < plan.RequiredMiles) missing.Add($"{miles:N0} of {plan.RequiredMiles:N0} mi");
-        if (onTimeAll < plan.RequiredOnTimePct)
-            missing.Add($"{onTimeAll:0.#}% of {plan.RequiredOnTimePct:0.#}% on time");
+        // Counted like the career ladder counts them: driver-fault only, inside a recent window, so
+        // clean work walks them off. A percentage over the whole period never forgave anything.
+        var lateStrikes = SafetyService.LateStrikes(s);
+        if (lateStrikes >= plan.MaxLateStrikes)
+            missing.Add($"{lateStrikes} driver-fault late delivery(s) in the last " +
+                        $"{SafetyService.LateStrikeWindow} loads, against an allowance of {plan.MaxLateStrikes}");
         if (faults > plan.MaxDriverFaultIncidents)
             missing.Add($"{faults} driver-fault incident(s) against an allowance of {plan.MaxDriverFaultIncidents}");
 

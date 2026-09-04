@@ -849,7 +849,14 @@ public static class CareerService
             var p = s.Driver.Probation;
             review.ProbationProgress.Add(Req("Loads delivered", stats.LoadsDelivered, p.RequiredLoads));
             review.ProbationProgress.Add(Req("Company miles", stats.TotalMiles, p.RequiredMiles, "N0"));
-            review.ProbationProgress.Add(ReqPct("On-time service", stats.OnTimePct, p.RequiredOnTimePct));
+            // What the review actually gates on. The service percentage is still worth seeing, but it
+            // is context — it counts every late load however it happened, which is right for a customer
+            // and wrong for a judgement about the driver.
+            review.ProbationProgress.Add(ReqMax(
+                $"Driver-fault late, last {SafetyService.LateStrikeWindow} loads",
+                SafetyService.LateStrikes(s), p.MaxLateStrikes - 1));
+            review.ProbationProgress.Add(ReqPct("On-time service (all causes, for information)",
+                stats.OnTimePct, 0));
             review.ProbationProgress.Add(ReqMax("Avg damage per trip", stats.AvgDamagePerTrip, p.MaxAvgDamagePct, "0.##", "%"));
             review.ProbationProgress.Add(ReqMax("Driver-fault incidents", stats.DriverFaultIncidents, p.MaxDriverFaultIncidents));
 
