@@ -436,10 +436,11 @@ public static class HomeTime
         s.Driver.HomeTimesOnTrailer++;
 
         // Reporting in is the whole point of probation. Somebody goes through the period with them and
-        // writes a verdict; three good ones in a row is what ends it.
+        // writes a verdict; the period running out is what ends it.
         var review = Probation.ReviewOnArrival(s);
         if (review is { ClearedProbation: true })
-            CareerService.ClearProbation(s, force: true, note: $"Cleared on {review.Number} — {Probation.PassesFor(s)} good reviews in a row.");
+            CareerService.ClearProbation(s, force: true,
+                note: $"Cleared on {review.Number} — the {s.Driver.Probation.DurationDays}-day period is served.");
 
         // Off probation the reviewing carries on, just less often. Filed here for the same reason: the
         // driver is standing at the yard, which is the only place this conversation happens.

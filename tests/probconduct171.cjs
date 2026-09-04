@@ -207,8 +207,10 @@ async function incident(o) {
   const service = (await rows()).find((r) => /on-time service/i.test(r.label || ''));
   ok('the raw service figure is still shown, as information', !!service,
     service ? `${service.label}: ${service.current}` : '(missing)');
-  ok('and is marked as not being the bar', /information/i.test(service?.label || ''),
-    service?.label || '');
+  ok('and is marked as not being the bar', service?.informational === true,
+    `informational=${service?.informational}`);
+  ok('so it carries no threshold to clear', !service?.required,
+    service?.required === '' ? 'no threshold' : `required=${service?.required}`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

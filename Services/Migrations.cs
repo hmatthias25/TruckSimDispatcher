@@ -747,14 +747,14 @@ public static class Migrations
 
         CareerService.RestoreProbation(s,
             $"Probation restored: cleared on thresholds alone with {passes} good review(s) in a row against " +
-            $"{Probation.PassesFor(s)} required.");
+            $"{Probation.PassesToClear} required.");
 
         s.Events.Insert(0, new LogEvent
         {
             Channel = "career",
             GameTime = s.Status.GameTime,
             Message = $"Probation put back: it had been cleared without the reviews ({passes} of " +
-                      $"{Probation.PassesFor(s)} good reviews in a row). Back on the probationary scale until " +
+                      $"{Probation.PassesToClear} good reviews in a row). Back on the probationary scale until " +
                       "you have sat them. Settlements already paid are untouched.",
         });
     }

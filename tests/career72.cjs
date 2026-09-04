@@ -98,11 +98,20 @@ async function runLoad(destCity, destState) {
   // takes an overdue driver materially further from the yard. Amarillo is 274 mi further out than OKC
   // and stopped being bookable halfway through; Tulsa is inside the tolerance in both directions.
   await report('Tulsa', 'OK', day);
+  // The reviews are still listed, but as a fact rather than a bar. A run of three stopped being the
+  // gate when probation became a period (#169), and the panel went on demanding it — half filled and
+  // unmeetable — beside a standing line already counting the period down (#176).
   const row = progressRow('review');
-  ok('probation progress counts the reviews', !!row,
-    row ? `${row.label}: ${row.current} of ${row.required}` : '(no such row)');
-  ok('and it wants three of them', row && Number(row.required) === 3, `${row?.required}`);
-  ok('with none sat yet, it is not met', row && !row.met, `met=${row?.met}`);
+  ok('probation progress still reports the reviews', !!row,
+    row ? `${row.label}: ${row.current}` : '(no such row)');
+  ok('but not as a requirement of three', row && !row.required,
+    row?.required === '' ? 'no threshold, as it should be' : `required=${row?.required}`);
+  ok('it is marked informational', row && row.informational === true, `${row?.informational}`);
+
+  const periodRow = progressRow('period served');
+  ok('and the period IS a listed requirement', !!periodRow,
+    periodRow ? `${periodRow.label}: ${periodRow.current} of ${periodRow.required}` : '(no such row)');
+  ok('with none of it served yet, it is not met', periodRow && !periodRow.met, `met=${periodRow?.met}`);
 
   head('2. #72/#169 Numbers alone do not clear it');
   // Enough loads and miles to satisfy every threshold. Under the period model the point is sharper
@@ -114,7 +123,10 @@ async function runLoad(destCity, destState) {
     if (i % 4 === 3) await goYard();            // in for review, and home time does not go overdue
   }
   S = un(await api('/bootstrap'));
-  const thresholdRows = (career().probationProgress || []).filter((r) => !/review/i.test(r.label));
+  // The numbers only. The period is a requirement too and is deliberately not one of these — the
+  // whole point of this section is that every number can be green while probation still has weeks left.
+  const thresholdRows = (career().probationProgress || [])
+    .filter((r) => !/review|period served/i.test(r.label));
   ok('every other threshold is met', thresholdRows.every((r) => r.met),
     thresholdRows.filter((r) => !r.met).map((r) => r.label).join(', ') || 'all met');
   ok('but probation is NOT reported as met', career().probationMet === false,
@@ -133,8 +145,11 @@ async function runLoad(destCity, destState) {
   let refused = null;
   try { await api('/career/clear-probation', 'POST', { note: 'trying it on' }); }
   catch (e) { refused = e.message; }
-  ok('clearing without the reviews is refused', refused !== null, (refused || '(ALLOWED!)').slice(0, 140));
-  ok('and it says what is missing', /review/i.test(refused || ''), (refused || '').slice(0, 140));
+  ok('clearing before the period is served is refused', refused !== null,
+    (refused || '(ALLOWED!)').slice(0, 140));
+  ok('and it says what is missing', /period/i.test(refused || ''), (refused || '').slice(0, 140));
+  ok('in days, which is the unit that closes it', /day\(s\)/i.test(refused || ''),
+    (refused || '').slice(0, 100));
 
   head('5. #74 There is no way to set your own rate');
   let payGone = null;

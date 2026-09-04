@@ -683,6 +683,17 @@ public class RequirementProgress
     public string Required { get; set; } = "";
     public bool Met { get; set; }
     public double Pct { get; set; }
+
+    /// <summary>
+    /// A figure worth seeing that is not a bar to clear. Rendered as a value on its own — no threshold,
+    /// no progress bar, no tick — and skipped when working out whether the set is met.
+    ///
+    /// The service percentage is the case that needed it: it counts every late load however it
+    /// happened, which is right for a customer and wrong as a judgement about the driver, so it belongs
+    /// beside the gate rather than being one. Put through the requirement builders it came out as
+    /// "100% / 0% ✓", a fact wearing a requirement's clothes.
+    /// </summary>
+    public bool Informational { get; set; }
 }
 
 /// <summary>
@@ -847,6 +858,14 @@ public static class CareerService
         if (s.Driver.Probation.Active)
         {
             var p = s.Driver.Probation;
+            // First, because it is the gate. It was in the panel's subtitle and nowhere in the rows, so
+            // a driver with every number green read "requirements met" on day forty of ninety — and
+            // ClearProbation, which leans on this, let them out.
+            var periodDays = (double)p.DurationDays;
+            var daysLeft = ProbationPlanner.DaysLeft(s) ?? 0;
+            review.ProbationProgress.Add(Req("Period served",
+                Math.Max(0, periodDays - daysLeft), periodDays));
+
             review.ProbationProgress.Add(Req("Loads delivered", stats.LoadsDelivered, p.RequiredLoads));
             review.ProbationProgress.Add(Req("Company miles", stats.TotalMiles, p.RequiredMiles, "N0"));
             // What the review actually gates on. The service percentage is still worth seeing, but it
@@ -855,17 +874,21 @@ public static class CareerService
             review.ProbationProgress.Add(ReqMax(
                 $"Driver-fault late, last {SafetyService.LateStrikeWindow} loads",
                 SafetyService.LateStrikes(s), p.MaxLateStrikes - 1));
-            review.ProbationProgress.Add(ReqPct("On-time service (all causes, for information)",
-                stats.OnTimePct, 0));
+            review.ProbationProgress.Add(ReqInfo("On-time service, all causes",
+                $"{stats.OnTimePct:0.#}%"));
             review.ProbationProgress.Add(ReqMax("Avg damage per trip", stats.AvgDamagePerTrip, p.MaxAvgDamagePct, "0.##", "%"));
             review.ProbationProgress.Add(ReqMax("Driver-fault incidents", stats.DriverFaultIncidents, p.MaxDriverFaultIncidents));
 
-            // The reviews are the other half of the requirement, and they were missing from this list
-            // entirely — so the tab reported "requirements met" to a driver who had never sat three good
-            // reviews, and lit the button that cleared them on the strength of it.
-            review.ProbationProgress.Add(Req("Good reviews in a row",
-                Probation.ConsecutivePasses(s), Probation.PassesFor(s)));
-            review.ProbationMet = review.ProbationProgress.All(r => r.Met);
+            // Reviews are feedback on how the period is going, not the thing that ends it. Listed as a
+            // fact rather than a bar: as a requirement of three it sat here half filled and unmeetable
+            // next to a standing line already counting the period down, telling the driver two
+            // different stories about the same probation.
+            var passes = Probation.PassesFor(s);
+            review.ProbationProgress.Add(passes > 0
+                ? Req("Good reviews in a row", Probation.ConsecutivePasses(s), passes)
+                : ReqInfo("Good reviews behind you", $"{Probation.ConsecutivePasses(s)}"));
+
+            review.ProbationMet = review.ProbationProgress.Where(r => !r.Informational).All(r => r.Met);
 
             review.Findings.Add(review.ProbationMet
                 ? "Probation is served — the numbers are there and the reviews are behind you."
@@ -906,6 +929,17 @@ public static class CareerService
             review.NextRankProgress.Add(ReqPct("On-time service", stats.OnTimePct, next.OnTime));
             review.NextRankProgress.Add(ReqMax("Avg damage per trip", stats.AvgDamagePerTrip, next.MaxDamage, "0.##", "%"));
             review.NextRankProgress.Add(ReqMax("Driver-fault incidents", stats.DriverFaultIncidents, next.MaxFaults));
+
+            // Probation was in the verdict and not in the list, so a driver in their first month read
+            // five green ticks and a "not yet" with nothing saying why. Every other refusal in this app
+            // names its reason; this one hid it in a boolean.
+            if (s.Driver.Probation.Active)
+            {
+                var days = (double)s.Driver.Probation.DurationDays;
+                var left = ProbationPlanner.DaysLeft(s) ?? 0;
+                review.NextRankProgress.Add(Req("Probation served", Math.Max(0, days - left), days));
+            }
+
             review.NextRankMet = review.NextRankProgress.All(r => r.Met) && !s.Driver.Probation.Active;
 
             if (review.NextRankMet)
@@ -943,12 +977,19 @@ public static class CareerService
         {
             // Checked on its own rather than leaning on ProbationMet, so this holds even if the progress
             // list is ever rearranged. Probation is not served on numbers alone.
-            var passes = Probation.ConsecutivePasses(s);
-            var want = Probation.PassesFor(s);
-            if (passes < want)
+            //
+            // The period, not a run of reviews. This asked for three passes in a row against
+            // Probation.PassesFor, which is zero on the period model — so the comparison was always
+            // false and the only thing left guarding the override was a progress list that did not
+            // mention the period either. Both holes, one cause.
+            if (!ProbationPlanner.ReviewDue(s))
+            {
+                var left = ProbationPlanner.DaysLeft(s) ?? 0;
                 throw new InvalidOperationException(
-                    $"{passes} good review(s) in a row against {want} required. The numbers are only " +
-                    "half of it — the reviews are the other half.");
+                    $"{left:0.#} day(s) of the {s.Driver.Probation.DurationDays}-day period still to run. " +
+                    "The numbers are only half of it — the period has to be served, and the review that " +
+                    "decides it is taken at the first home time after that.");
+            }
             if (!review.ProbationMet)
                 throw new InvalidOperationException("Probation requirements are not met. Override explicitly if operations is clearing it early.");
         }
@@ -1433,8 +1474,8 @@ public static class CareerService
             : $"Promoted to {s.Driver.RankTitle}.";
 
         if (kind == "probation")
-            n.Detail.Add($"{Probation.PassesFor(s)} good reviews in a row and every threshold met. " +
-                         "That is the probationary period served — nothing hanging over the job now.");
+            n.Detail.Add("The period is served and every threshold met. That is the probation done — " +
+                         "nothing hanging over the job now.");
         else
             n.Detail.Add("Earned on the record: the loads, the miles, the service and the safety file. " +
                          "Nothing you had to ask for.");
@@ -1481,6 +1522,17 @@ public static class CareerService
             Pct = required > 0 ? Math.Round(Math.Clamp(current / required, 0, 1) * 100, 0) : 100
         };
     }
+
+    /// <summary>A figure shown for information. Not a bar, and not counted when deciding "met".</summary>
+    private static RequirementProgress ReqInfo(string label, string value) => new()
+    {
+        Label = label,
+        Current = value,
+        Required = "",
+        Met = true,
+        Pct = 100,
+        Informational = true,
+    };
 
     private static RequirementProgress ReqMax(string label, double current, double max, string fmt = "0.#", string suffix = "")
     {

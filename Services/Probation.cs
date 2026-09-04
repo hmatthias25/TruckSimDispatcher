@@ -23,13 +23,25 @@ public static class Probation
 
     /// <summary>
     /// The default, and what every career written before the plan carried its own figure used.
-    /// Ask <see cref="PassesFor"/> rather than this — the number is per-career now.
+    /// <b>Historical.</b> Probation is a period now, and nothing requires a run of reviews. Kept for the
+    /// schema-4 migration, which is about careers cleared under this rule and has to know what it was.
     /// </summary>
     public const int PassesToClear = 3;
 
-    /// <summary>Consecutive passes THIS driver's probation takes. A fail breaks the run.</summary>
-    public static int PassesFor(AppState s) =>
-        s.Driver.Probation.PassesRequired > 0 ? s.Driver.Probation.PassesRequired : PassesToClear;
+    /// <summary>
+    /// Consecutive passes this driver's probation requires. <b>Zero, unless a plan still says otherwise.</b>
+    ///
+    /// This used to read the retired zero as "unset" and hand back <see cref="PassesToClear"/>:
+    ///
+    ///     PassesRequired > 0 ? PassesRequired : PassesToClear
+    ///
+    /// The migration writes zero deliberately, to mean the streak is not the gate. Turning it back into
+    /// three put "3 good reviews in a row" on the career panel of every migrated career — half filled
+    /// and unmeetable, beside a standing line already counting the period down. The comment on
+    /// ProbationPlan.PassesRequired says the field is kept at zero rather than deleted so it reads as
+    /// "not used" rather than as a requirement nothing enforces. Then this read it as one.
+    /// </summary>
+    public static int PassesFor(AppState s) => Math.Max(0, s.Driver.Probation.PassesRequired);
 
     /// <summary>Days past the fortnight before the overrun is worth writing down.</summary>
     private const double OverrunGraceDays = 3;

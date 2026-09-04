@@ -213,8 +213,14 @@ const V = () => S.views;
     rev.verdict === 'Pass' || (S.incidents || []).length === 0,
     `${(S.incidents || []).length} incident(s)`);
 
-  head('7. Three passes in a row is what clears it');
-  ok('the requirement is stated', V().probation.passesNeeded === 3, `${V().probation.passesNeeded}`);
+  head('7. The period is what clears it, not a run of passes');
+  // Was "three passes in a row is what clears it". Probation became a period in #169 and the streak
+  // stopped being a gate; the field kept answering 3 because PassesFor read the retired zero as
+  // "unset" and substituted the old default (#176).
+  ok('no run of passes is required', V().probation.passesNeeded === 0,
+    `${V().probation.passesNeeded}`);
+  ok('the period is stated instead', V().probation.durationDays > 0,
+    `${V().probation.durationDays}-day period`);
 
   // Four clean loads per fortnight, run out on the road, then report in at the yard for the review.
   dayCursor = 36;
