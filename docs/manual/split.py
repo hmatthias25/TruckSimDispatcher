@@ -44,6 +44,7 @@ PLAYER_TITLES = {
     "Where you stand, and when to apply",
     "Who is worth keeping, and what is worth running",
     "Probation, and who decides a sacking",
+    "What the fuel says, at review time",
     "What your experience is worth, and to whom",
     "Your first day: what to buy and set up",
     # the daily loop

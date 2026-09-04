@@ -246,6 +246,14 @@ public static class Fuel
         public decimal Saved { get; set; }
         public decimal BuyingBonus { get; set; }
         public List<string> Lines { get; set; } = new();
+
+        /// <summary>
+        /// Fills bought well above what was reachable earlier on that same run.
+        ///
+        /// Kept as its own list as well as going into <see cref="Lines"/>, because a review needs to
+        /// know whether there WAS a bad buy, not to fish the sentence back out of a settlement stub.
+        /// </summary>
+        public List<string> Overpaid { get; set; } = new();
     }
 
     /// <summary>
@@ -332,6 +340,7 @@ public static class Fuel
                         $"through, across {r.Gallons:N0} gal. Your share ${r.BuyingBonus:N2}.");
         }
 
+        r.Overpaid = stranded;
         foreach (var line in stranded.Take(2)) r.Lines.Add(line);
 
         // Said once, so a driver working an expensive corner of the map knows the app can tell a bad

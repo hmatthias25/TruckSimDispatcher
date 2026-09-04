@@ -154,6 +154,10 @@ public static class PeriodicReview
         // was doing to the truck, so a senior driver could beat a tractor to death with nothing said.
         var wear = WearReview.Assess(s, since.Value, now.Value, s.PeriodicReviews.FirstOrDefault()?.TruckDamagePct ?? -1);
         WearReview.Apply(wear, forThem, against);
+
+        // The same fuel findings a probationary driver gets. Clearing probation should not stop the
+        // company telling somebody how they are driving and where they are buying.
+        FuelReview.Apply(FuelReview.Assess(s, since.Value, now.Value), forThem, against);
         review.TruckDamagePct = wear.DamageNow;
 
         review.Strengths = forThem;

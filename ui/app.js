@@ -4662,15 +4662,22 @@ function viewSafety() {
       <div class="panel-head"><h2>Record an incident</h2></div>
       <div class="grid2">
         <label>Type<select id="in-kind">${['Collision', 'Late', 'Damage', 'Citation', 'Fatigue', 'Fuel', 'Overweight', 'Other'].map((x) => `<option>${x}</option>`).join('')}</select></label>
-        <label>Severity<select id="in-sev">${['Minor', 'Moderate', 'Serious', 'Major'].map((x) => `<option>${x}</option>`).join('')}</select></label>
+        <label>Damage incurred %<input id="in-damage" type="number" step="0.1" min="0" max="100"
+          placeholder="how much this put on the truck"></label>
         <label>Fault<select id="in-fault">${['Driver', 'Dispatcher', 'Unavoidable', 'Mechanical', 'GameLimitation'].map((x) => `<option>${x}</option>`).join('')}</select></label>
         <label>Cost $<input id="in-cost" type="number" step="0.01" value="0"></label>
         <label>Trip number<input id="in-trip" value="${esc(S.views.activeTrip?.number || '')}"></label>
+        <label>Severity, if nothing was hit<select id="in-sev">${['Minor', 'Moderate', 'Serious', 'Major'].map((x) => `<option>${x}</option>`).join('')}</select></label>
         <label class="chk" style="margin-top:26px"><input type="checkbox" id="in-prevent" checked> Preventable</label>
       </div>
       <label>What happened<textarea id="in-desc" placeholder="be specific — Safety decides fault and consequence from this"></textarea></label>
       <p class="hint">You report it; Safety decides what follows and tells you. You do not choose your
-        own outcome.</p>
+        own outcome &mdash; so <b>give the damage and let them grade it</b>. That figure is what sets the
+        rung, and what a preventable costs a probation. Under
+        ${num(S.settings?.maintenance?.incidentNoiseFloorPct ?? 1, 1)}% it is logged and nothing else:
+        traffic touches a truck.</p>
+      <p class="hint">The severity box is read <em>only</em> where there is no damage to grade &mdash; a
+        citation, a fatigue call, a late delivery. Fill the damage in and it is ignored.</p>
       <div class="row-actions"><button class="btn primary" data-act="record-incident">File incident</button></div>
     </div>
 
@@ -6493,11 +6500,16 @@ async function handleAction(act, d, ev) {
         const r = absorb(await api('/incidents', 'POST', {
           kind: sv('in-kind'), severity: sv('in-sev'), faultAttribution: sv('in-fault'),
           preventable: bv('in-prevent'), cost: fv('in-cost'), tripNumber: sv('in-trip'),
+          // Blank means "nothing was hit", which is NOT the same as zero damage and must not be sent as
+          // it. -1 is how the model says unreported, and it is what keeps the severity box meaningful
+          // for a citation or a fatigue call.
+          damageIncurredPct: sv('in-damage') === '' ? -1 : fv('in-damage'),
           description: sv('in-desc'), locationCity: S.status.locationCity, locationState: S.status.locationState,
         }));
+        const graded = `${r.incident.number} filed as ${String(r.incident.severity || '').toLowerCase()}`;
         toast(r.action
-          ? `${r.incident.number} filed. Safety has issued ${r.action.level} — acknowledge it below.`
-          : `${r.incident.number} filed. No discipline attaches.`, r.action ? 'bad' : 'ok');
+          ? `${graded}. Safety has issued ${r.action.level} — acknowledge it below.`
+          : `${graded}. No discipline attaches.`, r.action ? 'bad' : 'ok');
       });
     }
     case 'forgive-incident': {

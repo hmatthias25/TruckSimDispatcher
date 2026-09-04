@@ -173,6 +173,11 @@ public static class Probation
         // else did to them and never once noticed wear. See WearReview.
         var wear = WearReview.Assess(s, since.Value, now.Value, last?.TruckDamagePct ?? -1);
         WearReview.Apply(wear, forThem, against);
+
+        // Fuel, judged the same way and in the same place. It used to exist only on a settlement, which
+        // is after the period is over and the money is decided - no use to somebody who could still
+        // change how they are driving.
+        FuelReview.Apply(FuelReview.Assess(s, since.Value, now.Value), forThem, against);
         review.TruckDamagePct = wear.DamageNow;
 
         if (daysCovered > ReviewIntervalDays + OverrunGraceDays)
