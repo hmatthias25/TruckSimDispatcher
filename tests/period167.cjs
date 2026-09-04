@@ -99,6 +99,11 @@ async function report(city, st, day, o = {}) {
   ok('the period itself does not move', otrP.durationDays === before169.durationDays,
     `${otrP.durationDays} days`);
 
+  // The discipline ladder applies to everyone; probation has its own harsher rule that ends a
+  // career at three strikes and would pre-empt the ladder before it could escalate. Clear it so
+  // this suite tests the ladder rather than the probation rule.
+  await api('/career/clear-probation', 'POST', { force: true, note: 'test setup' });
+
   head('5. #170 A pole scrape is not a rollover');
   const before = (await boot()).discipline.length;
   await api('/incidents', 'POST', {

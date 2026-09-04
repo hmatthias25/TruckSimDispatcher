@@ -245,9 +245,17 @@ public static class SafetyService
         if (inc.DamageIncurredPct < 0 && inc.TruckDamagePctAfter >= 0)
             inc.DamageIncurredPct = Math.Max(0, inc.TruckDamagePctAfter - s.Status.TruckDamagePct);
 
-        // Severity is the company's call on the damage, not the driver's on the form. Letting the
+        // Severity is the company's call on the damage, not the driver's on the form — letting the
         // reporter grade their own wreck is how a rollover got filed as Minor.
-        inc.Severity = SeverityFor(s, inc.DamageIncurredPct);
+        //
+        // But only where damage was actually reported. With no figure there is nothing to grade from,
+        // and overriding to Minor anyway would be the app inventing a reading in the one direction that
+        // lets a wreck off — the same mistake it refuses to make about a truck's condition. No figure
+        // means the report stands.
+        if (inc.DamageIncurredPct >= 0)
+            inc.Severity = SeverityFor(s, inc.DamageIncurredPct);
+        else if (string.IsNullOrWhiteSpace(inc.Severity))
+            inc.Severity = "Minor";
 
         if (inc.AgesOffAfterLoads <= 0) inc.AgesOffAfterLoads = AgeOffFor(inc.Severity);
         s.Incidents.Insert(0, inc);
@@ -365,16 +373,30 @@ public static class SafetyService
         var currentIndex = active.Count == 0 ? -1
             : active.Max(a => Array.IndexOf(Ladder, a.Level));
 
-        var next = inc.Severity switch
-        {
-            // Wrecking the truck is not a coaching conversation. Major starts at a final warning and
-            // goes up from there, which on a second-chance carrier is the end of the career.
-            "Major" => Math.Max(currentIndex + 1, 3),
-            "Serious" => Math.Max(currentIndex + 1, 2),
-            "Moderate" => Math.Max(currentIndex + 1, 1),
-            // Minor still counts — it just has to accumulate rather than landing a rung on its own.
-            _ => currentIndex + 1
-        };
+        // Skipping rungs is a judgement about DAMAGE, so it only applies where the event was graded
+        // from damage. A late delivery carries a severity too and has no damage in it at all — three
+        // of them is a pattern worth a coaching conversation, not a written warning off the first
+        // finding, and letting the damage tiers reach lateness was making it one.
+        var graded = inc.DamageIncurredPct >= 0;
+
+        var next = graded
+            ? inc.Severity switch
+            {
+                // Wrecking the truck is not a coaching conversation. Major starts at a final warning
+                // and goes up, which on a second-chance carrier is the end of the career.
+                "Major" => Math.Max(currentIndex + 1, 3),
+                "Serious" => Math.Max(currentIndex + 1, 2),
+                "Moderate" => Math.Max(currentIndex + 1, 1),
+                // Minor counts, but has to accumulate rather than landing a rung on its own.
+                _ => currentIndex + 1
+            }
+            : inc.Severity switch
+            {
+                // Ungraded: the caller's word is all there is, and only an outright Major is trusted
+                // to skip. Everything else walks the ladder a rung at a time as it always did.
+                "Major" => Math.Max(currentIndex + 1, 2),
+                _ => currentIndex + 1
+            };
         next = Math.Clamp(next, 0, Ladder.Length - 1);
         return Ladder[next];
     }
@@ -404,6 +426,11 @@ public static class SafetyService
                 Channel = "career", GameTime = s.Status.GameTime, Message = onProbation.Message,
             });
         }
+
+        // The period already ended the job. Running the ladder on top of that would issue a suspension
+        // against somebody who no longer works here — and worse, applying it overwrites Status, so a
+        // termination came out reading "Suspended". The heavier consequence stands.
+        if (onProbation is { Kind: "Terminated" }) return (created, null);
 
         var level = RecommendDiscipline(s, created);
         if (level == null) return (created, null);
@@ -778,13 +805,7 @@ public static class CareerService
             DriverFaultIncidents = s.Incidents
                 .Where(i => i.FaultAttribution == "Driver" && i.Preventable
                             && string.IsNullOrWhiteSpace(i.ForgivenGameTime))
-                .Sum(i => i.Severity switch
-                {
-                    "None" => 0,
-                    "Minor" => 1,
-                    "Moderate" => 2,
-                    _ => 4,          // Serious or Major: on its own, past any probation allowance
-                })
+                .Sum(i => ProbationConduct.WeightOf(i.Severity))
         };
 
         st.TotalMiles = st.LoadedMiles + st.DeadheadMiles;

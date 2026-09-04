@@ -67,6 +67,7 @@ PLAYER_TITLES = {
     # the company
     "Home time",
     "Probation is a period, not a streak",
+    "Getting it wrong while they are watching",
     "Re-rigged on the road",
     "Arriving, and what you are told when you do",
     "Choosing and changing your arrangement",

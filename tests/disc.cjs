@@ -16,6 +16,10 @@ const head = (t) => console.log(`\n=== ${t} ===`);
     experienceYears: 5, homeCity: 'Denver', homeState: 'CO', acceptsProbation: true, homeTimePreference: 'biweekly' };
   await api('/onboarding/market', 'POST', app);
   let S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: '2000-01-01T06:00' }));
+  // The discipline ladder applies to everyone; probation has its own harsher rule that ends a
+  // career at three strikes and would pre-empt the ladder before it could escalate. Clear it so
+  // this suite tests the ladder rather than the probation rule.
+  await api('/career/clear-probation', 'POST', { force: true, note: 'test setup' });
 
   head('A driver-fault preventable incident decides itself');
   let r = await api('/incidents', 'POST', {

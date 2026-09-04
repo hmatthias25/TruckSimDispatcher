@@ -41,6 +41,10 @@ const goHome = async (day) => { await report('Amarillo', 'TX', day - 1); return 
     homeTimePreference: 'biweekly' };
   await api('/onboarding/market', 'POST', app);
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(1) }));
+  // The discipline ladder applies to everyone; probation has its own harsher rule that ends a
+  // career at three strikes and would pre-empt the ladder before it could escalate. Clear it so
+  // this suite tests the ladder rather than the probation rule.
+  await api('/career/clear-probation', 'POST', { force: true, note: 'test setup' });
   const hq = S.company.terminals[0];
   S = un(await api(`/terminals/${hq.id}/level`, 'POST', { level: 'Large' }));
 
