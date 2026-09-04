@@ -238,9 +238,41 @@ public static class SafetyService
         inc.Number = $"{code}-INC-{++s.Counters.Incident:0000}";
         if (string.IsNullOrWhiteSpace(inc.GameTime)) inc.GameTime = s.Status.GameTime;
         inc.LoadCountAtIncident = s.Trips.Count(t => t.Status == "Delivered");
+
+        // What the event actually did, worked out from the reading the driver gave against what the
+        // truck was on before. Only derived where it was not reported directly — a driver who knows the
+        // delta is a better source than a subtraction across two moments.
+        if (inc.DamageIncurredPct < 0 && inc.TruckDamagePctAfter >= 0)
+            inc.DamageIncurredPct = Math.Max(0, inc.TruckDamagePctAfter - s.Status.TruckDamagePct);
+
+        // Severity is the company's call on the damage, not the driver's on the form. Letting the
+        // reporter grade their own wreck is how a rollover got filed as Minor.
+        inc.Severity = SeverityFor(s, inc.DamageIncurredPct);
+
         if (inc.AgesOffAfterLoads <= 0) inc.AgesOffAfterLoads = AgeOffFor(inc.Severity);
         s.Incidents.Insert(0, inc);
         return inc;
+    }
+
+    /// <summary>
+    /// What an event costs, from what it actually did.
+    ///
+    /// Severity used to be whatever the caller passed in, so a 1% pole scrape and a 30% rollover walked
+    /// the same ladder and a driver could file a wreck as Minor. Derived from damage now, and the
+    /// thresholds are the company's policy rather than a magic number in a switch.
+    ///
+    /// Under the noise floor the event is <b>logged and nothing else</b>. Traffic touches a truck; a
+    /// carrier that disciplined for every point of paint would have no drivers.
+    /// </summary>
+    public static string SeverityFor(AppState s, double damageIncurred)
+    {
+        var m = s.Settings.Maintenance;
+        if (damageIncurred < 0) return "Minor";                       // not reported: judge it lightly
+        if (damageIncurred < m.IncidentNoiseFloorPct) return "None";
+        if (damageIncurred < m.IncidentMinorPct) return "Minor";
+        if (damageIncurred < m.IncidentSeriousPct) return "Moderate";
+        if (damageIncurred < m.IncidentMajorPct) return "Serious";
+        return "Major";
     }
 
     /// <summary>How much clean work it takes to put an incident behind you. Severity scales it.</summary>
@@ -249,6 +281,7 @@ public static class SafetyService
         "Major" => 60,
         "Serious" => 40,
         "Moderate" => 25,
+        "None" => 5,          // on the record, off the hiring bar almost immediately
         _ => 20
     };
 
@@ -322,6 +355,11 @@ public static class SafetyService
     {
         if (inc.FaultAttribution != "Driver" || !inc.Preventable) return null;
 
+        // Below the noise floor it goes on the record and stops there. A point of paint off a pole is
+        // not a disciplinary matter, and treating it as one is how three bad parking jobs used to walk
+        // a driver to a final warning.
+        if (inc.Severity == "None") return null;
+
         var loadsNow = s.Trips.Count(t => t.Status == "Delivered");
         var active = ActiveDiscipline(s, loadsNow);
         var currentIndex = active.Count == 0 ? -1
@@ -329,9 +367,12 @@ public static class SafetyService
 
         var next = inc.Severity switch
         {
-            // A major preventable event skips straight up the ladder.
-            "Major" => Math.Max(currentIndex + 1, 2),
-            "Serious" => Math.Max(currentIndex + 1, 1),
+            // Wrecking the truck is not a coaching conversation. Major starts at a final warning and
+            // goes up from there, which on a second-chance carrier is the end of the career.
+            "Major" => Math.Max(currentIndex + 1, 3),
+            "Serious" => Math.Max(currentIndex + 1, 2),
+            "Moderate" => Math.Max(currentIndex + 1, 1),
+            // Minor still counts — it just has to accumulate rather than landing a rung on its own.
             _ => currentIndex + 1
         };
         next = Math.Clamp(next, 0, Ladder.Length - 1);

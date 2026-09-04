@@ -412,8 +412,15 @@ const gday = (day, hm) => {
   const timeline = (tEval.feasibility.timeline || []).map((x) => x.label || x).join(' | ');
   ok('the pre-dock wait is rested, not idled on duty',
     /taken as the reset|Rest timed to the opening/i.test(timeline), timeline.slice(-130) || '(none)');
-  ok('and it does not sit a whole ten on top of a shorter wait',
-    !/Rest timed to the opening — 10:00/.test(timeline), 'sleeps in instead');
+  // This used to assert a ten-hour rest never appeared here, which is exactly how the phantom reset
+  // hid: the plan credited a full 11 and 14 for a six-hour sit and the timeline looked reasonable.
+  // A reset costs a reset. What must NOT happen is sitting it AT the receiver, and the next section
+  // guards the case where the window survives the wait and no reset is taken at all.
+  ok('a rest that restores the clocks actually spends a full reset',
+    /Rest timed to the opening/.test(timeline)
+      ? /Rest timed to the opening — (1[0-9]|[2-9][0-9]):/.test(timeline)
+      : true,
+    timeline.match(/Rest timed to the opening — [0-9:]+/)?.[0] || 'no such rest in this plan');
   ok('the driver is told why',
     (tEval.feasibility.warnings || []).some((x) => /Sleep in at your last stop|reset there|unload fresh/i.test(x)),
     (tEval.feasibility.warnings || []).find((x) => /Sleep in|reset/i.test(x))?.slice(0, 120) || '(none)');

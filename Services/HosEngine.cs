@@ -430,15 +430,23 @@ public static class HosEngine
                             // costs exactly the same wall-clock time and puts them on the dock at opening
                             // with a fresh fourteen. The rest before this leg is already in the plan, so
                             // this is that rest running longer, not a second one.
+                            // A reset costs a reset. This used to credit a full 11 and 14 while spending
+                            // only `waiting` — six hours, in the case that turned this up — so the driver
+                            // was handed four hours of clock that do not exist and every leg after it was
+                            // computed off a number the game will never agree with. Sleeping LONGER at the
+                            // last stop is the right idea and it means at least the full ten.
+                            var slept = Math.Max(waiting, rules.OffDutyReset);
                             drive = rules.DriveLimit;
                             shift = rules.ShiftLimit;
                             brk = rules.DrivingBeforeBreak;
-                            Step($"Rest timed to the opening — {Hhmm.Of(waiting)} rather than arriving early", "Rest", waiting, 0);
+                            result.RestsRequired++;
+                            Step($"Rest timed to the opening — {Hhmm.Of(slept)} rather than arriving early", "Rest", slept, 0);
                             result.Warnings.Add(
                                 $"You would get there {Hhmm.Of(waiting)} before they open with only " +
                                 $"{Hhmm.Of(Math.Max(0, windowAfterWaiting))} of window left, and the dock needs " +
-                                $"{Hhmm.Of(task.Hours)}. Sleep in at your last stop instead and roll up on the " +
-                                "opening with a full clock — same arrival, and the window is yours.");
+                                $"{Hhmm.Of(task.Hours)}. Sleep in at your last stop instead — a full " +
+                                $"{Hhmm.Of(rules.OffDutyReset)}, not just the {Hhmm.Of(waiting)} you would be " +
+                                "waiting — and roll up on the opening with a clock that is actually fresh.");
                         }
                     }
                     else

@@ -667,25 +667,13 @@ public static class Seed
         };
         if (app.HasHazmat) pay.HazmatCpm = 0.05m;
 
-        var probation = new ProbationPlan
-        {
-            Active = true,
-            RequiredLoads = experienced ? 8 : green ? 14 : 10,
-            RequiredMiles = experienced ? 4500 : green ? 8000 : 6000,
-            RequiredOnTimePct = 95,
-            MaxAvgDamagePct = green ? 6 : 5,
-            MaxDriverFaultIncidents = 1,
-            DurationDays = experienced ? 60 : 90,
-            StartedGameDate = s.Status.GameTime,
-            Notes = experienced
-                ? "Shortened on verified experience."
-                : green
-                    ? "Extended — developing driver. Expect closer coaching early."
-                    : "Standard probation."
-        };
-        // Same slack rule as a changeover: the window has to outlast the passes, or one bad review
-        // leaves the driver needing a clean run they no longer have the fortnights for.
-        ProbationPlanner.EnsureSlack(probation);
+        // The same planner a changeover uses. This built its own plan with its own numbers, so the
+        // first probation of a career and every one after it disagreed about what probation is — and
+        // this one kept the three-review streak alive after the model moved to a period.
+        var probation = ProbationPlanner.For(s, s.Company.Code, s.Status.GameTime);
+        probation.MaxAvgDamagePct = green ? 6 : 5;
+        probation.RequiredOnTimePct = 95;
+        if (green) probation.Notes += " Developing driver — expect closer coaching early.";
 
         var quals = new List<string> { "Class A CDL" };
         if (app.HasHazmat) quals.Add("Hazmat");

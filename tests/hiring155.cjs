@@ -108,33 +108,28 @@ const find = (m, code) => m.find((c) => c.code === code);
 
   head('7. #156 Probation scales, and always leaves slack');
   const p = S.driver.probation;
-  ok('the plan carries its own passes figure', p.passesRequired > 0, `${p.passesRequired} passes`);
+  // #169 replaced the streak with a period. The scaling this section was written for survives — a
+  // stretch buys the full ninety, a comfortable move buys less — but the gate is the period now.
+  ok('the plan carries a period', p.durationDays >= 30, `${p.durationDays} days`);
+  ok('the streak is retired, not merely unused', !(p.passesRequired > 0),
+    `passesRequired=${p.passesRequired}`);
   const reviews = Math.floor(p.durationDays / 14);
-  ok('the window outlasts the passes it asks for', reviews >= p.passesRequired + 2,
-    `${reviews} reviews available for ${p.passesRequired} required`);
-  ok('so one bad fortnight is survivable', reviews - p.passesRequired >= 2,
-    `${reviews - p.passesRequired} spare`);
+  ok('with interim reviews along the way', reviews >= 2, `${reviews} review(s) in the period`);
   ok('and the plan says so in words', /review/i.test(p.notes || ''), (p.notes || '').slice(0, 120));
 
-  head('8. #156 Every gate reads the plan, not the old constant');
-  // PassesToClear was a const, and five references inside Probation.cs still read it after the figure
-  // went per-career — including the auto-clear, so a two-pass probation would never have cleared.
-  const want = p.passesRequired;
+  head('8. #169 Every gate reads the period, not a leftover constant');
+  // The same failure mode the old section guarded: a figure moved onto the plan while call sites went
+  // on reading a constant. EnsureSlack was resurrecting PassesRequired from zero back to three, which
+  // put the streak silently back on every plan that had retired it.
   const view = (await api('/bootstrap')).views.probation;
-  ok('the view quotes the plan', view.passesNeeded === want, `${view.passesNeeded} vs ${want}`);
-  // Whole numbers only, and deliberately without a regex: a word-boundary escape written through a
-  // template literal is a backspace character, not a boundary, and the assertion then passes forever.
-  const quoted = String(view.standing || '').match(/[0-9]+/g) || [];
-  ok('and the standing text does too', quoted.includes(String(want)),
-    `quotes ${quoted.join(', ') || 'no numbers'} — wanted ${want}`);
-
-  let refusal = '';
-  try { await api('/career/clear-probation', 'POST', { force: false, note: 'gate check' }); }
-  catch (e) { refusal = e.message; }
-  ok('clearing early is refused', refusal.length > 0, refusal.slice(0, 90) || '(allowed!)');
-  ok('and the refusal counts against the plan, not a constant',
-    new RegExp(`against ${want} required`).test(refusal), refusal.slice(0, 110));
-
+  ok('the view carries the period', view.durationDays === p.durationDays,
+    `${view.durationDays} vs ${p.durationDays}`);
+  ok('and a day count against it', typeof view.daysLeft === 'number', `${view.daysLeft}`);
+  ok('the standing quotes the period it is actually serving',
+    (String(view.standing || '').match(/[0-9]+/g) || []).includes(String(p.durationDays)),
+    view.standing || '(none)');
+  ok('nothing claims a run of passes is needed',
+    !/in a row/i.test(view.standing || ''), view.standing || '');
 
   head('9. #158 The card leads with what YOU would be paid');
   const board = await market();

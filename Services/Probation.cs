@@ -63,12 +63,19 @@ public static class Probation
                 ? $"Probation cleared after {s.ProbationReviews.Count} review(s)."
                 : "Not on probation.";
 
-        var run = ConsecutivePasses(s);
-        var want = PassesFor(s);
-        var need = want - run;
-        return s.ProbationReviews.Count == 0
-            ? $"On probation. Report to the yard every {ReviewIntervalDays} days — {want} good reviews in a row clears it."
-            : $"On probation. {run} pass(es) in a row, {need} more to go.";
+        // The period, not the streak. Interim reviews still land every fortnight, but they are feedback
+        // on how it is going rather than the thing that ends it.
+        var left = ProbationPlanner.DaysLeft(s);
+        var days = s.Driver.Probation.DurationDays;
+        var attempt = s.Driver.Probation.Attempt >= 2 ? " This is the second look." : "";
+
+        if (left is not { } d)
+            return $"On probation — a {days}-day period, reviewed at your first home time after it ends.{attempt}";
+
+        return d <= 0
+            ? $"Probation served. The review that decides it happens at your next home time.{attempt}"
+            : $"On probation. {d:0.#} of {days} day(s) left; the review is taken at the first home time " +
+              $"after that.{attempt}";
     }
 
     /// <summary>
@@ -172,32 +179,59 @@ public static class Probation
         var run = ConsecutivePasses(s);
         review.PassesInARow = run;
 
-        if (review.Verdict == "Pass" && run >= want)
+        // ---- the verdict that actually decides it
+        //
+        // A streak is not a probationary period. Interim reviews carry on as feedback so a driver can
+        // see where they stand, but only the review AFTER the period is served clears anything — and
+        // that is the one this branch handles.
+        if (!ProbationPlanner.ReviewDue(s))
         {
-            var (metThresholds, shortfall) = MeetsCompanyThresholds(s);
-            if (metThresholds)
-            {
-                review.ClearedProbation = true;
-                review.NextStep = $"That is {want} in a row. Probation is done — you are a company driver. " +
-                                  "Your own home-time arrangement takes over from here.";
-            }
-            else
-            {
-                review.NextStep = $"That is {want} good reviews in a row, which is the hard part. " +
-                                  $"You are still short on the numbers though: {shortfall} Keep the run going and it will come.";
-            }
-        }
-        else if (review.Verdict == "Pass")
-        {
-            review.NextStep = $"{run} in a row. {want - run} more and you are off probation. " +
-                              $"Back in {ReviewIntervalDays} days.";
-        }
-        else
-        {
-            review.NextStep = $"The run resets — you need {want} in a row. Back in {ReviewIntervalDays} days. " +
-                              "This is not discipline and it is not on your safety record; it means the probation carries on.";
+            var left = ProbationPlanner.DaysLeft(s) ?? 0;
+            review.NextStep = review.Verdict == "Pass"
+                ? $"Nothing wrong here. {left:0.#} day(s) of the period left — the review that decides it is " +
+                  "taken at the first home time after that."
+                : $"Not a good period, and it goes on the record for the review at the end. {left:0.#} day(s) " +
+                  "left. This is not discipline; it is a warning shot while there is still time to fix it.";
+            return review;
         }
 
+        // The period is served. Two questions, kept apart on purpose: was the work done at all, and was
+        // it done well? A driver who parked for two months fails the first regardless of how clean the
+        // few loads they ran were.
+        var (workMet, workGaps) = ProbationPlanner.WorkDone(s);
+        var (metThresholds, shortfall) = MeetsCompanyThresholds(s);
+        var quality = review.Verdict == "Pass" && metThresholds;
+
+        if (workMet && quality)
+        {
+            review.ClearedProbation = true;
+            review.NextStep = $"That is the {s.Driver.Probation.DurationDays}-day period served and the review " +
+                              "passed. Probation is done — you are a company driver, and your own home-time " +
+                              "arrangement takes over from here.";
+            return review;
+        }
+
+        var why = new List<string>();
+        why.AddRange(workGaps);
+        if (!metThresholds) why.Add(shortfall);
+        if (review.Verdict != "Pass") why.Add("And this period's own review did not pass.");
+
+        if (s.Driver.Probation.Attempt < 2)
+        {
+            // One more look. Not a formality — the same review against the same bar, thirty days on.
+            s.Driver.Probation.Attempt = 2;
+            s.Driver.Probation.DurationDays += ProbationPlanner.SecondChanceDays;
+            review.NextStep =
+                $"The period is up and this does not clear it: {string.Join(" ", why)} " +
+                $"You get {ProbationPlanner.SecondChanceDays} more days and one more review. Pass that and you are " +
+                "a company driver. Do not, and we part company.";
+            return review;
+        }
+
+        // Second look failed. That is the job.
+        review.EndsEmployment = true;
+        review.NextStep = $"That was the second review and it does not clear either: {string.Join(" ", why)} " +
+                          "This is the end of it here.";
         return review;
     }
 

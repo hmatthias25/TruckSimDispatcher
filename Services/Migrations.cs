@@ -18,6 +18,8 @@ public static class Migrations
             return;
         }
 
+        MoveProbationOffTheStreak(s);
+        TakeBackPayForLoadsNobodyHauled(s);
         RetireTheCarHaulerNobodyCanBuy(s);
         NameTheTankOnTheYard(s);
         RebaseGameCalendar(s);
@@ -1405,6 +1407,104 @@ public static class Migrations
     /// Capacity and services follow the yard tier. Even the smallest yard fuels and parks a truck —
     /// a terminal that cannot do that is not a terminal — while a shop needs real square footage.
     /// </summary>
+    /// <summary>
+    /// Converts a probation running on "three good reviews in a row" to a period.
+    ///
+    /// The clock runs from where probation actually STARTED, not from today — a driver eighty days in
+    /// has served eighty days, and restarting them would be the migration taking three months off
+    /// somebody for the crime of updating the app.
+    ///
+    /// Reviews already filed stay as history. They were the gate; they are feedback now, and deleting
+    /// them would lose a record the driver earned.
+    /// </summary>
+    private static void MoveProbationOffTheStreak(AppState s)
+    {
+        if (!s.Driver.Probation.Active) return;
+        if (s.Driver.Probation.Attempt > 0 && s.Driver.Probation.DurationDays >= ProbationPlanner.RookieDays
+            && s.Driver.Probation.PassesRequired == 0)
+            return;                                    // already on the period model
+
+        var plan = s.Driver.Probation;
+        plan.Attempt = Math.Max(1, plan.Attempt);
+
+        // Anything short of the standard period came off the old ternaries, which shortened the days
+        // while leaving the passes at three. Put it back to a real period.
+        if (plan.DurationDays < 30) plan.DurationDays = ProbationPlanner.RookieDays;
+
+        // Scale the work requirements to the period, which the old model never did.
+        plan.RequiredLoads = Math.Max(4, (int)Math.Round(plan.DurationDays / 7.0));
+        plan.RequiredMiles = Math.Round(plan.DurationDays * 220.0, 0);
+
+        // The streak is not the gate any more. Kept at zero rather than deleted so the field reads as
+        // "not used" rather than as a requirement of three that nothing enforces.
+        plan.PassesRequired = 0;
+
+        if (string.IsNullOrWhiteSpace(plan.StartedGameDate))
+            plan.StartedGameDate = string.IsNullOrWhiteSpace(s.Driver.HiredGameDate)
+                ? s.Status.GameTime : s.Driver.HiredGameDate;
+
+        var left = ProbationPlanner.DaysLeft(s);
+        plan.Notes = $"{plan.DurationDays}-day probation, reviewed at your first home time after it ends.";
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "career",
+            GameTime = s.Status.GameTime,
+            Message = left is { } d && d <= 0
+                ? $"Probation is a {plan.DurationDays}-day period now rather than a run of reviews, and yours is " +
+                  "already served — the review that decides it happens at your next home time."
+                : $"Probation is a {plan.DurationDays}-day period now rather than a run of reviews. " +
+                  $"Yours started {GameClock.Pretty(plan.StartedGameDate)}, so there are about " +
+                  $"{Math.Max(0, left ?? 0):0.#} day(s) left. The reviews you have already had stay on the record.",
+        });
+    }
+
+    /// <summary>
+    /// Strips linehaul from cancelled loads that were paid as though they ran.
+    ///
+    /// Cancelling called ComputeTripPay, which falls through to DispatchedMiles when there are no
+    /// ActualMiles — so a cancelled load paid the full planned distance at the loaded rate. That money
+    /// is sitting in UnsettledPay waiting to be handed over for real.
+    ///
+    /// Only unsettled trips are touched. A settlement already issued is the driver's pay history and
+    /// not something to reach back into — see the same reasoning in Changeover.
+    /// </summary>
+    private static void TakeBackPayForLoadsNobodyHauled(AppState s)
+    {
+        var wrong = s.Trips
+            .Where(t => t.Status == "Cancelled"
+                        && string.IsNullOrWhiteSpace(t.SettlementNumber)
+                        && (t.Pay.LinehaulPay > 0 || t.Pay.DeadheadPay > 0 || t.Pay.DivisionPremium > 0))
+            .ToList();
+        if (wrong.Count == 0) return;
+
+        var taken = 0m;
+        foreach (var t in wrong)
+        {
+            // The breakdown day stays: that one is real, and it is the only part that was.
+            var keep = t.Pay.BreakdownPay;
+            var had = t.Pay.Total;
+            t.Pay = new PayBreakdown();
+            if (keep > 0)
+            {
+                t.Pay.BreakdownPay = keep;
+                t.Pay.Total = keep;
+                t.Pay.Lines.Add($"Cancelled by the company — one day of breakdown/detention pay = ${keep:N2}.");
+            }
+            taken += had - t.Pay.Total;
+        }
+
+        s.Driver.UnsettledPay = Math.Round(Math.Max(0, s.Driver.UnsettledPay - taken), 2);
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "payroll",
+            GameTime = s.Status.GameTime,
+            Message = $"${taken:N2} taken back off {wrong.Count} cancelled load(s) — they were paid the full " +
+                      "loaded rate for freight that was never hauled. Empty miles still come back on the " +
+                      "next dispatch at the empty rate.",
+        });
+    }
+
     /// <summary>
     /// Takes the car carrier off the books, because there has never been one to take off them in game.
     ///

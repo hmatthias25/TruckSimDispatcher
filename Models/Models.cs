@@ -686,6 +686,15 @@ public class ProbationPlan
     public int PassesRequired { get; set; } = 3;
     public string StartedGameDate { get; set; } = "";
     public string ClearedGameDate { get; set; } = "";
+
+    /// <summary>
+    /// Which look this is. 1 is the standard period; 2 is the thirty days granted after a failed first
+    /// review. There is no third — failing the second ends the job.
+    /// </summary>
+    public int Attempt { get; set; } = 1;
+
+    /// <summary>Days added for preventables during the period, so the driver can see what cost them.</summary>
+    public double ExtendedDays { get; set; }
     public string Notes { get; set; } = "";
 }
 
@@ -1706,6 +1715,17 @@ public class Incident
     /// changes the deductible and the record.
     /// </summary>
     public double TruckDamagePctAfter { get; set; } = -1;
+
+    /// <summary>
+    /// Damage the event actually caused, in points — <b>after minus before</b>.
+    ///
+    /// The record had only damage AFTER, which says what the truck is worth fixing and nothing about
+    /// what happened. A driver at 24% who scrapes a pole to 25% and a driver who rolls a clean truck to
+    /// 25% were the same incident on the file, and severity was whatever the caller happened to type.
+    /// This is the figure the consequence is scaled on. Negative means not reported.
+    /// </summary>
+    public double DamageIncurredPct { get; set; } = -1;
+
     /// <summary>
     /// Clean loads that must pass before this stops counting against hiring. Scaled by severity —
     /// a scraped mirror is not a rollover. It stays on the record for ever either way; ageing off
@@ -2011,6 +2031,15 @@ public class FleetReport
 /// </summary>
 public class ProbationReview
 {
+    /// <summary>
+    /// True where this review ended the job — the second look after a failed period, failed too.
+    ///
+    /// The periodic review has carried this for a while; probation could not end a career at all, which
+    /// was fine when it was a streak nobody could fail permanently and wrong once it became a period
+    /// with a last chance in it.
+    /// </summary>
+    public bool EndsEmployment { get; set; }
+
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string Number { get; set; } = "";
     public int ReviewNumber { get; set; }
@@ -2688,6 +2717,23 @@ public class MaintenanceThresholds
     /// whose whole set is idling does not have a bad trailer, it has one trailer too many.
     /// </summary>
     public double TrailerSurplusPct { get; set; } = 20;
+
+    /// <summary>
+    /// Damage below which a preventable is logged and nothing follows.
+    ///
+    /// Traffic touches a truck and a kerb takes paint. A carrier that disciplined for every point would
+    /// have no drivers, and an app that did it would teach the player its safety record means nothing.
+    /// </summary>
+    public double IncidentNoiseFloorPct { get; set; } = 1;
+
+    /// <summary>Damage up to which an event is Minor — real, but it takes several before it bites.</summary>
+    public double IncidentMinorPct { get; set; } = 5;
+
+    /// <summary>Damage at which an event skips the early rungs. A serious hit, not a scrape.</summary>
+    public double IncidentSeriousPct { get; set; } = 15;
+
+    /// <summary>Damage at which one event can end the job. A rollover or a pile-up.</summary>
+    public double IncidentMajorPct { get; set; } = 25;
 
     /// <summary>
     /// How far ahead another trailer type has to be, in utilisation points, before operations replaces a

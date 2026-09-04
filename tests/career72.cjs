@@ -104,11 +104,14 @@ async function runLoad(destCity, destState) {
   ok('and it wants three of them', row && Number(row.required) === 3, `${row?.required}`);
   ok('with none sat yet, it is not met', row && !row.met, `met=${row?.met}`);
 
-  head('2. #72 Numbers alone do not clear it');
-  // Enough loads and miles to satisfy every threshold except the reviews.
-  for (let i = 0; i < 11; i++) {
+  head('2. #72/#169 Numbers alone do not clear it');
+  // Enough loads and miles to satisfy every threshold. Under the period model the point is sharper
+  // than it was: you can meet every number on the plan and still not be off probation, because what
+  // clears it is the period being served and reviewed. 34 loads at 600 mi covers the 90-day
+  // requirement of 13 loads and 19,800 miles with room.
+  for (let i = 0; i < 34; i++) {
     await runLoad(i % 2 ? 'Tulsa' : 'Oklahoma City', 'OK');
-    if (i === 3 || i === 7) await goYard();     // in for review, and the clock starts over
+    if (i % 4 === 3) await goYard();            // in for review, and home time does not go overdue
   }
   S = un(await api('/bootstrap'));
   const thresholdRows = (career().probationProgress || []).filter((r) => !/review/i.test(r.label));
@@ -141,11 +144,15 @@ async function runLoad(destCity, destState) {
   S = un(await api('/bootstrap'));
   ok('and the rate is untouched', S.driver.pay.loadedCpm === startLoaded, `$${S.driver.pay.loadedCpm}`);
 
-  head('6. #73 Three good reviews, and it clears itself');
+  head('6. #73/#169 The period is served, and it clears itself');
+  // Probation is a 90-day period now, not three passes in a row. The loop still does the work — the
+  // requirements are scaled to the period and cannot be sat out — but the clock has to run out too,
+  // and the verdict lands at the first home time after that.
   let cleared = null;
-  for (let period = 1; period <= 3 && !cleared; period++) {
+  for (let period = 1; period <= 14 && !cleared; period++) {
     for (let i = 0; i < 4; i++) await runLoad(i % 2 ? 'Tulsa' : 'Oklahoma City', 'OK');
     day += 8;                                   // a review needs a period to review
+    // Past day 90 the verdict is owed; before it, these are interim reviews and clear nothing.
     const r = await report(hCity, hState, day, 'Terminal');
     const revs = (S.views.probation?.reviews) || [];
     console.log(`     period ${period}: ${revs.length} review(s), latest ${revs[0]?.verdict}, ` +
@@ -156,7 +163,8 @@ async function runLoad(destCity, destState) {
     await report('Tulsa', 'OK', day);           // leave, so the next arrival is an arrival
   }
 
-  ok('probation cleared on its own', !!cleared, cleared ? cleared.headline : '(never cleared)');
+  ok('probation cleared on its own once the period was served', !!cleared,
+    cleared ? cleared.headline : `(never cleared — day ${day}, ${S.views.probation?.daysLeft?.toFixed(1)} left)`);
   if (cleared) {
     ok('it is announced as a probation clearing', cleared.kind === 'probation', cleared.kind);
     ok('the driver is told the new rank', /Company Driver/i.test(cleared.rankTitle), cleared.rankTitle);

@@ -1624,16 +1624,24 @@ public static class TripService
             Detail = $"Cancelled ({trip.FaultAttribution} fault): {reason}"
         });
 
-        // Driver still gets paid for miles actually run on a company-caused cancellation.
-        if (trip.FaultAttribution != "Driver")
+        // A cancelled load pays NO linehaul, whatever the fault. This used to call ComputeTripPay under
+        // a comment saying "paid for miles actually run" — but a cancelled trip has no ActualMiles, so
+        // that falls through to DispatchedMiles and pays the whole planned distance at the loaded rate
+        // for a load nobody hauled.
+        //
+        // The miles genuinely driven are not lost: Repositioning picks them up against the next
+        // dispatch and pays them at the empty rate, which is the right rate for running without freight.
+        trip.Pay = new PayBreakdown();
+
+        // What does survive is the day. A company-caused cancellation had the driver sitting there
+        // because dispatch changed its mind, and that costs them a day whoever's fault it was not.
+        if (trip.FaultAttribution != "Driver" && trip.Kind == "Freight" && s.Driver.Pay.BreakdownPerDay > 0)
         {
-            trip.Pay = PayEngine.ComputeTripPay(s, trip);
-            if (trip.Pay.Total <= 0 && trip.Kind == "Freight")
-            {
-                trip.Pay.BreakdownPay = s.Driver.Pay.BreakdownPerDay;
-                trip.Pay.Total = s.Driver.Pay.BreakdownPerDay;
-                trip.Pay.Lines.Add($"Company-caused cancellation — one day of breakdown/detention pay = ${trip.Pay.Total:N2}");
-            }
+            trip.Pay.BreakdownPay = s.Driver.Pay.BreakdownPerDay;
+            trip.Pay.Total = s.Driver.Pay.BreakdownPerDay;
+            trip.Pay.Lines.Add(
+                $"Cancelled by the company — no linehaul on a load that was not run, but one day of " +
+                $"breakdown/detention pay = ${trip.Pay.Total:N2}. Empty miles come back on the next dispatch.");
             s.Driver.UnsettledPay = Math.Round(s.Driver.UnsettledPay + trip.Pay.Total, 2);
         }
 

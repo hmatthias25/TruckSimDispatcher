@@ -66,6 +66,7 @@ PLAYER_TITLES = {
     "The audit, and whose fault it was",
     # the company
     "Home time",
+    "Probation is a period, not a streak",
     "Re-rigged on the road",
     "Arriving, and what you are told when you do",
     "Choosing and changing your arrangement",

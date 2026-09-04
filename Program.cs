@@ -1748,8 +1748,19 @@ app.MapPost("/api/career/trip-length", (TripLengthRequest req) => Results.Ok(sto
 
     s.Application ??= new DriverApplication();
     s.Application.PreferredTripLength = pref;
+
+    // Probation asks for loads and miles in the shape the driver actually runs — many short deliveries
+    // or fewer long ones — so changing the shape has to move the bar with it. Otherwise a driver who
+    // switches to local work mid-period is held to an over-the-road mileage they are no longer running,
+    // which is the app punishing them for a choice it offered.
+    ProbationPlanner.Retarget(s);
+
     store.Log(s, "career", $"Trip-length preference changed to {pref}. Dispatch will weigh the board on it " +
-                           "from the next load.");
+                           "from the next load" +
+                           (Probation.IsOn(s)
+                               ? $", and your probation targets move with it — now {s.Driver.Probation.RequiredLoads} " +
+                                 $"load(s) and {s.Driver.Probation.RequiredMiles:N0} mi."
+                               : "."));
     return Snapshot(s);
 })));
 
@@ -2130,6 +2141,15 @@ object Snapshot(AppState? given = null)
             probation = new
             {
                 on = Probation.IsOn(s),
+                // The period, and when the verdict lands. A driver on no fixed home-time arrangement has
+                // to know to ask for one or the review never happens at all.
+                daysLeft = ProbationPlanner.DaysLeft(s),
+                endsOn = ProbationPlanner.EndsOn(s) is { } e ? GameClock.Format(e) : "",
+                reviewDue = ProbationPlanner.ReviewDue(s),
+                notice = ProbationPlanner.Notice(s) ?? "",
+                attempt = s.Driver.Probation.Attempt,
+                durationDays = s.Driver.Probation.DurationDays,
+                workDone = ProbationPlanner.WorkDone(s).Shortfall,
                 standing = Probation.Standing(s),
                 intervalDays = Probation.ReviewIntervalDays,
                 passesNeeded = Probation.PassesFor(s),
