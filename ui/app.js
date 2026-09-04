@@ -3563,7 +3563,10 @@ function fleetOpsHtml() {
         ${f.due?.isDue ? `<div class="callout warn"><p>${esc(f.due.message)}</p></div>`
           : f.due?.nextDueGameTime ? `<p class="hint">Next report due ${gt(f.due.nextDueGameTime)}.</p>` : ''}
         <div class="grid2">
-          ${dayTimeInput('fr-start', '', 'Period start (game)')}
+          ${/* Where the last report left off — or when the first driver was taken on, for the first
+                one. Blank fell back to TODAY, so the form opened with a period covering no time and the
+                driver had to remember their own filing history and type it back in. */ ''}
+          ${dayTimeInput('fr-start', f.due?.lastPeriodEnd || '', 'Period start (game)')}
           ${dayTimeInput('fr-end', S.status.gameTime, 'Period end (game)')}
         </div>
         <div class="tablewrap"><table>
@@ -3824,6 +3827,10 @@ function stubTableHtml(st) {
     ${st.accessorials ? row('Accessorials', st.accessorials) : ''}
     ${st.onTimeBonus ? row('On-time bonus', st.onTimeBonus) : ''}
     ${st.safetyBonus ? row('Safety bonus', st.safetyBonus) : ''}
+    ${st.fuelEfficiencyBonus ? row(`Fuel economy bonus${st.mpg
+      ? ` (${num(st.mpg, 2)} mpg vs ${num(st.ratedMpg, 1)} rated)` : ''}`, st.fuelEfficiencyBonus) : ''}
+    ${st.fuelBuyingBonus ? row(`Fuel buying bonus${st.fuelSaved
+      ? ` (${money(st.fuelSaved)} saved)` : ''}`, st.fuelBuyingBonus) : ''}
     ${st.guaranteeMakeup ? row('Weekly guarantee make-up', st.guaranteeMakeup) : ''}
     ${st.chargebacks ? row('Chargebacks', -st.chargebacks, 'color:var(--red)') : ''}
     <tr><td><b>GROSS PAY</b></td><td class="num"><b>${money(b.gross)}</b></td></tr>

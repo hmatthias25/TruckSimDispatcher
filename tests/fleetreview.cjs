@@ -74,6 +74,14 @@ const trailerOf = async (name) =>
   const vance = drivers.find((d) => d.name === 'R. Vance');
   const kroll = drivers.find((d) => d.name === 'D. Kroll');
 
+  head('0. The next report starts where the last one ended');
+  // The form used to open with a blank period start, which dayTimeInput falls back to TODAY for — so
+  // every report covered no time at all unless the driver remembered their own filing history and
+  // typed it back in. The date was already computed for the due check; it is prefilled from it now.
+  const due0 = (await api('/fleetops')).summary?.due || (await api('/fleetops')).due;
+  ok('with nothing filed yet, it falls back to when the first driver was taken on',
+    !!due0.lastPeriodEnd, due0.lastPeriodEnd || '(blank — the form would default to today)');
+
   head('1. Picking a trailer puts the driver on it');
   await setOdds(0);
   await place(15);
@@ -91,6 +99,10 @@ const trailerOf = async (name) =>
   ok('and Kroll on his', await trailerOf('D. Kroll') === 'T802', await trailerOf('D. Kroll'));
   ok('the report says so', r.findings.some((f) => /R\. Vance is now on trailer/.test(f)),
     r.findings.filter((f) => /trailer/i.test(f)).join(' | '));
+
+  const due1 = (await api('/fleetops')).summary?.due || (await api('/fleetops')).due;
+  ok('and the next period now starts where this one ended', due1.lastPeriodEnd === iso(15),
+    `${due1.lastPeriodEnd} against the ${iso(15)} just filed`);
 
   head('2. Mileage comes off the odometer, not out of the player');
   // 304,000 against the 300,000 on file is 4,000 miles for the period. Nothing typed it in.
