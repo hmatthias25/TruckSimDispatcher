@@ -91,32 +91,80 @@ async function report(day) {
     find(await market(), 'MEL').divisionYears === 0,
     `${find(await market(), 'MEL').divisionYears} yr on flatbed`);
 
-  head('4. The board brief arrives BEFORE the driver reads the board');
+  head('4. On the Cargo Market the brief says nothing, because the game already filtered');
+  // Reported from play: "the cargo jobs ONLY shows cargos I can run with the trailer assigned to me".
+  // The company settled the division the day it hooked you to a reefer, so every listing resolves to
+  // that one division and this check cannot fail. Saying it anyway is noise about a choice the driver
+  // does not have.
   await api('/board/clear', 'POST', {});
-  const before = ((await api('/board/evaluate')).dispatchNotes || []).join(' | ');
-  ok('an empty board still gets the brief', /runs/i.test(before), before.slice(0, 200) || '(silent)');
-  ok('it names the divisions', /reefer/i.test(before), before.slice(0, 200));
-  ok('and translates them into what is printed on an ATS listing',
-    /dry van|curtainside/i.test(before), before.slice(0, 220));
-  ok('and says not to bother writing the rest down',
-    /no point writing it down|cannot authorise/i.test(before), before.slice(-130));
+  const cargoEmpty = (await api('/board/evaluate')).dispatchNotes || [];
+  ok('nothing about divisions on an empty Cargo Market board',
+    !cargoEmpty.some((x) => /runs Reefer|off-division|Freight Market will show/i.test(x)),
+    cargoEmpty.find((x) => /division/i.test(x))?.slice(0, 120) || `${cargoEmpty.length} note(s), none of them this`);
 
-  head('4b. And once there is a board, how much of it we can use');
+  await api('/board/add', 'POST', {
+    cargo: 'Steel Coils', trailerType: 'Flatbed',
+    originCity: 'Kansas City', originState: 'MO', destCity: 'Topeka', destState: 'KS',
+    loadedMiles: 140, deadheadMiles: 10, gameRevenue: 900, deadlineHours: 30, weightLbs: 42000,
+  });
+  const cargoMixed = (await api('/board/evaluate')).dispatchNotes || [];
+  ok('nor when a load is typed in that the trailer could not pull',
+    !cargoMixed.some((x) => /off-division|none of this board/i.test(x)),
+    cargoMixed.find((x) => /off-division/i.test(x))?.slice(0, 120) || 'silent, as it should be');
+
+  head('5. On the Freight Market it is the real gate');
+  // Drop and hook: no trailer of your own, so ATS offers every trailer on the lot and the driver can
+  // genuinely hook something the company does not run. This is the only place the brief is worth
+  // anything. Reached the way drophook99 reaches it — the arrangement comes through an equipment order.
+  await api('/board/clear', 'POST', {});
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+  for (const [city, st, day] of [['Denver', 'CO', 205], ['Phoenix', 'AZ', 208],
+    ['Las Vegas', 'NV', 211], ['Salt Lake City', 'UT', 214], ['Kansas City', 'MO', 217]]) {
+    await api('/status', 'POST', {
+      locationCity: city, locationState: st, locationKind: 'TruckStop', gameTime: at(day),
+      fuelPct: 80, atsOdometer: 50000, truckDamagePct: 3, trailerDamagePct: 2,
+      dutyStatus: 'OffDuty', atsBankBalance: 80000,
+    });
+  }
+  const ceiling = (await api('/bootstrap')).views.career.ceilingRank;
+  await api('/career/promote', 'POST', { rank: ceiling, force: true, note: 'fixture' });
+
+  const offers = await api('/career/dedicated/offers');
+  ok('there is an account to put the driver on', (offers.offers || []).length > 0,
+    offers.blocked || `${(offers.offers || []).length} on offer`);
+  const assigned = await api('/career/dedicated/assign', 'POST', { company: offers.offers[0].name });
+  await api('/status', 'POST', {
+    locationCity: 'Kansas City', locationState: 'MO', locationKind: 'Terminal', gameTime: at(220),
+    fuelPct: 80, atsOdometer: 50000, truckDamagePct: 3, trailerDamagePct: 2,
+    dutyStatus: 'OffDuty', atsBankBalance: 80000,
+  });
+  await api(`/equipment/orders/${assigned.order.number}/complete`, 'POST', {});
+  ok('the driver is on drop and hook',
+    (await api('/bootstrap')).views.dropHook?.on === true, 'freight market');
+
+  const brief = ((await api('/board/evaluate')).dispatchNotes || [])
+    .find((x) => /Freight Market will show/i.test(x));
+  ok('now the brief appears', !!brief, brief?.slice(0, 190) || '(silent)');
+  ok('it warns that every trailer on the lot is on offer', /every trailer on the lot/i.test(brief || ''),
+    brief?.slice(0, 120) || '');
+  ok('it names what we run', /reefer/i.test(brief || ''), brief?.slice(0, 160) || '');
+  ok('and says to hook one of those', /hook one of those/i.test(brief || ''),
+    brief?.slice(-110) || '');
+
+  head('5b. And a trailer the company does not run is called out up front');
   await api('/board/add', 'POST', {
     cargo: 'Steel Coils', trailerType: 'Flatbed',
     originCity: 'Kansas City', originState: 'MO', destCity: 'Topeka', destState: 'KS',
     loadedMiles: 140, deadheadMiles: 10, gameRevenue: 900, deadlineHours: 30, weightLbs: 42000,
   });
   const notes = (await api('/board/evaluate')).dispatchNotes || [];
-  // The note itself, not the joined blob — a board carries several and matching anywhere in the
-  // concatenation would pass on somebody else's sentence.
-  const offDivision = notes.find((n) => /none of this board|off-division/i.test(n));
-  ok('a flatbed load at a reefer carrier is called out up front', !!offDivision,
+  const offDivision = notes.find((x) => /none of this board|off-division/i.test(x));
+  ok('a flatbed on a reefer carrier board is refused before it is read', !!offDivision,
     offDivision?.slice(0, 200) || `no such note among ${notes.length}`);
   ok('and it names what we do run instead', /reefer/i.test(offDivision || ''),
     offDivision?.slice(-110) || '');
 
-  head('5. Specialised freight buys a real orientation, not a sentence about one');
+  head('6. Specialised freight buys a real orientation, not a sentence about one');
   ok('Bennett is flagged specialised', find(m0, 'BEN').specialized === true);
   const offer = un(await api('/onboarding/hire', 'POST',
     { application: app, force: true, code: 'BEN', gameTime: at(210) }));

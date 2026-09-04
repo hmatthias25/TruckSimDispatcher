@@ -11,6 +11,21 @@ namespace TruckSimDispatcher.Services;
 /// and only then found out their company does not haul that. That is a checker, not a dispatcher. The
 /// slot to say it up front is the same one <see cref="Dedicated.BoardNote"/> uses to say which loads on
 /// a board belong to the account.
+///
+/// <b>This is about the Freight Market only.</b> ATS has two, and they put a different question to the
+/// driver:
+///
+///   * <b>Cargo Market</b> — you have a trailer, and the game only lists cargo that trailer can pull.
+///     The company settled the division when it assigned the trailer, so every listing resolves to that
+///     one division and this check cannot fail. Telling a driver hooked to a reefer that we run reefer
+///     and dry van is noise about a choice they do not have.
+///   * <b>Freight Market</b> — drop and hook, so the driver pulls whatever the shipper has and every
+///     trailer on the lot is on offer. This is the only place they can hook something the company does
+///     not run, and the only place the brief is worth anything.
+///
+/// <see cref="DispatchEngine.DivisionFor"/> already knew the difference. The first cut of this class did
+/// not, read the listing's trailer type on both markets, and so gave a second and disagreeing answer to
+/// a question the engine had already answered.
 /// </summary>
 public static class CompanyFreight
 {
@@ -59,16 +74,21 @@ public static class CompanyFreight
     /// </summary>
     public static string? BoardNote(AppState s)
     {
+        // Silent on the Cargo Market. The game only lists what the assigned trailer can pull, so the
+        // division was decided the day that trailer was hooked and there is nothing here to warn about.
+        if (!DropHook.Active(s)) return null;
+
         var divisions = Divisions(s);
         if (divisions.Count == 0) return null;
 
         var kinds = divisions.SelectMany(TrailersFor).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var look = kinds.Count == 0 ? "" : $" On the board that is {Join(kinds)}.";
+        var look = kinds.Count == 0 ? "" : $" That is {Join(kinds)}.";
 
         // ---- nothing entered yet: this is the moment the advice is worth anything
         if (s.Board.Count == 0)
-            return $"{s.Company.Name} runs {Join(divisions)}.{look} Anything else on that board is " +
-                   "somebody else's freight and I cannot authorise it, so there is no point writing it down.";
+            return $"The Freight Market will show you every trailer on the lot. {s.Company.Name} runs " +
+                   $"{Join(divisions)}.{look} Hook one of those — anything else is somebody else's " +
+                   "freight and I cannot authorise it, so there is no point writing it down.";
 
         // ---- something entered: say how much of it we can actually use
         var ours = s.Board.Count(b => Runs(s, b));
@@ -82,13 +102,25 @@ public static class CompanyFreight
               $"I will not authorise it — we are {Join(divisions)}.";
     }
 
-    /// <summary>Whether a listing is freight this company would move at all.</summary>
+    /// <summary>
+    /// Whether a listing is freight this company would move at all.
+    ///
+    /// Through <see cref="DispatchEngine.DivisionFor"/> rather than off the listing directly, so this
+    /// and the dispatch refusal cannot disagree. Read straight off <c>load.TrailerType</c> it answered
+    /// the Cargo Market wrongly: there the division comes from the trailer the company assigned, not
+    /// from whatever the driver typed in the trailer column.
+    /// </summary>
     public static bool Runs(AppState s, BoardLoad load)
     {
         var divisions = Divisions(s);
         if (divisions.Count == 0) return true;
 
-        var division = DispatchEngine.DivisionForTrailer(load.TrailerType);
+        // A drop-and-hook listing with no trailer type recorded is an unknown, not a violation. Judging
+        // it would fail every blank row at a carrier that does not happen to run dry van, which is what
+        // DivisionFor falls back to.
+        if (DropHook.Active(s) && string.IsNullOrWhiteSpace(load.TrailerType)) return true;
+
+        var division = DispatchEngine.DivisionFor(load, DispatchEngine.AssignedTrailer(s));
         return string.IsNullOrWhiteSpace(division)
                || divisions.Any(d => d.Equals(division, StringComparison.OrdinalIgnoreCase));
     }
