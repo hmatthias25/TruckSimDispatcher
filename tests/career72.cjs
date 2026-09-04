@@ -98,15 +98,16 @@ async function runLoad(destCity, destState) {
   // takes an overdue driver materially further from the yard. Amarillo is 274 mi further out than OKC
   // and stopped being bookable halfway through; Tulsa is inside the tolerance in both directions.
   await report('Tulsa', 'OK', day);
-  // The reviews are still listed, but as a fact rather than a bar. A run of three stopped being the
-  // gate when probation became a period (#169), and the panel went on demanding it — half filled and
-  // unmeetable — beside a standing line already counting the period down (#176).
+  // A run of three stopped being the gate when probation became a period (#169), and the panel went on
+  // demanding it — half filled and unmeetable — beside a standing line already counting the period down
+  // (#176). It is off the list entirely now (#178): the reviews are rendered as verdict cards under
+  // this panel, and a count of them among the requirements only asked why a retired gate was still
+  // sitting with the live ones.
   const row = progressRow('review');
-  ok('probation progress still reports the reviews', !!row,
-    row ? `${row.label}: ${row.current}` : '(no such row)');
-  ok('but not as a requirement of three', row && !row.required,
-    row?.required === '' ? 'no threshold, as it should be' : `required=${row?.required}`);
-  ok('it is marked informational', row && row.informational === true, `${row?.informational}`);
+  ok('the reviews are not a probation requirement any more', !row,
+    row ? `still listed: ${row.label} ${row.current}/${row.required}` : 'off the list');
+  ok('but they are still on file to read', (S.views.probation?.reviews || []).length >= 0,
+    `${(S.views.probation?.reviews || []).length} review(s) recorded`);
 
   const periodRow = progressRow('period served');
   ok('and the period IS a listed requirement', !!periodRow,
@@ -126,7 +127,7 @@ async function runLoad(destCity, destState) {
   // The numbers only. The period is a requirement too and is deliberately not one of these — the
   // whole point of this section is that every number can be green while probation still has weeks left.
   const thresholdRows = (career().probationProgress || [])
-    .filter((r) => !/review|period served/i.test(r.label));
+    .filter((r) => !/period served/i.test(r.label));
   ok('every other threshold is met', thresholdRows.every((r) => r.met),
     thresholdRows.filter((r) => !r.met).map((r) => r.label).join(', ') || 'all met');
   ok('but probation is NOT reported as met', career().probationMet === false,

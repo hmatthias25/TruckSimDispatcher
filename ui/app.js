@@ -4802,17 +4802,13 @@ function viewCareer() {
   const c = S.views.career, st = c.stats;
   // Judge incidents against the allowance in force, so the tile agrees with the requirement below it.
   const faultMax = c.probationActive ? S.driver.probation.maxDriverFaultIncidents : 0;
-  // An informational row is a figure, not a bar. No threshold, no fill, no tick — drawing one gave
-  // "On-time service 100% / 0% ✓", which reads as a requirement of nought per cent.
-  const prog = (rows) => rows.map((r) => (r.informational
-    ? `<div class="progress-row">
-    <span class="pl">${esc(r.label)}</span>
-    <span class="pb"></span>
-    <span class="pv sub">${esc(r.current)}</span></div>`
-    : `<div class="progress-row">
+  // Every row here is a requirement with a bar. The informational variant is gone: an empty .pb keeps
+  // its own dark track and border, so a row with nothing to fill read as a bar at zero — failed, on a
+  // panel where everything else was green.
+  const prog = (rows) => rows.map((r) => `<div class="progress-row">
     <span class="pl">${esc(r.label)}</span>
     <span class="pb ${r.met ? 'done' : ''}"><i style="width:${r.pct}%"></i></span>
-    <span class="pv">${esc(r.current)} / ${esc(r.required)} ${r.met ? '✓' : ''}</span></div>`)).join('');
+    <span class="pv">${esc(r.current)} / ${esc(r.required)} ${r.met ? '✓' : ''}</span></div>`).join('');
 
   const chg = S.views.changeover;
 

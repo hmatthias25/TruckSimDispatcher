@@ -204,13 +204,21 @@ async function incident(o) {
   ok('nothing is against the driver yet', lateRow && Number(lateRow.current) === 0,
     lateRow ? `${lateRow.current}` : '');
 
+  // The raw service figure is NOT on this panel. It counts every late load however it happened, which
+  // is not what the period judges, and a figure that is not a requirement has no business on a list of
+  // requirements — it read as an unfilled bar, which is worse than not showing it (#178). It is still
+  // in front of the driver on the same tab, as a real gate with a real bar, on the promotion card.
   const service = (await rows()).find((r) => /on-time service/i.test(r.label || ''));
-  ok('the raw service figure is still shown, as information', !!service,
-    service ? `${service.label}: ${service.current}` : '(missing)');
-  ok('and is marked as not being the bar', service?.informational === true,
-    `informational=${service?.informational}`);
-  ok('so it carries no threshold to clear', !service?.required,
-    service?.required === '' ? 'no threshold' : `required=${service?.required}`);
+  ok('the all-causes service figure is not a probation requirement', !service,
+    service ? `still listed: ${service.label}` : 'off the list');
+
+  const promo = (await api('/bootstrap')).views.career?.nextRankProgress || [];
+  ok('and it is still shown where it IS a gate', promo.some((r) => /on-time/i.test(r.label || '')),
+    promo.map((r) => r.label).join(', ') || '(no promotion rows)');
+
+  ok('every row left on the probation panel carries a threshold',
+    (await rows()).every((r) => String(r.required || '').length > 0),
+    (await rows()).filter((r) => !String(r.required || '').length).map((r) => r.label).join(', ') || 'all of them');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

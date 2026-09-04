@@ -683,17 +683,6 @@ public class RequirementProgress
     public string Required { get; set; } = "";
     public bool Met { get; set; }
     public double Pct { get; set; }
-
-    /// <summary>
-    /// A figure worth seeing that is not a bar to clear. Rendered as a value on its own — no threshold,
-    /// no progress bar, no tick — and skipped when working out whether the set is met.
-    ///
-    /// The service percentage is the case that needed it: it counts every late load however it
-    /// happened, which is right for a customer and wrong as a judgement about the driver, so it belongs
-    /// beside the gate rather than being one. Put through the requirement builders it came out as
-    /// "100% / 0% ✓", a fact wearing a requirement's clothes.
-    /// </summary>
-    public bool Informational { get; set; }
 }
 
 /// <summary>
@@ -874,21 +863,21 @@ public static class CareerService
             review.ProbationProgress.Add(ReqMax(
                 $"Driver-fault late, last {SafetyService.LateStrikeWindow} loads",
                 SafetyService.LateStrikes(s), p.MaxLateStrikes - 1));
-            review.ProbationProgress.Add(ReqInfo("On-time service, all causes",
-                $"{stats.OnTimePct:0.#}%"));
             review.ProbationProgress.Add(ReqMax("Avg damage per trip", stats.AvgDamagePerTrip, p.MaxAvgDamagePct, "0.##", "%"));
             review.ProbationProgress.Add(ReqMax("Driver-fault incidents", stats.DriverFaultIncidents, p.MaxDriverFaultIncidents));
 
-            // Reviews are feedback on how the period is going, not the thing that ends it. Listed as a
-            // fact rather than a bar: as a requirement of three it sat here half filled and unmeetable
-            // next to a standing line already counting the period down, telling the driver two
-            // different stories about the same probation.
+            // Reviews are feedback on how the period is going, not the thing that ends it — so they are
+            // not on a list of things that end it. They are rendered as verdict cards directly under
+            // this panel, where the reasoning is, and a count of them here only ever raised the question
+            // of why the thing that stopped being a gate was still sitting among the gates.
+            //
+            // A plan still carrying a real streak requirement is honoured, because that IS a gate.
             var passes = Probation.PassesFor(s);
-            review.ProbationProgress.Add(passes > 0
-                ? Req("Good reviews in a row", Probation.ConsecutivePasses(s), passes)
-                : ReqInfo("Good reviews behind you", $"{Probation.ConsecutivePasses(s)}"));
+            if (passes > 0)
+                review.ProbationProgress.Add(
+                    Req("Good reviews in a row", Probation.ConsecutivePasses(s), passes));
 
-            review.ProbationMet = review.ProbationProgress.Where(r => !r.Informational).All(r => r.Met);
+            review.ProbationMet = review.ProbationProgress.All(r => r.Met);
 
             review.Findings.Add(review.ProbationMet
                 ? "Probation is served — the numbers are there and the reviews are behind you."
@@ -1522,17 +1511,6 @@ public static class CareerService
             Pct = required > 0 ? Math.Round(Math.Clamp(current / required, 0, 1) * 100, 0) : 100
         };
     }
-
-    /// <summary>A figure shown for information. Not a bar, and not counted when deciding "met".</summary>
-    private static RequirementProgress ReqInfo(string label, string value) => new()
-    {
-        Label = label,
-        Current = value,
-        Required = "",
-        Met = true,
-        Pct = 100,
-        Informational = true,
-    };
 
     private static RequirementProgress ReqMax(string label, double current, double max, string fmt = "0.#", string suffix = "")
     {
