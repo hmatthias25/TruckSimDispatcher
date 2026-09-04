@@ -232,33 +232,31 @@ public static class ProbationPlanner
                           && (bar.MinOnTime <= 0 || onTime >= bar.MinOnTime + 4)
                           && faults <= bar.MaxFaults;
 
-        int passes, days, reqLoads;
+        int days, reqLoads;
         double reqMiles;
         string note;
 
-        // A PERIOD, reviewed at the end of it. The passes figure survives only so the interim reviews
-        // have something to say; it no longer clears anything — see Probation.ReviewOnArrival.
+        // A PERIOD, reviewed at the end of it. There is no passes figure any more: it was written here,
+        // never read, and meanwhile Probation.PassesFor was reading the retired zero as "unset" and
+        // substituting three — putting a requirement on the career panel that nothing enforced.
         //
         // Loads and miles are scaled to the period rather than fixed, because they are what stops the
         // whole thing being sat out at the terminal. A driver doing the job clears them without
         // noticing; a driver parked for three months does not.
         if (reaching)
         {
-            passes = 4;
             days = RookieDays;
             note = "Reaching above your record — they want more than you have proven, so the full " +
                    $"{RookieDays} days, reviewed at your first home time after it.";
         }
         else if (established)
         {
-            passes = 2;
             days = loads >= 200 ? 30 : 45;
             note = $"Shortened to {days} days on {loads} verified loads and a record that clears their bar " +
                    "with room. Reviewed at your first home time after it.";
         }
         else
         {
-            passes = 3;
             days = RookieDays;
             note = $"Standard {RookieDays}-day probation, reviewed at your first home time after it.";
         }
