@@ -671,7 +671,14 @@ public class ProbationPlan
     public double RequiredMiles { get; set; } = 6000;
     public double RequiredOnTimePct { get; set; } = 95;
     public double MaxAvgDamagePct { get; set; } = 5;
-    public int MaxDriverFaultIncidents { get; set; } = 1;
+    /// <summary>
+    /// Preventable "weight" the period allows, where a light bump is worth less than a wreck.
+    ///
+    /// This used to be a headcount, so a 2% pole tap and a 24% rollover were both "1 incident" against
+    /// an allowance of 1 — the damage tiers scaled the discipline ladder and then the review threw that
+    /// away. Counted by severity now: see <see cref="TruckSimDispatcher.Services.CareerService"/>.
+    /// </summary>
+    public int MaxDriverFaultIncidents { get; set; } = 2;
     public int DurationDays { get; set; } = 90;
 
     /// <summary>
@@ -1725,6 +1732,15 @@ public class Incident
     /// This is the figure the consequence is scaled on. Negative means not reported.
     /// </summary>
     public double DamageIncurredPct { get; set; } = -1;
+
+    /// <summary>
+    /// True where this counted against a probation the driver was serving at the time.
+    ///
+    /// Kept on the incident rather than counted from scratch each time, because the answer has to be
+    /// stable: whether an event was a strike is decided once, when it happens, against the probation
+    /// that was running then. Recomputing it later would change history every time the plan moved.
+    /// </summary>
+    public bool CountedOnProbation { get; set; }
 
     /// <summary>
     /// Clean loads that must pass before this stops counting against hiring. Scaled by severity —

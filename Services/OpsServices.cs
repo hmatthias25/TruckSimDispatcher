@@ -390,6 +390,21 @@ public static class SafetyService
     public static (Incident Incident, DisciplineAction? Action) FileAndDecide(AppState s, Incident inc)
     {
         var created = RecordIncident(s, inc);
+
+        // What it costs the PERIOD, on top of whatever rung the ladder gives it. Judged here, as the
+        // incident is filed, against the probation that was actually running at the time.
+        var onProbation = ProbationConduct.Assess(s, created);
+        if (onProbation != null)
+        {
+            created.Notes = string.IsNullOrWhiteSpace(created.Notes)
+                ? onProbation.Message
+                : created.Notes + " | " + onProbation.Message;
+            s.Events.Insert(0, new LogEvent
+            {
+                Channel = "career", GameTime = s.Status.GameTime, Message = onProbation.Message,
+            });
+        }
+
         var level = RecommendDiscipline(s, created);
         if (level == null) return (created, null);
 
@@ -758,7 +773,18 @@ public static class CareerService
             DriverEarnings = s.Driver.LifetimeEarnings,
             UnsettledPay = s.Driver.UnsettledPay,
             Cancellations = s.Trips.Count(t => t.Status == "Cancelled"),
-            DriverFaultIncidents = s.Incidents.Count(i => i.FaultAttribution == "Driver" && i.Preventable)
+            // Weighted, not counted. A light bump must not consume the same allowance as a rollover —
+            // that was the review undoing everything the damage tiers had just decided.
+            DriverFaultIncidents = s.Incidents
+                .Where(i => i.FaultAttribution == "Driver" && i.Preventable
+                            && string.IsNullOrWhiteSpace(i.ForgivenGameTime))
+                .Sum(i => i.Severity switch
+                {
+                    "None" => 0,
+                    "Minor" => 1,
+                    "Moderate" => 2,
+                    _ => 4,          // Serious or Major: on its own, past any probation allowance
+                })
         };
 
         st.TotalMiles = st.LoadedMiles + st.DeadheadMiles;
