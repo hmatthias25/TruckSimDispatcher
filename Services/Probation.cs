@@ -194,13 +194,10 @@ public static class Probation
 
         s.ProbationReviews.Insert(0, review);
 
-        // ---- does this clear it?
-        //
-        // On THIS driver's plan, not the default. The passes figure is per-career now and a two-pass
-        // probation that still auto-cleared at three would never clear at all.
-        var want = PassesFor(s);
-        var run = ConsecutivePasses(s);
-        review.PassesInARow = run;
+        // The run of passes at the time of this review. Recorded because it is a true thing about the
+        // review and old ones carry it, not because anything is counting to a target — nothing has been
+        // since probation became a period, and the review card stopped showing it as "1 of 3".
+        review.PassesInARow = ConsecutivePasses(s);
 
         // ---- the verdict that actually decides it
         //

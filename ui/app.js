@@ -3084,7 +3084,6 @@ function probationHtml() {
         <span>loads <b>${r.loadsDelivered}</b></span>
         <span>on time <b>${num(r.onTimePct, 1)}%</b></span>
         <span>preventable <b>${r.preventableFaults}</b></span>
-        <span>run <b>${r.passesInARow}/${p.passesNeeded}</b></span>
       </div>
       ${(r.strengths || []).length ? `<ul class="reasons good">${r.strengths.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
       ${(r.concerns || []).length ? `<ul class="reasons bad">${r.concerns.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
@@ -4871,8 +4870,8 @@ function viewCareer() {
       ${badge(c.probationMet ? 'ok' : 'warn', c.probationMet ? 'requirements met' : 'in progress')}
       <div class="spacer"></div><span class="sub">${S.driver.probation.durationDays}-day period · ${esc(S.driver.probation.notes)}</span></div>
     ${prog(c.probationProgress)}
-    <p class="hint">Operations clears this itself once the numbers <em>and</em> the reviews are both there,
-      and tells you at your next report-in. It is not something you click — a driver does not sign off
+    <p class="hint">Operations clears this itself once every line above is green — the period included —
+      and tells you at your next report-in. It is not something you click: a driver does not sign off
       their own probation any more than they authorise their own equipment.</p>
   </div>` : ''}
 

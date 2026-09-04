@@ -184,16 +184,13 @@ public static class Migrations
     /// pay, miles, times, settlements — because none of that was wrong.
     /// </summary>
     /// <summary>
-    /// Puts back probation that was cleared without the three good reviews.
+    /// <b>Retired.</b> Kept only to stamp schema 4 so nothing downstream re-runs.
     ///
-    /// The Career tab used to offer a button the moment the loads/miles/on-time thresholds were met,
-    /// without counting the reviews at all — so a driver could be moved onto the Company Driver scale
-    /// having never sat three good reviews in a row. The reviews are half the requirement.
-    ///
-    /// Deliberately narrow. It only touches a driver sitting at <b>exactly</b> the rank that button
-    /// granted: anybody who has since been promoted on merit to senior or above is left alone, because
-    /// by then the record speaks for itself and demoting them would do more damage than the original
-    /// mistake. Anyone legitimately cleared still has their three passes on file and is untouched.
+    /// It put a driver back on probation where the Career tab's old button had cleared it the moment the
+    /// loads/miles/on-time thresholds were met, without counting the three good reviews. Probation is a
+    /// period now and the reviews inside it are feedback, so there is no streak left to have been short
+    /// of — and reimposing one on a career that has since run months past the period it would set would
+    /// be enforcing a rule the app no longer has.
     /// </summary>
     /// <summary>
     /// Clears out "Tanker" and "Doubles/Triples", which were never endorsements.
@@ -738,25 +735,16 @@ public static class Migrations
         if (s.SchemaVersion >= 4) return;
         s.SchemaVersion = 4;
 
-        if (s.Driver.Probation.Active) return;                 // still on it — nothing to undo
-        if (s.Driver.Rank != "company") return;                // moved up on merit since; leave it
-        if (s.Driver.CareerOver || s.Driver.TerminatedForCause) return;
-
-        var passes = Probation.ConsecutivePasses(s);
-        if (passes >= Probation.PassesFor(s)) return;           // earned it properly, on this career's plan
-
-        CareerService.RestoreProbation(s,
-            $"Probation restored: cleared on thresholds alone with {passes} good review(s) in a row against " +
-            $"{Probation.PassesToClear} required.");
-
-        s.Events.Insert(0, new LogEvent
-        {
-            Channel = "career",
-            GameTime = s.Status.GameTime,
-            Message = $"Probation put back: it had been cleared without the reviews ({passes} of " +
-                      $"{Probation.PassesToClear} good reviews in a row). Back on the probationary scale until " +
-                      "you have sat them. Settlements already paid are untouched.",
-        });
+        // ---- retired, deliberately, and kept only to stamp the schema.
+        //
+        // This put a driver back on probation when it had been cleared on thresholds alone without the
+        // three good reviews. That rule is gone: probation is a period now, and the reviews inside it
+        // are feedback. Restoring probation on a streak would enforce a rule the app no longer has,
+        // against careers that have since run months of game time past the period it would impose.
+        //
+        // It briefly became a silent no-op on its own, when PassesFor stopped substituting the old
+        // default of three and the guard `passes >= PassesFor(s)` turned always-true. Better said out
+        // loud than left as an accident of arithmetic.
     }
 
     private static void ClearSafetyRecordWrittenUnderOldRules(AppState s)
@@ -913,15 +901,9 @@ public static class Migrations
             if (string.IsNullOrWhiteSpace(tr.AcquiredGameTime))
                 tr.AcquiredGameTime = fallback;
 
-        // Yards had no trailer capacity, so an unset one would read as zero and refuse every purchase.
-        foreach (var yard in s.Company.Terminals)
-            if (yard.TrailerCapacity <= 0)
-                yard.TrailerCapacity = yard.Level switch
-                {
-                    "Large" => 12,
-                    "Medium" => 6,
-                    _ => 3
-                };
+        // Yard trailer capacity used to be backfilled here, because an unset one read as zero and
+        // refused every purchase. ATS has no per-garage trailer limit, so the field was retired and has
+        // no readers left — writing it was only keeping an obsolete-member warning alive.
     }
 
     /// <summary>
@@ -1575,20 +1557,20 @@ public static class Migrations
         switch (level)
         {
             case "Large":
-                t.TruckCapacity = 5; t.TrailerCapacity = 12;
+                t.TruckCapacity = 5;
                 t.HasFuel = true; t.HasShop = true; t.HasParking = true;
                 t.HasTrailerDrop = true; t.HasDriverFacilities = true;
                 t.FuelPricePerGal = 3.58m; t.ShopLabourDiscount = 0.35; t.MonthlyCost = 4_200m;
                 break;
             case "Medium":
-                t.TruckCapacity = 3; t.TrailerCapacity = 6;
+                t.TruckCapacity = 3;
                 t.HasFuel = true; t.HasShop = true; t.HasParking = true;
                 t.HasTrailerDrop = true; t.HasDriverFacilities = false;
                 t.FuelPricePerGal = 3.72m; t.ShopLabourDiscount = 0.20; t.MonthlyCost = 2_400m;
                 break;
             default:
                 t.Level = "Small";
-                t.TruckCapacity = 1; t.TrailerCapacity = 3;
+                t.TruckCapacity = 1;
                 t.HasFuel = true; t.HasShop = false; t.HasParking = true;
                 t.HasTrailerDrop = true; t.HasDriverFacilities = false;
                 t.FuelPricePerGal = 3.85m; t.ShopLabourDiscount = 0; t.MonthlyCost = 1_150m;

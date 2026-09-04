@@ -266,6 +266,8 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
         OnTimePct = stats.OnTimePct,
         DriverFaultIncidents = stats.DriverFaultIncidents,
         Earnings = s.Driver.LifetimeEarnings,
+        // Taken now, because the trips it is read from are cleared a few lines down.
+        DivisionDays = DivisionExperience.ServedDaysByDivision(s),
         Separation = "Resigned",
         Reason = req.Reason ?? ""
     });
@@ -304,10 +306,9 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     s.Driver.Rank = "probationary";
     s.Driver.RankTitle = "Probationary Company Driver";
     s.Driver.HiredGameDate = s.Status.GameTime;
-    // Scaled to the move: reaching above your record buys a longer look, clearing the new bar with
-    // room buys a shorter one, and the window always outlasts the passes it asks for. The old pair of
-    // ternaries shortened the days for an experienced driver while leaving the passes at three, which
-    // left them exactly three reviews for three passes and no way to survive a bad one.
+    // Scaled to the move: reaching above your record buys a longer look, clearing the new bar with room
+    // buys a shorter one, and a specialised carrier holds a floor under it whatever the record says.
+    // The work targets are scaled to the period too, so a shorter one cannot be sat out.
     s.Driver.Probation = ProbationPlanner.For(s, req.Code, s.Status.GameTime);
     s.Driver.EmployeeId = $"{s.Company.Code}-{1000 + Math.Abs(s.Driver.Name.GetHashCode() % 9000)}";
     s.Driver.UnsettledPay = 0;

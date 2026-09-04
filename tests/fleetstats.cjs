@@ -50,9 +50,12 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
 
   const hq = S.company.terminals[0];
   S = un(await api(`/terminals/${hq.id}/level`, 'POST', { level: 'Large' }));
-  ok('a large yard holds more trailers than tractors',
-    S.company.terminals[0].trailerCapacity > S.company.terminals[0].truckCapacity,
-    `${S.company.terminals[0].truckCapacity} trucks / ${S.company.terminals[0].trailerCapacity} trailers`);
+  // Tractor capacity only. A per-garage trailer limit is not a thing ATS has (#166), so the field was
+  // retired, lost its last reader, and has now stopped being written — asserting a yard holds more
+  // trailers than tractors was asserting a rule the app deliberately does not have.
+  ok('levelling a yard up raises what it can hold in tractors',
+    S.company.terminals[0].truckCapacity > 1,
+    `${S.company.terminals[0].truckCapacity} tractors at a large yard`);
 
   const stock = await api('/fleet/stock', 'POST', {
     terminalId: hq.id, count: 3, alreadyBought: true, transmissionPreference: 'automatic', addTrailers: true,

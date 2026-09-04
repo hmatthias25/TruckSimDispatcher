@@ -33,6 +33,36 @@ const app = {
   homeCity: 'Kansas City', homeState: 'MO', acceptsProbation: true, homeTimePreference: 'biweekly',
 };
 
+const H = require('./lib/helpers.cjs');
+
+let day = 300;
+let S;
+
+/** One load. On drop and hook the LISTING carries the trailer, so pass what should be hooked. */
+async function runLoad(destCity, destState, trailerType) {
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+  await api('/board/clear', 'POST', {});
+  const add = () => api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType,
+    originCity: S.status.locationCity, originState: S.status.locationState,
+    destCity, destState, loadedMiles: 400, deadheadMiles: 0,
+    gameRevenue: 1800, deadlineHours: 240, weightLbs: 40000,
+  });
+  const auth = await H.authorize(api, add, (d) => { day += d; return at(day); });
+  day += 1;
+  const done = await api(`/trips/${auth.trip.id}/complete`, 'POST', {
+    deliveredGameTime: at(day), actualMiles: 400, endOdometer: 0, actualRevenue: 1800,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 2, trailerDamageAfter: 1, cargoDamagePct: 0,
+    loadingHours: 1, unloadingHours: 1, detentionHours: 0,
+    layoverDays: 0, breakdownDays: 0, extraStops: 0, tarpsUsed: 0,
+    delayReason: '', damageCause: '', notes: '',
+    locationCity: destCity, locationState: destState, fuelPct: 60, gameTime: at(day),
+  });
+  S = done.snapshot;
+  return done;
+}
+
 const find = (m, code) => m.find((c) => c.code === code);
 const market = async () => (await api('/market')).market;
 
@@ -163,6 +193,30 @@ async function report(day) {
     offDivision?.slice(0, 200) || `no such note among ${notes.length}`);
   ok('and it names what we do run instead', /reefer/i.test(offDivision || ''),
     offDivision?.slice(-110) || '');
+
+  head('5c. THE REPORTED CASE: credit follows what you HAULED, not who employed you');
+  // "I looked at Melton and it said nothing on your record for flatbed, but I have been running almost
+  // exclusively flatbed for 70 days." Served days went to the EMPLOYER's first-listed division, so
+  // freight pulled at a carrier known for something else vanished.
+  //
+  // Drop and hook is where the two come apart cleanly: the listing carries the trailer, so a dry van
+  // hauled at C.R. England — Reefer first — is a day of dry van and not a day of reefer. Under the old
+  // arithmetic every one of these days landed on reefer and dry van stayed at nought forever.
+  const vanBefore = find(await market(), 'WER').divisionYears;   // Werner — Dry Van first
+  day = 221;
+  S = un(await api('/bootstrap'));
+  for (const [c, st] of [['Tulsa', 'OK'], ['Kansas City', 'MO'], ['Tulsa', 'OK'], ['Kansas City', 'MO']]) {
+    await runLoad(c, st, 'Dry Van');
+  }
+  const vanAfter = find(await market(), 'WER').divisionYears;
+
+  ok('hauling dry van puts dry van on the record', vanAfter > vanBefore,
+    `${vanBefore} -> ${vanAfter} yr on dry van`);
+  ok('and the carrier stops being told there is nothing there',
+    !/Nothing on your record is dry van/i.test(find(await market(), 'WER').divisionNote || ''),
+    (find(await market(), 'WER').divisionNote || '(none)').slice(0, 130));
+  ok('the days are days, not a load count',
+    vanAfter - vanBefore > 0.005, `${((vanAfter - vanBefore) * 365).toFixed(1)} day(s) credited`);
 
   head('6. Specialised freight buys a real orientation, not a sentence about one');
   ok('Bennett is flagged specialised', find(m0, 'BEN').specialized === true);

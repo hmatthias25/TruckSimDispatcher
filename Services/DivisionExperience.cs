@@ -78,28 +78,78 @@ public static class DivisionExperience
         foreach (var f in app?.FreightExperience ?? new List<string>())
             Add(f, declared);
 
-        // ---- what we watched them do. Days at an employer count toward the freight that employer ran.
+        // ---- what we watched them do at previous employers
         foreach (var h in s.Driver.EmploymentHistory)
         {
             var from = GameClock.TryParse(h.StartedGameDate);
             var to = GameClock.TryParse(h.EndedGameDate);
             if (from == null || to == null) continue;
             var days = Math.Max(0, (to.Value - from.Value).TotalDays);
-            Add(Carriers.PrimaryDivisionOf(h.CarrierCode), days / Carriers.DaysPerYear);
+
+            // The split recorded when they left, taken off the trips while those still existed. Falls
+            // back to the carrier's main freight for records written before that was kept — the best
+            // guess available once the trips are gone, and flagged here so it is not mistaken for
+            // something measured.
+            if (h.DivisionDays.Count > 0)
+                foreach (var kv in h.DivisionDays) Add(kv.Key, kv.Value / Carriers.DaysPerYear);
+            else
+                Add(Carriers.PrimaryDivisionOf(h.CarrierCode), days / Carriers.DaysPerYear);
         }
 
         // ---- and the seat they are in now
         if (s.Onboarded)
-        {
-            var served = CareerService.Compute(s).DaysEmployed;
-            // By code where we know the carrier, by what the company says it runs otherwise — a
-            // custom outfit the player typed in still has divisions, and its driver still earns time.
-            var now = Carriers.PrimaryDivisionOf(s.Company.Code);
-            if (string.IsNullOrWhiteSpace(now)) now = s.Company.Divisions.FirstOrDefault() ?? "";
-            Add(now, served / Carriers.DaysPerYear);
-        }
+            foreach (var kv in ServedDaysByDivision(s))
+                Add(kv.Key, kv.Value / Carriers.DaysPerYear);
 
         return years;
+    }
+
+    /// <summary>
+    /// Days served at the current employer, split across the freight actually hauled.
+    ///
+    /// By what was on the back of the truck, not by who signed the cheque. This used to put every day
+    /// onto the employer's first-listed division, so seventy days of flatbed at a carrier whose
+    /// <c>Divisions[0]</c> is Dry Van came out as seventy days of dry van and no flatbed at all — the
+    /// app claiming to know whose freight the time was on and then not looking, which is the fault the
+    /// whole class exists to fix.
+    ///
+    /// Trips already carry it: <c>Trip.Division</c> is derived from the trailer that was actually
+    /// pulled, not from what the listing asked for.
+    ///
+    /// Proportional rather than counted, because days are the unit every experience bar is measured in
+    /// and a driver does not earn a day per load. Someone who ran three quarters flatbed over ninety
+    /// days has about sixty-seven days of flatbed.
+    /// </summary>
+    public static Dictionary<string, double> ServedDaysByDivision(AppState s)
+    {
+        var split = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        if (!s.Onboarded) return split;
+
+        var served = CareerService.Compute(s).DaysEmployed;
+        if (served <= 0) return split;
+
+        var hauled = s.Trips
+            .Where(t => t.Status == "Delivered" && t.Kind == "Freight")
+            .Select(t => Norm(t.Division))
+            .Where(d => !string.IsNullOrWhiteSpace(d))
+            .GroupBy(d => d, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (hauled.Count == 0)
+        {
+            // Nothing delivered yet, so there is nothing to measure and the carrier's own freight is
+            // the only honest guess. A custom outfit the player typed in still has divisions.
+            var now = Carriers.PrimaryDivisionOf(s.Company.Code);
+            if (string.IsNullOrWhiteSpace(now)) now = s.Company.Divisions.FirstOrDefault() ?? "";
+            if (!string.IsNullOrWhiteSpace(now)) split[Norm(now)] = served;
+            return split;
+        }
+
+        var total = (double)hauled.Sum(g => g.Count());
+        foreach (var g in hauled)
+            split[g.Key] = served * (g.Count() / total);
+
+        return split;
     }
 
     /// <summary>Years credited on one division.</summary>

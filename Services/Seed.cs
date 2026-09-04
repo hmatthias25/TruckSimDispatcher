@@ -664,7 +664,6 @@ public static class Seed
         // this one kept the three-review streak alive after the model moved to a period.
         var probation = ProbationPlanner.For(s, s.Company.Code, s.Status.GameTime);
         probation.MaxAvgDamagePct = green ? 6 : 5;
-        probation.RequiredOnTimePct = 95;
         if (green) probation.Notes += " Developing driver — expect closer coaching early.";
 
         var quals = new List<string> { "Class A CDL" };

@@ -561,6 +561,19 @@ public class EmploymentRecord
     public double OnTimePct { get; set; }
     public int DriverFaultIncidents { get; set; }
     public decimal Earnings { get; set; }
+    /// <summary>
+    /// Days at this employer, split across the freight actually hauled there.
+    ///
+    /// Written when the driver leaves, off the trips, while those still exist — a changeover clears
+    /// them. Without it the record keeps a carrier code and nothing about the work, so two years of
+    /// flatbed at a mixed carrier became two years of whatever that carrier mostly ran, the moment the
+    /// driver changed jobs.
+    ///
+    /// Empty on records written before this was kept. See DivisionExperience.Credited, which falls back
+    /// to the carrier's main division for those and says so.
+    /// </summary>
+    public Dictionary<string, double> DivisionDays { get; set; } = new();
+
     /// <summary>Resigned | Terminated | Laid off</summary>
     public string Separation { get; set; } = "Resigned";
     public string Reason { get; set; } = "";
@@ -669,15 +682,6 @@ public class ProbationPlan
     public bool Active { get; set; } = true;
     public int RequiredLoads { get; set; } = 10;
     public double RequiredMiles { get; set; } = 6000;
-    /// <summary>
-    /// Service standard shown as context. <b>No longer the gate</b> — see <see cref="MaxLateStrikes"/>.
-    ///
-    /// It was the gate, computed over the whole period with no fault filter and nothing ageing off, so
-    /// a shipper who loaded you late on day three still counted on day ninety. At 95% over roughly
-    /// thirty loads a single late delivery was the entire allowance.
-    /// </summary>
-    public double RequiredOnTimePct { get; set; } = 95;
-
     /// <summary>
     /// Driver-fault late deliveries the period allows, counted the way the career ladder counts them:
     /// inside a recent window, so clean work walks them off.
