@@ -639,6 +639,8 @@ public static class Carriers
                 IsCurrentEmployer = spec.Code == s.Company.Code,
                 IsRealCompany = IsRealCompany(spec.Code),
                 CreditedExperienceYears = CreditedExperience(s, s.Application?.ExperienceYears ?? 0),
+                DivisionYears = DivisionExperience.YearsOn(s, spec.Divisions[0]),
+                DivisionNote = DivisionExperience.MarketNote(s, spec.Code),
                 LoadsToQualify = LoadsStillNeeded(s, spec),
                 DaysToQualify = DaysStillNeeded(s, spec),
                 Condition = cond,
@@ -810,7 +812,11 @@ public static class Carriers
                 var howLong = daysToGo >= 365
                     ? $"about {daysToGo / 365.0:0.#} more year(s) on the job"
                     : $"about {daysToGo} more day(s) on the job";
-                fails.Add($"They want {minYears:0.#} years on {spec.Divisions[0].ToLowerInvariant()}" +
+                // Years behind the wheel, not years on their freight. It said "years on flatbed" and
+                // then counted days served anywhere on anything, which was the app telling a driver
+                // they had failed a test it never set. What their freight is worth is said separately,
+                // by DivisionExperience, because it is a credit rather than a bar.
+                fails.Add($"They want {minYears:0.#} years behind the wheel" +
                           (Math.Abs(cond.YearsShift) > 0.01 ? $" ({cond.State.ToLowerInvariant()} — normally {spec.MinYears:0.#})" : "") + ". " +
                           $"You credit at {credited:0.0} years ({years:0.#} declared plus time served) — " +
                           $"{howLong}. Loads do not shorten it; running hard proves the time was worked, " +
@@ -883,6 +889,12 @@ public static class Carriers
             // a carrier winning freight takes a chance it would not take in a flat quarter.
             var reach = HiringStanding.ReachChanceFor(cond.State);
             var nearMiss = fails.Count == 1 && skillsClear && s.Driver.Status != "Terminated";
+
+            // Time on their freight is worth something exactly here, where somebody is deciding whether
+            // to stretch. A van driver one load short of an open-deck carrier's bar is a maybe; a
+            // flatbedder one load short is the same maybe with a reason to say yes.
+            var (divPoints, divNote) = DivisionExperience.Weigh(s, spec.Code);
+            if (nearMiss && divPoints > 0) reach = Math.Min(100, reach + divPoints);
             d.ChancePct = nearMiss ? reach : 0;
 
             if (nearMiss && reach > 0 && HiringStanding.Roll(s, spec.Code, cond.Period, reach))
@@ -893,6 +905,7 @@ public static class Carriers
                 d.Reasons.Add("You are short of what they normally want: " + fails[0] +
                               " They are taking you anyway — they need the seat filled more than they " +
                               "need the record, and that will not be true every month.");
+                if (divNote != null) d.Reasons.Add(divNote);
                 d.Conditions.Add("Taken on a stretch. Expect them to watch you closely.");
                 d.Standing = HiringStanding.Marginal;
                 FinishOffer(s, d, spec, cond, app, totalLoads, notes);
@@ -911,6 +924,14 @@ public static class Carriers
 
         // Clears the bar. Comfortably is an offer; by a hair is a decision they get to make.
         d.ChancePct = comfortable ? 100 : HiringStanding.ChanceFor(cond.State);
+
+        // "They had people in front of them who cleared it by more" is precisely the call division
+        // time should move. It only ever adds — a driver without their freight is not marked down for
+        // it, they simply do not get the lift.
+        var (clearPoints, clearNote) = DivisionExperience.Weigh(s, spec.Code);
+        if (d.ChancePct < 100 && clearPoints > 0)
+            d.ChancePct = Math.Min(100, d.ChancePct + clearPoints);
+        if (clearNote != null) notes.Add(clearNote);
 
         // Still on probation somewhere else. Recruiters read that as somebody who has not finished
         // anything, and it outranks the record — a strong application from a driver three weeks into a
@@ -998,6 +1019,31 @@ public static class Carriers
         if (spec.Specialized) d.Conditions.Add("Specialised freight — expect a longer orientation before they turn you loose.");
         if (totalLoads > 0) d.Conditions.Add($"Starting rate reflects your {totalLoads} loads of history.");
     }
+
+    /// <summary>
+    /// The freight a carrier is built around. Divisions are listed most-run first, so the first one is
+    /// what a driver would actually be hauling most weeks.
+    /// </summary>
+    public static string PrimaryDivisionOf(string? code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code ?? "", StringComparison.OrdinalIgnoreCase));
+        return spec == null || spec.Divisions.Length == 0 ? "" : spec.Divisions[0];
+    }
+
+    /// <summary>Every division a carrier runs, most-run first.</summary>
+    public static string[] DivisionsOf(string? code)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code ?? "", StringComparison.OrdinalIgnoreCase));
+        return spec == null ? Array.Empty<string>() : spec.Divisions.ToArray();
+    }
+
+    /// <summary>
+    /// Whether this carrier moves freight that needs its own orientation before they turn somebody
+    /// loose on it. Read by <see cref="ProbationPlanner"/>, which is what makes the promise true.
+    /// </summary>
+    public static bool IsSpecialized(string? code) =>
+        AllSpecs.FirstOrDefault(c => c.Code.Equals(code ?? "", StringComparison.OrdinalIgnoreCase))
+            ?.Specialized == true;
 
     /// <summary>A carrier's hiring bar, condition-adjusted, for anything that needs to reason about it.</summary>
     public static (double MinYears, int MinLoads, double MinOnTime, int MaxFaults, double MaxAvgDamage)
@@ -1378,6 +1424,15 @@ public class CarrierListing
     public string Name { get; set; } = "";
     public List<string> Divisions { get; set; } = new();
     public string PrimaryDivision { get; set; } = "";
+
+    /// <summary>Years the driver has on THIS carrier's main freight, rather than years in total.</summary>
+    public double DivisionYears { get; set; }
+
+    /// <summary>
+    /// Where that leaves them here. Never a refusal — division time is a credit on a close call, so
+    /// this says either "it is what they want" or "it is not a bar, but it breaks ties against you".
+    /// </summary>
+    public string? DivisionNote { get; set; }
     public string Size { get; set; } = "";
     public string HqCity { get; set; } = "";
     public string HqState { get; set; } = "";

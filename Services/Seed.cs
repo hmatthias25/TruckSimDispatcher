@@ -168,17 +168,9 @@ public static class Seed
         a.OpeningBalance = amount;
     }
 
-    private static string Norm(string division) => (division ?? "").Trim() switch
-    {
-        "Refrigerated" or "Reefer" or "Frozen" => "Reefer",
-        "Van" or "Dry Van" => "Dry Van",
-        "Open Deck" or "Flatbed" or "Step Deck" => "Flatbed",
-        "Bulk" or "Tanker" => "Tanker",
-        "Oversize" or "Heavy Haul" or "Specialized" => "Heavy Haul",
-        "Car Hauling" or "Auto" => "Auto",
-        "" => "Dry Van",
-        var v => v
-    };
+    // One normaliser, in DivisionExperience. Two places spelling "Open Deck" differently is how a
+    // driver's flatbed years quietly stop counting as flatbed years.
+    private static string Norm(string division) => DivisionExperience.Norm(division);
 
     // ---------------------------------------------------------------- fleet
 

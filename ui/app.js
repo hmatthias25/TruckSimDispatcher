@@ -473,6 +473,7 @@ function renderMarket(market, { onboarding }) {
         <span>tops out at <b>${esc(c.ceilingTitle)}</b></span>
       </div>
       <p class="hint" style="margin-bottom:6px"><b>Their bar:</b> ${esc(c.standardsNote)}</p>
+      ${c.divisionNote ? `<p class="hint" style="margin-bottom:6px"><b>On their freight:</b> ${esc(c.divisionNote)}</p>` : ''}
       ${c.condition && c.condition.state !== 'Steady' ? `<p class="hint" style="margin-bottom:6px">
         <b>${esc(c.condition.state)}:</b> ${esc(c.condition.note)}
         ${!c.condition.hiring ? ` Reviewed around <b>${gt(c.condition.reviewedOn)}</b>.` : ''}</p>` : ''}

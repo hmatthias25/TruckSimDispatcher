@@ -90,6 +90,9 @@ public static class DispatchEngine
             decision.Headline = "No board submitted.";
             decision.Rationale = "Send me the jobs you can see and I will pick one.";
             decision.RejectAll = false;
+            // The one moment this advice is worth anything: before the driver has read the board. It
+            // used to arrive after they had entered a load, as a refusal.
+            if (CompanyFreight.BoardNote(s) is { } lookFor) decision.DispatchNotes.Add(lookFor);
             return decision;
         }
 
@@ -102,6 +105,9 @@ public static class DispatchEngine
         // assignment, because the game puts the two side by side and picking the wrong one hands the
         // driver a trailer they are not supposed to have.
         if (DropHook.BoardNote(s) is { } dhNote) decision.DispatchNotes.Add(dhNote);
+
+        // How much of what they wrote down we can actually use. Silent when it all fits.
+        if (CompanyFreight.BoardNote(s) is { } freightNote) decision.DispatchNotes.Add(freightNote);
 
         // Empty miles are worked out once, at authorisation, from the reading on file. If the driver has
         // plainly moved since their last close-out without reporting a new one, say so now — after the

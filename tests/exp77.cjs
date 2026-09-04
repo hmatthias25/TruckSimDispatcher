@@ -119,7 +119,12 @@ async function runLoad(destCity, destState) {
   head('5. Being turned down explains it in time');
   const m2 = await api('/onboarding/market', 'POST', greenhorn);
   const reasons = (m2.market || []).flatMap((c) => c.screening?.reasons || []).join(' | ');
-  const yearsReason = reasons.split(' | ').find((r) => /years on/i.test(r)) || '';
+  // Located on "behind the wheel" rather than "years on", which is what the refusal used to say. It
+  // claimed a division check nobody made — "two years on flatbed" answered with days served anywhere
+  // on anything (#172) — and now names the thing it actually counts. "Years on <division>" is still a
+  // phrase the app uses, but it belongs to DivisionExperience crediting time, not to a refusal, and
+  // matching on it here picked up the credit and asserted refusal wording against it.
+  const yearsReason = reasons.split(' | ').find((r) => /years behind the wheel/i.test(r)) || '';
   ok('a years refusal names time', !yearsReason || /day\(s\)|year\(s\) on the job/i.test(yearsReason),
     yearsReason.slice(0, 150) || '(nobody refused on years)');
   ok('and says loads will not shorten it',

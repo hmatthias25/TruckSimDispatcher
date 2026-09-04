@@ -137,7 +137,7 @@
 
 <!-- ============================================================ COVER -->
 <div class="page cover">
-  <div class="kicker">User manual &middot; v0.38 alpha</div>
+  <div class="kicker">User manual &middot; {{BUILD}}</div>
   <h1>TruckSim<br>Dispatcher</h1>
   <div class="rulebar"></div>
   <div class="sub">A dispatch office for American&nbsp;Truck&nbsp;Simulator.<br>
@@ -148,13 +148,13 @@
     <div><span>Runs on</span> Windows &middot; one portable .exe &middot; no install</div>
     <div><span>Needs</span> Nothing. No internet, no account, no runtime</div>
     <div><span>Your game</span> ATS, any DLC, mods welcome</div>
-    <div><span>This manual</span> Covers v0.38 alpha &middot; the build is shown in the app header</div>
+    <div><span>This manual</span> Covers {{BUILD}} &middot; the build is shown in the app header</div>
   </div>
 
   <div class="alphabox">
     <div class="ab-tag">Alpha</div>
     <div>
-      <b>This is v0.38 alpha and is not ready for release.</b>
+      <b>This is {{BUILD}} and is not ready for release.</b>
       It is being play-tested. Expect rough edges, expect things to change, and expect the occasional
       bug. Keep backups of your career file — Settings → Data will take one for you.
       Please report anything that looks wrong.
@@ -1293,11 +1293,20 @@
       looked at, because there is usually far more in a city than at one dock.</p>
   </div>
 
-  <h3>Pasting screenshots instead</h3>
-  <p>If you have set an API key (Section 22), you can paste screenshots of the job board straight in and
-    the app reads the rows out of them. ATS only shows about ten jobs at a time, so paste as many as you
-    need — they are read in small batches behind the scenes and merged, and a job that appears on two
-    screenshots is only added once.</p>
+  <div class="pfoot"><span>8 &middot; The board</span><span>18</span></div>
+</div>
+
+<!-- ============================================================ 8a2 - pasting screenshots -->
+<div class="page">
+  <div class="kicker">Section 8, continued</div>
+  <h2>Pasting the board instead of typing it</h2>
+
+  <p class="lede">If you have set an API key (Section 22), you can paste screenshots of the job board
+    straight in and the app reads the rows out of them.</p>
+
+  <p>ATS only shows about ten jobs at a time, so paste as many as you need — they are read in small
+    batches behind the scenes and merged, and a job that appears on two screenshots is only added
+    once.</p>
 
   <div class="rule">
     <h4>It always asks before committing</h4>
@@ -1305,6 +1314,34 @@
       destination, miles, revenue or a delivery window is refused rather than staged with a silent zero.
       A misread payout would corrupt every rate and feasibility decision downstream, so the confirmation
       step is not optional.</p>
+  </div>
+
+  <div class="rule">
+    <h4>Read the divisions off the brief first</h4>
+    <p>Dispatch names what the company hauls before you open the board &mdash; <i>&ldquo;we are Reefer,
+      Dedicated and Dry Van; on the board that is reefer, dry van and curtainside&rdquo;</i>. The
+      divisions are translated into what is actually printed on an ATS listing, because a board shows a
+      trailer and a cargo and never the word &ldquo;division&rdquo;.</p>
+    <p style="margin-top:6pt">Arrangements are left out of that list on purpose. <b>Dedicated</b>
+      describes whose freight it is and <b>Hazmat</b> what is inside it; neither is something you can
+      look for in a trailer column, and listing them would send you hunting a dedicated trailer.</p>
+    <p style="margin-top:6pt">That check has always existed. It used to arrive as a refusal <em>after</em>
+      you had read the board, picked a job and typed it in &mdash; which is the one point at which
+      knowing would have saved you the trouble.</p>
+  </div>
+
+  <h3>And once the board is in</h3>
+  <p>Dispatch says how much of it is freight the company runs. If it all fits, nothing is said &mdash;
+    a note that fires on every board is a note nobody reads.</p>
+
+  <div class="rule">
+    <h4>When none of it is ours</h4>
+    <p>A board with nothing on-division is not treated as a refusal to work. Dispatch says so plainly,
+      asks you to look again, and offers to treat the market as dry if it genuinely is &mdash; which is
+      what puts repositioning and running empty back on the table.</p>
+    <p style="margin-top:6pt">A partial board is reported as a count: <i>three of eleven loads here are
+      freight we run</i>. The rest is not scored, argued over or ranked below the others. It is not ours,
+      and saying so once is cheaper than eight rejections.</p>
   </div>
 
   <div class="pfoot"><span>8 &middot; The board</span><span>18</span></div>
@@ -4700,6 +4737,9 @@
   <p>Resign and apply elsewhere from the carrier market. Specialised fleets — tankers, heavy haul,
     car haul, agricultural — pay better and demand more: years behind the wheel, endorsements, and a
     clean record. A greenhorn will be turned down, which is the point of the progression.</p>
+  <p>They also run a longer orientation, and now they mean it. A strong record can shorten an ordinary
+    probation to thirty or forty-five days; at a specialised carrier it will not go below sixty. Permits,
+    routing and securement take as long as they take.</p>
 
 
   <div class="rule">
@@ -4711,6 +4751,46 @@
       requirement, which is a separate gate about verifiable history, and they are what proves the time
       was worked — but running hard does not make more of it. A fleet wanting five years wants five
       years.</p>
+  </div>
+
+  <div class="pfoot"><span>20 &middot; Career</span><span>72</span></div>
+</div>
+
+<!-- ============================================================ 20y - what experience is worth -->
+<div class="page">
+  <div class="kicker">Section 20, continued</div>
+  <h2>What your experience is worth, and to whom</h2>
+
+  <p class="lede">Years open the door. Whose freight those years were on decides who goes through it
+    first when there is one seat and two applications.</p>
+
+  <div class="rule">
+    <h4>Time on their kind of freight</h4>
+    <p>A carrier's card shows how much of your experience is on <b>their</b> kind of freight. What you
+      listed on the application counts, up to two years &mdash; a hiring office will take your word for
+      having pulled a reefer, not for a decade of it &mdash; and past that it is time actually served,
+      credited to whatever the carrier you served it at was hauling.</p>
+    <p style="margin-top:6pt">So two hundred days at a reefer outfit is two hundred days of reefer
+      experience, and it stays on your file when you leave. Nothing about it is guessed: it is the
+      application you filled in and the jobs you have actually held.</p>
+  </div>
+
+  <div class="rule">
+    <h4>A credit, never a bar</h4>
+    <p>Nobody refuses you for not having their freight. Needing flatbed time to get a flatbed job is a
+      career that cannot be started, and a game that cannot be started is not a harder one.</p>
+    <p style="margin-top:6pt">What it does is break ties. When two drivers clear the bar and one seat is
+      open, the one with that carrier's freight behind them goes first &mdash; which is the call the
+      market was already making when it told you somebody had cleared it by more. The card says plainly
+      which of the two you are, and says so before you resign from anything.</p>
+  </div>
+
+  <div class="rule">
+    <h4>What changed</h4>
+    <p>Refusals on experience say <i>years behind the wheel</i>, because that is what is counted. They
+      used to say &ldquo;two years on flatbed&rdquo; and then measure days served anywhere, on anything
+      &mdash; so two years of reefer cleared an open-deck carrier's bar, and the app was failing drivers
+      on a test it never set.</p>
   </div>
 
   <p>Carriers also have business conditions that shift over time. One having a bad quarter may not be
@@ -6021,7 +6101,7 @@
       if that is genuinely what you want.</p>
   </div>
 
-  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.38 alpha</b>.</p>
+  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>{{BUILD}}</b>.</p>
 
   <h3>Updating without losing your career</h3>
   <p>Replace <code>TruckSimDispatcher.exe</code> in the folder you are already using and leave the

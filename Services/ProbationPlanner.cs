@@ -83,6 +83,20 @@ public static class ProbationPlanner
     /// <summary>The second look granted after a failed first review. There is no third.</summary>
     public const int SecondChanceDays = 30;
 
+    /// <summary>
+    /// The shortest orientation a specialised carrier will run, however good the record is.
+    ///
+    /// Every offer from one of these says "specialised freight — expect a longer orientation before
+    /// they turn you loose", and nothing longer used to happen: the flag was read by the hiring screen
+    /// and by nothing else, so an outfit moving transformers and project cargo put a strong hire on the
+    /// same shortened clock as a grocery run, having just told them the opposite.
+    ///
+    /// A floor rather than an extension, because the point is not to punish a good record — it is that
+    /// permits, routing and securement take as long to learn as they take, and a carrier does not turn
+    /// somebody loose on a lowboy in thirty days because their van numbers were tidy.
+    /// </summary>
+    public const int SpecialisedFloorDays = 60;
+
     /// <summary>Days out from the review at which the driver starts being warned it is coming.</summary>
     public const int WarnWithinDays = 14;
 
@@ -247,6 +261,15 @@ public static class ProbationPlanner
             passes = 3;
             days = RookieDays;
             note = $"Standard {RookieDays}-day probation, reviewed at your first home time after it.";
+        }
+
+        // ---- and a specialised carrier does not turn anybody loose on the short clock
+        if (Carriers.IsSpecialized(code) && days < SpecialisedFloorDays)
+        {
+            var was = days;
+            days = SpecialisedFloorDays;
+            note = $"{note} Held to {SpecialisedFloorDays} days rather than {was}: this is specialised " +
+                   "freight, and the orientation is the orientation whatever your record says.";
         }
 
         // In the shape this driver runs, not a single over-the-road figure everyone is held to.

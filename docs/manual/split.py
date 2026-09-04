@@ -44,6 +44,7 @@ PLAYER_TITLES = {
     "Where you stand, and when to apply",
     "Who is worth keeping, and what is worth running",
     "Probation, and who decides a sacking",
+    "What your experience is worth, and to whom",
     "Your first day: what to buy and set up",
     # the daily loop
     "The loop, end to end",
@@ -53,6 +54,7 @@ PLAYER_TITLES = {
     "Reporting and reading your clocks",
     "Reading your clocks off a screenshot",
     "The board: the dock first, then the city",
+    "Pasting the board instead of typing it",
     "Stage two: the city board",
     "The other clock: how long the listing lasts",
     "How a load is judged",
@@ -150,8 +152,27 @@ OPS_COVER = """<div class="page">
 """
 
 
+BUILD_CS = pathlib.Path(__file__).resolve().parents[2] / "Services" / "Build.cs"
+
+
+def build_label() -> str:
+    """The version, read from the one place that defines it.
+
+    Build.cs says every version the app shows comes from there, "the manual" included, and the manual
+    was carrying a hardcoded v0.38 into a v0.44 release. A number that has to be updated in four places
+    is wrong in two of them within a release, which is the comment on that constant.
+    """
+    src = BUILD_CS.read_text(encoding="utf-8")
+    version = re.search(r'Version\s*=\s*"([^"]+)"', src)
+    stage = re.search(r'Stage\s*=\s*"([^"]+)"', src)
+    if not version or not stage:
+        raise SystemExit(f"split.py: cannot read Version/Stage out of {BUILD_CS}")
+    return f"v{version.group(1)} {stage.group(1)}"
+
+
 def main() -> None:
     text = SOURCE.read_text(encoding="utf-8")
+    text = text.replace("{{BUILD}}", build_label())
 
     parts = re.split(r'(<div class="page[^"]*">)', text)
     head = parts[0]
