@@ -225,6 +225,12 @@ public static class DispatchEngine
                 decision.DispatchNotes.Add($"{pick.Feasibility.FuelStopsRequired} fuel stop(s) planned — do not run below a quarter tank.");
             // Where they sit if they get there early. Said before they commit, because whether the
             // receiver will have them overnight changes what the last few hours of the run look like.
+            // Said before they commit, because "your rest runs longer" changes what the night looks like.
+            if (pick.Feasibility.SleptInHours > 0)
+                decision.DispatchNotes.Add(
+                    $"You would be {Hhmm.Of(pick.Feasibility.SleptInHours)} early, so the plan holds your rest " +
+                    "that much longer instead of sitting at the gate. Roll up on the opening with the window " +
+                    "intact rather than spending it parked.");
             if (pick.Feasibility.WaitForAppointmentHours > 0.25)
                 decision.DispatchNotes.Add(pick.Feasibility.WaitForAppointmentHours >= s.Settings.Hos.OffDutyReset
                     ? Facilities.OvernightNote(s, pick.Load.DestCity, pick.Load.DestState, pick.Load.Receiver,

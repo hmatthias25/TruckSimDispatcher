@@ -3031,6 +3031,14 @@ public class FeasibilityResult
     /// </summary>
     public double WaitForAppointmentHours { get; set; }
     /// <summary>
+    /// Hours added to a rest already in the plan rather than sat on duty at the gate.
+    ///
+    /// The same wall-clock time either way — the truck is parked for those hours whichever end of the
+    /// run they fall at — but held onto a rest they do not come off the 14-hour window. Reported from
+    /// play as arriving seven hours early and burning seven hours of shift for no reason.
+    /// </summary>
+    public double SleptInHours { get; set; }
+    /// <summary>
     /// When the receiver opens, as a game time. Empty when the listing showed no window — and the app
     /// then behaves exactly as it did before windows were read, which keeps older loads intact.
     /// </summary>

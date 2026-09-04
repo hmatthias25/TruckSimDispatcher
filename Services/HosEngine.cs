@@ -78,6 +78,18 @@ public class PlanRequest
 public static class HosEngine
 {
     private const double Eps = 0.0005;
+
+    /// <summary>
+    /// Waiting below which sitting at the gate is simpler than rearranging the run.
+    ///
+    /// Nobody holds a rest an extra twenty minutes to save twenty minutes of window. Above it the swap
+    /// is free: the truck is parked either way, and the only question is which clock pays for it.
+    /// </summary>
+    private const double SleepInWorthIt = 1.0;
+
+    /// <summary>One timeline stamp moved later, for a rest that ended up running longer.</summary>
+    private static string Shifted(string gameTime, double hours) =>
+        GameClock.TryParse(gameTime) is { } t ? GameClock.Format(t.AddHours(hours)) : gameTime;
     private const int MaxIterations = 400;
 
     public static double EffectiveMph(AppSettings s, Truck? truck)
@@ -449,17 +461,56 @@ public static class HosEngine
                                 "waiting — and roll up on the opening with a clock that is actually fresh.");
                         }
                     }
+                    else if (waiting >= SleepInWorthIt
+                             && timeline.FindLastIndex(x => x.Kind is "Rest" or "Restart") is var restAt
+                             && restAt >= 0)
+                    {
+                        // There is already a rest in this plan, so the wait goes on the END of it and the
+                        // driver rolls up at opening with the window intact. Same hours parked either way
+                        // — the difference is only whether they come off the fourteen.
+                        //
+                        // This is the driver's own answer, reported from play: "take my 10 and extend my
+                        // 10 so I get there at or a little before my appointment, otherwise I'm burning my
+                        // shift clock for no reason." The branch above already said as much for a wait
+                        // that made the load infeasible. It is just as true for one that only makes it
+                        // worse, and that was the whole of the gap.
+                        //
+                        // Extending the rest already there, not adding one: a fresh ten does not fit
+                        // inside seven hours of slack, which is exactly why this had to be the shape.
+                        var slept = timeline[restAt];
+                        slept.Hours = Math.Round(slept.Hours + waiting, 2);
+                        slept.Label = $"{slept.Label} — held {Hhmm.Of(waiting)} longer rather than arriving early";
+                        slept.EndGameTime = Shifted(slept.EndGameTime, waiting);
+
+                        // Everything after it happens later by the same amount. The clocks those legs
+                        // leave behind do not move: they burn the same hours wherever they sit.
+                        for (var i = restAt + 1; i < timeline.Count; i++)
+                        {
+                            timeline[i].StartGameTime = Shifted(timeline[i].StartGameTime, waiting);
+                            timeline[i].EndGameTime = Shifted(timeline[i].EndGameTime, waiting);
+                        }
+
+                        // The wall clock still moves. The shift clock does not, and that is the point.
+                        clock = clock.AddHours(waiting);
+                        result.SleptInHours = Math.Round(waiting, 2);
+                        result.WaitForAppointmentHours = 0;
+                        result.Warnings.Add(
+                            $"You would have got there {Hhmm.Of(waiting)} early, so I have held your rest " +
+                            $"{Hhmm.Of(waiting)} longer instead of sitting at the gate. The same hours parked " +
+                            $"either way — this way they do not come off your {rules.ShiftLimit:0.#}-hour window.");
+                    }
                     else
                     {
-                        // Short wait: on duty at the gate, burning the window.
+                        // Nothing to extend: no rest in this plan to hang the wait on, and a fresh one
+                        // will not fit inside slack shorter than a reset. Sitting really is the option.
                         shift = Math.Max(0, shift - waiting);
                         cycle = Math.Max(0, cycle - waiting);
                         Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}", "OnDuty", waiting, 0);
                         if (waiting >= 0.25)
                             result.Warnings.Add(
-                                $"You get there {Hhmm.Of(waiting)} before they open. Short enough to wait at the " +
-                                "receiver — no need to go anywhere — but it is on-duty time and comes off your " +
-                                $"{rules.ShiftLimit:0.#}-hour window, not slack.");
+                                $"You get there {Hhmm.Of(waiting)} before they open, and there is no rest in this " +
+                                "plan to hang the wait on. It gets sat at the receiver, and it is on-duty time — " +
+                                $"it comes off your {rules.ShiftLimit:0.#}-hour window, not out of slack.");
                     }
                 }
             }

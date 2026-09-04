@@ -280,9 +280,16 @@ const gday = (day, hm) => {
         !(bf.warnings || []).some((w) => /wait at the receiver/.test(w)),
         (ev.pros || []).find((p) => /take it whenever/.test(p)) || 'no wait planned');
     } else {
-      ok(`${who}: a short wait stays at the receiver`,
-        (bf.warnings || []).some((w) => /wait at the receiver/.test(w)),
-        (bf.warnings || []).find((w) => /before they open/.test(w)) || '(none)');
+      // Either answer is right, and which one depends on whether this plan HAS a rest to hang the
+      // wait on (#185). With one, the rest runs longer and the driver arrives at opening with the
+      // window intact; without one, a fresh ten will not fit inside the slack and it gets sat.
+      // What must never happen is nobody being sent to a truck stop over it — asserted below.
+      ok(`${who}: the wait is either sat at the receiver or slept off before it`,
+        (bf.warnings || []).some((w) => /wait at the receiver|gets sat at the receiver/.test(w))
+        || bf.sleptInHours > 0,
+        bf.sleptInHours > 0
+          ? `rest held ${bf.sleptInHours}h longer instead`
+          : (bf.warnings || []).find((w) => /before they open/.test(w)) || '(none)');
     }
     ok(`${who}: and nobody is sent to a truck stop`,
       !(bf.timeline || []).some((x) => /truck stop/i.test(x.label)),
@@ -444,10 +451,58 @@ const gday = (day, hm) => {
     ok('this receiver takes it early, so there is no wait to spend', !/Waiting for the receiver/i.test(qTimeline),
       'taken on arrival');
   } else {
-    ok('a short wait with window to spare stays on duty at the gate',
-      /Waiting for the receiver to open/i.test(qTimeline) && !/taken as the reset|Rest timed/i.test(qTimeline),
+    // Nineteen miles, so there is no rest anywhere in this plan to hang the wait on and a fresh ten
+    // will not fit inside six hours of slack. Sitting really is the only option here — which is a
+    // different thing from sitting being the right answer generally (see the section below).
+    ok('a short wait with nothing to sleep off first stays on duty at the gate',
+      /Waiting for the receiver to open/i.test(qTimeline) && !/taken as the reset|Rest timed|held /i.test(qTimeline),
       qTimeline.slice(-110));
   }
+
+  head('#185 Burlington IA to Texarkana TX on a full clock — the reported run');
+  // Reported from play on this exact lane and this exact clock: told they would reach the receiver
+  // seven hours early. The load was legal; the plan was just worse than the driver's own answer —
+  // "take my 10 and extend my 10 so I get there at or a little before my appointment, otherwise I'm
+  // burning my shift clock for no reason."
+  //
+  // Long enough to need a rest on the way, so there IS one to extend. The same hours are parked either
+  // way; the only question is whether they come off the fourteen.
+  // Named, because whether a receiver takes a load whenever you turn up is decided per facility and a
+  // load with no receiver on it is taken early — and then there is no appointment to be early FOR.
+  // Kroger holds you to the window; section 15 above relies on the same fact.
+  await api('/board/clear', 'POST', {});
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+  const far = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, receiver: 'Kroger',
+    originCity: 'Burlington', originState: 'IA', destCity: 'Texarkana', destState: 'TX',
+    loadedMiles: 730, deadheadMiles: 0,
+    // Picked up Wednesday 18:00, due Friday 04:30 — 34.5 hours.
+    gameRevenue: 2900, appointmentOpensHours: 34.5, deadlineHours: 34.5, weightLbs: 40000,
+  });
+  const fEval = (far.evaluations || [])[0];
+  ok('the receiver holds you to the appointment', fEval && !fEval.receiverTakesEarly,
+    fEval?.receiverTakesEarly ? 'took it early — nothing to test' : 'held to the window');
+  const ff = fEval.feasibility;
+  const fLine = (ff.timeline || []).map((x) => x.label || x).join(' | ');
+  console.log('     plan:');
+  for (const x of (ff.timeline || [])) {
+    console.log(`       ${String(x.kind).padEnd(8)} ${hhmm(x.hours).padStart(6)}  ` +
+                `drive ${hhmm(x.driveRemainingAfter).padStart(6)}  shift ${hhmm(x.shiftRemainingAfter).padStart(6)}  ${x.label}`);
+  }
+
+  ok('the run is long enough to need a rest', ff.restsRequired > 0, `${ff.restsRequired} rest(s)`);
+  ok('the wait is held onto that rest rather than sat at the gate', ff.sleptInHours > 0,
+    `${hhmm(ff.sleptInHours)} added to the rest`);
+  ok('and nothing is spent waiting at the receiver', !ff.waitForAppointmentHours,
+    `${ff.waitForAppointmentHours} waiting`);
+  ok('the timeline says the rest ran longer', /held .* longer rather than arriving early/i.test(fLine),
+    (ff.timeline || []).map((x) => x.label).find((l) => /held /i.test(l)) || fLine.slice(0, 140));
+  ok('and it is not a second reset bolted on', ff.restsRequired === 1, `${ff.restsRequired}`);
+  ok('the driver rolls up with the window intact rather than spent',
+    ff.shiftRemainingOnArrival > 4, `${hhmm(ff.shiftRemainingOnArrival)} of 14 left on arrival`);
+  ok('and it is said before they commit, not left in the timeline',
+    (ff.warnings || []).some((w) => /held your rest/i.test(w)),
+    (ff.warnings || []).find((w) => /held your rest/i.test(w))?.slice(0, 130) || '(silent)');
 
 
   console.log(`\n${pass} passed, ${fail} failed`);
