@@ -59,6 +59,27 @@ app.MapGet("/api/bootstrap", () => Results.Ok(Snapshot()));
 
 app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s =>
 {
+    // A board is a snapshot of what ATS is offering WHERE THE DRIVER IS STANDING. Once they have moved,
+    // it is not that any more — and nothing was clearing it. The board survived authorize only, so rows
+    // typed in at one stop were still on it at the next, and every rule that reasons about "the board"
+    // read them as current.
+    //
+    // Reported from play twice on the same lane: a dock board at Oklahoma City that dispatch committed
+    // off without ever asking for the city board. That hold asks two questions of the board — has this
+    // city been looked at, and does anything on it get the driver home — and a leftover row from a
+    // previous stop can answer either one wrongly. Scoping the first question to the current city fixed
+    // half of it; this fixes the cause.
+    var movedTo = (u.LocationCity ?? "").Trim();
+    if (movedTo.Length > 0 && s.Board.Count > 0
+        && !movedTo.Equals(s.Status.LocationCity ?? "", StringComparison.OrdinalIgnoreCase))
+    {
+        var dropped = s.Board.Count;
+        s.Board.Clear();
+        store.Log(s, "dispatch",
+            $"Board of {dropped} job(s) cleared — that was {s.Status.LocationCity}'s freight and you are " +
+            $"in {movedTo} now. Enter what is on offer here.");
+    }
+
     if (u.LocationCity != null) s.Status.LocationCity = u.LocationCity.Trim();
     if (u.LocationState != null) s.Status.LocationState = u.LocationState.Trim().ToUpperInvariant();
     if (u.LocationKind != null) s.Status.LocationKind = u.LocationKind;

@@ -152,6 +152,45 @@ let S;
   ok('and a load is committed to', !!asked.authorizedLoadId,
     (asked.evaluations || []).find((e) => e.load.id === asked.authorizedLoadId)?.load.destCity || 'none');
 
+  head('6. #191b THE CAUSE: a board does not survive the truck moving');
+  // Nothing cleared the board when the driver drove away. It survived authorize only, so rows typed in
+  // at one stop were still on it at the next and every rule that reads "the board" read them as current.
+  // Scoping the city question to the current town fixed one gate; this fixes why there was anything
+  // stale to scope around.
+  await api('/board/clear', 'POST', {});
+  await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
+    originCity: 'Oklahoma City', originState: 'OK', destCity: 'Ottumwa', destState: 'IA',
+    loadedMiles: 561, deadheadMiles: 0, gameRevenue: 2136, deadlineHours: 40, weightLbs: 30000,
+  });
+  ok('a board is on file at Oklahoma City', (await api('/bootstrap')).board.length === 1,
+    `${(await api('/bootstrap')).board.length} row(s)`);
+
+  await api('/status', 'POST', {
+    locationCity: 'Tulsa', locationState: 'OK', locationKind: 'Receiver', gameTime: iso(13),
+    fuelPct: 80, atsOdometer: 40400, truckDamagePct: 3, trailerDamagePct: 2,
+    dutyStatus: 'OnDuty', atsBankBalance: 90000,
+  });
+  ok('reporting in from Tulsa clears it', (await api('/bootstrap')).board.length === 0,
+    `${(await api('/bootstrap')).board.length} row(s) left`);
+  ok('and it is said, not done quietly',
+    ((await api('/bootstrap')).events || []).some((e) => /Board of 1 job\(s\) cleared/i.test(e.message || '')),
+    ((await api('/bootstrap')).events || []).find((e) => /cleared/i.test(e.message || ''))?.message?.slice(0, 130) || '(silent)');
+
+  head('7. Reporting in from the SAME city leaves the board alone');
+  await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
+    originCity: 'Tulsa', originState: 'OK', destCity: 'Wichita', destState: 'KS',
+    loadedMiles: 175, deadheadMiles: 0, gameRevenue: 700, deadlineHours: 30, weightLbs: 30000,
+  });
+  await api('/status', 'POST', {
+    locationCity: 'Tulsa', locationState: 'OK', locationKind: 'Receiver', gameTime: iso(13, '11:00'),
+    fuelPct: 78, atsOdometer: 40400, truckDamagePct: 3, trailerDamagePct: 2,
+    dutyStatus: 'OnDuty', atsBankBalance: 90000,
+  });
+  ok('a second report from the same dock does not throw the board away',
+    (await api('/bootstrap')).board.length === 1, `${(await api('/bootstrap')).board.length} row(s)`);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });
