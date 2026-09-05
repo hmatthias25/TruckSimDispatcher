@@ -737,7 +737,13 @@ public static class DispatchEngine
         var dest = Markets.Find(s, load.DestCity, load.DestState);
         e.DestTier = dest?.Tier ?? 2;
 
-        e.DestResetFriendly = dest?.ResetFriendly ?? false;
+        // A terminal the company owns can hold a restart by construction: parking, fuel, a shop and
+        // facilities are what a yard IS. Read off the market table alone this came back false for any
+        // town not in it — McDonough GA, Mondovi WI and Tontitown AR are all carrier yards and none of
+        // them are listed — so a driver's own domicile scored as "NOT a good restart location" while a
+        // truck stop three states away scored as one. Whether somewhere is a freight market is a
+        // different question from whether you can sit a 34 there.
+        e.DestResetFriendly = (dest?.ResetFriendly ?? false) || IsOwnYard(s, load.DestCity, load.DestState);
 
         // ---- hard gates
         e.HardFails.AddRange(QualificationFails(s, load, trailer));
@@ -911,9 +917,28 @@ public static class DispatchEngine
 
         if (s.Hos.CycleRemaining <= w.ResetWatchCycleHours)
         {
-            var resetPts = (e.DestResetFriendly ? 1.0 : -0.8) * w.ResetPositioning;
+            // The restart and the home time are the SAME thirty-four hours. Where both are due and the
+            // load finishes at the yard, one stop serves both — and taking the restart anywhere else
+            // spends those hours twice. The two used to be scored as unrelated terms, so a reset-capable
+            // truck stop scored exactly what the driver's own terminal did and only the home-time points
+            // broke the tie, at 0.55 urgency while merely due.
+            // Read here rather than reusing the homeStatus below, which is declared after this block.
+            var hs34 = HomeTime.Status(s);
+            var bothAtOnce = hs34.Tracked && hs34.DueSoon
+                             && IsOwnYard(s, load.DestCity, load.DestState);
+
+            var resetPts = (bothAtOnce ? 2.0 : e.DestResetFriendly ? 1.0 : -0.8) * w.ResetPositioning;
             score += resetPts;
-            detail.Add($"Reset watch active ({Hhmm.Of(s.Hos.CycleRemaining)} cycle) and destination is {(e.DestResetFriendly ? "reset-capable" : "NOT a good restart location")}: {resetPts:+0.00;-0.00}");
+            detail.Add(bothAtOnce
+                ? $"Reset watch active ({Hhmm.Of(s.Hos.CycleRemaining)} cycle) and this finishes at " +
+                  $"{hs34.TerminalLabel} with home time {(hs34.Overdue ? "overdue" : $"due in {hs34.DaysUntilDue:0.#} days")} " +
+                  $"— the restart and the home time are the same 34: {resetPts:+0.00;-0.00}"
+                : $"Reset watch active ({Hhmm.Of(s.Hos.CycleRemaining)} cycle) and destination is {(e.DestResetFriendly ? "reset-capable" : "NOT a good restart location")}: {resetPts:+0.00;-0.00}");
+
+            if (bothAtOnce)
+                e.Pros.Add($"Sit the 34 at {hs34.TerminalLabel}. You need the restart and you are due " +
+                           "home — that is one stop for both, and taking it anywhere else spends the same " +
+                           "hours twice.");
         }
 
         detail.Add(dock.Learned
@@ -1181,6 +1206,22 @@ public static class DispatchEngine
             "this. If the city is no better I will say so and we will talk about moving.";
     }
 
+    /// <summary>
+    /// Whether somewhere is a yard this company operates.
+    ///
+    /// Matched on the terminal list rather than the market table, because the two answer different
+    /// questions: the table says whether a town is worth hauling freight to, and this says whether the
+    /// driver can park, fuel and sleep there. A carrier's own yard is always the second.
+    /// </summary>
+    public static bool IsOwnYard(AppState s, string? city, string? state)
+    {
+        if (string.IsNullOrWhiteSpace(city)) return false;
+        return s.Company.Terminals.Any(
+            t => t.City.Equals(city.Trim(), StringComparison.OrdinalIgnoreCase)
+                 && (string.IsNullOrWhiteSpace(state) || string.IsNullOrWhiteSpace(t.State)
+                     || t.State.Equals(state.Trim(), StringComparison.OrdinalIgnoreCase)));
+    }
+
     public static string DivisionFor(BoardLoad load, Trailer? trailer)
     {
         // The one case where the listing wins: a drop-and-hook driver is pulling the shipper's trailer,
@@ -1232,9 +1273,16 @@ public static class DispatchEngine
         }
 
         if (resetWatch)
-            parts.Add(pick.DestResetFriendly
-                ? $"With {Hhmm.Of(s.Hos.CycleRemaining)} of cycle left this also drops you somewhere you can sit the restart."
-                : $"Cycle is at {Hhmm.Of(s.Hos.CycleRemaining)} — this is the last load before we plan the restart.");
+        {
+            var hs = HomeTime.Status(s);
+            var atYard = hs.Tracked && hs.DueSoon && IsOwnYard(s, pick.Load.DestCity, pick.Load.DestState);
+            parts.Add(atYard
+                ? $"With {Hhmm.Of(s.Hos.CycleRemaining)} of cycle left and home time {(hs.Overdue ? "overdue" : $"due in {hs.DaysUntilDue:0.#} days")}, " +
+                  $"this finishes at {hs.TerminalLabel} — sit the 34 there and it is your home time as well. One stop, not two."
+                : pick.DestResetFriendly
+                    ? $"With {Hhmm.Of(s.Hos.CycleRemaining)} of cycle left this also drops you somewhere you can sit the restart."
+                    : $"Cycle is at {Hhmm.Of(s.Hos.CycleRemaining)} — this is the last load before we plan the restart.");
+        }
 
         if (pick.Load.DeadheadMiles > 0)
             parts.Add($"{pick.Load.DeadheadMiles:0} mi of deadhead is acceptable to get under this freight.");

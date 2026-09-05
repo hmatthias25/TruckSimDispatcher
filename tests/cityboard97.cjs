@@ -243,6 +243,55 @@ async function cityBoard(rows) {
     fine.authorizedLoadId || 'none');
   ok('and nothing asks for the city', fine.wantCityBoard !== true, `${fine.wantCityBoard}`);
 
+  head('#188/#189 The reported scenario: 16 hours of cycle, 3.5 days to home time');
+  // "Taking a load to Oklahoma City. When I get there I'll have around 16 hours on my cycle left. IN
+  // ADDITION I am also 3.5 days from home time. Ideally dispatch would want to prioritize getting me
+  // back to my terminal in Springfield MO to take my 34."
+  //
+  // Both triggers fire at those numbers — the reset watch at 18 hours of cycle, and DueSoon at
+  // IntervalDays * 0.75, which on a biweekly is exactly 3.5 days out. They were scored as unrelated
+  // terms, so a reset-capable truck stop anywhere scored what the driver's own yard scored.
+  // Earlier sections took home time, so wind the clock forward to where the driver is due again rather
+  // than assuming a day number.
+  let hs34 = null;
+  for (let d = 40; d <= 80 && !hs34; d += 1) {
+    await place('Oklahoma City', 'OK', d);
+    const st = (await api('/bootstrap')).views.homeTime;
+    if (st.dueSoon === true && st.overdue === false) hs34 = st;
+  }
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 16 });
+  ok('home time is due, not yet overdue', !!hs34,
+    hs34 ? `due in ${hs34.daysUntilDue?.toFixed?.(1)} days` : 'never landed in the window');
+
+  // Both reset-capable, both paying about the same per mile — so the thing deciding this is the yard,
+  // not the rate. Springfield is the terminal; Tulsa is a truck stop town like any other.
+  const both = await dockBoard([['Springfield', 'MO', 250, 700], ['Tulsa', 'OK', 240, 680]]);
+  const home34 = (both.evaluations || []).find((e) => e.load.destCity === 'Springfield');
+  const away34 = (both.evaluations || []).find((e) => e.load.destCity === 'Tulsa');
+
+  ok('the yard run is the one authorized', both.authorizedLoadId === home34?.load.id,
+    `${(both.evaluations || []).find((e) => e.load.id === both.authorizedLoadId)?.load.destCity || 'none'}`);
+  ok('and it outscores the reset-capable one that is not home',
+    home34 && away34 && home34.score > away34.score,
+    `Springfield ${home34?.score?.toFixed?.(2)} vs Tulsa ${away34?.score?.toFixed?.(2)}`);
+  ok('the score line says the restart and the home time are the same 34',
+    (home34?.scoreDetail || []).some((d) => /the same 34/i.test(d)),
+    (home34?.scoreDetail || []).find((d) => /reset watch/i.test(d)) || '(not scored)');
+  ok('and the card puts it in the driver terms',
+    (home34?.pros || []).some((x) => /one stop for both/i.test(x)),
+    (home34?.pros || []).find((x) => /Sit the 34/i.test(x))?.slice(0, 130) || '(silent)');
+  ok('the reasoning says it too, rather than "somewhere you can sit the restart"',
+    /one stop, not two/i.test(both.rationale || ''), (both.rationale || '').slice(-150));
+
+  head('#188 A yard the market table has never heard of can still hold a restart');
+  // DestResetFriendly read the city table alone, so a terminal in a town not listed came back false —
+  // McDonough GA, Mondovi WI and Tontitown AR are all real carrier yards and none of them are in it.
+  // The driver's own domicile scored as NOT a good restart location.
+  const yards = (await api('/bootstrap')).company.terminals || [];
+  ok('the company has a yard to test with', yards.length > 0, `${yards.length} terminal(s)`);
+  ok('and a load finishing there is treated as restart-capable',
+    home34?.destResetFriendly === true, `${home34?.destResetFriendly}`);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });
