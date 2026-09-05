@@ -353,6 +353,10 @@ public static class FleetOpsService
         //
         // Already posted to the ledger by ServiceDueUnits, so nothing is posted again — this only
         // attributes it to the line, the unit's lifetime spend, and the period total.
+        // Work the COMPANY decided on and billed itself for. Kept apart from the repairs reported on the
+        // driver lines, which the player already paid inside ATS — this is money the app spent on their
+        // behalf, and the game knows nothing about it until they make it so.
+        var yardBill = 0m;
         foreach (var (unit, spent) in FleetMaintenance.ServiceDueUnits(s, report))
         {
             var owning = report.Lines.FirstOrDefault(
@@ -364,7 +368,17 @@ public static class FleetOpsService
                 serviced.LifetimeRepairCost = Math.Round(serviced.LifetimeRepairCost + spent, 2);
 
             report.TotalRepairs = Math.Round(report.TotalRepairs + spent, 2);
+            yardBill += spent;
         }
+
+        // Said as an instruction rather than left in the findings, because it is something to DO. The
+        // app cannot touch the game's bank, so a service it booked on a hired driver's tractor sits as a
+        // variance against the reported ATS balance until the player puts it in. Reported from play:
+        // "I never got that info so had no idea what to charge the game."
+        if (yardBill > 0)
+            report.Instructions.Add(
+                $"**Take ${yardBill:N0} out in ATS** for the yard work above. The app has already booked it " +
+                "against operating; the game has not, and the two will not agree until you do.");
         ResolvePersonnel(s, report);
         AssessRetirements(s, report);
         IssueTradeInstructions(s, report);

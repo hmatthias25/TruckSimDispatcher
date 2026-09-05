@@ -121,6 +121,14 @@ const found = (rep, re) => (rep.findings || []).filter((f) => re.test(f)).join('
   ok('and the company paid for it', !!posted && posted.amount < 0,
     posted ? `${posted.memo} ${posted.amount}` : '(nothing posted)');
 
+  // The app cannot reach the game's bank, so a service it booked sits as a variance against the
+  // reported ATS balance until the player puts it in. Reported from play: "I never got that info so had
+  // no idea what to charge the game." It is an instruction now, not a line in the findings.
+  const charge = (rep.instructions || []).find((x) => /Take \$[\d,]+ out in ATS/i.test(x));
+  ok('and the player is told what to take out of the game', !!charge,
+    charge?.slice(0, 130) || `${(rep.instructions || []).length} instruction(s), none of them this`);
+  ok('naming the amount, not just the fact', /\$[1-9][\d,]*/.test(charge || ''), charge?.slice(0, 60) || '');
+
   head('4. #125 Nobody stops driving for a service');
   // The one thing the app must not claim: ATS keeps them rolling whatever the app says.
   const still = (await api('/fleetops')).drivers.find((x) => x.id === marcus.id);

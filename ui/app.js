@@ -2507,6 +2507,57 @@ function homeBriefModal(b) {
 
 /* The audit, shown the moment a load closes. It used to render inline on the tab, where it sat until
    the next dispatch was taken — by which point it was about the wrong trip and easily missed. */
+/**
+ * What the fleet report actually did, the moment it is filed.
+ *
+ * Filing used to answer with a toast — "FR-0004 filed — net $1,240" — and everything else went onto a
+ * card in a list below the form. So a period where a hired driver's tractor went through the shop, or
+ * was condemned, or had work deferred for want of cash, looked from the outside like nothing had
+ * happened: the maintenance flag simply cleared.
+ *
+ * Reported from play in exactly those words — the AI maintenance was cleared, with no indication
+ * maintenance was done or what the result was.
+ *
+ * Same shape as the trip audit for the same reason: the company did things with the driver's equipment
+ * and money, and it says so while they are still looking.
+ */
+function fleetReportModal(r) {
+  const money0 = (v) => money(v || 0);
+  const shopped = (r.findings || []).filter((f) => /PM|shop|service|held over|condemn/i.test(f));
+  const rest = (r.findings || []).filter((f) => !shopped.includes(f));
+
+  modal(`<div class="panel-head"><h2>${esc(r.number)} filed</h2>
+      ${badge(r.netContribution >= 0 ? 'ok' : 'bad', `net ${money0(r.netContribution)}`)}
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+
+    <div class="kv" style="margin-bottom:10px">
+      <span>revenue <b>${money0(r.totalRevenue)}</b></span>
+      <span>wages <b>${money0(r.totalWages)}</b></span>
+      <span>repairs <b>${money0(r.totalRepairs)}</b></span>
+      <span>miles <b>${num(r.totalMiles || 0)}</b></span>
+    </div>
+
+    ${shopped.length ? `<div class="callout ${/condemn|held over/i.test(shopped.join(' ')) ? 'warn' : 'go'}">
+      <h4>Maintenance this period</h4>
+      <ul>${shopped.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    </div>` : `<div class="callout mute"><p>No unit came due for a service this period.</p></div>`}
+
+    ${r.repairsNeeded?.length ? `<div class="callout stop">
+      <h4>Sent for repair (${r.repairsNeeded.length})</h4>
+      <ul>${r.repairsNeeded.map((f) => `<li><b>${esc(f.unitKind)} ${esc(f.unit)}</b> at ${pct(f.damagePct)} —
+        work order ${esc(f.workOrderNumber)}${f.outOfService ? ' · out of service' : ''}</li>`).join('')}</ul>
+    </div>` : ''}
+
+    ${r.instructions?.length ? `<div class="callout ${r.playerGetsNewTruck ? 'go' : 'warn'}">
+      <h4>${r.playerGetsNewTruck ? 'Go and buy it — that one is yours' : 'What to do in ATS now'}</h4>
+      <ul>${r.instructions.map((x) => `<li>${esc(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</li>`).join('')}</ul>
+    </div>` : ''}
+
+    ${rest.length ? `<h3 class="sect">Everything else</h3>
+      <ul class="reasons">${rest.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}`);
+}
+
 function auditModal(a) {
   const late = a.trip.serviceResult === 'Late';
   const cls = late ? (a.faultAttribution === 'Driver' ? 'stop' : 'warn') : 'go';
@@ -3635,6 +3686,9 @@ function fleetOpsHtml() {
           <div class="loadcard-head"><span class="lane">${esc(r.number)}</span>
             <span class="sub">${gt(r.periodStartGame)} → ${gt(r.periodEndGame)}</span>
             <div class="spacer"></div>
+            ${/* The same summary the filing put up, on demand. A report is read once when it is filed
+                  and then wanted again later — usually to find the figure to take out of ATS. */ ''}
+            <button class="btn tiny ghost" data-act="show-report" data-num="${esc(r.number)}">What it did</button>
             <b style="font-family:var(--mono)">net ${money(r.netContribution)}</b></div>
           <div class="kv">
             <span>revenue <b>${money(r.totalRevenue)}</b></span>${
@@ -6013,6 +6067,10 @@ async function handleAction(act, d, ev) {
         tu ? () => trueUpModal(tu) : null,
       ]);
     });
+    case 'show-report': {
+      const rep = (FLEETOPS?.reports || []).find((x) => x.number === d.num);
+      return rep ? fleetReportModal(rep) : toast('That report is not loaded.', 'bad');
+    }
     case 'show-cancel': return cancelModal(d.id);
     case 'do-cancel': return run(async () => {
       absorb(await api(`/trips/${d.id}/cancel`, 'POST',
@@ -6246,7 +6304,9 @@ async function handleAction(act, d, ev) {
           notes: sv('fr-note'), lines,
         }));
         FLEETOPS = await api('/fleetops');
-        toast(`${r.report.number} filed — net ${money(r.report.netContribution)}.`, 'ok');
+        // In front of them, not on a card below the form. A period where a tractor went through the
+        // shop, was condemned, or had its PM deferred used to read as "nothing happened".
+        queueModals([() => fleetReportModal(r.report)]);
       });
     }
 
