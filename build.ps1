@@ -58,6 +58,7 @@ if ($Package) {
     # Everything that ships. Named rather than globbed so a missing manual is an error you see here,
     # not a thin zip somebody notices after downloading it.
     $shipped = @(
+        'docs\manual\TruckSim-Dispatcher-FAQ.pdf',
         'docs\manual\TruckSim-Dispatcher-User-Manual.pdf',
         'docs\manual\TruckSim-Dispatcher-Operations-Manual.pdf',
         'README.md'

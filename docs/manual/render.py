@@ -19,6 +19,7 @@ _NAME = sys.argv[1] if len(sys.argv) > 1 else "manual.html"
 _PDFS = {
     "manual.html": "TruckSim-Dispatcher-User-Manual.pdf",
     "operations.html": "TruckSim-Dispatcher-Operations-Manual.pdf",
+    "faq.html": "TruckSim-Dispatcher-FAQ.pdf",
 }
 HTML = HERE / _NAME
 PDF = HERE / _PDFS.get(_NAME, _NAME.replace(".html", ".pdf"))

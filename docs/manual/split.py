@@ -236,6 +236,18 @@ def main() -> None:
 
     (HERE / "manual.html").write_text(head + body + tail, encoding="utf-8", newline="")
 
+    # The FAQ is its own source rather than pages carved out of the manual: it is written for somebody
+    # who has never seen the app, not for somebody working through it, and it answers questions the
+    # manual does not have a place for. It rides this pipeline so it inherits the stylesheet and the
+    # version, both of which have drifted before when a document was built by hand.
+    faq_src = HERE / "faq-source.html"
+    if faq_src.exists():
+        faq = faq_src.read_text(encoding="utf-8").replace("{{BUILD}}", build_label())
+        (HERE / "faq.html").write_text(
+            head.replace("TruckSim Dispatcher — User Manual", "TruckSim Dispatcher — FAQ")
+            + faq + tail,
+            encoding="utf-8", newline="")
+
     (HERE / "operations.html").write_text(
         head.replace("TruckSim Dispatcher — User Manual", "TruckSim Dispatcher — Operations Manual")
         + OPS_COVER + "".join(relabel(p) for _, p in ops) + tail,

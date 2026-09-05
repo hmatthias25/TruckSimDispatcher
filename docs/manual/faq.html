@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TruckSim Dispatcher — FAQ</title>
+<style>
+  @page { size: letter; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    color: #1a2129; font-size: 10.5pt; line-height: 1.5;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  .page {
+    width: 8.5in; height: 11in; padding: 0.72in 0.78in 0.6in;
+    page-break-after: always; position: relative; overflow: hidden;
+    background: #fff;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  body { counter-reset: pg 0; }
+  .page { counter-increment: pg; }
+  .pfoot .pn::after { content: counter(pg); }
+  .pfoot {
+    position: absolute; left: 0.78in; right: 0.78in; bottom: 0.34in;
+    border-top: 0.5pt solid #d3dae1; padding-top: 4pt;
+    font-size: 7.5pt; color: #7d8b98; display: flex; justify-content: space-between;
+  }
+
+  h1 { font-size: 20pt; margin: 0 0 6pt; letter-spacing: -0.4pt; color: #14324e; }
+  h2 {
+    font-size: 14pt; margin: 0 0 8pt; color: #14324e;
+    border-bottom: 1.5pt solid #d99412; padding-bottom: 4pt; letter-spacing: -0.2pt;
+  }
+  h3 { font-size: 11pt; margin: 11pt 0 3pt; color: #1f4a70; }
+  h4 { font-size: 9.5pt; margin: 9pt 0 3pt; color: #3b4a57; text-transform: uppercase; letter-spacing: 0.6pt; }
+  p { margin: 0 0 6pt; }
+  ul, ol { margin: 0 0 7pt; padding-left: 16pt; }
+  li { margin: 0 0 2.5pt; }
+  b, strong { color: #10293d; }
+  code, .mono { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background: #eef2f5; padding: 0 3pt; border-radius: 2pt; }
+
+  .kicker { font: 700 8pt/1.3 Consolas, monospace; letter-spacing: 1.6pt; text-transform: uppercase; color: #d99412; margin-bottom: 5pt; }
+  .lede { font-size: 11.5pt; color: #3b4a57; margin-bottom: 10pt; }
+
+  figure { margin: 7pt 0 8pt; page-break-inside: avoid; }
+  figure img { width: 100%; display: block; border: 0.75pt solid #b9c4cf; border-radius: 3pt; }
+  figcaption { font-size: 8pt; color: #6b7885; margin-top: 4pt; font-style: italic; }
+  .shot-sm { max-width: 62%; margin-left: auto; margin-right: auto; }
+  .shot-md { max-width: 82%; margin-left: auto; margin-right: auto; }
+
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0 8pt; font-size: 8.8pt; }
+  th { background: #14324e; color: #fff; text-align: left; padding: 4pt 6pt; font-size: 8.3pt; letter-spacing: 0.3pt; }
+  td { border: 0.5pt solid #ccd5dd; padding: 3pt 6pt; vertical-align: top; line-height: 1.35; }
+  tr:nth-child(even) td { background: #f5f8fa; }
+  td.mono, th.num { font-family: Consolas, monospace; }
+
+  .note, .warn, .rule {
+    border-left: 3pt solid #2b6cb0; background: #f2f7fc; padding: 6pt 9pt; margin: 7pt 0;
+    font-size: 9.3pt; border-radius: 0 3pt 3pt 0; line-height: 1.42;
+  }
+  .warn { border-left-color: #b3392f; background: #fdf4f3; }
+  .rule { border-left-color: #2f9c48; background: #f3faf5; }
+  .note p:last-child, .warn p:last-child, .rule p:last-child { margin-bottom: 0; }
+  .note h4, .warn h4, .rule h4 { margin-top: 0; color: #14324e; }
+
+  .cols2 { column-count: 2; column-gap: 20pt; }
+  .cols2 p, .cols2 li { orphans: 2; widows: 2; }
+  .side { display: flex; gap: 14pt; align-items: flex-start; }
+  .side > .txt { flex: 1 1 52%; }
+  .side > .pic { flex: 1 1 48%; }
+  .side > .pic img { width: 100%; border: 0.75pt solid #b9c4cf; border-radius: 3pt; display: block; }
+
+  /* cover */
+  .cover { background: #10222f; color: #e8eef4; height: 11in; padding: 1.1in 0.9in; }
+  .cover h1 { color: #fff; font-size: 40pt; line-height: 1.02; letter-spacing: -1.2pt; margin: 0 0 10pt; }
+  .cover .sub { font-size: 15pt; color: #a8bccd; margin-bottom: 26pt; }
+  .cover .rulebar { height: 4pt; width: 2.1in; background: #d99412; margin: 0 0 26pt; }
+  .cover .kicker { color: #d99412; font-size: 9pt; letter-spacing: 2.4pt; }
+  .cover .credit {
+    position: absolute; left: 0.9in; right: 0.9in; bottom: 1.0in;
+    border-top: 1pt solid #2c4356; padding-top: 12pt; font-size: 10pt; color: #a8bccd;
+  }
+  .cover .credit b { color: #fff; }
+  .cover .facts { margin-top: 22pt; font-size: 10pt; color: #c3d2de; }
+  .cover .facts div { padding: 3pt 0; border-bottom: 0.5pt solid #22384a; }
+  .cover .facts span { display: inline-block; width: 1.5in; color: #7f97ab; font: 700 8pt Consolas, monospace; letter-spacing: 1pt; text-transform: uppercase; }
+  .alphabox {
+    margin-top: 30pt; background: #3a2410; border: 1.5pt solid #d99412; border-radius: 4pt;
+    padding: 12pt 14pt; display: flex; gap: 12pt; align-items: flex-start; color: #f0dcc0; font-size: 9.5pt; line-height: 1.45;
+  }
+  .alphabox b { color: #ffcf7a; }
+  .ab-tag {
+    flex: none; background: #d99412; color: #241703; font: 700 9pt Consolas, monospace;
+    letter-spacing: 1.4pt; text-transform: uppercase; padding: 3pt 9pt; border-radius: 3pt;
+  }
+
+  /* contents */
+  /* Two columns: listing every page rather than just the section openings roughly trebled the
+     row count, and one column of it ran off the bottom of the page. */
+  /* The contents is rebuilt from the pages themselves, so it grows every time one is added.
+     Leading is kept tight deliberately — a page of it should not need pruning to fit. */
+  .toc { font-size: 8.1pt; column-count: 2; column-gap: 18pt; line-height: 1.28; }
+  .toc .grp:first-child { margin-top: 0; }
+  .toc div { display: flex; align-items: baseline; break-inside: avoid;
+             padding: 0.05pt 0; border-bottom: 0.5pt dotted #cdd6de; }
+  .toc .n { font: 700 9pt Consolas, monospace; color: #d99412; width: 26pt; flex: none; }
+  .toc .t { flex: 1; }
+  .toc .p { font: 700 9pt Consolas, monospace; color: #7d8b98; }
+  .toc .sub { padding-left: 16pt; font-size: 6.9pt; }
+  .toc .sub .t { color: #5c6b78; }
+  .toc .sub .p { font-size: 8.4pt; }
+  .toc .grp { margin-top: 3.5pt; font: 700 8pt Consolas, monospace; letter-spacing: 1.4pt; text-transform: uppercase; color: #94a3af; border: 0; padding-bottom: 2pt; }
+
+  svg { display: block; margin: 0 auto; }
+  .dg { font-family: "Segoe UI", Arial, sans-serif; }
+  .dg .bx { fill: #f4f7f9; stroke: #8fa1b0; stroke-width: 1.1; }
+  .dg .bx-a { fill: #fdf3e0; stroke: #d99412; stroke-width: 1.3; }
+  .dg .bx-g { fill: #eff9f2; stroke: #2f9c48; stroke-width: 1.3; }
+  .dg .bx-r { fill: #fdf1ef; stroke: #b3392f; stroke-width: 1.3; }
+  .dg .bx-b { fill: #eff5fc; stroke: #2b6cb0; stroke-width: 1.3; }
+  .dg .bx-d { fill: #14324e; stroke: #14324e; }
+  .dg t, .dg text { font-size: 9.2px; fill: #1a2129; }
+  .dg .ttl { font-weight: 700; font-size: 9.8px; fill: #10293d; }
+  .dg .sm { font-size: 8px; fill: #5c6b78; }
+  .dg .wt { fill: #fff; font-weight: 700; }
+  .dg .ln { stroke: #8fa1b0; stroke-width: 1.1; fill: none; }
+  .dg .ln-a { stroke: #d99412; stroke-width: 1.6; fill: none; }
+  .dg .ln-g { stroke: #2f9c48; stroke-width: 1.6; fill: none; }
+  .dg .ln-r { stroke: #b3392f; stroke-width: 1.6; fill: none; }
+  .dg .lbl { font-size: 8px; fill: #6b7885; font-style: italic; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ COVER -->
+<!-- ============================================================ FAQ COVER -->
+<div class="page cover">
+  <div class="kicker">Frequently asked &middot; v0.45 alpha</div>
+  <h1>TruckSim<br>Dispatcher</h1>
+  <div class="rulebar"></div>
+  <div class="sub">You drive. The company decides, audits and pays.<br>
+    A dispatch office for American&nbsp;Truck&nbsp;Simulator.</div>
+
+  <div class="facts">
+    <div><span>In one line</span> ATS gives you a truck; this gives you an employer</div>
+    <div><span>Runs on</span> Windows &middot; one portable .exe &middot; no install</div>
+    <div><span>Touches your game</span> Never. It cannot read or write your save</div>
+    <div><span>Costs</span> Nothing, and it is not for sale</div>
+    <div><span>You will need</span> The ATS developer console, to sit your rests</div>
+    <div><span>This sheet</span> The questions people actually ask</div>
+  </div>
+
+  <div class="alphabox">
+    <div class="ab-tag">Alpha</div>
+    <div>
+      <b>This is v0.45 alpha and is not finished.</b>
+      It is being play-tested. Expect rough edges and expect things to change. If something reads wrong
+      or breaks, saying so is the most useful thing you can do with it.
+    </div>
+  </div>
+
+  <div class="pfoot"><span>TruckSim Dispatcher &middot; FAQ</span><span class="pn"></span></div>
+</div>
+
+<!-- ============================================================ what it is -->
+<div class="page">
+  <div class="kicker">The short version</div>
+  <h2>What is this, actually?</h2>
+
+  <p class="lede">American Truck Simulator hands you a truck and a job list and lets you do whatever you
+    like. This app puts a carrier on the other end of the radio.</p>
+
+  <p>You are a <b>company driver</b>. You report where you are and what your clocks say; dispatch tells
+    you which load you are running and why. You close the load out; the company audits it, pays you on
+    Friday, and writes up your file. Miss enough windows and there is a conversation. Wreck enough
+    equipment and there is a different one.</p>
+
+  <p>Nothing is enforced. The app cannot stop you doing anything in ATS &mdash; it is a second screen
+    that treats your game as a job.</p>
+
+  <div class="rule">
+    <h4>The point is the pressure, not the paperwork</h4>
+    <p>Freight in ATS pays whether you take the good load or the bad one. Here somebody is watching the
+      rate, the empty miles, your hours, your home time and the state of the truck &mdash; and they say
+      no. A run you would have taken without thinking gets refused with a number attached.</p>
+  </div>
+
+  <h3>What it is not</h3>
+  <table>
+    <tr><th style="width:1.6in">Not a mod</th><td>Nothing is installed into ATS. No files touched, no launch options, no risk to your profile.</td></tr>
+    <tr><th>Not telemetry</th><td>It does not read the game. There is no plugin, no memory reading, no SDK. You tell it what the screen says.</td></tr>
+    <tr><th>Not a money cheat</th><td>It pays <em>you</em>, the driver, on its own books. What ATS does with company money is between you and ATS.</td></tr>
+    <tr><th>Not multiplayer</th><td>Single career, on your machine. TruckersMP is not supported and would not know about it.</td></tr>
+  </table>
+
+  <div class="pfoot"><span>TruckSim Dispatcher &middot; FAQ</span><span class="pn"></span></div>
+</div>
+
+<!-- ============================================================ getting going -->
+<div class="page">
+  <div class="kicker">Getting going</div>
+  <h2>What do I need, and how do I start?</h2>
+
+  <h3>To run it: nothing but the exe</h3>
+  <p>Download the zip, unpack it anywhere, double-click <code>TruckSimDispatcher.exe</code>. A console
+    window opens and your browser opens with it. Leave the console open while you play;
+    <code>Ctrl+C</code> shuts it down. No install, no .NET runtime, no account, no internet.</p>
+
+  <p>Your career lives in a <code>data</code> folder beside the exe. Back it up by copying that folder
+    &mdash; or use <b>Settings &rarr; Data</b>, which will take one for you.</p>
+
+  <div class="rule">
+    <h4>Put it on a second monitor</h4>
+    <p>It is a browser page. Alt-tab works, a phone or tablet on the same network works, and a second
+      screen beside the game is what it was built for. You will be typing into it between legs, not
+      while driving.</p>
+  </div>
+
+  <h3>One thing you will need in ATS itself</h3>
+  <div class="rule">
+    <h4>The developer console, for rests and restarts</h4>
+    <p>This app runs you to hours-of-service rules, and ATS has no way to sit still for ten hours, let
+      alone thirty-four. The game's own sleep advances a fixed amount at a rest area and no more, so a
+      <b>10-hour reset</b> or a <b>34-hour restart</b> cannot be taken in the game as it ships.</p>
+    <p style="margin-top:6pt">Enable the developer console and advance the clock by the hours the app
+      tells you to sit. It is a game limitation, not a choice the app made &mdash; and without it the
+      whole HOS side of this is unplayable, because you will never legally get your hours back.</p>
+    <p style="margin-top:6pt">Turning it on is a one-line change to <code>config.cfg</code> in your
+      ATS profile folder, and it is a standard thing to run with. Nothing else here needs it.</p>
+  </div>
+
+  <h3>Genuinely optional, and what each is for</h3>
+  <table>
+    <tr><th style="width:1.6in">A save editor</th>
+      <td><b>Occasionally useful, never required.</b> Two reasons come up. Seeding starting cash if you
+        want to begin bigger than a one-truck outfit. And putting money back when the app's books hold
+        more than ATS does &mdash; a service the company paid for on a hired driver's tractor, say,
+        which the app booked and the game knows nothing about. It tells you the exact figure.
+        <i>TS SE Tool</i> with <i>SII_Decrypt</i> is the usual pairing. Back the save up first: editors
+        can corrupt one and SCS cannot support a modified profile.</td></tr>
+    <tr><th>An API key</th>
+      <td><b>Only if you want to paste screenshots.</b> Without one you type the numbers, which is
+        perfectly normal and nothing is lost. With one you can paste the job board or your HOS screen
+        and it reads the rows out. It is an Anthropic key from <code>console.anthropic.com</code> &mdash;
+        a developer key, not a Claude subscription login &mdash; and you pay Anthropic for what you use.</td></tr>
+  </table>
+
+  <div class="pfoot"><span>TruckSim Dispatcher &middot; FAQ</span><span class="pn"></span></div>
+</div>
+
+<!-- ============================================================ the loop -->
+<div class="page">
+  <div class="kicker">How a session goes</div>
+  <h2>What does it actually feel like to use?</h2>
+
+  <p class="lede">Four things, and only the first two happen every leg.</p>
+
+  <table>
+    <tr><th style="width:0.4in">1</th><td><b>Report in.</b> Where you are, the game clock, your four HOS
+      clocks, fuel, damage. Type it or paste a screenshot.</td></tr>
+    <tr><th>2</th><td><b>Show the board.</b> The handful of jobs going out from where you are parked
+      first; the whole city only if none of those work. Dispatch picks one and shows its working &mdash;
+      every term, with its contribution to the score.</td></tr>
+    <tr><th>3</th><td><b>Run it in ATS.</b> The app does nothing while you drive. Fuel stops and
+      breakdowns get logged if they happen.</td></tr>
+    <tr><th>4</th><td><b>Close it out.</b> Miles, times, damage, costs. You get an audit: what it earned,
+      what it cost, whether it was on time and whose fault it was if not.</td></tr>
+  </table>
+
+  <div class="rule">
+    <h4>You do not pick your own freight</h4>
+    <p>Dispatch chooses. You can ask for something else and it will answer, and off probation you get
+      more latitude &mdash; but a company driver does not shop the board, and that is the whole
+      arrangement. If you want to overrule it you can, and it is recorded as your call.</p>
+  </div>
+
+  <h3>Where the time goes</h3>
+  <p>Entering a board is the bulk of it &mdash; a handful of jobs, four fields each that matter. Everything
+    else is a few numbers off the game screen. Pasting screenshots collapses most of that if you have a
+    key set.</p>
+
+  <div class="note">
+    <h4>It will refuse loads, and it will be annoying</h4>
+    <p>That is the feature. A load that cannot make its window is refused with the arithmetic attached.
+      A dock offering nothing worth the truck gets held while it asks for the city board. Being told
+      "no, and here is why" is the thing ATS never does.</p>
+  </div>
+
+  <div class="pfoot"><span>TruckSim Dispatcher &middot; FAQ</span><span class="pn"></span></div>
+</div>
+
+<!-- ============================================================ common questions -->
+<div class="page">
+  <div class="kicker">Common questions</div>
+  <h2>The ones that come up most</h2>
+
+  <table>
+    <tr><th style="width:2.1in">Does it work with my mods?</th>
+      <td>Yes, and it does not need to know about them. You type the city names, so map mods, ProMods,
+        C2C and the rest all work. About thirty thousand real US city coordinates ship with it, so a town
+        the app's own market table has never heard of still gets a real distance.</td></tr>
+    <tr><th>Which DLC do I need?</th>
+      <td>None in particular. It follows wherever you drive.</td></tr>
+    <tr><th>Can I cheat it?</th>
+      <td>Trivially &mdash; you are the only source of numbers. The app is built so that cheating is
+        boring rather than impossible: every judgement is seeded, so reloading does not re-roll an
+        answer you did not like, and the audit tells you when a figure does not add up.</td></tr>
+    <tr><th>Does it use real HOS rules?</th>
+      <td>The US FMCSA pattern: 11 driving, 14 on duty, a 30-minute break, 70 hours in 8 days, a
+        10-hour reset and a 34-hour restart. Modelled for a game. <b>Do not use it to plan real
+        driving.</b></td></tr>
+    <tr><th>Is my save safe?</th>
+      <td>The app never opens it. The only risk in this whole workflow is a save editor, if you choose
+        to use one.</td></tr>
+    <tr><th>Where does my data go?</th>
+      <td>Nowhere. Everything is on your machine, no accounts and no network calls &mdash; unless you set
+        an API key for screenshots, which is off by default and clearly marked where it is not.</td></tr>
+    <tr><th>Can I run my own fleet?</th>
+      <td>Yes. Hire drivers in ATS, add them on the Fleet tab, and file a periodic fleet report. The
+        company handles their maintenance, replaces worn-out tractors and occasionally loses one of them
+        to a competitor.</td></tr>
+    <tr><th>Do I have to start at the bottom?</th>
+      <td>You start on probation somewhere that will take you. Where that is depends on the experience
+        you declare, and carriers check it against your record as you build one.</td></tr>
+  </table>
+
+  <div class="pfoot"><span>TruckSim Dispatcher &middot; FAQ</span><span class="pn"></span></div>
+</div>
+
+<!-- ============================================================ help -->
+<div class="page">
+  <div class="kicker">If something looks wrong</div>
+  <h2>Reading it, and reporting it</h2>
+
+  <h3>Two manuals ship with this</h3>
+  <table>
+    <tr><th style="width:1.9in">User Manual</th>
+      <td>What to do, in order. Read the first few sections and you can play; the rest is reference.</td></tr>
+    <tr><th>Operations Manual</th>
+      <td>Why every rule exists &mdash; each threshold, each mechanism, and the failure it was built to
+        prevent. You never need it to play. It is numbered against the User Manual, so a page headed
+        <b>From Section 13</b> belongs behind Section 13 there.</td></tr>
+  </table>
+
+  <div class="rule">
+    <h4>Almost every rule came from somebody playing</h4>
+    <p>The reason the Operations Manual reads like a list of mistakes is that it is one. Loads that were
+      refused for the wrong reason, hours credited that did not exist, a driver failed for a shipper's
+      delay &mdash; each of those was somebody reporting it from a real career, and the fix is written up
+      beside the fault.</p>
+    <p style="margin-top:6pt">So a report of "this feels wrong" is worth more than it sounds, even
+      without a diagnosis attached.</p>
+  </div>
+
+  <h3>What helps when reporting</h3>
+  <ul>
+    <li>The <b>build stamp</b> from the app header &mdash; the version alone is not enough, since a
+      dozen builds can carry the same number.</li>
+    <li>What you expected, and what happened instead.</li>
+    <li>The <b>scoring detail</b> on the load card, if it is a dispatch decision you disagree with.
+      Every term is itemised, so the disagreement can usually be traced to one number.</li>
+    <li>Your <code>career.json</code>, if you are willing. It settles in one look what guessing does not.</li>
+  </ul>
+
+  <div class="note">
+    <h4>It is alpha, and that is not a disclaimer</h4>
+    <p>Play-testing feedback is the reason it is in your hands at all. Keep backups of your career file
+      &mdash; Settings &rarr; Data will take one &mdash; and expect things to move.</p>
+  </div>
+
+  <div class="pfoot"><span>TruckSim Dispatcher &middot; FAQ</span><span class="pn"></span></div>
+</div>
+
+</body>
+</html>
