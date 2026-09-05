@@ -19,5 +19,35 @@ public static class Build
     /// <summary>Alpha | Beta | Release — shown alongside the number.</summary>
     public const string Stage = "alpha";
 
-    public static string Display => $"v{Version} {Stage}";
+    /// <summary>
+    /// When this executable was built, read off the file itself.
+    ///
+    /// The version number moves once a release; a bug hunt moves through a dozen builds in an afternoon
+    /// and every one of them says v0.44 alpha. That cost a whole diagnosis: a fix went out, the same
+    /// fault came back, and neither of us could tell whether the build under test contained the fix.
+    ///
+    /// Off the file rather than stamped in at compile time, because a single-file publish rewrites the
+    /// exe and its timestamp IS the publish. Nothing to remember, nothing to pass through MSBuild, and
+    /// it cannot drift from the binary it describes.
+    /// </summary>
+    public static string Stamp
+    {
+        get
+        {
+            try
+            {
+                var path = Environment.ProcessPath;
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return "";
+                return File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm");
+            }
+            catch
+            {
+                // A version string is not worth failing a page render over.
+                return "";
+            }
+        }
+    }
+
+    public static string Display =>
+        Stamp.Length > 0 ? $"v{Version} {Stage} · build {Stamp}" : $"v{Version} {Stage}";
 }
