@@ -15,6 +15,10 @@ let REACHED_PAGE = 1;      // which page of the reached-cities list is showing
 /* Which board the driver is showing us: what is on offer at this dock, or the whole city. Starts
    local because that is the first thing you see when the trailer comes off. */
 let BOARD_STAGE = 'local';
+// Set when the DRIVER picks a tab themselves, so the automatic correction below never overrules a
+// deliberate choice. Cleared whenever the stop changes, because a preference expressed at one dock is
+// not a preference about the next one.
+let BOARD_STAGE_PINNED = false;
 let BUSY = '';             // label of an in-flight long operation
 
 const TABS = [
@@ -251,7 +255,22 @@ function atCustomer() {
  * is offered at a truck stop, so the stage goes back to the city board on its own.
  */
 function fixBoardStage() {
-  if (BOARD_STAGE === 'local' && !atCustomer()) BOARD_STAGE = 'city';
+  if (BOARD_STAGE === 'local' && !atCustomer()) { BOARD_STAGE = 'city'; return; }
+
+  // And back again, which it never did. This was one-way: a stage flipped to city at a truck stop
+  // stayed city after arriving at the next receiver, the panel still offered the local tab but did not
+  // select it, and every row typed in there was filed as CITY freight.
+  //
+  // That is not cosmetic. atLocation is what tells dispatch whether a board is one dock's worth or the
+  // whole town, and the home-time hold turns on it — so a driver entering jobs at this location got
+  // them recorded as a city board already looked at, and the "show me the city board" question was
+  // never asked. Reported from play three times on the same lane; the career file had five rows, all
+  // originating in Oklahoma City, all flagged as city freight.
+  //
+  // Only with nothing entered yet, so a driver who has typed rows keeps the tab they typed them on,
+  // and only when they have not chosen a tab themselves.
+  if (BOARD_STAGE === 'city' && atCustomer() && !BOARD_STAGE_PINNED
+      && (S?.board?.length ?? 0) === 0) BOARD_STAGE = 'local';
 }
 
 /**
@@ -5673,7 +5692,7 @@ async function handleAction(act, d, ev) {
     });
 
     /* ---- board */
-    case 'board-stage': BOARD_STAGE = d.stage; return render();
+    case 'board-stage': BOARD_STAGE = d.stage; BOARD_STAGE_PINNED = true; return render();
     case 'board-add': {
       const load = {
         cargo: sv('b-cargo') || 'Freight', trailerType: sv('b-trailer'),
@@ -5809,6 +5828,13 @@ async function handleAction(act, d, ev) {
           hazmatClass: l.hazmatClass || '',
           trailerType: sv(`x-trailer-${i}`),
           shipper: l.shipper || '', receiver: l.receiver || '',
+          // Which board these came off. The manual form has always sent this; the screenshot importer
+          // never did, so every pasted row was filed as CITY freight however the tab was set — and
+          // atLocation is what tells dispatch whether it is looking at one dock's worth or the whole
+          // town. A driver pasting jobs at this location got a board that already counted as the city
+          // board, so the "show me the city board" question could never be asked. Reported three times
+          // on one lane before the career file showed five rows, all out of Oklahoma City, all city.
+          atLocation: BOARD_STAGE === 'local',
           deadheadMiles: 0, extraStops: 0,
           isUrgent: !!l.isUrgent, isFragile: !!l.isFragile, isHazmat: !!l.isHazmat,
           notes: 'Imported from screenshot',
@@ -5947,6 +5973,7 @@ async function handleAction(act, d, ev) {
       FUEL = { tripId: null, seeded: 0, rows: [] };
       // New dock, new starting point: show me what is going out from here before the whole city.
       BOARD_STAGE = 'local';
+      BOARD_STAGE_PINNED = false;
       // The audit belongs in front of the driver the moment the load closes, not sitting on a tab
       // until they have already taken the next one. A payday that landed on this close-out queues
       // behind it rather than being lost — closing out on a Friday is how most of them arrive.
