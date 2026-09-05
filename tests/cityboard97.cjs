@@ -292,6 +292,42 @@ async function cityBoard(rows) {
   ok('and a load finishing there is treated as restart-capable',
     home34?.destResetFriendly === true, `${home34?.destResetFriendly}`);
 
+  head('#189b And when the dock has nothing going home, it asks BEFORE sending you elsewhere');
+  // The follow-up question: "what would happen if I stop in Oklahoma City and the receiver has none of
+  // these — would the app check the city board before sending me somewhere not in that area?"
+  //
+  // This is the #97 hold, and it has to keep working now the reset watch is also live: a load that is
+  // reset-capable but nowhere near the yard must not walk past it on the strength of the new term.
+  const away = await dockBoard([['Amarillo', 'TX', 260, 900], ['Wichita', 'KS', 160, 560]]);
+  ok('nothing is committed to off that dock', !away.authorizedLoadId,
+    (away.evaluations || []).find((e) => e.load.id === away.authorizedLoadId)?.load.destCity || 'none');
+  ok('the city board is asked for first', away.wantCityBoard === true, `${away.wantCityBoard}`);
+  ok('and the reason is the yard, not the money',
+    /not one of them finishes near/i.test(away.rationale || ''), (away.rationale || '').slice(0, 160));
+  ok('it still names one as the backup, so a dock that really is all there is can be taken',
+    !!away.heldLoadId, away.heldLoadId || 'none');
+
+  head('#189c Show it the city board and the yard run wins');
+  await api('/board/clear', 'POST', {});
+  for (const [c, st2, mi, rev, atLoc] of [
+    ['Amarillo', 'TX', 260, 900, true], ['Wichita', 'KS', 160, 560, true],
+    ['Springfield', 'MO', 250, 700, false]]) {
+    await api('/board/add', 'POST', {
+      cargo: `To ${c}`, trailerType: S.trailers[0].type, atLocation: atLoc,
+      originCity: 'Oklahoma City', originState: 'OK',
+      destCity: c, destState: st2, loadedMiles: mi, deadheadMiles: atLoc ? 0 : 20,
+      gameRevenue: rev, deadlineHours: 40, weightLbs: 30000,
+    });
+  }
+  const city = await api('/board/evaluate');
+  const won = (city.evaluations || []).find((e) => e.load.id === city.authorizedLoadId);
+  ok('a wider board is not held again', city.wantCityBoard !== true, `${city.wantCityBoard}`);
+  ok('and the yard run is the one taken, deadhead and all', won?.load.destCity === 'Springfield',
+    `${won?.load.destCity || 'none'} (${won?.load.deadheadMiles || 0} mi deadhead)`);
+  ok('even against better-paying freight that is not home',
+    (city.evaluations || []).some((e) => e.load.destCity === 'Amarillo' && e.score < (won?.score ?? 0)),
+    `Springfield ${won?.score?.toFixed?.(2)} vs Amarillo ${(city.evaluations || []).find((e) => e.load.destCity === 'Amarillo')?.score?.toFixed?.(2)}`);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });
