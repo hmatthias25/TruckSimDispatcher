@@ -5353,8 +5353,13 @@ function cancelModal(id) {
     <div class="callout warn"><p>Once freight is loaded the company is committed. Cancelling costs a penalty and
       goes on the record with a fault attribution. Only do this for a genuine emergency.</p></div>
     <label>Reason<textarea id="cx-reason" placeholder="what makes this unavoidable"></textarea></label>
-    <label>Fault<select id="cx-fault">${['Dispatcher', 'Driver', 'Mechanical', 'Unavoidable', 'GameLimitation']
+    ${/* Driver first, because the first option is the one that gets sent when nobody touches it and
+          the driver is the one who pressed cancel. Dispatcher led this list, so an untouched dialog
+          paid a breakdown day and filed the cancellation against the company. */ ''}
+    <label>Fault<select id="cx-fault">${['Driver', 'Dispatcher', 'Mechanical', 'Unavoidable', 'GameLimitation']
       .map((x) => `<option>${x}</option>`).join('')}</select></label>
+    <p class="hint" style="margin:0">Dispatcher or Mechanical is the company's doing and pays you a
+      breakdown day. The others do not &mdash; say what actually happened.</p>
     <label class="chk"><input type="checkbox" id="cx-charge" checked>
       Charge the company the ${money(S.settings.cancellationPenalty)} cancellation penalty</label>
     <div class="row-actions end"><button class="btn danger" data-act="do-cancel" data-id="${esc(id)}">Cancel the load</button></div>`);
@@ -5811,6 +5816,15 @@ async function handleAction(act, d, ev) {
       const rows = EXTRACT?.loads || [];
       const chosen = [];
       const rejected = [];
+      const duplicated = [];
+      /** The same job already on the board — the server's own comparison, applied before we send it. */
+      const already = (l) => (S.board || []).some((b) =>
+        (b.cargo || '').toLowerCase() === (l.cargo || '').toLowerCase()
+        && (b.destCity || '').toLowerCase() === (l.destCity || '').toLowerCase()
+        && (b.destState || '').toLowerCase() === (l.destState || '').toLowerCase()
+        && (b.originCity || '').toLowerCase() === (l.originCity || '').toLowerCase()
+        && Math.abs((b.loadedMiles || 0) - (l.loadedMiles || 0)) < 1
+        && Math.abs((b.gameRevenue || 0) - (l.gameRevenue || 0)) < 1);
       rows.forEach((l, i) => {
         if (!bv(`x-use-${i}`)) return;
         const load = {
@@ -5844,13 +5858,24 @@ async function handleAction(act, d, ev) {
           rejected.push(`row ${i + 1} (${load.cargo || 'unnamed'})`);
           return;
         }
+        // Already on the board. ATS lists the jobs at your location in the full city view too, so
+        // pasting the city board re-adds every dock row — and the way out used to be "clear the board
+        // first", which throws away those dock rows and the atLocation flag the city-board hold runs on.
+        //
+        // The server flags this rather than refusing it, deliberately, because two similar loads out of
+        // one shipper is ordinary and a driver typing by hand can see their own screen. Nobody de-dupes
+        // twenty pasted rows by hand, so the paste path skips them instead — same comparison the server
+        // uses, and the copy already on the board (the dock one) is the one kept.
+        if (already(load)) { duplicated.push(`${load.cargo} to ${load.destCity}`); return; }
         chosen.push(load);
       });
 
       if (!chosen.length) {
-        return toast(rejected.length
-          ? `Nothing added — ${rejected.length} row(s) are still missing destination, miles, revenue or the delivery window.`
-          : 'No rows ticked.', 'bad');
+        return toast(duplicated.length
+          ? `Nothing new — all ${duplicated.length} row(s) are already on the board from this dock.`
+          : rejected.length
+            ? `Nothing added — ${rejected.length} row(s) are still missing destination, miles, revenue or the delivery window.`
+            : 'No rows ticked.', duplicated.length ? 'ok' : 'bad');
       }
 
       return run(async () => {

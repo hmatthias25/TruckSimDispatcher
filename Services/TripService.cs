@@ -1614,7 +1614,12 @@ public static class TripService
         trip.Status = "Cancelled";
         trip.ServiceResult = "NotApplicable";
         trip.CancelReason = reason;
-        trip.FaultAttribution = string.IsNullOrWhiteSpace(fault) ? "Dispatcher" : fault;
+        // Nobody said, so it is the driver's — they are the one who pressed cancel. This defaulted to
+        // "Dispatcher", which is the single answer that both pays the driver a day and files a failure
+        // against the company, chosen on their behalf from no information at all. The app does not
+        // invent readings the game did not give, and it does not let a driver award themselves pay;
+        // guessing that the company caused it did both.
+        trip.FaultAttribution = string.IsNullOrWhiteSpace(fault) ? "Driver" : fault;
         trip.ClosedUtc = DateTime.UtcNow.ToString("o");
         trip.CompanyRevenue = 0;
         trip.Notes = $"Originally dispatched as {original}. {trip.Notes}".Trim();
@@ -1634,8 +1639,13 @@ public static class TripService
         trip.Pay = new PayBreakdown();
 
         // What does survive is the day. A company-caused cancellation had the driver sitting there
-        // because dispatch changed its mind, and that costs them a day whoever's fault it was not.
-        if (trip.FaultAttribution != "Driver" && trip.Kind == "Freight" && s.Driver.Pay.BreakdownPerDay > 0)
+        // because dispatch changed its mind, and that costs them a day.
+        //
+        // Named causes, not "anything that is not the driver". Unavoidable and GameLimitation are
+        // nobody's doing — a day nobody caused is not a day the company owes for, and reading the
+        // absence of driver fault as company fault is how an untouched dropdown paid out.
+        var companyCaused = trip.FaultAttribution is "Dispatcher" or "Mechanical";
+        if (companyCaused && trip.Kind == "Freight" && s.Driver.Pay.BreakdownPerDay > 0)
         {
             trip.Pay.BreakdownPay = s.Driver.Pay.BreakdownPerDay;
             trip.Pay.Total = s.Driver.Pay.BreakdownPerDay;

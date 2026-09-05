@@ -941,6 +941,16 @@ public static class DispatchEngine
         score += dhPts;
         detail.Add($"Deadhead {load.DeadheadMiles:0} mi ({e.DeadheadRatio * 100:0}% of loaded): {dhPts:+0.00;-0.00}");
 
+        // Already parked on it. The deadhead penalty above is meant to cover this and only does where a
+        // deadhead figure is known — pasted boards carry none, so a job across town scored identically
+        // to the one at the dock under the truck.
+        if (load.AtLocation)
+        {
+            score += w.AtDockEdge;
+            detail.Add($"Already at this shipper — nothing to reposition to get under it: {w.AtDockEdge:+0.00;-0.00}");
+            e.Pros.Add("You are already sitting at this shipper — no running to get under it.");
+        }
+
         // A thin market costs more when home time is close. The penalty used to be flat — the same
         // whether home was a fortnight away or two hours — but a thin market is exactly where a home-time
         // promise dies: nothing comes out of it to get the driver back, so the load after this one is an

@@ -1321,6 +1321,14 @@
     once.</p>
 
   <div class="rule">
+    <h4>Pasting the city board over the dock board</h4>
+    <p>ATS lists the jobs at your location in the full city view as well, so the city screenshots repeat
+      what you already entered. <b>Do not clear the board first</b> &mdash; that would throw away the
+      dock rows and, with them, the fact that those loads are at your dock. Rows already on the board are
+      skipped on import and you are told how many.</p>
+  </div>
+
+  <div class="rule">
     <h4>It always asks before committing</h4>
     <p>Extracted rows are shown in an editable table for you to confirm, and anything missing a
       destination, miles, revenue or a delivery window is refused rather than staged with a silent zero.
@@ -1509,6 +1517,17 @@
   <p>Open <b>Scoring detail</b> on any load and every term is itemised with its contribution, so a
     decision you disagree with can always be traced to a number. And you can request an alternate with a
     reason &mdash; dispatch decides, but it will answer. Off probation you get more latitude.</p>
+
+  <div class="rule">
+    <h4>Being parked on it counts for something</h4>
+    <p>A load offered where the truck is already sitting gets a small edge, because there is nothing to
+      run to get under it. It is sized at what that saved hop is actually worth &mdash; about what the
+      deadhead penalty would have charged for a cross-town reposition &mdash; so it settles a close call
+      and nothing more. A city load that is genuinely better still wins, and a load that heads home when
+      home time is due wins comfortably.</p>
+    <p style="margin-top:6pt">This matters most with pasted boards, which record no deadhead at all: a
+      job across town would otherwise have scored exactly like the one at the dock under your wheels.</p>
+  </div>
 
   <div class="rule">
     <h4>The highest score does not always win</h4>

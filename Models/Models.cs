@@ -2930,6 +2930,26 @@ public class ScoringWeights
     /// scored better for wasting them.
     /// </summary>
     public double AppointmentIdle { get; set; } = 0.8;
+
+    /// <summary>
+    /// What it is worth that the truck is already sitting at the shipper.
+    ///
+    /// This was supposed to arrive through the deadhead penalty, and does when a deadhead figure is
+    /// known. It usually is not: the screenshot importer records no deadhead for anything, so a job
+    /// forty miles across town scored exactly like the one at the dock the truck is parked on and the
+    /// tie broke on rate.
+    ///
+    /// Sized at what the avoided deadhead is actually worth, rather than picked. A cross-town hop to
+    /// another shipper is twenty-five miles or so; on a 350-mile load that is a deadhead ratio of 0.07,
+    /// which <see cref="DeadheadPenalty"/> would charge about 0.35 for. So this is the same charge,
+    /// applied as a credit to the load that does not incur it.
+    ///
+    /// Deliberately BELOW the home-time pull. A first attempt at one market tier (0.9) outranked the
+    /// 0.77 a near-due home run scores, so a dock load beat the road home — which is precisely the
+    /// thing this was not supposed to do. It breaks ties; it does not overrule getting the driver home
+    /// or avoiding a market that will strand them.
+    /// </summary>
+    public double AtDockEdge { get; set; } = 0.4;
     /// <summary>
     /// Weight on getting the driver home when their home time is coming due. Deliberately heavier
     /// than division or trip-length fit: a carrier that misses home time loses drivers, so once the
