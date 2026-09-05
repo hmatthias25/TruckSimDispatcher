@@ -59,6 +59,7 @@ PLAYER_TITLES = {
     "Stage two: the city board",
     "The other clock: how long the listing lasts",
     "How a load is judged",
+    "Reading the decision, and arguing with it",
     "Turning a load down",
     "Appointments, and the receiver who takes you early",
     "Running the load: the trip log and fuel stops",

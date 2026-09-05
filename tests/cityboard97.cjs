@@ -328,6 +328,78 @@ async function cityBoard(rows) {
     (city.evaluations || []).some((e) => e.load.destCity === 'Amarillo' && e.score < (won?.score ?? 0)),
     `Springfield ${won?.score?.toFixed?.(2)} vs Amarillo ${(city.evaluations || []).find((e) => e.load.destCity === 'Amarillo')?.score?.toFixed?.(2)}`);
 
+  head('Reported from play: Ottumwa IA against Kansas City MO, out of Oklahoma City');
+  // Queried from a real career — "I was given the load to Ottumwa IA, which isn't in the 200 mile range
+  // to get back to Springfield, when Kansas City was." Could not be reproduced: Kansas City wins on
+  // comparable figures and wins clearly. Kept as the regression test, because the terms deciding it are
+  // ones recent work has been moving — the reset watch scores the yard now, and both of these are
+  // reset-capable, so neither gets an edge from it.
+  const okc = await dockBoard([['Ottumwa', 'IA', 600, 2100], ['Kansas City', 'MO', 350, 1250]]);
+  const kc = (okc.evaluations || []).find((e) => e.load.destCity === 'Kansas City');
+  const ott = (okc.evaluations || []).find((e) => e.load.destCity === 'Ottumwa');
+
+  ok('Kansas City is the one authorized', okc.authorizedLoadId === kc?.load.id,
+    (okc.evaluations || []).find((e) => e.load.id === okc.authorizedLoadId)?.load.destCity || 'none');
+  ok('and it is not close', (kc?.score ?? 0) - (ott?.score ?? 0) > 2,
+    `Kansas City ${kc?.score?.toFixed?.(2)} vs Ottumwa ${ott?.score?.toFixed?.(2)}`);
+  ok('because Kansas City lands inside the home radius',
+    (kc?.scoreDetail || []).some((d) => /inside our .* home radius/i.test(d)),
+    (kc?.scoreDetail || []).find((d) => /home radius/i.test(d)) || '(no home term)');
+  ok('while Ottumwa is no nearer home than Oklahoma City already was',
+    (ott?.scoreDetail || []).some((d) => /neutral on home time/i.test(d)),
+    (ott?.scoreDetail || []).find((d) => /home time/i.test(d)) || '(no home term)');
+  ok('both can hold a restart, so the reset watch does not pick between them',
+    kc?.destResetFriendly === true && ott?.destResetFriendly === true,
+    `KC ${kc?.destResetFriendly} / Ottumwa ${ott?.destResetFriendly}`);
+
+  head('#190 A better load dropped on feasibility is named, not silently binned');
+  // The real board, with the figures off the driver's own score cards: Kansas City scored 4.43 and came
+  // out Tight on zero slack; Ottumwa scored 2.79, was feasible, and won by being the only candidate.
+  // Both cards were on screen and neither said why the lower number was taken.
+  // Home time taken first, and a CITY board. Two things have to be out of the way for this section to
+  // be about what it says it is: on a dock-only board with nothing near the yard the #97 hold fires and
+  // nothing is authorized at all, and with home time due a 561-mile run outbound is disqualified
+  // outright. Both are covered above. This is about what happens once something IS being authorized.
+  await place('Springfield', 'MO', 210, 'Terminal');
+  await place('Oklahoma City', 'OK', 212);
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 60 });
+  await api('/board/clear', 'POST', {});
+  await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: false,
+    originCity: 'Oklahoma City', originState: 'OK', destCity: 'Ottumwa', destState: 'IA',
+    loadedMiles: 561, deadheadMiles: 10, gameRevenue: 2136, deadlineHours: 40, weightLbs: 30000,
+  });
+  // Deliverable, but inside the safety buffer: 343 miles plus the dock at both ends is about 10:30,
+  // so twelve hours leaves under the 2:00 we want. That is Tight, not impossible.
+  const tightBoard = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: false,
+    originCity: 'Oklahoma City', originState: 'OK', destCity: 'Kansas City', destState: 'MO',
+    loadedMiles: 343, deadheadMiles: 10, gameRevenue: 1237, deadlineHours: 12, weightLbs: 30000,
+  });
+  const kcT = (tightBoard.evaluations || []).find((e) => e.load.destCity === 'Kansas City');
+  const ottT = (tightBoard.evaluations || []).find((e) => e.load.destCity === 'Ottumwa');
+
+  ok('the Kansas City run does not clear the safety buffer', kcT?.feasibility.verdict !== 'Feasible',
+    `${kcT?.feasibility.verdict}, ${kcT?.feasibility.slackHours}h slack`);
+  ok('so Ottumwa is the one authorized', tightBoard.authorizedLoadId === ottT?.load.id,
+    (tightBoard.evaluations || []).find((e) => e.load.id === tightBoard.authorizedLoadId)?.load.destCity || 'none');
+
+  const notes = (tightBoard.dispatchNotes || []).join(' | ');
+  const named = (tightBoard.dispatchNotes || []).find((x) => /scored better/i.test(x)) || '';
+  if ((kcT?.score ?? 0) > (ottT?.score ?? 0)) {
+    ok('the better-scoring one is named rather than left as a red card with no reason',
+      /scored better/i.test(notes), named.slice(0, 200) || '(silent)');
+    ok('with the slack that ruled it out', /slack against our/i.test(named), named.slice(0, 200));
+    ok('and the override offered, the same as on a rejected board',
+      /authorize it directly/i.test(named), named.slice(-110));
+    ok('it is offered as the backup, not a reject', kcT?.recommendation === 'Backup',
+      kcT?.recommendation || '?');
+  } else {
+    // A window that tight costs score as well as feasibility, so it does not always outscore.
+    ok('nothing outscored the authorized load, so there is nothing to name', !named,
+      `KC ${kcT?.score?.toFixed?.(2)} vs Ottumwa ${ottT?.score?.toFixed?.(2)}`);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });

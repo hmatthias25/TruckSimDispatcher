@@ -217,6 +217,47 @@ public static class DispatchEngine
                     $"{Hhmm.Of(s.Settings.SafetyBufferHours)} buffer, and on an ordinary day I would not " +
                     "book it. You are overdue home and this is the load that heads there, so I am taking " +
                     "it and owning the call. Do not lose time you do not have.");
+            // A load that scored better and was dropped on feasibility. Refusing it is right — booking
+            // something that cannot make its window is a service failure on the driver's record, and the
+            // app does not do that on its own. Going quiet about it is not: the driver reads two score
+            // cards, sees the lower number authorized, and concludes the scoring is broken.
+            //
+            // Reported from a real board. Kansas City scored 4.43 and came out Tight on zero slack;
+            // Ottumwa scored 2.79, was feasible, and won by being the only candidate. Nothing on either
+            // card said so. The reject-all path already has these words and only reaches them when
+            // NOTHING is clear, which is exactly the case this is not.
+            var beaten = decision.Evaluations
+                .Where(e => e.Load.Id != pick.Load.Id
+                            && e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
+                            && e.Feasibility.Verdict != "Feasible"
+                            && e.Score > pick.Score)
+                .OrderByDescending(e => e.Score)
+                .FirstOrDefault();
+
+            if (beaten != null)
+            {
+                beaten.Recommendation = "Backup";
+                decision.DispatchNotes.Add(
+                    $"{Place(beaten.Load.DestCity, beaten.Load.DestState)} {beaten.Load.Cargo} scored better " +
+                    $"({beaten.Score:0.0} against {pick.Score:0.0}) and I am not taking it: " +
+                    $"{Hhmm.Of(beaten.Feasibility.SlackHours)} of slack against our " +
+                    $"{Hhmm.Of(s.Settings.SafetyBufferHours)} buffer, so it is a late delivery waiting to " +
+                    "happen and that lands on your record, not mine. If you want it anyway, authorize it " +
+                    "directly and I will own the call.");
+
+                // What it would have done differently, where that is the whole point of it.
+                var hs = HomeTime.Status(s);
+                if (hs.Tracked && hs.DueSoon
+                    && Geo.MilesBetween(beaten.Load.DestCity, beaten.Load.DestState,
+                                        HomeTerminalCity(s), HomeTerminalState(s)) is { } beatenHome
+                    && Geo.MilesBetween(pick.Load.DestCity, pick.Load.DestState,
+                                        HomeTerminalCity(s), HomeTerminalState(s)) is { } pickHome
+                    && pickHome - beatenHome > 100)
+                    decision.DispatchNotes.Add(
+                        $"For what it is worth, it would have finished {beatenHome:N0} mi from {hs.TerminalLabel} " +
+                        $"against {pickHome:N0} on this one, with home time due in {hs.DaysUntilDue:0.#} days.");
+            }
+
             decision.DispatchNotes.Add($"Run it at ${pick.AllInRpm:0.00}/mi all-in on {pick.Load.LoadedMiles + pick.Load.DeadheadMiles:0} total miles.");
             decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
             if (pick.Feasibility.RestsRequired > 0)
@@ -1221,6 +1262,15 @@ public static class DispatchEngine
                  && (string.IsNullOrWhiteSpace(state) || string.IsNullOrWhiteSpace(t.State)
                      || t.State.Equals(state.Trim(), StringComparison.OrdinalIgnoreCase)));
     }
+
+    /// <summary>The home terminal's city, or empty. Kept beside IsOwnYard, which asks the same question.</summary>
+    private static string HomeTerminalCity(AppState s) =>
+        s.Company.Terminals.FirstOrDefault(t => t.Id == s.Driver.HomeTerminalId)?.City
+        ?? s.Company.Terminals.FirstOrDefault()?.City ?? "";
+
+    private static string HomeTerminalState(AppState s) =>
+        s.Company.Terminals.FirstOrDefault(t => t.Id == s.Driver.HomeTerminalId)?.State
+        ?? s.Company.Terminals.FirstOrDefault()?.State ?? "";
 
     public static string DivisionFor(BoardLoad load, Trailer? trailer)
     {
