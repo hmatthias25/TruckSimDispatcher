@@ -953,10 +953,29 @@ public static class HomeTime
         if (!st.Tracked || !st.DueSoon) return null;
         if (clear.Count == 0) return null;
 
-        // Everything the driver showed us came off the dock they are standing on. Read off the board
-        // rather than off the runnable subset: a city board with only its local rows feasible has still
-        // been looked at, and asking for it again would be asking for something already in hand.
-        if (s.Board.Count == 0 || !s.Board.All(b => b.AtLocation)) return null;
+        // Has the city board been looked at — for the city they are standing in?
+        //
+        // Read off the board rather than off the runnable subset: a city board with only its local rows
+        // feasible has still been looked at, and asking for it again would be asking for something
+        // already in hand. That much was right.
+        //
+        // What was wrong is that it asked whether EVERY row was local, so one leftover city row anywhere
+        // turned this hold off. The board is cleared on authorize, on reject-all, on running out of
+        // hours and on an explicit clear — but NOT on delivery. So a city row entered at a previous stop
+        // survives the delivery, survives the drive, and is still sitting there when the next dock board
+        // is typed in. Reported from play as a dock board at Oklahoma City that was never held.
+        //
+        // They are also easy to acquire without meaning to: the board panel forces itself back to city
+        // mode whenever the driver is not at a shipper or receiver, so anything entered at a truck stop
+        // is a city row.
+        //
+        // So: only a city row FROM HERE answers the question. Anywhere else is a different town's board.
+        if (s.Board.Count == 0) return null;
+        var lookedAtThisCity = s.Board.Any(
+            b => !b.AtLocation
+                 && !string.IsNullOrWhiteSpace(b.OriginCity)
+                 && b.OriginCity.Equals(s.Status.LocationCity ?? "", StringComparison.OrdinalIgnoreCase));
+        if (lookedAtThisCity) return null;
 
         var home = HomeTerminal(s);
         if (home == null) return null;

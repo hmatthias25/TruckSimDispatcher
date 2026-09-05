@@ -115,6 +115,43 @@ let S;
     (kc?.score ?? 0) > (ott?.score ?? 0),
     `KC ${kc?.score?.toFixed?.(2)} vs Ottumwa ${ott?.score?.toFixed?.(2)}`);
 
+  head('4. #191 THE FAULT: a stale city row from a previous stop killed the hold');
+  // The board is cleared on authorize, on reject-all, on running out of hours and on an explicit clear
+  // - but NOT on delivery. So a city row entered somewhere else survives, and the gate asked whether
+  // EVERY row was local. One leftover turned the hold off.
+  await api('/board/clear', 'POST', {});
+  await api('/board/add', 'POST', {
+    cargo: 'Leftover', trailerType: S.trailers[0].type, atLocation: false,
+    originCity: 'Amarillo', originState: 'TX', destCity: 'Lubbock', destState: 'TX',
+    loadedMiles: 120, deadheadMiles: 300, gameRevenue: 400, deadlineHours: 40, weightLbs: 30000,
+  });
+  await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
+    originCity: 'Oklahoma City', originState: 'OK', destCity: 'Ottumwa', destState: 'IA',
+    loadedMiles: 561, deadheadMiles: 0, gameRevenue: 2136, deadlineHours: 40, weightLbs: 30000,
+  });
+  const stale = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
+    originCity: 'Oklahoma City', originState: 'OK', destCity: 'Kansas City', destState: 'MO',
+    loadedMiles: 343, deadheadMiles: 0, gameRevenue: 1237, deadlineHours: 14.5, weightLbs: 30000,
+  });
+  ok('a row left over from Amarillo does not answer for Oklahoma City',
+    stale.wantCityBoard === true, `wantCityBoard=${stale.wantCityBoard}`);
+  ok('and nothing is committed to on the strength of it', !stale.authorizedLoadId,
+    (stale.evaluations || []).find((e) => e.load.id === stale.authorizedLoadId)?.load.destCity || 'none');
+
+  head('5. But a city board actually pulled HERE answers it, and is not asked for twice');
+  await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: false,
+    originCity: 'Oklahoma City', originState: 'OK', destCity: 'Wichita', destState: 'KS',
+    loadedMiles: 160, deadheadMiles: 15, gameRevenue: 620, deadlineHours: 30, weightLbs: 30000,
+  });
+  const asked = await api('/board/evaluate');
+  ok('the city has been looked at, so the hold stands down', asked.wantCityBoard !== true,
+    `wantCityBoard=${asked.wantCityBoard}`);
+  ok('and a load is committed to', !!asked.authorizedLoadId,
+    (asked.evaluations || []).find((e) => e.load.id === asked.authorizedLoadId)?.load.destCity || 'none');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });
