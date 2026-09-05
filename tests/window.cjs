@@ -504,6 +504,21 @@ const gday = (day, hm) => {
     (ff.warnings || []).some((w) => /held your rest/i.test(w)),
     (ff.warnings || []).find((w) => /held your rest/i.test(w))?.slice(0, 130) || '(silent)');
 
+  head('#186 And those parked hours count against the load when it is picked');
+  // "This is not the best job for a dispatcher to choose really. The truck will be sitting an extra 9
+  // hours to hit the appointment, which is less equipment utilisation." Slack is scored as a GOOD
+  // thing — so before this, a load that held the truck nine hours scored better for it.
+  ok('the parked hours are recorded as idle', ff.idleHours > 0, `${hhmm(ff.idleHours)} idle`);
+  ok('and they are the hours held onto the rest, not the mandatory reset',
+    Math.abs(ff.idleHours - ff.sleptInHours) < 0.02,
+    `${hhmm(ff.idleHours)} idle vs ${hhmm(ff.sleptInHours)} held`);
+  ok('the score is marked down for them',
+    (fEval.scoreDetail || []).some((d) => /tied up waiting on the appointment: -/.test(d)),
+    (fEval.scoreDetail || []).find((d) => /tied up waiting/.test(d)) || '(not scored)');
+  ok('and the driver is told why it is worse than the rate looks',
+    (fEval.cons || []).some((c) => /earning nothing/i.test(c)),
+    (fEval.cons || []).find((c) => /earning nothing/i.test(c))?.slice(0, 130) || '(silent)');
+
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

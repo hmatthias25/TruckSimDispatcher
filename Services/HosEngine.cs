@@ -494,6 +494,7 @@ public static class HosEngine
                         clock = clock.AddHours(waiting);
                         result.SleptInHours = Math.Round(waiting, 2);
                         result.WaitForAppointmentHours = 0;
+                        result.IdleHours = Math.Round(waiting, 2);
                         result.Warnings.Add(
                             $"You would have got there {Hhmm.Of(waiting)} early, so I have held your rest " +
                             $"{Hhmm.Of(waiting)} longer instead of sitting at the gate. The same hours parked " +
@@ -505,6 +506,7 @@ public static class HosEngine
                         // will not fit inside slack shorter than a reset. Sitting really is the option.
                         shift = Math.Max(0, shift - waiting);
                         cycle = Math.Max(0, cycle - waiting);
+                        result.IdleHours = Math.Round(waiting, 2);
                         Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}", "OnDuty", waiting, 0);
                         if (waiting >= 0.25)
                             result.Warnings.Add(

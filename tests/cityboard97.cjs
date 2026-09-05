@@ -199,6 +199,50 @@ async function cityBoard(rows) {
     ok('and it is still explained', /home time is close/i.test(thinFar), thinFar.slice(0, 90));
   }
 
+  head('#187 A dock board of poor freight is held too, whatever the home-time date says');
+  // Reported from play: "the dispatcher should not be shy to reject all jobs at a receiver if none of
+  // them are that good... better to have a 20 mile deadhead run to another receiver than to lose money
+  // on crappy jobs."
+  //
+  // The hold above existed for one trigger only — home time close — and its own comment called that
+  // "the expensive case". It is AN expensive case. Committing the tractor for a day and a half to
+  // freight that loses money is expensive whenever it happens.
+  await place('Oklahoma City', 'OK', 30);           // home time freshly taken, so it is not the trigger
+  const hsFar = (await api('/bootstrap')).views.homeTime;
+  ok('home time is not what is driving this', hsFar.dueSoon === false,
+    `due in ${hsFar.daysUntilDue?.toFixed?.(1)} days`);
+
+  // Above break-even, so these are not the pre-existing "this load loses money" rejection — they are
+  // genuinely takeable freight that is simply not worth the truck. That is the gap this fills.
+  const poor = await dockBoard([['Denver', 'CO', 620, 840], ['Amarillo', 'TX', 260, 360]]);
+  ok('nothing is authorized off a dock of loads this thin', !poor.authorizedLoadId,
+    poor.authorizedLoadId || 'none authorized');
+  ok('the city board is asked for instead', poor.wantCityBoard === true, `${poor.wantCityBoard}`);
+  ok('and the money is named, not just asserted',
+    /loses about \$|under our \$|an hour for as long/i.test(poor.rationale || ''),
+    (poor.rationale || '').slice(0, 190));
+  ok('it says how long the truck would be tied up',
+    /tie the truck up/i.test(poor.rationale || ''), (poor.rationale || '').slice(0, 200));
+  ok('a deadhead to better freight is offered as the point',
+    /twenty miles of deadhead/i.test(poor.rationale || ''), (poor.rationale || '').slice(-120));
+
+  head('#187b It is a hold, not a rejection — the driver can still take it');
+  ok('the best of them is held and named', !!poor.heldLoadId, poor.heldLoadId || 'none');
+  ok('and offered as the backup rather than binned',
+    (poor.evaluations || []).find((e) => e.load.id === poor.heldLoadId)?.recommendation === 'Backup',
+    (poor.evaluations || []).find((e) => e.load.id === poor.heldLoadId)?.recommendation || '?');
+  const took = await api('/dispatch/authorize', 'POST', { loadId: poor.heldLoadId });
+  ok('authorizing it directly is the override', !!took.trip, took.trip?.number || 'refused');
+  await api('/trips/' + took.trip.id + '/cancel', 'POST', { reason: 'fixture' });
+
+  head('#187c Decent freight off the same dock is still committed to');
+  // The floor has to be a floor, not a mood. Rates that clear it are taken without ceremony.
+  await place('Oklahoma City', 'OK', 33);
+  const fine = await dockBoard([['Denver', 'CO', 620, 1900], ['Amarillo', 'TX', 260, 850]]);
+  ok('a paying dock board is authorized as before', !!fine.authorizedLoadId,
+    fine.authorizedLoadId || 'none');
+  ok('and nothing asks for the city', fine.wantCityBoard !== true, `${fine.wantCityBoard}`);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 })().catch((e) => { console.error('ERROR ' + e.message); process.exitCode = 1; });

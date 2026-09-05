@@ -186,7 +186,7 @@ public static class DispatchEngine
         // A hold, not a rejection. The board stays up, the load it would have taken is named as the
         // backup, and authorizing that load directly is the override for when a dock really is all there
         // is — which happens, and the driver can see their own game.
-        if (clear.Count > 0 && HomeTime.WantCityBoardFirst(s, clear) is { } ask)
+        if (clear.Count > 0 && (HomeTime.WantCityBoardFirst(s, clear) ?? WeakDockBoard(s, clear)) is { } ask)
         {
             decision.RejectAll = false;
             decision.WantCityBoard = true;
@@ -926,6 +926,21 @@ public static class DispatchEngine
         score += slackPts;
         detail.Add($"HOS slack {Hhmm.Of(e.Feasibility.SlackHours)}: {slackPts:+0.00;-0.00}");
 
+        // Hours the tractor is parked because the receiver will not take it yet. Slack above is scored
+        // as a good thing, so without this a load that holds the truck nine hours to hit an appointment
+        // scored BETTER for it — more slack, and nothing anywhere reading the hours it cost to get.
+        var idle = e.Feasibility.IdleHours;
+        if (idle > 0.25)
+        {
+            var idlePts = -Math.Clamp(idle / 8.0, 0, 2.0) * w.AppointmentIdle;
+            score += idlePts;
+            detail.Add($"{Hhmm.Of(idle)} tied up waiting on the appointment: {idlePts:+0.00;-0.00}");
+            if (idle >= 4)
+                e.Cons.Add($"Ties the truck up {Hhmm.Of(idle)} doing nothing, waiting for them to take it. " +
+                           "That is a tractor earning nothing, and it is why this is not as good as the rate " +
+                           "makes it look.");
+        }
+
         var division = DivisionFor(load, trailer);
         var app = s.Application;
         var fit = 0.0;
@@ -1098,6 +1113,74 @@ public static class DispatchEngine
     /// dry van the whole time. ATS filters the board by the hooked trailer, so what is hooked is what
     /// the division should follow.
     /// </summary>
+    /// <summary>
+    /// Why the city board is worth a look before committing to what one dock is offering.
+    ///
+    /// The home-time hold above says the same thing for a different reason, and its comment states the
+    /// general principle before scoping it away: "a handful of loads at one dock is not the town... a
+    /// merely acceptable local load got committed to and the city was never seen. Near home time that is
+    /// the expensive case." Near home time is <b>an</b> expensive case. Tying the tractor up for a day
+    /// and a half on freight that loses money is expensive whenever it happens, and looking costs one
+    /// screen.
+    ///
+    /// Reported from play: <i>"the dispatcher should not be shy to reject all jobs at a receiver if none
+    /// of them are that good... better to have a 20 mile deadhead run to another receiver than to lose
+    /// money on crappy jobs."</i>
+    ///
+    /// A hold, not a rejection — the board stays up, the best load is named as the backup, and
+    /// authorizing it directly is the override for when a dock really is all there is.
+    /// </summary>
+    /// <summary>
+    /// A nominal highway average, used only to turn a per-mile floor into a per-hour one. Not a speed
+    /// anything is planned at — <see cref="HosEngine"/> owns that.
+    /// </summary>
+    private const double NominalMph = 45;
+
+    private static string? WeakDockBoard(AppState s, List<LoadEvaluation> clear)
+    {
+        // Only where everything came off the dock the driver is standing on. A city board that has been
+        // looked at has been looked at, and asking for it again is asking for something already in hand.
+        if (s.Board.Count == 0 || !s.Board.All(b => b.AtLocation)) return null;
+
+        var best = clear[0];
+        var floor = s.Settings.Scoring.FloorAllInRpm;
+
+        // The app's own two definitions of freight not worth booking. TripService already audits the
+        // floor after the load has run — "that is under our floor, my call to book it, not yours" —
+        // which is an admission the check belongs before the truck moves rather than after.
+        var losesMoney = best.EstimatedMargin <= 0;
+        var underFloor = best.AllInRpm < floor;
+
+        // And the case the rate alone cannot see: a load that pays acceptably per mile and then ties the
+        // tractor up for a day and a half getting them. Per COMMITTED hour, not per driving hour — the
+        // hours spent parked waiting on a dock are hours the truck is not earning, which is the whole of
+        // the complaint that opened this.
+        //
+        // The floor is derived from the app's own two numbers rather than invented: the rate below which
+        // it will not book freight, at a nominal highway average.
+        var perHourFloor = floor * (decimal)NominalMph;
+        var elapsed = best.Feasibility.ElapsedHours;
+        var perHour = elapsed > 1 ? best.EstimatedCompanyRevenue / (decimal)elapsed : perHourFloor;
+        var poorUse = perHour < perHourFloor;
+
+        if (!losesMoney && !underFloor && !poorUse) return null;
+
+        var where = Place(s.Status.LocationCity, s.Status.LocationState);
+        var what = losesMoney
+            ? $"the best of them loses about ${Math.Abs(best.EstimatedMargin):N0} after fuel, wages and overhead"
+            : underFloor
+                ? $"the best of them is ${best.AllInRpm:0.00}/mi all-in, under our ${floor:0.00} floor"
+                : $"the best of them works out at ${perHour:0} an hour for as long as the truck is tied up, " +
+                  $"against the ${perHourFloor:0} we would want";
+
+        return
+            $"That is {s.Board.Count} load(s) off one dock and {what}. Before I tie the truck up on " +
+            $"{Place(best.Load.DestCity, best.Load.DestState)} for {Hhmm.Of(best.Feasibility.ElapsedHours)}, " +
+            $"show me the whole board for {where}. There are usually more shippers in a town than the one " +
+            "you are parked at, and twenty miles of deadhead to better freight beats a day and a half on " +
+            "this. If the city is no better I will say so and we will talk about moving.";
+    }
+
     public static string DivisionFor(BoardLoad load, Trailer? trailer)
     {
         // The one case where the listing wins: a drop-and-hook driver is pulling the shipper's trailer,

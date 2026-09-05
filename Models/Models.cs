@@ -2920,6 +2920,16 @@ public class ScoringWeights
     public double HosSlack { get; set; } = 0.7;
     public double DivisionFit { get; set; } = 0.5;
     public double UtilizationFit { get; set; } = 0.4;
+
+    /// <summary>
+    /// What idle hours cost a load's score.
+    ///
+    /// Sized against HosSlack, which is the term it has to argue with: slack is scored as a good thing
+    /// — and it is, as protection against a late delivery — but a load that holds the truck nine hours
+    /// to hit an appointment has MORE slack, so on the only measure that noticed the hours at all it
+    /// scored better for wasting them.
+    /// </summary>
+    public double AppointmentIdle { get; set; } = 0.8;
     /// <summary>
     /// Weight on getting the driver home when their home time is coming due. Deliberately heavier
     /// than division or trip-length fit: a carrier that misses home time loses drivers, so once the
@@ -3038,6 +3048,19 @@ public class FeasibilityResult
     /// play as arriving seven hours early and burning seven hours of shift for no reason.
     /// </summary>
     public double SleptInHours { get; set; }
+
+    /// <summary>
+    /// Hours the tractor is tied up and earning nothing, waiting on an appointment.
+    ///
+    /// The wait at the gate plus any rest held longer to avoid it — both are the truck parked because
+    /// the receiver will not take it yet, and neither is a rest the driver needed. The mandatory reset
+    /// is deliberately NOT in here: that is the law, not a cost of this particular load, and every load
+    /// long enough to need one pays it equally.
+    ///
+    /// Read by the scoring so a load that ties the truck up for thirty-four hours to move seven hundred
+    /// miles is not treated as equal to one that does it in twenty-five.
+    /// </summary>
+    public double IdleHours { get; set; }
     /// <summary>
     /// When the receiver opens, as a game time. Empty when the listing showed no window — and the app
     /// then behaves exactly as it did before windows were read, which keeps older loads intact.
