@@ -1009,9 +1009,27 @@ public static class DispatchEngine
             : $"Dock time assumed {Hhmm.Of(dock.Loading)} to load and {Hhmm.Of(dock.Unloading)} to unload — a starting " +
               "estimate until we have run a few of these.");
 
-        var slackPts = Math.Clamp(e.Feasibility.SlackHours / 8.0, -2.0, 1.5) * w.HosSlack;
+        // Slack, with the appointment wait added back before it is scored.
+        //
+        // SlackHours is deadline minus the projected FINISH, so a load that sits six hours on a gate
+        // finishes six hours later and already scores lower for it. The idle penalty below was then
+        // added on top, on the reasoning that "a load that holds the truck nine hours has MORE slack" —
+        // which is not what slack measures. The result was the same hours charged twice: about -0.52 of
+        // lost slack plus -0.60 of idle on a six-hour wait, against an all-in RPM term whose entire
+        // realistic spread is 1.0. A booked appointment cost a load more than a bad rate did, and every
+        // listing without one — which off the ATS cargo market is most of them — floated to the top.
+        //
+        // So the comparison here is the schedule risk of the RUN, wait excluded, and the hours the wait
+        // costs are priced once, in the term written to price them. Reported from play as no-appointment
+        // deliveries taking the top three places on a board.
+        var slackForScore = e.Feasibility.SlackHours + Math.Max(0, e.Feasibility.IdleHours);
+        var slackPts = Math.Clamp(slackForScore / 8.0, -2.0, 1.5) * w.HosSlack;
         score += slackPts;
-        detail.Add($"HOS slack {Hhmm.Of(e.Feasibility.SlackHours)}: {slackPts:+0.00;-0.00}");
+        detail.Add($"HOS slack {Hhmm.Of(e.Feasibility.SlackHours)}"
+                   + (e.Feasibility.IdleHours > 0.25
+                       ? $" ({Hhmm.Of(slackForScore)} once the gate wait is set aside — it is charged below, not twice)"
+                       : "")
+                   + $": {slackPts:+0.00;-0.00}");
 
         // Hours the tractor is parked because the receiver will not take it yet. Slack above is scored
         // as a good thing, so without this a load that holds the truck nine hours to hit an appointment
