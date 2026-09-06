@@ -2448,9 +2448,9 @@ function whereaboutsHtml(b) {
   ];
   return `<div class="callout info">
     <h4>Where are the trailers?</h4>
-    <p>Have a look at the trailer screen while you are here. I only need a direction — it tells me what a
-      swap onto that box will cost you. Take a trailer somebody is out with and the game skips the days
-      they are away, off your home time. One parked with nobody on it costs nothing, so say so.</p>
+    <p>Have a look at the trailer screen. I only need a direction — it tells me what a swap onto that box
+      will cost you. Take a trailer somebody is out with and the game skips the days they are away, off
+      your home time. One parked with nobody on it costs nothing, so say so.</p>
     ${ask.map((a) => `<div style="margin:8px 0;padding-top:6px;border-top:1px solid var(--line)">
       <p style="margin:0 0 4px"><b>${esc(a.trailer)}</b>${a.trailerType ? ` — ${esc(a.trailerType)}` : ''}</p>
       <p class="hint" style="margin:0 0 6px">${esc(a.known)}</p>
@@ -2580,6 +2580,12 @@ function auditModal(a) {
       <h4>Check these numbers</h4>
       ${a.warnings.map((w) => `<p>${esc(w)}</p>`).join('')}
       <p class="hint" style="margin:0">Posted as reported — correct it on the trip if it was a typo.</p></div>` : ''}
+
+    ${/* The trailer change for the home time they are about to run to, settled HERE. Asked at the yard it
+          arrived after the only decision it could have changed; asked at the drop that ends the tour, the
+          driver is sitting at a receiver with the game's trailer screen a keypress away, and an answer
+          still buys them a reserved box instead of days skipped. */ ''}
+    ${whereaboutsHtml(a)}
 
     ${(a.whatsNext || []).length ? `<div class="callout ${a.restartOrdered ? 'stop' : 'warn'}">
       <h4>${a.restartOrdered ? 'Before your next load — restart required' : 'Before your next load'}</h4>
@@ -5804,7 +5810,10 @@ async function handleAction(act, d, ev) {
         city: sv(`wa-city-${d.id}`), state: sv(`wa-state-${d.id}`),
       });
       absorb(r);
-      toast(r.estimate?.text || 'Noted.', r.estimate?.worthWaiting ? 'ok' : '');
+      // What the answer bought them, not just that it was filed. Where the position settles which box
+      // they are changing onto, that is the thing worth saying back — it is why they were asked.
+      if (r.changeover) toast(r.changeover, 'ok');
+      else toast(r.estimate?.text || 'Noted.', r.estimate?.worthWaiting ? 'ok' : '');
     });
 
     case 'hosread-drop': HOSREAD = null; HOSWAS = null; return render();

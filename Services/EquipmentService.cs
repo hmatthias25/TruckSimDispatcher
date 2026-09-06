@@ -148,10 +148,33 @@ public static class EquipmentService
         {
             previous.AssignedTruckUnit = "";
             previous.CurrentLocation = here;
+
+            // And it is now a parked box, standing here, that any hired driver can take. That is a
+            // position the app KNOWS rather than one it is guessing at — the driver just unhooked it —
+            // so it is filed as one. Left unwritten, the old record stood: a trailer the player had
+            // reported inbound to Denver a fortnight ago went on reading as inbound to Denver while it
+            // sat on the yard they were standing on.
+            if (!DropHook.Is(previous.Type))
+            {
+                previous.Whereabouts = "Parked";
+                previous.WhereaboutsCity = s.Status.LocationCity;
+                previous.WhereaboutsState = s.Status.LocationState;
+                previous.WhereaboutsGameTime = s.Status.GameTime;
+            }
         }
 
         trailer.AssignedTruckUnit = s.Driver.AssignedTruckUnit;
         trailer.CurrentLocation = here;
+
+        // The one being hooked is accounted for by the fact that it is hooked. Anything stale about
+        // where it used to be would otherwise be costed against the next swap off it.
+        if (!DropHook.Is(trailer.Type))
+        {
+            trailer.Whereabouts = "";
+            trailer.WhereaboutsCity = "";
+            trailer.WhereaboutsState = "";
+            trailer.WhereaboutsGameTime = "";
+        }
         // New box, new tenure. The rising chance of a re-rig is about how long somebody has been on ONE
         // trailer, so it has to start over the moment they are on a different one — otherwise a driver
         // moved last week carries the old pressure onto the new assignment.
@@ -225,7 +248,15 @@ public static class EquipmentService
     /// used to say "stay home until it is in" and hold dispatch pending a report that could never come,
     /// which is an instruction the game has no way of accepting.
     /// </summary>
-    public static EquipmentOrder? IssueTrailerReassignment(AppState s, string requiredType, string reason)
+    /// <param name="prefer">
+    /// The box the driver was already told about at the drop that ended their last tour, where there was
+    /// one. It goes to the front of the queue rather than being re-picked: the app promised a specific
+    /// unit a fortnight ago, and possibly had the driver go and reserve it, so handing them a different
+    /// one on arrival makes the promise worthless. It still has to survive every check below — a promise
+    /// about a trailer that has since been sold is not one worth keeping.
+    /// </param>
+    public static EquipmentOrder? IssueTrailerReassignment(AppState s, string requiredType, string reason,
+                                                           Trailer? prefer = null)
     {
         if (string.IsNullOrWhiteSpace(requiredType)) return null;
 
@@ -239,6 +270,8 @@ public static class EquipmentService
 
         var matching = s.Trailers
             .Where(t => t.Status == "InService" && TypeCovers(t.Type, requiredType))
+            .OrderByDescending(t => prefer != null
+                                    && t.Unit.Equals(prefer.Unit, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         // A trailer one of our own drivers is pulling is NOT free, however empty its AssignedTruckUnit
@@ -258,6 +291,16 @@ public static class EquipmentService
         if (free != null)
         {
             var at = !string.IsNullOrWhiteSpace(free.CurrentLocation) ? free.CurrentLocation : homeLabel;
+
+            // Where this is the box they were sent to claim a tour ago, say so. Being told to go and find
+            // a trailer you already walked over and marked as your own reads as the app having forgotten,
+            // and the point of reserving it was that this arrival would be a hook and nothing else.
+            var claimed = s.Driver.ChangeoverReserve
+                          && free.Unit.Equals(s.Driver.ChangeoverUnit, StringComparison.OrdinalIgnoreCase)
+                ? $"This is {free.Ref} — the one I had you mark as your own last trip, so it should be sitting " +
+                  "right where you left it. "
+                : "";
+
             return Issue(s, new EquipmentOrder
             {
                 Kind = "TrailerSwap",
@@ -267,10 +310,11 @@ public static class EquipmentService
                 TerminalId = homeYard?.Id ?? "",
                 TerminalLabel = homeLabel,
                 AvailableFromGameTime = s.Status.GameTime,
-                Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, free.Subtype)} freight. " +
+                Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, free.Subtype)} freight. " + claimed +
                               $"Drop {(current == null ? "your trailer" : current.Unit)} and hook trailer {free.Ref} " +
                               $"({free.Year} {free.Make}, {free.Length} {TrailerSpec.Describe(free.Type, free.Subtype)}) at {at}. " +
-                              "Do the swap in ATS, then mark this order complete.",
+                              "Do the swap in ATS, then mark this order complete — your old box goes back in " +
+                              "the pool for the hired drivers at the same time.",
                 Notes = "Trailer is on the property and free."
             });
         }

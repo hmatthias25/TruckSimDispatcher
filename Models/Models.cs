@@ -439,6 +439,31 @@ public class Driver
     public string LastTrailerDecisionGameTime { get; set; } = "";
 
     /// <summary>
+    /// The trailer the driver was told, at the drop that ended their last tour, they would be changing
+    /// onto when they get home. Blank for no change coming.
+    ///
+    /// The promise is kept here so the order raised on arrival lands on the box that was named a fortnight
+    /// earlier. Working it out twice — once for the notice and once for the order — is how a driver gets
+    /// told about DV-3 and handed DV-7, and it is worse than never having promised anything.
+    ///
+    /// See <see cref="Services.TrailerChangeover"/> for why the whole decision moved to the drop.
+    /// </summary>
+    public string ChangeoverUnit { get; set; } = "";
+    public string ChangeoverType { get; set; } = "";
+    public string ChangeoverGameTime { get; set; } = "";
+
+    /// <summary>
+    /// The promised box was parked with nobody on it, and the driver was told to mark it as their own in
+    /// the ATS trailer manager to hold it.
+    ///
+    /// Worth recording separately because it changes what is said on arrival: a reserved trailer is one
+    /// they already went and claimed, and being told to go and find it again reads as the app having
+    /// forgotten. It also says the swap should cost no skipped days — if it suddenly does, the reservation
+    /// did not hold.
+    /// </summary>
+    public bool ChangeoverReserve { get; set; }
+
+    /// <summary>
     /// The last arrival briefing, kept until the driver marks it read.
     ///
     /// It used to exist only as a field on one HTTP response, rendered into one modal. Dismiss it, miss

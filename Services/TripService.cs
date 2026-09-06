@@ -135,6 +135,17 @@ public class TripAudit
     public List<string> WhatsNext { get; set; } = new();
     /// <summary>Set when a 34-hour restart was ordered off the back of this delivery.</summary>
     public bool RestartOrdered { get; set; }
+
+    /// <summary>
+    /// Company trailers at the home yard whose position dispatch wants before the driver runs in empty.
+    ///
+    /// Asked here rather than at the yard because here is the last moment the answer can still change
+    /// anything. See <see cref="TrailerChangeover"/>.
+    /// </summary>
+    public List<object> AskWhereabouts { get; set; } = new();
+
+    /// <summary>What the company settled on for the trailer change, once those answers are in.</summary>
+    public string ChangeoverNote { get; set; } = "";
 }
 
 /// <summary>Closes a load out: service audit, pay accrual, ledger postings, equipment and career updates.</summary>
@@ -965,13 +976,37 @@ public static class TripService
         if (!audit.GotYouHome && audit.HomeTimeInstructions.Count > 0)
             audit.WhatsNext.Add(audit.HomeTimeInstructions[0]);
 
-        // A trailer change coming at the next home time, said on the way in rather than sprung on
-        // arrival. Being told after you have parked is how a wait for the trailer gets tacked onto the
-        // end of your home time instead of overlapping with it.
+        // A trailer change coming at the home time they are running toward, settled HERE — at the drop
+        // that ends the tour — rather than sprung on them once they have parked.
+        //
+        // Both halves happen at this moment now. The positions are asked for while the driver is still
+        // sitting at the receiver with the trailer screen a keypress away, and the box is picked off what
+        // they say. Doing the picking at the yard meant the wait for a trailer got tacked onto the end of
+        // home time instead of overlapping with it, and doing the asking at the yard meant the answers
+        // arrived after the only decision they could have changed had already been made.
         var homeStatus = HomeTime.Status(s);
-        if (homeStatus.Tracked && (homeStatus.DueSoon || homeStatus.Overdue || audit.GotYouHome)
-            && HomeTime.ReassignmentNotice(s) is { } reNotice)
-            audit.WhatsNext.Add(reNotice);
+        if (homeStatus.Tracked && (homeStatus.DueSoon || homeStatus.Overdue || audit.GotYouHome))
+        {
+            if (TrailerChangeover.AskAtDrop(s))
+                audit.AskWhereabouts = TrailerChangeover.AskRows(s);
+
+            // Decided on what is known right now. Answering a whereabouts question re-runs this, so a
+            // driver who fills the rows in gets the picked box and the cost immediately rather than on
+            // some later screen.
+            var plan = TrailerChangeover.Decide(s);
+            if (plan != null)
+            {
+                TrailerChangeover.Remember(s, plan);
+                audit.ChangeoverNote = plan.Note;
+                audit.WhatsNext.Add(plan.Note);
+            }
+            else
+            {
+                // Nothing coming. Drop any promise left over from a tour where something was — the seed
+                // is per home time, and a stale unit here would hand them a trailer nobody decided on.
+                TrailerChangeover.Forget(s);
+            }
+        }
 
         return audit;
     }

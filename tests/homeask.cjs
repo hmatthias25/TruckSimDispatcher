@@ -121,8 +121,13 @@ async function report(city, state, day, hm = '08:00') {
     if (noticed) {
       ok('the notice says a trailer change is coming',
         /changing trailers|wants you on/i.test(noticed), noticed);
+      // What the stay is going to cost, in whichever of the four shapes applies. #196 moved this
+      // decision to the drop that ends the tour and gave it one voice, so the wording is the plan's:
+      // a straight hook off a parked box, a forecast in days for one that is out, a shrug where nobody
+      // has reported on it, or a wait while operations sources one we do not own.
       ok('and it tells them what to expect of the stay',
-        /wait at the yard|straight swap/i.test(noticed), noticed);
+        /straight hook|costs you nothing|day\(s\) skipped|expect a wait|nothing current on where it is/i
+          .test(noticed), noticed);
     }
   } else {
     console.log('  (no reassignment came up in eight home times — seeded, so a legitimate outcome)');

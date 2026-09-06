@@ -1357,7 +1357,16 @@ app.MapPost("/api/fleetops/whereabouts", (WhereaboutsRequest req) => Results.Ok(
 
     var estimate = Whereabouts.Assess(s, t);
     store.Log(s, "fleet", $"{t.Ref}: {estimate.Text}");
-    return new { estimate, snapshot = Snapshot(s) };
+
+    // Answer the question they were actually asked. These rows are put in front of a driver at the drop
+    // that ends their tour so operations can settle which box they are changing onto, and the point of
+    // asking there is that the answer changes something while there is still time to act on it. Filing
+    // it and saying nothing back made it feel like paperwork.
+    var plan = TrailerChangeover.Decide(s);
+    TrailerChangeover.Remember(s, plan);
+    if (plan != null) store.Log(s, "fleet", plan.Note);
+
+    return new { estimate, changeover = plan?.Note ?? "", snapshot = Snapshot(s) };
 })));
 
 // The driver has now actually seen a settlement. Separate from paying it on purpose: paying is the

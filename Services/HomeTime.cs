@@ -355,7 +355,13 @@ public static class HomeTime
         // reassignment fires whenever the driver next reports in at the yard, so gating the warning on
         // the schedule would leave anyone who came home early with no warning at all — which is the
         // whole complaint. Better a fortnight's notice than none.
-        st.ReassignmentNotice = ReassignmentNotice(s) ?? "";
+        //
+        // Silent once they are standing on the yard, though. The counter ticks on arrival, so from there
+        // this reads a home time AHEAD — and a driver who had just been told nothing was changing this
+        // time was then shown a notice about a change, costed against a trailer position they had typed in
+        // moments earlier and which will mean nothing in a fortnight. Reported from play in those words.
+        // What is happening at THIS visit is LastTrailerDecision, which the brief already carries.
+        st.ReassignmentNotice = st.AtYard ? "" : ReassignmentNotice(s) ?? "";
 
         st.Headline = st.Overdue
             ? $"Home time is OVERDUE — {st.DaysOut:0.#} days out against a {st.IntervalDays}-day arrangement. " +
@@ -518,7 +524,15 @@ public static class HomeTime
               "the shipper's trailer, dropped at the other end. No trailer of your own."
             : $"Freight mix — operations wants you on {pick.ToLowerInvariant()} for the next tour.";
 
-        return EquipmentService.IssueTrailerReassignment(s, pick, reason);
+        // The box named at the drop that ended the tour, where it is still a sensible thing to hand over.
+        // Re-picking here would quietly break a promise the driver may have acted on — a parked trailer
+        // they were told to mark as their own is one they have already walked over and claimed.
+        var order = EquipmentService.IssueTrailerReassignment(s, pick, reason,
+                                                              TrailerChangeover.Promised(s, pick));
+
+        // Kept or not, the promise is spent: the next one is decided at the next tour-ending drop.
+        if (order != null) TrailerChangeover.Forget(s);
+        return order;
     }
 
     /// <summary>
@@ -660,44 +674,20 @@ public static class HomeTime
     /// </summary>
     public static string? ReassignmentNotice(AppState s)
     {
-        var next = ReassignmentTypeFor(s, s.Driver.HomeTimesTaken + 1);
-        if (next == null) return null;
+        // One voice for this. It used to compose its own version of the same decision — its own choice of
+        // box, its own reading of where that box was, its own wording — and then the order raised on
+        // arrival made all three again from scratch. Nothing forced them to agree, and they did not: the
+        // notice named whatever trailer of the right type came first out of the list, the order picked a
+        // free one at the home yard.
+        //
+        // A driver reserving the box they were told about only works if it is the same box.
+        var plan = TrailerChangeover.Decide(s);
+        if (plan == null) return null;
 
         var current = DispatchEngine.AssignedTrailer(s);
-        var msg = $"Heads up: operations wants you on {next.ToLowerInvariant()} for the next tour, so you are " +
-                  $"changing trailers when you get in" +
-                  (current != null ? $" — off {current.Ref} ({current.Type})." : ".");
-
-        // Where the one they want is somewhere other than the yard, say so now. That wait is what turned
-        // a home time into a home time plus a day, and knowing about it in advance is the whole point.
-        //
-        // Asked of the TRAILER. It used to look up whichever hired driver the app had down as pulling one
-        // of that type and describe where THEY were, which is a fact about a person the app cannot keep
-        // current — AI drivers change trailers by themselves and the app never hears about it.
-        var wanted = s.Trailers.FirstOrDefault(t => !t.Retired
-            && !t.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)
-            && EquipmentService.TypeCovers(t.Type, next));
-
-        if (wanted == null)
-        {
-            msg += $" I do not have a {next.ToLowerInvariant()} on the books, so operations will be sourcing one. " +
-                   "There may be a wait at the yard — plan your home time around it rather than sitting on top of it.";
-            return msg;
-        }
-
-        var where = Whereabouts.Assess(s, wanted);
-        msg += $" The one we have is {wanted.Ref}. ";
-
-        if (!where.Known)
-            msg += "I have nothing current on where it is — have a look at the trailer screen while you are in " +
-                   "and tell me, and I can say whether it is a straight swap or a wait at the yard.";
-        else
-            msg += where.Text + (where.WorthWaiting
-                ? ""
-                : " That is a wait at the yard rather than a straight swap, so plan your home time around it " +
-                  "rather than sitting on top of it.");
-
-        return msg;
+        return current != null && !DropHook.Is(plan.Type)
+            ? $"{plan.Note} You come off {current.Ref} ({current.Type}) at the same time."
+            : plan.Note;
     }
 
     private static bool Qualified(AppState s, string trailerType)
