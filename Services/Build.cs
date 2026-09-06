@@ -1,9 +1,9 @@
-namespace TruckSimDispatcher.Services;
+﻿namespace TruckSimDispatcher.Services;
 
 /// <summary>
 /// The build number, defined once.
 ///
-/// Everything that shows a version reads it from here — the app header, Settings, the startup banner,
+/// Everything that shows a version reads it from here â€” the app header, Settings, the startup banner,
 /// the career file and the manual. A version that has to be updated in four places is wrong in two of
 /// them within a release.
 /// </summary>
@@ -14,9 +14,9 @@ public static class Build
     /// <b>0.9 is followed by 0.10</b>, then 0.11. A 1.0 means released, and this is not that. Beta will
     /// have its own numbering.
     /// </summary>
-    public const string Version = "0.46";
+    public const string Version = "0.47";
 
-    /// <summary>Alpha | Beta | Release — shown alongside the number.</summary>
+    /// <summary>Alpha | Beta | Release â€” shown alongside the number.</summary>
     public const string Stage = "alpha";
 
     /// <summary>
@@ -49,5 +49,5 @@ public static class Build
     }
 
     public static string Display =>
-        Stamp.Length > 0 ? $"v{Version} {Stage} · build {Stamp}" : $"v{Version} {Stage}";
+        Stamp.Length > 0 ? $"v{Version} {Stage} Â· build {Stamp}" : $"v{Version} {Stage}";
 }

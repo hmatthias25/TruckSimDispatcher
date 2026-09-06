@@ -3080,6 +3080,17 @@ public class FeasibilityResult
     /// </summary>
     public double ShiftRemainingOnArrival { get; set; }
     public double DriveRemainingOnArrival { get; set; }
+
+    /// <summary>
+    /// The 14-hour window left as the driver backs onto the receiver's dock, <b>before</b> any of it goes
+    /// on the unload. Negative where the plan has no unload to measure against.
+    ///
+    /// Distinct from <see cref="ShiftRemainingOnArrival"/>, which is what is left once they are empty.
+    /// That one reads zero on any run that simply uses its whole window, which is ordinary. This one
+    /// against the dock time is the thing worth knowing: whether the window is going to run out WHILE
+    /// they are on the property, at which point there is no legal way to move the truck at all.
+    /// </summary>
+    public double ShiftRemainingAtDock { get; set; } = -1;
     /// <summary>
     /// Hours spent sitting at the receiver waiting for the window to open. Zero when the opening time
     /// is unknown, which is every load dispatched before the app started reading windows as ranges.

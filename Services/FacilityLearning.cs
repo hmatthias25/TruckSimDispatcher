@@ -43,7 +43,7 @@ public static class FacilityLearning
     /// After this many samples the average stops chasing every load and settles. Before it, each new
     /// reading moves the figure a lot — which is what makes it converge quickly from a bad seed.
     /// </summary>
-    private const int SettleAt = 10;
+    public const int SettleAt = 10;
 
     public static string Normalise(string? trailerType)
     {

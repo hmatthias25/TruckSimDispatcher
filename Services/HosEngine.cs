@@ -59,6 +59,15 @@ public class PlanRequest
     /// Defaults to true so a plan that never sets it behaves as it always did.
     /// </summary>
     public bool ReceiverAllowsOvernight { get; set; } = true;
+    /// <summary>
+    /// How many real deliveries the unload figure is averaged over, or -1 where the caller does not know.
+    ///
+    /// <see cref="UnloadingHours"/> is a mean, so by definition half of all docks run longer than it. That
+    /// is fine when the mean is settled over ten loads and the driver has hours in hand; it is not fine
+    /// when the figure came off a seed table and the window only just covers it. This says which of those
+    /// the plan is looking at, so the margin it holds back can be sized to how much the number is worth.
+    /// </summary>
+    public int DockSamples { get; set; } = -1;
     public bool IncludePreTrip { get; set; } = true;
     /// <summary>Miles the truck can run on the fuel currently aboard.</summary>
     public double UsableFuelRangeMiles { get; set; } = 9999;
@@ -567,6 +576,16 @@ public static class HosEngine
                         continue;
                     }
 
+                    // The window they will actually have as the doors open — after any reset taken above,
+                    // which is the number that decides whether a dock running long strands them.
+                    //
+                    // Not ShiftRemainingOnArrival, which is what is left once they are EMPTY and reads
+                    // zero on any run that simply used its whole day. That is ordinary. This one measured
+                    // against the dock time is the thing: reported from play as an hour of window against
+                    // a two-hour unload, on a lot with no overnight parking, with nothing said about it.
+                    if (task.IsUnload && task.AtDock && notStarted)
+                        result.ShiftRemainingAtDock = Math.Round(Math.Max(0, shift), 2);
+
                     var cap = Min(shift, cycle, remaining);
                     if (cap <= Eps)
                     {
@@ -662,16 +681,49 @@ public static class HosEngine
         // Being stranded on the receiver's property is a different risk from being late, and it is the
         // one nobody sees coming. Say it before they accept, in the terms it will actually happen in.
         var strandMargin = Math.Max(0, s.StrandedMarginHours);
+
+        // Where to sleep if it comes to that, said in every one of these rather than assumed. A plan that
+        // says "take your ten on their property" at a receiver that turns trucks out is the advice that
+        // put a driver on a lot with no legal way to leave it.
+        var berth = req.ReceiverAllowsOvernight
+            ? $"They will have you overnight, so plan on the {rules.OffDutyReset:0.#} at their gate."
+            : $"They do NOT allow overnight parking, so there is nowhere on that lot to take the " +
+              $"{rules.OffDutyReset:0.#} — and once the window is gone you cannot legally move to find one. " +
+              "Ask before you back in.";
+
+        // How firm the dock figure is. It is an AVERAGE: half of all docks run longer than it, by
+        // definition. The question is only by how much, and that depends on where the number came from —
+        // a seed table is a guess, ten real deliveries is not. Never zero, however settled.
+        var dockSlop = req.DockSamples >= FacilityLearning.SettleAt ? 0.25
+                     : req.DockSamples > 0 ? 0.40
+                     : 0.60;
+        var dockMargin = Math.Max(0.5, req.UnloadingHours * dockSlop);
+        var atDock = result.ShiftRemainingAtDock;
+
         if (req.UnloadingHours > 0 && shift <= 0.01)
             result.Warnings.Add(
-                $"Your window closes while you are still at the receiver. Finishing the unload is legal, but you will not be " +
-                $"able to move the truck afterwards — plan on a {rules.OffDutyReset:0.#} on their property.");
+                "Your window closes while you are still at the receiver. Finishing the unload is legal, but you will " +
+                $"not be able to move the truck afterwards. {berth}");
+
+        // The one nobody sees coming, and the reason this exists: the window covers the unload we PLANNED
+        // and nothing more. Reported from play as an hour of window against a dock that took two — the
+        // plan fit, so it said nothing, and the driver took a ten somewhere they had been told they could
+        // not. The old pair of warnings both measured what was left once the trailer was EMPTY, which is
+        // the wrong end: by then the overrun has already happened.
+        else if (req.UnloadingHours > 0 && atDock >= 0 && atDock < req.UnloadingHours + dockMargin)
+            result.Warnings.Add(
+                $"You back in with {Hhmm.Of(atDock)} of window against a dock we have down for " +
+                $"{Hhmm.Of(req.UnloadingHours)}" +
+                (req.DockSamples > 0
+                    ? $", averaged over {req.DockSamples} load(s). "
+                    : " — and that figure is a starting estimate, not something we have measured here. ") +
+                $"Run {Hhmm.Of(dockMargin)} long and your window shuts while you are on their property. {berth}");
+
         else if (req.UnloadingHours > 0 && shift < strandMargin)
             result.Warnings.Add(
                 $"This delivers with only {Hhmm.Of(shift)} left on your 14-hour SHIFT once you are empty — " +
-                $"nothing to do with the delivery window. If they hold you " +
-                $"{Hhmm.Of(shift)} longer than planned, the window shuts while you are on the property and you are parked " +
-                $"there for a {rules.OffDutyReset:0.#}. Worth asking about overnight parking before you back in.");
+                $"nothing to do with the delivery window. If they hold you {Hhmm.Of(shift)} longer than " +
+                $"planned, the window shuts while you are on the property. {berth}");
 
         if (result.FuelStopsRequired == 0 && result.TotalMiles > req.UsableFuelRangeMiles)
             result.Warnings.Add("Fuel range check could not be resolved — confirm the fuel level.");

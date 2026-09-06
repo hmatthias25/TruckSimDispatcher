@@ -887,6 +887,9 @@ public static class DispatchEngine
             LoadedMiles = load.LoadedMiles,
             LoadingHours = pickupHours,
             UnloadingHours = dock.Unloading,
+            // How much that unload figure is worth. A seed table and ten measured deliveries are not the
+            // same number and should not be trusted to the same margin.
+            DockSamples = dock.Samples,
             NavEstimateHours = load.NavEstimateHours,
             ExtraStops = load.ExtraStops,
             DeadlineHours = load.DeadlineHours,
