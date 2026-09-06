@@ -133,6 +133,27 @@ const view = async () => (await api('/bootstrap')).views;
     (await api('/bootstrap')).settings.hookHours > 0,
     `hook ${(await api('/bootstrap')).settings.hookHours}h`);
 
+  head('8b. And the PLAN uses it, whatever trailer the listing names');
+  // The listing on a Freight Market job names a real trailer type, and the dock table was being read by
+  // it — so a hook was planned as a full live unload. That is up to three hours of window spent on paper
+  // the driver was never going to spend, which is enough to plan a reset nobody needs.
+  await api('/board/clear', 'POST', {});
+  const hookPlan = await api('/board/add', 'POST', {
+    cargo: 'Frozen Foods', trailerType: 'Reefer',      // a type with real, long dock times
+    originCity: 'Omaha', originState: 'NE', destCity: 'Kansas City', destState: 'MO',
+    loadedMiles: 165, deadheadMiles: 0, gameRevenue: 1100, deadlineHours: 30, weightLbs: 40000,
+    shipper: 'Megamart', receiver: 'Megamart',
+  });
+  const hookEval = (hookPlan.evaluations || [])[0];
+  const hookHrs = (await api('/bootstrap')).settings.hookHours;
+  const drop = (hookEval?.feasibility.timeline || []).find((x) => /Unload|drop/i.test(x.label || ''));
+  ok('the drop is planned as a hook, not a reefer unload',
+    drop && Math.abs(drop.hours - hookHrs) < 0.02,
+    drop ? `${drop.hours}h against a ${hookHrs}h hook` : '(no drop step)');
+  ok('and the same at the pickup end', 
+    (hookEval?.feasibility.timeline || []).some((x) => /Hook/i.test(x.label || '')),
+    (hookEval?.feasibility.timeline || []).map((x) => x.label).join(' | ').slice(0, 120));
+
   head('9. On the board: the trailer never blocks anything, but the divisions still do');
   await place('Omaha', 'NE', 6);
   await api('/board/clear', 'POST', {});

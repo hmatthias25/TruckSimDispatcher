@@ -863,7 +863,15 @@ public static class DispatchEngine
         // ---- HOS feasibility
         var fuelRange = HosEngine.UsableRange(s.Settings, truck, s.Status.FuelPct);
         // Dock time for whatever is actually hooked, not one figure for every trailer on the map.
-        var dock = FacilityLearning.For(s, string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
+        // On drop and hook there is no dock time at either end — you back under what is there and pull the
+        // pin at the other. The listing still names a real trailer type, and reading the dock table by it
+        // booked a full live unload against a job that is a hook: up to three hours of window spent on
+        // paper that the driver was never going to spend, which is enough to plan a reset that is not
+        // needed or refuse a load that is comfortably legal. The loading end was already handled through
+        // PreLoaded; this is the other one.
+        var dock = FacilityLearning.For(s, DropHook.Active(s)
+            ? trailer?.Type
+            : string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
 
         // A pre-loaded trailer is a hook, not a load. Planning a two-hour live load against something ATS
         // hands over already loaded costs the driver hours they were never going to spend, and can refuse
