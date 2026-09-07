@@ -881,7 +881,19 @@ public static class DispatchEngine
         var hookable = load.PreLoaded && !LiveLoaded(s, load.TrailerType);
         var pickupHours = hookable ? Math.Max(0, s.Settings.HookHours) : dock.Loading;
 
-        e.Feasibility = HosEngine.Plan(s, new PlanRequest
+        // What kind of place this is going to, which decides what waiting even looks like. A warehouse
+        // books a slot and runs all night; a job site takes it whenever, but only while somebody is there.
+        var dockKind = FacilityProfile.For(s, load,
+            string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
+
+        // A site is never "booked", so the takes-early roll says nothing about one — its waiting comes
+        // from opening hours instead. The exception is a knob the player has deliberately moved: that is
+        // an instruction about every receiver on the map, job sites included.
+        var takesEarly = DeliveryWindow.TakesEarly(s, load, dockKind.TakesEarlyPct);
+        var siteHours = dockKind.Kind == FacilityProfile.Kind.Site
+                        && !(FacilityProfile.KnobMoved(s) && takesEarly);
+
+        var planReq = new PlanRequest
         {
             DeadheadMiles = load.DeadheadMiles,
             LoadedMiles = load.LoadedMiles,
@@ -898,18 +910,75 @@ public static class DispatchEngine
 
             // What the plan actually waits for: the booked slot, or nothing where they will take it
             // whenever it turns up.
-            WaitUntilHours = DeliveryWindow.TakesEarly(s, load) ? 0 : AppointmentHoursFor(s, load),
+            //
+            // The odds of being booked are now the receiver's rather than the fleet's. One flat 12% said
+            // every customer in the country books nearly every load, which is true of a grocery DC and
+            // nonsense at a bridge job — see FacilityProfile.TakesEarlyPercent.
+            //
+            // A site with a real window off the listing waits for the window to OPEN and then goes
+            // straight in — that is the whole difference from a dock, which holds you to a slot booked
+            // somewhere inside the same range. So it takes the opening directly rather than a slot, and
+            // rather than the daily opening hours below: the game gave a moment in time, and a moment in
+            // time is not a clock reading that repeats every morning. Collapsing it into one turned a
+            // 1,004-mile run the game was perfectly happy with into an infeasible load.
+            WaitUntilHours = siteHours
+                ? (dockKind.HoursAreGuess ? 0 : load.AppointmentOpensHours)
+                : takesEarly
+                    ? 0
+                    : AppointmentHoursFor(s, load),
+
+            // And a site with NO window is the case that used to plan as though the place never closed.
+            // Here the app is guessing, so it may only hold a driver until the morning of the day they
+            // get there — the reported case of rolling up to a job site at 3am with nobody about.
+            SiteOpenHour = siteHours ? dockKind.OpenHour : -1,
+            SiteCloseHour = siteHours ? dockKind.CloseHour : -1,
+            SiteQueuePeakHours = siteHours ? dockKind.QueuePeak : 0,
+            SiteHoursAreGuess = siteHours && dockKind.HoursAreGuess,
             ReceiverAllowsOvernight = Facilities.AllowsOvernightParking(
                 s, load.DestCity, load.DestState, load.Receiver),
             UsableFuelRangeMiles = fuelRange,
             StartGameTime = s.Status.GameTime,
             Label = load.Cargo
-        }, truck);
+        };
+
+        e.Feasibility = HosEngine.Plan(s, planReq, truck);
+
+        // When a site opens, and how long the queue at its gate runs, are the app's reading of the world
+        // rather than anything the game said. They are allowed to cost the driver hours. They are not
+        // allowed to be the reason a load ATS called deliverable comes back refused — that is a guess
+        // overruling a fact, which is the one thing this app does not do anywhere else.
+        //
+        // Reported while building it: a 1,004-mile flatbed to Tulsa went Infeasible by 1.2 minutes on a
+        // derived opening time. So where dropping our own reading makes it legal again, the load is legal
+        // again and the reading becomes what it always was — a warning about a tight afternoon.
+        if (e.Feasibility.Verdict == "Infeasible"
+            && dockKind.Kind == FacilityProfile.Kind.Site
+            && (planReq.WaitUntilHours > 0 || planReq.SiteQueuePeakHours > 0))
+        {
+            planReq.WaitUntilHours = 0;
+            planReq.SiteQueuePeakHours = 0;
+            planReq.SiteOpenHour = -1;
+            planReq.SiteCloseHour = -1;
+
+            var straightIn = HosEngine.Plan(s, planReq, truck);
+            if (straightIn.Verdict != "Infeasible")
+            {
+                e.Feasibility = straightIn;
+                e.Cons.Add(
+                    "This only works if you walk straight in. On our reading of when they open and how " +
+                    "busy the gate is it does not make the deadline — but that reading is ours, not the " +
+                    "game's, and I am not refusing a load ATS says is deliverable on the strength of it. " +
+                    "Ring ahead if you can.");
+            }
+        }
 
         // ---- economics
         // Said on the card, before the load is picked. A receiver taking it early is worth hours, and
         // hours are only worth planning around if you know about them in time to plan.
-        e.ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load) && load.AppointmentOpensHours > 0;
+        // "They will take it whenever you arrive" is a thing a booked dock does as a favour. A job site
+        // does not do it at all — it is open or it is not, and turning up inside its day was never early.
+        // Saying it of a site would put a pro on the card at the same time as the plan waits for morning.
+        e.ReceiverTakesEarly = !siteHours && takesEarly && load.AppointmentOpensHours > 0;
         if (!e.ReceiverTakesEarly && load.AppointmentOpensHours > 0
             && GameClock.TryParse(s.Status.GameTime) is { } evalNow)
         {
@@ -1535,7 +1604,16 @@ public static class DispatchEngine
                 && GameClock.TryParse(s.Status.GameTime) is { } opensFrom
                 ? GameClock.Format(opensFrom.AddHours(load.AppointmentOpensHours))
                 : "",
-            ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load),
+            // Rolled with the receiver's own odds rather than the old fleet-wide 12%, but NOT read off
+            // the evaluation: the card's flag is the narrower question of whether a BOOKED slot will be
+            // waived, and answers false on a load that never had a slot to waive. This one is the plain
+            // fact the trip carries for the rest of the run — will they take it whenever it turns up.
+            ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load,
+                FacilityProfile.TakesEarlyPercent(s,
+                    string.IsNullOrWhiteSpace(load.TrailerType)
+                        ? AssignedTrailer(s)?.Type
+                        : load.TrailerType,
+                    load.Cargo)),
             IsOversize = load.IsOversize,
             TarpsUsed = load.RequiresTarp ? 1 : 0,
             FeasibilityAtDispatch = eval.Feasibility,

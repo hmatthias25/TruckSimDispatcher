@@ -299,6 +299,18 @@ public static class DeliveryWindow
     public static bool TakesEarly(AppState s, BoardLoad load) =>
         TakesEarly(s, StableKey(s, load));
 
+    /// <summary>
+    /// The same question with the odds supplied by the caller, because they are not the same everywhere.
+    ///
+    /// One number for the whole fleet said a grocery DC and a bridge job book their loads at the same
+    /// rate. <see cref="FacilityProfile.TakesEarlyPercent"/> works out the real one from what the trailer
+    /// is and, for a reefer, whether the freight actually needs the box running.
+    ///
+    /// The seed is untouched, so a load's answer only moves if the odds moved.
+    /// </summary>
+    public static bool TakesEarly(AppState s, BoardLoad load, int percent) =>
+        Hash("early|" + StableKey(s, load)) % 100 < (uint)Math.Clamp(percent, 0, 100);
+
     /// <summary>What identifies a load for seeding: everything about it except the id we minted.</summary>
     private static string StableKey(AppState s, BoardLoad load) =>
         string.Join("|",

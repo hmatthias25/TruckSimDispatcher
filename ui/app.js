@@ -1689,6 +1689,10 @@ function viewActive() {
   // gone with the board — but it is what decides where the last few hours before the window are spent,
   // and that call is made a long way down the road from where it was answered.
   const pk = S.views.receiverParking;
+  // A job site has a working day rather than a booked slot, and that changes what the last leg is for:
+  // there is nothing to be early for, and something to be late for. Read live, so a load already running
+  // when this arrived picks it up without its dispatch plan being rewritten under it.
+  const sh = S.views.receiverSiteHours;
   // Said before the state line rather than on the settlement afterwards, which is the only time
   // it can change what the driver does.
   const fx = S.views.fuelCrossing;
@@ -1721,6 +1725,8 @@ function viewActive() {
       ${t.weightLbs ? `<dt>Weight</dt><dd>${num(t.weightLbs)} lb</dd>` : ''}
       ${pk ? `<dt>Parking</dt><dd>${badge(pk.allowed ? 'ok' : 'warn', pk.headline)}
              <div class="sub">${esc(pk.detail)}</div></dd>` : ''}
+      ${sh ? `<dt>Their hours</dt><dd>${badge('info', sh.headline)}
+             <div class="sub">${esc(sh.detail)}</div></dd>` : ''}
       <dt>Rationale</dt><dd style="font-family:inherit">${esc(t.authorizationRationale)}</dd>
     </dl>
     ${f ? `<h3 class="sect">Plan captured at authorization</h3>

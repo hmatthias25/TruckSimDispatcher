@@ -3117,6 +3117,25 @@ public class FeasibilityResult
     /// miles is not treated as equal to one that does it in twenty-five.
     /// </summary>
     public double IdleHours { get; set; }
+
+    /// <summary>
+    /// Hours queued at the gate behind other trucks, on a site that takes loads as they arrive.
+    ///
+    /// <b>Not idle.</b> The truck is on the property with the engine running and it comes off the fourteen
+    /// exactly the way the unload does, so it lives on the dock clock. <see cref="IdleHours"/> prices a
+    /// truck parked outside a gate it is not allowed through yet, which is a different cost with a
+    /// different remedy — you can sleep through one and not the other.
+    /// </summary>
+    public double QueueHours { get; set; }
+
+    /// <summary>
+    /// The wait in this plan was for a site to open in the morning, not for a booked slot.
+    ///
+    /// Worth distinguishing because the advice differs: an appointment is a time somebody agreed to and
+    /// turning up early is your own doing, whereas nobody being at a job site at 3am is just what a job
+    /// site is. It also says the load has no appointment at all, which is most flatbed and tanker work.
+    /// </summary>
+    public bool WaitedForSiteToOpen { get; set; }
     /// <summary>
     /// When the receiver opens, as a game time. Empty when the listing showed no window — and the app
     /// then behaves exactly as it did before windows were read, which keeps older loads intact.

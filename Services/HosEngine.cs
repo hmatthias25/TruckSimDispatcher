@@ -68,6 +68,42 @@ public class PlanRequest
     /// the plan is looking at, so the margin it holds back can be sized to how much the number is worth.
     /// </summary>
     public int DockSamples { get; set; } = -1;
+
+    /// <summary>
+    /// When a site-type receiver opens and closes, as hours of the day. -1 on both for a place that never
+    /// closes, which is every dock and every load planned before this existed.
+    ///
+    /// A dock wait is a <b>point</b>: your slot, which you wait for even though the building is staffed at
+    /// 3am. A site wait is a <b>range</b>: any time inside it is free and any time outside it is a wait for
+    /// the morning. See <see cref="FacilityProfile"/>. Both end up as hours-until-they-will-take-it, and
+    /// from there the same machinery handles them — including deciding whether to sit the wait out on duty
+    /// or hold the rest longer and roll up fresh.
+    /// </summary>
+    public double SiteOpenHour { get; set; } = -1;
+    public double SiteCloseHour { get; set; } = -1;
+
+    /// <summary>
+    /// The hours above are the app's guess rather than a range read off the listing.
+    ///
+    /// It changes what they are allowed to do. A guessed OPENING can only ever hold a driver until the
+    /// morning of the day they arrive — that is the reported case, rolling up to a job site at 3am with
+    /// nobody there. A guessed CLOSING is not allowed to push a load to the next day at all, because the
+    /// game already said when the load is due and a guess must never be what makes a legal run
+    /// impossible. Reported as a 1,004-mile flatbed coming back Infeasible against a deadline ATS was
+    /// perfectly happy with.
+    ///
+    /// Where the driver entered the game's own range, both ends are real and both are enforced.
+    /// </summary>
+    public bool SiteHoursAreGuess { get; set; }
+
+    /// <summary>
+    /// How long the queue at the gate runs at opening time. Worst on the dot, eased off by mid-day.
+    ///
+    /// This is time ON the property with the engine running, so it lands on the dock clock rather than
+    /// being idle outside a gate — it is the reason "no appointment" must not mean "no waiting".
+    /// </summary>
+    public double SiteQueuePeakHours { get; set; }
+
     public bool IncludePreTrip { get; set; } = true;
     /// <summary>Miles the truck can run on the fuel currently aboard.</summary>
     public double UsableFuelRangeMiles { get; set; } = 9999;
@@ -328,15 +364,19 @@ public static class HosEngine
         /// app already models for an early appointment — the same applies here, and it costs the hop out
         /// and back.
         /// </summary>
-        void RestBeforeDock(HosTask task)
+        void RestBeforeDock(HosTask task, double queueHours = 0)
         {
-            var shortBy = task.Hours - shift;
+            var needed = task.Hours + queueHours;
+            var shortBy = needed - shift;
             var where = task.IsUnload ? "the receiver" : "the shipper";
+            var queued = queueHours > 0.01
+                ? $" (including about {Hhmm.Of(queueHours)} queued at the gate)"
+                : "";
 
             if (req.ReceiverAllowsOvernight)
             {
                 result.Warnings.Add(
-                    $"You have {Hhmm.Of(shift)} of window and {where} needs {Hhmm.Of(task.Hours)} — " +
+                    $"You have {Hhmm.Of(shift)} of window and {where} needs {Hhmm.Of(needed)}{queued} — " +
                     $"{Hhmm.Of(shortBy)} short. They will let you sit, so take the " +
                     $"{rules.OffDutyReset:0.#} on their property first and start fresh.");
                 TakeReset();
@@ -345,7 +385,7 @@ public static class HosEngine
 
             var hop = Facilities.RepositionHoursEachWay;
             result.Warnings.Add(
-                $"You have {Hhmm.Of(shift)} of window and {where} needs {Hhmm.Of(task.Hours)} — you cannot " +
+                $"You have {Hhmm.Of(shift)} of window and {where} needs {Hhmm.Of(needed)}{queued} — you cannot " +
                 $"start that, let alone finish it and get off their lot. Run to a truck stop, take your " +
                 $"{rules.OffDutyReset:0.#}, and come back to it with a full window. That is about " +
                 $"{Hhmm.Of(hop * 2)} of driving either side plus the reset, and it is the only legal way to " +
@@ -381,10 +421,32 @@ public static class HosEngine
             // the first time is when the receiver will actually take it, so arriving early is dead
             // time rather than slack. Skipped entirely when no opening time is known, which is how
             // every load dispatched before this existed keeps the plan it was given.
-            if (task.IsUnload && req.WaitUntilHours > 0)
+            //
+            // Two clocks can produce that wait and only one of them existed before. A booked slot is a
+            // POINT — you wait for it even though the warehouse is lit up and stocking shelves at 3am. A
+            // job site is a RANGE — any time inside it is free, and outside it there is simply nobody
+            // there to take the load off you. Both come out as hours-until-they-will-have-it, and from
+            // here the same machinery handles them.
+            if (task.IsUnload)
             {
-                var opensAt = start.Value.AddHours(req.WaitUntilHours);
-                var waiting = (opensAt - clock).TotalHours;
+                double waiting;
+                if (req.WaitUntilHours > 0)
+                {
+                    waiting = (start.Value.AddHours(req.WaitUntilHours) - clock).TotalHours;
+                }
+                else if (req.SiteHoursAreGuess)
+                {
+                    // No window off the listing, so the working day is the app's own guess. It may hold a
+                    // driver until the morning of the day they arrive and no further — see the note on
+                    // SiteHoursAreGuess for why a guess is not allowed to make a load impossible.
+                    waiting = HoursUntilOpen(clock, req.SiteOpenHour, req.SiteCloseHour, guessed: true);
+                    if (waiting > Eps) result.WaitedForSiteToOpen = true;
+                }
+                else
+                {
+                    waiting = 0;
+                }
+
                 if (waiting > Eps)
                 {
                     result.WaitForAppointmentHours = Math.Round(waiting, 2);
@@ -526,7 +588,23 @@ public static class HosEngine
                 }
             }
 
-            var remaining = task.Hours;
+            // Trucks in front of you at the gate. Worst on the dot of opening, because everybody turns up
+            // then, and eased off through the morning — which is what makes rolling in at ten instead of
+            // six an actual decision rather than just being late.
+            //
+            // On the DOCK clock, not idle: you are on the property with the engine running and it comes
+            // off the fourteen exactly like the unload does. The appointment-idle term prices a truck sat
+            // outside a gate it is not allowed through yet, which is a different thing.
+            var queue = 0.0;
+            if (task.IsUnload && task.AtDock && req.SiteQueuePeakHours > 0 && req.SiteOpenHour >= 0)
+            {
+                var pastOpen = clock.TimeOfDay.TotalHours - req.SiteOpenHour;
+                if (pastOpen < 0) pastOpen += 24;
+                queue = FacilityProfile.QueueAt(req.SiteQueuePeakHours, pastOpen);
+                if (queue > 0.01) result.QueueHours = Math.Round(queue, 2);
+            }
+
+            var remaining = task.Hours + queue;
             var milesRemaining = task.Miles;
 
             while (remaining > Eps)
@@ -569,10 +647,15 @@ public static class HosEngine
                     // the morning. Nobody does that, and no receiver would allow it.
                     //
                     // So if the window will not cover the whole job, the rest happens BEFORE it starts.
-                    var notStarted = Math.Abs(remaining - task.Hours) < Eps;
-                    if (task.AtDock && notStarted && task.Hours > Eps && shift + Eps < task.Hours && cycle > Eps)
+                    // The whole job as it will actually be worked: the unload plus whatever queue is
+                    // sat through to get to it. Both are on-duty time on their property and the window
+                    // has to cover the pair of them — measuring against the unload alone would let a
+                    // driver back in with just enough for the dock and none for the four trucks ahead.
+                    var dockWork = task.Hours + queue;
+                    var notStarted = Math.Abs(remaining - dockWork) < Eps;
+                    if (task.AtDock && notStarted && dockWork > Eps && shift + Eps < dockWork && cycle > Eps)
                     {
-                        RestBeforeDock(task);
+                        RestBeforeDock(task, queue);
                         continue;
                     }
 
@@ -595,7 +678,7 @@ public static class HosEngine
                     }
                     shift -= cap; cycle -= cap;
                     remaining -= cap;
-                    Step(task.Label + (cap < task.Hours - Eps ? " (segment)" : ""), "OnDuty", cap, 0);
+                    Step(task.Label + (cap < dockWork - Eps ? " (segment)" : ""), "OnDuty", cap, 0);
                 }
             }
         }
@@ -736,6 +819,35 @@ public static class HosEngine
     }
 
     private static double Min(params double[] v) => v.Min();
+
+    /// <summary>
+    /// Hours until a site-type receiver will take the load, arriving at this moment. Zero where they are
+    /// open now, and zero for anywhere that never closes.
+    ///
+    /// A range that runs past midnight is handled — a yard open 18:00 to 06:00 is a night shift, not a
+    /// twelve-hour gap with the sense inverted.
+    /// </summary>
+    internal static double HoursUntilOpen(DateTime at, double openHour, double closeHour,
+                                          bool guessed = false)
+    {
+        if (openHour < 0 || closeHour < 0) return 0;               // never closes
+        if (Math.Abs(openHour - closeHour) < 0.01) return 0;       // open all hours
+
+        var tod = at.TimeOfDay.TotalHours;
+        var inside = closeHour > openHour
+            ? tod >= openHour && tod < closeHour
+            : tod >= openHour || tod < closeHour;                  // straddles midnight
+        if (inside) return 0;
+
+        // Turning up after a closing time nobody told us about. We do not actually know they shut — we
+        // guessed the working day — and holding the load to the next morning on that guess is how a run
+        // the game called deliverable comes back impossible. Only a real range gets to do that.
+        if (guessed && tod >= openHour) return 0;
+
+        var until = openHour - tod;
+        if (until < 0) until += 24;
+        return Math.Round(until, 2);
+    }
 
     /// <summary>Plain-language read of the driver's current clocks and what they can legally do now.</summary>
     public static HosStatusView Describe(AppState state, Truck? truck)

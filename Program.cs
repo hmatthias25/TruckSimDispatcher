@@ -2252,6 +2252,9 @@ object Snapshot(AppState? given = null)
             // lost with the board, which is the one place it was no longer needed — it is planning
             // information for the run, not for the decision to take it.
             receiverParking = Facilities.ParkingFor(s, TripService.Active(s)),
+            // The same shape for a site's working day, so a load already running picks up the rule
+            // without its dispatch plan being rewritten underneath it.
+            receiverSiteHours = FacilityProfile.SiteHoursFor(s, TripService.Active(s)),
             // What fuel costs where, so a route can be planned around it rather than paid for after.
             fuel = Fuel.PlanningView(s),
             // Said before the state line, which is the only time it is any use. Null when the run does
