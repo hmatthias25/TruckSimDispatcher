@@ -916,12 +916,11 @@ public static class DispatchEngine
         var dockKind = FacilityProfile.For(s, load,
             string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
 
-        // A site is never "booked", so the takes-early roll says nothing about one — its waiting comes
-        // from opening hours instead. The exception is a knob the player has deliberately moved: that is
-        // an instruction about every receiver on the map, job sites included.
+        // Sites are mostly not booked, and an unbooked one waits on opening hours instead of a slot. The
+        // minority that ARE booked behave like a dock for this purpose: somebody is expecting the truck at
+        // a stated time, so there is no gate to queue at and no morning to wait for.
         var takesEarly = DeliveryWindow.TakesEarly(s, load, dockKind.TakesEarlyPct);
-        var siteHours = dockKind.Kind == FacilityProfile.Kind.Site
-                        && !(FacilityProfile.KnobMoved(s) && takesEarly);
+        var siteHours = dockKind.Kind == FacilityProfile.Kind.Site && takesEarly;
 
         var planReq = new PlanRequest
         {
@@ -951,8 +950,12 @@ public static class DispatchEngine
             // rather than the daily opening hours below: the game gave a moment in time, and a moment in
             // time is not a clock reading that repeats every morning. Collapsing it into one turned a
             // 1,004-mile run the game was perfectly happy with into an infeasible load.
+            //
+            // An unbooked site waits for nothing at dispatch: it waits for the morning, and that is the
+            // SiteOpenHour below. The game's delivery range is its deadline, not its working day — a
+            // flatbed job listed 16:04 to 22:04 does not mean the site is open in the evening.
             WaitUntilHours = siteHours
-                ? (dockKind.HoursAreGuess ? 0 : load.AppointmentOpensHours)
+                ? 0
                 : takesEarly
                     ? 0
                     : AppointmentHoursFor(s, load),

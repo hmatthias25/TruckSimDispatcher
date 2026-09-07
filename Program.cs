@@ -1372,6 +1372,47 @@ app.MapPost("/api/fleetops/whereabouts", (WhereaboutsRequest req) => Results.Ok(
 // The driver has now actually seen a settlement. Separate from paying it on purpose: paying is the
 // calendar's job and telling them is the screen's, and conflating the two is what let a payday land on a
 // fuel-stop log and go unmentioned.
+/// The driver is on the receiver's property. The one moment the receiver gets an opinion.
+///
+/// Deliberately an ACTION rather than something read off the status clock. Arriving is a thing that
+/// happens once, the answer is rolled once, and a driver refreshing the page must not be able to shop for
+/// a free door. Re-reporting a genuinely different arrival time is a different arrival and is allowed to
+/// give a different answer — turning up two hours earlier really is a different situation.
+app.MapPost("/api/trips/{id}/arrived", (string id, ArrivedRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var trip = s.Trips.FirstOrDefault(t => t.Id == id)
+               ?? throw new InvalidOperationException("Trip not found.");
+    if (trip.Status == "Delivered") throw new InvalidOperationException($"{trip.Number} is already closed out.");
+
+    var at = GameClock.TryParse(string.IsNullOrWhiteSpace(req.GameTime) ? s.Status.GameTime : req.GameTime)
+             ?? throw new InvalidOperationException("I need the game date and time you are looking at.");
+
+    var call = ReceiverCall.Assess(s, trip, at);
+
+    trip.ArrivedGameTime = GameClock.Format(at);
+    trip.ReceiverCallKind = call?.Kind ?? "StraightIn";
+    trip.WorkStartsGameTime = call?.WorkStartsGameTime ?? GameClock.Format(at);
+    trip.ReceiverCallNote = call?.Instruction ?? "";
+    trip.QueuePosition = call?.Position ?? 0;
+
+    store.Log(s, "dispatch", call == null
+        ? $"{trip.Number}: arrived {GameClock.Pretty(trip.ArrivedGameTime)} — straight onto a door."
+        : $"{trip.Number}: arrived {GameClock.Pretty(trip.ArrivedGameTime)} — {call.Headline}.", trip.Number);
+
+    return new
+    {
+        call = call ?? new ReceiverCall.Call
+        {
+            Kind = "StraightIn",
+            ArrivedGameTime = trip.ArrivedGameTime,
+            WorkStartsGameTime = trip.ArrivedGameTime,
+            Headline = "Straight onto a door",
+            Instruction = "Nothing to wait for. Log Begin unload now and get it off.",
+        },
+        snapshot = Snapshot(s),
+    };
+})));
+
 app.MapPost("/api/pay/acknowledge", (AcknowledgePayRequest? req) => Results.Ok(store.Mutate<object>(s =>
 {
     var marked = PayEngine.MarkAnnounced(s, req?.Numbers);
@@ -2255,9 +2296,6 @@ object Snapshot(AppState? given = null)
             // The same shape for a site's working day, so a load already running picks up the rule
             // without its dispatch plan being rewritten underneath it.
             receiverSiteHours = FacilityProfile.SiteHoursFor(s, TripService.Active(s)),
-            // Where they are in the line right now, and the clock to set before unloading. ATS will let
-            // a driver drop a load at a job site at 3am; the app is the only thing that will not.
-            siteQueueCall = FacilityProfile.QueueAtArrival(s, TripService.Active(s)),
             // What fuel costs where, so a route can be planned around it rather than paid for after.
             fuel = Fuel.PlanningView(s),
             // Said before the state line, which is the only time it is any use. Null when the run does
@@ -2449,6 +2487,7 @@ record CompleteWoRequest(decimal Cost, double DamageAfter, string Vendor, string
 record WriteOffRequest(string Unit, bool DriverFault, decimal ScrapRecovery, string? Notes);
 record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? Odometer);
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
+record ArrivedRequest(string? GameTime);
 record ReconcileRequest(string? Account, decimal Amount, string Memo, decimal? FixUnsettledPay, int? FixFreightCounter);
 record CareerActionRequest(string? Rank, string? Note, bool Force);
 record AiRequest(string? Message);

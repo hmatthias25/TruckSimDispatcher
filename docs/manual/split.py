@@ -65,6 +65,7 @@ PLAYER_TITLES = {
     "Running the load: the trip log and fuel stops",
     "Reporting after you load, and getting stuck at a dock",
     "Two kinds of receiver, and what each makes you wait for",
+    "Saying you have arrived, and when they actually take it",
     "Closing out, and never typing a number twice",
     "The empty miles between two loads",
     "Clocks at delivery, and the carry-forward",

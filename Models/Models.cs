@@ -1346,6 +1346,24 @@ public class Trip
     public string AppointmentOpensGameTime { get; set; } = "";
 
     /// <summary>
+    /// The driver said they were on the receiver's property, and what happened when they did.
+    ///
+    /// This is the moment the receiver gets an opinion. ATS has none — back up to the trailer and the load
+    /// is delivered, at 3am, at a construction site, four hours before a booked slot. So the driver says
+    /// "I am here" with the clock they are looking at, and the app answers with the time to set before
+    /// logging Begin unload, and why. See <see cref="Services.ReceiverCall"/>.
+    ///
+    /// Recorded rather than recomputed on every read: the answer is rolled once, at arrival, and a driver
+    /// must not be able to refresh their way to a free door. Blank on every load that was already running
+    /// when this arrived, which is exactly right — they have not arrived yet, and the button is waiting.
+    /// </summary>
+    public string ArrivedGameTime { get; set; } = "";
+    public string ReceiverCallKind { get; set; } = "";
+    public string WorkStartsGameTime { get; set; } = "";
+    public string ReceiverCallNote { get; set; } = "";
+    public int QueuePosition { get; set; }
+
+    /// <summary>
     /// The booked slot, somewhere between the window opening and its close. What the plan targets and
     /// what dispatch tells the driver to aim for — the opening is when the doors unlock, not when the
     /// dock is expecting you.

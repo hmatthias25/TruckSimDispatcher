@@ -1693,8 +1693,6 @@ function viewActive() {
   // there is nothing to be early for, and something to be late for. Read live, so a load already running
   // when this arrived picks it up without its dispatch plan being rewritten under it.
   const sh = S.views.receiverSiteHours;
-  // Read off the clock the driver last reported, so it only says anything once they are actually there.
-  const qc = S.views.siteQueueCall;
   // Said before the state line rather than on the settlement afterwards, which is the only time
   // it can change what the driver does.
   const fx = S.views.fuelCrossing;
@@ -1729,8 +1727,12 @@ function viewActive() {
              <div class="sub">${esc(pk.detail)}</div></dd>` : ''}
       ${sh ? `<dt>Their hours</dt><dd>${badge('info', sh.headline)}
              <div class="sub">${esc(sh.detail)}</div></dd>` : ''}
-      ${qc ? `<dt>The queue</dt><dd>${badge('warn', `#${qc.position} in line — set clock to ${qc.setClockTo.replace('T', ' ')}`)}
-             <div class="sub">${esc(qc.instruction)}</div></dd>` : ''}
+      ${t.arrivedGameTime ? `<dt>At the receiver</dt><dd>${badge(
+          t.receiverCallKind === 'TakenEarly' ? 'ok' : t.receiverCallKind === 'StraightIn' ? 'ok' : 'warn',
+          t.workStartsGameTime && t.workStartsGameTime !== t.arrivedGameTime
+            ? `start at ${t.workStartsGameTime.replace('T', ' ')}`
+            : 'straight in')}
+             <div class="sub">${esc(t.receiverCallNote || 'Nothing to wait for — log Begin unload now.')}</div></dd>` : ''}
       <dt>Rationale</dt><dd style="font-family:inherit">${esc(t.authorizationRationale)}</dd>
     </dl>
     ${f ? `<h3 class="sect">Plan captured at authorization</h3>
@@ -1747,6 +1749,23 @@ function viewActive() {
   ${loadedReportHtml(t)}
 
   <div class="cols">
+    ${!t.arrivedGameTime ? `<div class="panel">
+      <div class="panel-head"><h2>At the receiver?</h2>
+        <span class="sub">Say when you got there and I will tell you when they will actually take it.</span></div>
+      ${/* ATS delivers the second you back up to it, whatever the hour and whoever is expecting you. This
+            is where that gets a second opinion: a site that is shut, a line at the gate, or a warehouse
+            running two hours behind its own appointment. Rolled once, here, so refreshing cannot shop for
+            a free door. */ ''}
+      <div class="grid2">
+        ${dayTimeInput('arr-time', S.status.gameTime, 'Game time you pulled in')}
+        <div class="row-actions" style="align-items:end">
+          <button class="btn" data-act="arrived" data-id="${esc(t.id)}">I have arrived</button>
+        </div>
+      </div>
+      <p class="hint">Do this before you unload in game. If they cannot take you yet I will give you a
+        time to set the clock to and the reason, so the waiting lands on your hours where it really went.</p>
+    </div>` : ''}
+
     <div class="panel">
       <div class="panel-head"><h2>Trip log</h2><span class="sub">Log events as they happen.</span></div>
       <div class="grid2">
@@ -5813,6 +5832,23 @@ async function handleAction(act, d, ev) {
     /* ---- screenshot import */
     case 'shot-del': SHOTS.splice(+d.i, 1); return render();
     case 'shots-clear': SHOTS = []; EXTRACT = null; return render();
+    case 'arrived': return run(async () => {
+      const r = await api(`/trips/${d.id}/arrived`, 'POST', { gameTime: readDayTime('arr-time') });
+      absorb(r);
+      // In front of them, not as a toast that scrolls away — this is an instruction to go and carry out
+      // in the game before they touch anything else.
+      queueModals([() => modal(`<div class="panel-head"><h2>${esc(r.call.headline)}</h2>
+        <div class="spacer"></div>
+        <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+        <div class="callout ${r.call.kind === 'TakenEarly' || r.call.kind === 'StraightIn' ? 'go' : 'warn'}">
+          <p style="margin:0">${esc(r.call.instruction)}</p></div>
+        ${r.call.workStartsGameTime && r.call.workStartsGameTime !== r.call.arrivedGameTime ? `
+          <div class="kv"><span>set the clock to
+            <b>${esc(r.call.workStartsGameTime.replace('T', ' '))}</b></span>
+            <span>waiting <b>${hhmm(r.call.waitHours)}</b></span>
+            ${r.call.position ? `<span>place in line <b>#${r.call.position}</b></span>` : ''}</div>` : ''}`)]);
+    });
+
     case 'whereabouts': return run(async () => {
       const r = await api('/fleetops/whereabouts', 'POST', {
         trailerUnit: d.id,
