@@ -1017,6 +1017,20 @@ public class DriverStatus
     public double TruckDamagePct { get; set; }
     public double TrailerDamagePct { get; set; }
     public double AtsOdometer { get; set; }
+
+    /// <summary>
+    /// Why the board is empty, when the app is the one that emptied it.
+    ///
+    /// Out of hours clears the board on purpose — by the time the driver is legal these jobs have turned
+    /// over. Without this the reason went with it, and one read later the answer was "No board submitted.
+    /// Send me the jobs you can see and I will pick one", which is the app asking for the thing it had
+    /// just deleted. Found in a QA sweep; from the driver's seat it is a loop with no way out.
+    ///
+    /// Dropped as soon as they report a clock that says they have rested, so it cannot outlive the
+    /// situation it describes.
+    /// </summary>
+    public string BoardClearedReason { get; set; } = "";
+    public double BoardClearedAtShiftHours { get; set; }
     /// <summary>
     /// The bank balance shown in ATS. This IS the company's cash — the game already deducts fuel,
     /// repairs, garages, trucks and AI driver wages from it, so the app reconciles to it rather than

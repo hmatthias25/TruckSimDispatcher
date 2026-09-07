@@ -239,6 +239,112 @@ public static class FacilityProfile
                            QueuePeakHours(s, load.DestCity, load.DestState, load.Receiver), guessed);
     }
 
+    /// <summary>How long one truck takes to get in, get done and get out of the way at a site.</summary>
+    public const double MinutesPerTruckAhead = 30;
+
+    /// <summary>
+    /// Where the driver is in the queue at a job site, and what to set the game clock to before unloading.
+    ///
+    /// <para>ATS will happily let a flatbed driver drop a load at a construction site at three in the
+    /// morning. Nobody real would: there is nobody there. The game cannot enforce that, so the app has to
+    /// say it — the same way it already tells the driver to sit breaks and rests on the dev console
+    /// clock.</para>
+    ///
+    /// <para><b>Turning up early is rewarded, not punished.</b> Somebody who has been parked at the gate
+    /// since three is first through it; somebody rolling up at opening is behind the trucks that waited.
+    /// So the position falls the earlier they arrived, and with it the time they are told to set. That is
+    /// the trade the driver is actually making — a night at the gate against a morning in the queue — and
+    /// it is only a decision if both sides are visible.</para>
+    ///
+    /// <para>Seeded on the customer and the trip, so it is the same answer every time it is asked and
+    /// reloading cannot roll a better place in the line.</para>
+    /// </summary>
+    public class QueueCall
+    {
+        /// <summary>1 is first through the gate.</summary>
+        public int Position { get; set; }
+        /// <summary>Trucks that get seen before this one.</summary>
+        public int Ahead { get; set; }
+        /// <summary>Game clock to set before unloading, once they are through the gate.</summary>
+        public string SetClockTo { get; set; } = "";
+        /// <summary>Hours between arriving and being worked.</summary>
+        public double WaitHours { get; set; }
+        public string Instruction { get; set; } = "";
+    }
+
+    public static QueueCall? QueueAtArrival(AppState s, Trip? trip)
+    {
+        if (trip == null || trip.Kind != "Freight") return null;
+        if (KindOf(trip.TrailerType) != Kind.Site) return null;
+        if (GameClock.TryParse(s.Status.GameTime) is not { } now) return null;
+
+        var hours = SeededHours(s, trip.DestCity, trip.DestState, trip.Receiver);
+
+        // The listing's own opening beats the guess, exactly as it does in the planner.
+        var openHour = hours.OpenHour;
+        if (GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opensAt)
+            openHour = opensAt.TimeOfDay.TotalHours;
+
+        var peak = QueuePeakHours(s, trip.DestCity, trip.DestState, trip.Receiver);
+        var perTruck = MinutesPerTruckAhead / 60.0;
+        var busiest = (int)Math.Round(peak / perTruck);      // trucks waiting when the gate opens
+
+        var tod = now.TimeOfDay.TotalHours;
+        var untilOpen = openHour - tod;
+        if (untilOpen < -12) untilOpen += 24;                 // opening is tomorrow morning
+
+        double startsAt;      // hours from now until they are actually worked
+        int ahead;
+
+        if (untilOpen > 0.01)
+        {
+            // Early. Every hour spent at the gate is a truck that did not beat them to it, and four hours
+            // early is the front of the line however busy the place is.
+            var earned = Math.Clamp(untilOpen / 4.0, 0, 1);
+            ahead = (int)Math.Round(busiest * (1 - earned));
+            startsAt = untilOpen + ahead * perTruck;
+        }
+        else
+        {
+            // Inside their day: the rush at opening has been easing off ever since.
+            ahead = (int)Math.Round(QueueAt(peak, -untilOpen) / perTruck);
+            startsAt = ahead * perTruck;
+        }
+
+        if (startsAt <= 0.01 && ahead <= 0) return null;      // straight in, nothing to say
+
+        var worked = now.AddHours(startsAt);
+        var call = new QueueCall
+        {
+            Position = ahead + 1,
+            Ahead = ahead,
+            SetClockTo = GameClock.Format(worked),
+            WaitHours = Math.Round(startsAt, 2),
+        };
+
+        var nth = call.Position switch
+        {
+            1 => "first in line", 2 => "second in line", 3 => "third in line",
+            _ => $"{call.Position}th in line",
+        };
+
+        var why = untilOpen > 0.01
+            ? ahead == 0
+                ? $"You are {Hhmm.Of(untilOpen)} ahead of them opening, and early enough that nobody beats you to it"
+                : $"You are {Hhmm.Of(untilOpen)} ahead of them opening, with {ahead} already waiting when the gate goes up"
+            : $"They are open and there are {ahead} in front of you";
+
+        call.Instruction =
+            $"{why} — so you are {nth}. ATS will let you drop this now; a site at " +
+            $"{GameClock.Pretty(GameClock.Format(now))} would not. " +
+            $"Set the game clock to {GameClock.Pretty(call.SetClockTo)} before you unload — that is " +
+            $"{Hhmm.Of(startsAt)} of waiting" +
+            (ahead > 0 ? $", {Hhmm.Of(ahead * perTruck)} of it behind other trucks." : ".") +
+            " Then log Begin unload at that time so the hours land where they actually went.";
+
+        return call;
+    }
+
     /// <summary>
     /// What the driver on a load already running should know about the place they are going to.
     ///

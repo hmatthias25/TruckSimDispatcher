@@ -87,6 +87,35 @@ public static class DispatchEngine
 
         if (s.Board.Count == 0)
         {
+            // "Send me the board" is the wrong thing to say to a driver who cannot legally run whatever
+            // they send. Asking for it anyway is how an out-of-hours clear turned into a driver typing
+            // the same three jobs in over and over — the reason had gone and only the request was left.
+            var restartOpen = Restart.Open(s);
+            if (restartOpen != null)
+            {
+                decision.OutOfHours = true;
+                decision.NeedsRestart = true;
+                decision.Headline = $"You are out of cycle — {Hhmm.Of(s.Hos.CycleRemaining)} left on the " +
+                                    $"{s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}.";
+                decision.Rationale = "There is no point reading a board yet. Sit the restart, report your " +
+                                     "clocks, and pull a fresh one then — these listings will have turned over.";
+                decision.DispatchNotes.AddRange(Restart.Instructions(s, restartOpen));
+                return decision;
+            }
+
+            // Empty because WE emptied it, and the driver has not rested since. Say that, rather than
+            // asking them to send a board they cannot run — which is exactly what they had just done.
+            if (!string.IsNullOrWhiteSpace(s.Status.BoardClearedReason)
+                && s.Hos.ShiftRemaining <= s.Status.BoardClearedAtShiftHours + 0.01)
+            {
+                decision.OutOfHours = true;
+                decision.Headline = "Nothing to read yet — you are out of hours.";
+                decision.Rationale = s.Status.BoardClearedReason;
+                decision.DispatchNotes.Add("I cleared the board because these listings turn over while you " +
+                                           "rest. Take the hours, report your clocks, then send me a fresh one.");
+                return decision;
+            }
+
             decision.Headline = "No board submitted.";
             decision.Rationale = "Send me the jobs you can see and I will pick one.";
             decision.RejectAll = false;
@@ -133,8 +162,9 @@ public static class DispatchEngine
                                     $"{s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}.";
                 decision.Rationale = string.Join(" ", stops);
                 decision.DispatchNotes.AddRange(stops);
-                decision.DispatchNotes.Add("I am clearing the board. By the time you are legal these jobs will have " +
-                                           "turned over anyway — pull a fresh one when you are back on duty.");
+                decision.DispatchNotes.Add("Do not hold on to this board. By the time you are legal these jobs " +
+                                           "will have turned over anyway — pull a fresh one when you are back on " +
+                                           "duty. I am leaving what you typed on the screen rather than deleting it.");
                 foreach (var e in decision.Evaluations) { e.Recommendation = "Reject"; e.HardFails.AddRange(stops); }
                 return decision;
             }

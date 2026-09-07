@@ -2255,6 +2255,9 @@ object Snapshot(AppState? given = null)
             // The same shape for a site's working day, so a load already running picks up the rule
             // without its dispatch plan being rewritten underneath it.
             receiverSiteHours = FacilityProfile.SiteHoursFor(s, TripService.Active(s)),
+            // Where they are in the line right now, and the clock to set before unloading. ATS will let
+            // a driver drop a load at a job site at 3am; the app is the only thing that will not.
+            siteQueueCall = FacilityProfile.QueueAtArrival(s, TripService.Active(s)),
             // What fuel costs where, so a route can be planned around it rather than paid for after.
             fuel = Fuel.PlanningView(s),
             // Said before the state line, which is the only time it is any use. Null when the run does
@@ -2346,13 +2349,22 @@ object Snapshot(AppState? given = null)
 BoardDecision EvaluateBoard(AppState s)
 {
     var decision = DispatchEngine.EvaluateBoard(s);
+
     if (decision.OutOfHours && s.Board.Count > 0)
     {
         s.Board.Clear();
         store.Log(s, "dispatch", decision.NeedsRestart
             ? "Board cleared — out of cycle, 34-hour restart required."
             : "Board cleared — out of hours, 10-hour reset required.");
+
+        // Remember WHY it is empty. Clearing it is right — by the time the driver is legal these jobs
+        // have turned over — but the reason used to die with the board: one read later the answer was
+        // "No board submitted. Send me the jobs you can see and I will pick one", which is the app asking
+        // for the thing it just deleted. Found in a QA sweep, and from the driver's seat it is a loop.
+        s.Status.BoardClearedReason = decision.Rationale;
+        s.Status.BoardClearedAtShiftHours = s.Hos.ShiftRemaining;
     }
+
     return decision;
 }
 

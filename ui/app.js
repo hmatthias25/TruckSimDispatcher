@@ -1693,6 +1693,8 @@ function viewActive() {
   // there is nothing to be early for, and something to be late for. Read live, so a load already running
   // when this arrived picks it up without its dispatch plan being rewritten under it.
   const sh = S.views.receiverSiteHours;
+  // Read off the clock the driver last reported, so it only says anything once they are actually there.
+  const qc = S.views.siteQueueCall;
   // Said before the state line rather than on the settlement afterwards, which is the only time
   // it can change what the driver does.
   const fx = S.views.fuelCrossing;
@@ -1727,6 +1729,8 @@ function viewActive() {
              <div class="sub">${esc(pk.detail)}</div></dd>` : ''}
       ${sh ? `<dt>Their hours</dt><dd>${badge('info', sh.headline)}
              <div class="sub">${esc(sh.detail)}</div></dd>` : ''}
+      ${qc ? `<dt>The queue</dt><dd>${badge('warn', `#${qc.position} in line — set clock to ${qc.setClockTo.replace('T', ' ')}`)}
+             <div class="sub">${esc(qc.instruction)}</div></dd>` : ''}
       <dt>Rationale</dt><dd style="font-family:inherit">${esc(t.authorizationRationale)}</dd>
     </dl>
     ${f ? `<h3 class="sect">Plan captured at authorization</h3>
