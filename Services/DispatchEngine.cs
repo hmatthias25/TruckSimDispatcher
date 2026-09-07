@@ -939,10 +939,25 @@ public static class DispatchEngine
         double score = 0;
         var detail = new List<string>();
 
-        var rpmScore = targetRpm > 0 ? (double)(e.AllInRpm / targetRpm) : 1;
-        var rpmPts = Math.Clamp(rpmScore, 0, 2.0) * w.AllInRpm;
+        // Rate, and it keeps counting above target instead of flattening off.
+        //
+        // This used to be clamped at twice target. Target is break-even times MarginGoal — about $1.50
+        // on a $1.20 break-even — so everything from roughly $3.00/mi upwards scored an identical 2.00.
+        // Reported from play: a $3.23 load taken over a $4.25 one, the two of them level on rate and the
+        // decision handed to HOS slack. A dollar a mile is not a rounding difference, and a carrier that
+        // cannot tell those apart is not reading the only number the freight is actually judged on.
+        //
+        // Above 2x it climbs on a log, so more money is always worth more without one spectacular listing
+        // outvoting home time and the reset. Doubling again is worth one more point: 2x target scores
+        // 2.00, 4x scores 3.00, and that is where it stops — past four times break-even-plus-margin the
+        // load is exceptional whatever else is true of it.
+        var rpmRatio = targetRpm > 0 ? (double)(e.AllInRpm / targetRpm) : 1;
+        var rpmScore = rpmRatio <= 2.0 ? rpmRatio : 2.0 + Math.Log2(rpmRatio / 2.0);
+        var rpmPts = Math.Clamp(rpmScore, 0, 3.0) * w.AllInRpm;
         score += rpmPts;
-        detail.Add($"All-in RPM ${e.AllInRpm:0.00} vs ${targetRpm:0.00} target (break-even ${breakEven.BreakEvenRpm:0.00}): {rpmPts:+0.00;-0.00}");
+        detail.Add($"All-in RPM ${e.AllInRpm:0.00} vs ${targetRpm:0.00} target (break-even ${breakEven.BreakEvenRpm:0.00})"
+                   + (rpmRatio > 2.0 ? $" — {rpmRatio:0.0}x target, still counting" : "")
+                   + $": {rpmPts:+0.00;-0.00}");
 
         var revPts = Math.Clamp((double)load.GameRevenue / 2500.0, 0, 1.5) * w.TotalRevenue;
         score += revPts;
