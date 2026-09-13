@@ -1748,7 +1748,11 @@ function viewActive() {
   ${strandedHtml()}
   ${loadedReportHtml(t)}
 
+  ${/* Two named columns rather than a flow. The left one is the run as it happens — you arrive, then you
+        log against it — and the right one is the paperwork that ends it. Flowed automatically, the
+        close-out landed between the arrival panel and the log it feeds. */ ''}
   <div class="cols">
+   <div style="display:flex;flex-direction:column;gap:15px">
     ${!t.arrivedGameTime ? `<div class="panel">
       <div class="panel-head"><h2>At the receiver?</h2>
         <span class="sub">Say when you got there and I will tell you when they will actually take it.</span></div>
@@ -1819,7 +1823,9 @@ function viewActive() {
         </div>
       </div>
     </div>` : ''}
+   </div>
 
+   <div style="display:flex;flex-direction:column;gap:15px">
     <div class="panel">
       <div class="panel-head"><h2>Close the load out</h2><span class="sub">Operations audits the trip from these numbers.</span></div>
       <div class="grid2">
@@ -1877,6 +1883,7 @@ function viewActive() {
         <button class="btn danger" data-act="show-cancel" data-id="${t.id}">Cancel this load</button>
       </div>
     </div>
+   </div>
   </div>
   ${TRIP_AUDIT ? auditHtml(TRIP_AUDIT) : ''}`;
 }
@@ -2833,7 +2840,45 @@ function viewFleet() {
  */
 function viewEquipment() {
   const b = S.views.backdrop || {};
+  const onBox = (S.trailers || []).find((x) => x.unit === S.driver.assignedTrailerUnit);
   return `
+  ${/* What is actually hooked to the truck. The app has no standing to argue with this: the driver is
+        looking at it and the app cannot see the game. It exists because a career could otherwise wedge
+        with no trailer at all — a write-off, an order pointing at another state, a "not now" — and
+        nothing anywhere to say what was really behind the cab. */ ''}
+  <div class="panel">
+    <div class="panel-head"><h2>What is hooked to you</h2>
+      ${onBox ? badge('ok', `${esc(onBox.gameId || onBox.unit)} — ${esc(onBox.type)}`)
+              : badge('bad', 'nothing on file')}
+      <div class="spacer"></div></div>
+    ${!onBox ? `<div class="callout stop"><p style="margin:0">The app has you with no trailer, so dispatch
+      will not put you on freight. If you are pulling something, say so here and that is the end of it.</p></div>` : ''}
+    <div class="grid3">
+      <label>Trailer on the fleet
+        <select id="rt-unit">
+          <option value="">— not on the fleet, describe it —</option>
+          ${(S.trailers || []).filter((x) => !x.retired).map((x) =>
+            `<option value="${esc(x.unit)}"${x.unit === S.driver.assignedTrailerUnit ? ' selected' : ''}>${
+              esc(x.gameId || x.unit)} — ${esc(x.type)}${x.subtype ? ` (${esc(x.subtype)})` : ''}</option>`).join('')}
+        </select></label>
+      <label>…or type<select id="rt-type">
+        <option value="">—</option>
+        ${['Dry Van', 'Reefer', 'Flatbed', 'Step Deck', 'Lowboy', 'Tanker', 'Dump', 'Hopper',
+           'Log', 'Livestock', 'Car Hauler'].map((x) => `<option>${x}</option>`).join('')}</select></label>
+      <label>Subtype <span class="sub">— tankers</span>
+        <input id="rt-subtype" placeholder="e.g. Food Grade"></label>
+    </div>
+    <div class="grid3">
+      <label>Its name in ATS <span class="sub">— optional</span><input id="rt-gameid" placeholder="e.g. TRL-14"></label>
+      <label>Length <span class="sub">— optional</span><input id="rt-length" placeholder="53'"></label>
+      <div class="row-actions" style="align-items:end">
+        <button class="btn primary" data-act="report-trailer">I am pulling this</button></div>
+    </div>
+    <p class="hint">Reporting, not asking. Operations still decides what you are POSTED on — this is just
+      what is behind the cab right now, the same as an odometer reading. A trailer that is not on the
+      books gets added to them.</p>
+  </div>
+
   ${b.any ? `<div class="callout warn">
     <h4>Equipment on the book that ATS knows nothing about</h4>
     <p>${[b.trucks ? `${b.trucks} tractor(s)` : '', b.trailers ? `${b.trailers} trailer(s)` : '',
@@ -5847,6 +5892,15 @@ async function handleAction(act, d, ev) {
             <b>${esc(r.call.workStartsGameTime.replace('T', ' '))}</b></span>
             <span>waiting <b>${hhmm(r.call.waitHours)}</b></span>
             ${r.call.position ? `<span>place in line <b>#${r.call.position}</b></span>` : ''}</div>` : ''}`)]);
+    });
+
+    case 'report-trailer': return run(async () => {
+      const r = await api('/equipment/report-trailer', 'POST', {
+        trailerUnit: sv('rt-unit'), type: sv('rt-type'), subtype: sv('rt-subtype'),
+        gameId: sv('rt-gameid'), length: sv('rt-length'),
+      });
+      absorb(r);
+      toast(r.message, 'ok');
     });
 
     case 'whereabouts': return run(async () => {

@@ -114,6 +114,122 @@ public static class EquipmentService
     }
 
     /// <summary>
+    /// The driver says what is actually hooked to their truck.
+    ///
+    /// <para><b>Not a request, and not checked against one.</b> Everywhere else the app is firm that a
+    /// driver does not pick their own trailer — operations does, and <see cref="Requests.GuardSelfAssignment"/>
+    /// enforces it. This is the exception, and it is not really an exception at all: it is a driver
+    /// reporting a fact about their own truck, the same way they report an odometer or a damage figure.
+    /// The app does not get a vote on what is behind the cab. It can only be right or wrong about it.</para>
+    ///
+    /// <para>Reported from play: a write-off, a trailer order pointing nine hundred miles away, a "not
+    /// now" — and a career wedged with no trailer at all and no way to say otherwise. The driver hooked a
+    /// food-grade tanker that was standing unused in their game and had nowhere to tell the app. There
+    /// must never be a state the app can get into that the driver cannot get it out of.</para>
+    ///
+    /// <para>A unit that is not on the books is added to them. The player is looking at it in the game;
+    /// arguing that it does not exist would be the app preferring its own records to the thing the
+    /// driver can see.</para>
+    /// </summary>
+    public static string ReportTrailer(AppState s, string? unit, string? type, string? subtype,
+                                       string? gameId, string? length)
+    {
+        var id = (unit ?? "").Trim();
+        var here = $"{s.Status.LocationCity}, {s.Status.LocationState}";
+
+        var trailer = s.Trailers.FirstOrDefault(x => x.Unit.Equals(id, StringComparison.OrdinalIgnoreCase));
+
+        if (trailer == null)
+        {
+            var kind = (type ?? "").Trim();
+            if (kind.Length == 0)
+                throw new InvalidOperationException(
+                    "Tell me which trailer: pick one off the fleet, or give me the type of the one you have hooked.");
+
+            // Number it after the fleet rather than asking the driver to invent one.
+            if (id.Length == 0)
+            {
+                var n = 1;
+                while (s.Trailers.Any(x => x.Unit.Equals($"TR-{n:000}", StringComparison.OrdinalIgnoreCase))) n++;
+                id = $"TR-{n:000}";
+            }
+
+            var yard = s.Company.Terminals.FirstOrDefault(y =>
+                           y.City.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)
+                           && y.State.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase))
+                       ?? HomeTime.HomeTerminal(s);
+
+            trailer = new Trailer
+            {
+                Unit = id,
+                GameId = (gameId ?? "").Trim(),
+                Type = kind,
+                Subtype = (subtype ?? "").Trim(),
+                Division = kind,
+                Length = string.IsNullOrWhiteSpace(length) ? "53'" : length!.Trim(),
+                Status = "InService",
+                InGameGarage = true,
+                HomeTerminalId = yard?.Id ?? "",
+                CurrentLocation = here,
+            };
+            s.Trailers.Add(trailer);
+        }
+
+        if (trailer.Retired || trailer.Status == "Retired")
+        {
+            trailer.Retired = false;
+            trailer.Status = "InService";
+        }
+
+        // Drop whatever the app had them on, where they are standing.
+        var previous = s.Trailers.FirstOrDefault(x =>
+            x.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase));
+        if (previous != null && !previous.Unit.Equals(trailer.Unit, StringComparison.OrdinalIgnoreCase))
+        {
+            previous.AssignedTruckUnit = "";
+            previous.CurrentLocation = here;
+            if (!DropHook.Is(previous.Type))
+            {
+                previous.Whereabouts = "Parked";
+                previous.WhereaboutsCity = s.Status.LocationCity;
+                previous.WhereaboutsState = s.Status.LocationState;
+                previous.WhereaboutsGameTime = s.Status.GameTime;
+            }
+        }
+
+        trailer.AssignedTruckUnit = s.Driver.AssignedTruckUnit;
+        trailer.CurrentLocation = here;
+        if (!DropHook.Is(trailer.Type))
+        {
+            trailer.Whereabouts = "";
+            trailer.WhereaboutsCity = "";
+            trailer.WhereaboutsState = "";
+            trailer.WhereaboutsGameTime = "";
+        }
+
+        if (!string.Equals(s.Driver.AssignedTrailerUnit, trailer.Unit, StringComparison.OrdinalIgnoreCase))
+            s.Driver.HomeTimesOnTrailer = 0;
+        s.Driver.AssignedTrailerUnit = trailer.Unit;
+        s.Status.TrailerDamagePct = trailer.DamagePct;
+
+        // Any swap we were still waiting on is settled: they are on something, and this is what.
+        var msg = $"Noted — you are on {trailer.Ref} ({TrailerSpec.Describe(trailer.Type, trailer.Subtype)}) at {here}.";
+        var open = s.EquipmentOrders.FirstOrDefault(o => o.Status == "Open" && o.Kind == "TrailerSwap");
+        if (open != null)
+        {
+            open.Status = open.ToTrailerUnit.Equals(trailer.Unit, StringComparison.OrdinalIgnoreCase)
+                ? "Completed" : "Closed";
+            open.CompletedGameTime = s.Status.GameTime;
+            open.Notes = $"Driver reported {trailer.Ref} hooked at {here}.";
+            msg += $" {open.Number} is closed off against it.";
+        }
+
+        // The promise made at the last drop is spent too — they are on a box now, whatever it was.
+        TrailerChangeover.Forget(s);
+        return msg;
+    }
+
+    /// <summary>
     /// Hooks a different company trailer. Only legal where the trailer actually is — you cannot
     /// drop a reefer in Denver and be under a flatbed in Tulsa.
     /// </summary>
@@ -281,12 +397,21 @@ public static class EquipmentService
         bool HeldByHire(Trailer t) => s.HiredDrivers.Any(h => h.Status == "Active"
             && h.AssignedTrailerUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
 
-        // 1. Something free — nobody on it, and it is sitting at our home yard.
-        var free = matching.FirstOrDefault(t => string.IsNullOrWhiteSpace(t.AssignedTruckUnit)
-                                                && !HeldByHire(t)
-                                                && homeYard != null && t.HomeTerminalId == homeYard.Id)
-                   ?? matching.FirstOrDefault(t => string.IsNullOrWhiteSpace(t.AssignedTruckUnit)
-                                                   && !HeldByHire(t));
+        // 1. Something free — nobody on it, and as close to the driver as the fleet allows.
+        //
+        // Searched from where the driver is STANDING outwards, which it was not. It looked at the home
+        // yard and then at the whole company, so a driver reporting in at Springfield was told to fetch a
+        // trailer from Salt Lake City — nine hundred miles bobtail, stated as an instruction. Reported
+        // from play, and the driver quite reasonably said no.
+        var hereYard = s.Company.Terminals.FirstOrDefault(y =>
+            y.City.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)
+            && y.State.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase));
+
+        bool Free(Trailer t) => string.IsNullOrWhiteSpace(t.AssignedTruckUnit) && !HeldByHire(t);
+
+        var free = (hereYard != null ? matching.FirstOrDefault(t => Free(t) && t.HomeTerminalId == hereYard.Id) : null)
+                   ?? (homeYard != null ? matching.FirstOrDefault(t => Free(t) && t.HomeTerminalId == homeYard.Id) : null)
+                   ?? matching.FirstOrDefault(Free);
 
         if (free != null)
         {

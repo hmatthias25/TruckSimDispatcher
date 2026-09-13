@@ -1113,6 +1113,20 @@ app.MapGet("/api/equipment/swap-options", (string? trailerType) =>
             ? DispatchEngine.AssignedTrailer(store.State)?.Type ?? ""
             : trailerType)));
 
+/// What is ACTUALLY hooked to the truck, reported by the one person who can see it.
+///
+/// Separate from /equipment/swap on purpose. That is a swap the company sanctioned and it is guarded as
+/// such; this is a driver telling the app a fact about their own truck, which the app has no standing to
+/// refuse. It exists because a career can otherwise wedge with no trailer and no way to say otherwise —
+/// reported from play after a write-off, a trailer order pointing at another state, and a declined order.
+app.MapPost("/api/equipment/report-trailer", (ReportTrailerRequest req) => Results.Ok(store.Mutate(s =>
+{
+    var message = EquipmentService.ReportTrailer(s, req.TrailerUnit, req.Type, req.Subtype,
+                                                 req.GameId, req.Length);
+    store.Log(s, "career", message);
+    return new { message, snapshot = Snapshot(s) };
+})));
+
 app.MapPost("/api/equipment/swap", (SwapRequest req) => Results.Ok(store.Mutate(s =>
 {
     var message = EquipmentService.SwapTrailer(s, req.TrailerUnit, req.Force);
@@ -2488,6 +2502,7 @@ record WriteOffRequest(string Unit, bool DriverFault, decimal ScrapRecovery, str
 record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? Odometer);
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
 record ArrivedRequest(string? GameTime);
+record ReportTrailerRequest(string? TrailerUnit, string? Type, string? Subtype, string? GameId, string? Length);
 record ReconcileRequest(string? Account, decimal Amount, string Memo, decimal? FixUnsettledPay, int? FixFreightCounter);
 record CareerActionRequest(string? Rank, string? Note, bool Force);
 record AiRequest(string? Message);

@@ -45,7 +45,15 @@ public static class Equip
         var id = (gameId ?? "").Trim();
         if (id.Length == 0) return;
 
+        // A unit that is off the fleet does not hold its game name hostage.
+        //
+        // Reported from play, after a write-off: the replacement was given the same in-game name as the
+        // wreck — which is what anybody who names their trucks consistently does — and the add was
+        // refused because a RETIRED tractor still carried it. The only way through was to delete the
+        // wreck and type the whole replacement in again. A retired unit is kept so its trip history
+        // still resolves, not so it can go on owning a plate nobody can read off it any more.
         var clashTruck = s.Trucks.FirstOrDefault(t =>
+            !t.Retired && t.Status != "Retired" &&
             !t.Unit.Equals(ownUnit, StringComparison.OrdinalIgnoreCase) &&
             t.GameId.Trim().Equals(id, StringComparison.OrdinalIgnoreCase));
         if (clashTruck != null)
@@ -53,6 +61,7 @@ public static class Equip
                 $"Truck {clashTruck.Unit} already carries the game ID \"{id}\". Two units cannot share one.");
 
         var clashTrailer = s.Trailers.FirstOrDefault(t =>
+            !t.Retired && t.Status != "Retired" &&
             !t.Unit.Equals(ownUnit, StringComparison.OrdinalIgnoreCase) &&
             t.GameId.Trim().Equals(id, StringComparison.OrdinalIgnoreCase));
         if (clashTrailer != null)
