@@ -1555,6 +1555,17 @@ function decisionHtml() {
         <span class="hint" style="margin:0">${esc(o.reason)}</span>
       </div>`).join('')}
     </div>` : ''}
+    ${/* Asked HERE, at the moment the run home is ordered — not at the yard, which is too late to act
+          on. The whole value of the answer is that a parked box can be marked as your own in ATS BEFORE
+          you set off, so no AI driver takes it while you are driving in. */ ''}
+    ${(d.askWhereabouts || []).length ? `<div class="callout info">
+      <h4>Before you set off — where are the yard's trailers?</h4>
+      <p>You are running in empty, so this is the moment to settle what you pick up when you get there.
+        Have a look at the trailer screen now: a box that is parked costs you nothing and I will tell you
+        to reserve it, and one that is out costs days off your home time.</p>
+      ${d.changeoverNote ? `<p class="hint">${esc(d.changeoverNote)}</p>` : ''}
+      ${whereaboutsHtml({ askWhereabouts: d.askWhereabouts })}
+    </div>` : ''}
     ${d.wantCityBoard ? `<div class="callout warn">
       <h4>Pull the city board before I commit this</h4>
       <p>That was what is on offer at this dock, and none of it finishes near your yard with home time

@@ -3298,6 +3298,20 @@ public class BoardDecision
 
     /// <summary>The load operations would have taken, on a board held for the city question.</summary>
     public string HeldLoadId { get; set; } = "";
+
+    /// <summary>
+    /// Company trailers whose position operations wants before it picks the next box — asked HERE, at the
+    /// moment the driver is told to run home.
+    ///
+    /// This is the point the question is actually worth asking at. It was only ever asked at the
+    /// tour-ending drop and in the home brief, so a driver rejected off a board and pointed at the yard
+    /// got no prompt at all, and the box was chosen on whatever record happened to be on file — reported
+    /// from play as a trailer described as parked while it sat in Grand Junction, a thousand miles away.
+    /// </summary>
+    public List<object> AskWhereabouts { get; set; } = new();
+
+    /// <summary>What the company settled on for the trailer, once those answers are in.</summary>
+    public string ChangeoverNote { get; set; } = "";
     /// <summary>
     /// Every load failed on the clock rather than on the freight. The driver is not looking at a bad
     /// board — they are out of hours, and the answer is a rest, not a reposition. The board is cleared

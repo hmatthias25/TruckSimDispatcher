@@ -46,6 +46,15 @@ const stand = async (city, st, day, hm, kind = 'Shipper') => {
   const yard = S.company.terminals[0];
   S = un(await api(`/terminals/${yard.id}/level`, 'POST', { level: 'Large' }));
 
+  // Stock the yard with one of each, so whatever the re-rig rolls for there is actually a box to be
+  // asked about. An empty yard makes the position question meaningless and the section below vacuous.
+  for (const [u, ty] of [['SPR-V', 'Dry Van'], ['SPR-R', 'Reefer'], ['SPR-F', 'Flatbed'],
+                         ['SPR-S', 'Step Deck'], ['SPR-T', 'Tanker']])
+    await api('/fleet/trailer', 'POST', {
+      unit: u, type: ty, division: ty, year: 2021, make: 'Utility', length: "53'",
+      inGameGarage: true, status: 'InService', homeTerminalId: yard.id,
+    });
+
   // Put the driver on a tanker — the reported load. Re-registering the issued box is a fleet edit, not a
   // self-assignment, which the app is right to refuse.
   const mineBox = (S.trailers || []).find((x) => x.unit === S.driver.assignedTrailerUnit);
@@ -175,6 +184,95 @@ const stand = async (city, st, day, hm, kind = 'Shipper') => {
     `wantCity=${cityCall.wantCityBoard}`);
   ok('and now the run home is ordered on a full answer',
     cityCall.rejectAll === true, (cityCall.headline || '').slice(0, 100));
+
+  head('7. The trailer question is asked while heading home, not once you are there');
+  // A re-rig is seeded and occasional, so walk home times until one is actually pending — otherwise this
+  // section passes on an empty list and proves nothing. The notice on the home-time panel is how the app
+  // says one is coming.
+  let pending = '';
+  for (let i = 0; i < 10 && !pending; i++) {
+    await stand('Amarillo', 'TX', 40 + i * 15, '08:00');
+    pending = (await api('/bootstrap')).views?.homeTime?.reassignmentNotice || '';
+    if (pending) break;
+    await stand('Springfield', 'MO', 40 + i * 15 + 2, '09:00', 'Terminal');
+    const o2 = (await api('/bootstrap')).views?.equipmentOrder;
+    if (o2) await api(`/equipment/orders/${o2.number}/complete`, 'POST', {}).catch(() => {});
+  }
+  console.log(`  ..    re-rig pending: ${pending ? 'yes' : 'no'} — "${pending.slice(0, 80)}"`);
+  ok('a trailer change is pending, so there is something to ask about', !!pending,
+    pending ? 'rolled' : 'none in 10 home times');
+
+  // And genuinely overdue, which is what makes this a send-home rather than an ordinary bad board.
+  // Without it the driver is merely somewhere with poor freight, and "reposition and pull a fresh board"
+  // is the right answer — no trailer question belongs on that.
+  await stand('Amarillo', 'TX', 230, '08:00');
+  const st7 = (await api('/bootstrap')).views?.homeTime;
+  console.log(`  ..    home time: overdue=${st7?.overdue} daysOut=${st7?.daysOut}`);
+
+  // Now the board that sends them home, with that change outstanding.
+  await api('/board/clear', 'POST', {});
+  for (const [c, st, mi] of [['Detroit', 'MI', 530], ['Cleveland', 'OH', 560]])
+    await api('/board/add', 'POST', {
+      cargo: `Away ${c}`, trailerType: 'Tanker', receiver: 'X',
+      originCity: 'Amarillo', originState: 'TX', destCity: c, destState: st,
+      loadedMiles: mi, deadheadMiles: 0, gameRevenue: mi * 3, deadlineHours: 40,
+      weightLbs: 40000, atLocation: false,
+    });
+  const homeCall = await api('/board/evaluate');
+  console.log(`  ..    run-home decision: askWhereabouts=${(homeCall.askWhereabouts || []).length}`
+    + ` rejectAll=${homeCall.rejectAll} wantCity=${homeCall.wantCityBoard}`);
+  console.log(`  ..    "${(homeCall.headline || '').slice(0, 100)}"`);
+  const cityCall2 = homeCall;
+
+  // Reported from play, and the reason it has to be early: "asking when I get home is too late, it needs
+  // to be asked when I am HEADING HOME so I can prepare correctly — make trailer private for example so
+  // another AI driver doesn't take it when I am heading home."
+  //
+  // The answer only buys anything if it arrives before the driver sets off. At the yard it is a record.
+  ok('the run-home decision carries the position questions',
+    (cityCall2.askWhereabouts || []).length > 0, `${(cityCall2.askWhereabouts || []).length} row(s)`);
+  if ((cityCall2.askWhereabouts || []).length) {
+    ok('every row is a real box the change could land on',
+      cityCall2.askWhereabouts.every((x) => x.unit && x.trailerType),
+      cityCall2.askWhereabouts.map((x) => `${x.unit}:${x.trailerType}`).join(', '));
+    ok('and dispatch says what it is settling',
+      !!cityCall2.changeoverNote, (cityCall2.changeoverNote || '').slice(0, 110));
+
+    // Answer one as parked and the reserve instruction has to come back, because that is the thing the
+    // driver needs to act on before they drive away.
+    const pick = cityCall2.askWhereabouts[0];
+    const ans = await api('/fleetops/whereabouts', 'POST', {
+      trailerUnit: pick.unit, direction: 'Parked', city: 'Springfield', state: 'MO',
+    });
+    ok('answering names the box and tells them to reserve it',
+      /own trailer in the ATS trailer manager|mark .* as your own/i.test(ans.changeover || ''),
+      (ans.changeover || '(silent)').slice(0, 150));
+  } else {
+    console.log('  ..    no re-rig rolled for this home time, so there is nothing to ask about');
+  }
+
+  head('8. A load that finishes AT the yard asks the same question, when it is taken');
+  // The exception, reported from play: "if the load is GOING to my home city, in that case I should get
+  // it when I get that load." That load IS the run home — it just happens to be paying — so the trailer
+  // question belongs with it, at the same moment, while there is still a drive in which to go and
+  // reserve a box.
+  await api('/board/clear', 'POST', {});
+  await api('/board/add', 'POST', {
+    cargo: 'Palletised Goods home', trailerType: 'Tanker', receiver: 'Home Depot DC',
+    originCity: 'Amarillo', originState: 'TX', destCity: 'Springfield', destState: 'MO',
+    loadedMiles: 610, deadheadMiles: 0, gameRevenue: 2100, deadlineHours: 40,
+    weightLbs: 40000, atLocation: false,
+  });
+  const goingHome = await api('/board/evaluate');
+  console.log(`  ..    load to the yard: authorized=${!!goingHome.authorizedLoadId}`
+    + ` askWhereabouts=${(goingHome.askWhereabouts || []).length}`);
+  ok('a load finishing at the yard is taken', !!goingHome.authorizedLoadId,
+    (goingHome.headline || '').slice(0, 90));
+  ok('and it asks about the trailers with it, not once you get there',
+    (goingHome.askWhereabouts || []).length > 0,
+    `${(goingHome.askWhereabouts || []).length} row(s)`);
+  ok('naming what it is settling while there is still a drive to act in',
+    !!goingHome.changeoverNote, (goingHome.changeoverNote || '').slice(0, 110));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

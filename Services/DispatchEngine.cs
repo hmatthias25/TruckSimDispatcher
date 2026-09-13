@@ -234,6 +234,13 @@ public static class DispatchEngine
             pick.Recommendation = "Authorize";
             foreach (var e in clear.Skip(1)) e.Recommendation = "Backup";
             decision.AuthorizedLoadId = pick.Load.Id;
+
+            // A load that finishes at the yard IS the run home — so the trailer question comes now,
+            // with it, rather than waiting for an empty run that is not going to happen. Reported from
+            // play as the exception that matters: asked at the yard it is too late to go and mark a box
+            // as your own, and the whole point of asking is that you can.
+            if (FinishesAtHomeYard(s, pick.Load)) AskAboutTrailersHome(s, decision);
+
             decision.Headline =
                 $"{decision.NextTripNumberPreview} authorized: {Place(pick.Load.OriginCity, pick.Load.OriginState)} → " +
                 $"{Place(pick.Load.DestCity, pick.Load.DestState)}, {pick.Load.Cargo}.";
@@ -379,6 +386,7 @@ public static class DispatchEngine
             }
 
             decision.RejectAll = true;
+            AskAboutTrailersHome(s, decision);
             decision.Headline = $"Nothing here goes to {repair.HomeLabel}. Run it in empty.";
             decision.Rationale = repair.Headline;
             decision.DispatchNotes.Add(
@@ -418,6 +426,7 @@ public static class DispatchEngine
             }
 
             decision.RejectAll = true;
+            AskAboutTrailersHome(s, decision);
             decision.Headline = $"Every load here runs further from {homeSt.TerminalLabel}, and you are " +
                                 $"{homeSt.DaysLate:0.#} days late for home.";
             decision.Rationale = $"Nothing on this board finishes any nearer the yard than {homeSt.MilesFromHome:N0} mi, " +
@@ -492,6 +501,49 @@ public static class DispatchEngine
     /// <summary>Everything the driver showed us came off the dock they are standing on.</summary>
     private static bool onlyLocalBoard(BoardDecision d) =>
         d.Evaluations.Count > 0 && d.Evaluations.All(e => e.Load.AtLocation);
+
+    /// <summary>
+    /// The driver is being sent to the yard, so ask about the yard's trailers now.
+    ///
+    /// Every path that ends in an empty run home goes through here. The positions are what decide which
+    /// box they get, and the only moment the answer is worth anything is before the decision is made —
+    /// not at the yard afterwards, which is where the question used to arrive.
+    /// </summary>
+    /// <summary>
+    /// Whether this load finishes AT the yard — not merely closer to it.
+    ///
+    /// A load to Springfield is the run home; it just happens to be paying. So it wants the same trailer
+    /// question an empty run home gets, at the same moment — when it is taken, while there is still a
+    /// drive in which to go and reserve a box.
+    /// </summary>
+    private static bool FinishesAtHomeYard(AppState s, BoardLoad load)
+    {
+        var home = HomeTime.HomeTerminal(s);
+        if (home == null) return false;
+
+        if (home.City.Equals(load.DestCity ?? "", StringComparison.OrdinalIgnoreCase)
+            && home.State.Equals(load.DestState ?? "", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Or near enough that the yard is the same trip. HomeTime.Touch counts an arrival on a radius for
+        // the same reason: the town next to the yard is the yard as far as a driver is concerned.
+        var miles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
+        return miles is { } m && m <= 50;
+    }
+
+    private static void AskAboutTrailersHome(AppState s, BoardDecision d)
+    {
+        if (TrailerChangeover.ComingType(s) is not { } want || DropHook.Is(want)) return;
+        if (TrailerChangeover.Candidates(s, want).Count == 0) return;
+
+        d.AskWhereabouts = TrailerChangeover.AskRows(s);
+        if (TrailerChangeover.Decide(s) is { } plan)
+        {
+            d.ChangeoverNote = plan.Note;
+            d.DispatchNotes.Add(plan.Note);
+            TrailerChangeover.Remember(s, plan);
+        }
+    }
 
     /// <summary>
     /// Whether this trailer type has to be loaded at a dock even off a facility's own board.
