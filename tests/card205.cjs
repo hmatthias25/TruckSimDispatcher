@@ -238,15 +238,36 @@ const stand = async (city, st, day, hm, kind = 'Shipper') => {
     ok('and dispatch says what it is settling',
       !!cityCall2.changeoverNote, (cityCall2.changeoverNote || '').slice(0, 110));
 
-    // Answer one as parked and the reserve instruction has to come back, because that is the thing the
-    // driver needs to act on before they drive away.
-    const pick = cityCall2.askWhereabouts[0];
-    const ans = await api('/fleetops/whereabouts', 'POST', {
-      trailerUnit: pick.unit, direction: 'Parked', city: 'Springfield', state: 'MO',
+    // Every position in one call, then one decision. Reported from play: "Each selection has 'tell
+    // dispatch' after it. When I hit ONE it cleared out the rest." Filing them one at a time settled the
+    // changeover off the first row before it had heard about the others, and re-rendering wiped the form
+    // the driver was still filling in.
+    //
+    // Answered so that only the FULL set gives the right answer: everything out except one parked box,
+    // and the parked one deliberately last in the list.
+    const rows = cityCall2.askWhereabouts;
+    const parkedUnit = rows[rows.length - 1].unit;
+    const bulk = await api('/fleetops/whereabouts/all', 'POST', {
+      trailers: rows.map((x) => ({
+        trailerUnit: x.unit,
+        direction: x.unit === parkedUnit ? 'Parked' : 'Outbound',
+        city: x.unit === parkedUnit ? 'Springfield' : 'Grand Junction',
+        state: x.unit === parkedUnit ? 'MO' : 'CO',
+      })),
     });
-    ok('answering names the box and tells them to reserve it',
-      /own trailer in the ATS trailer manager|mark .* as your own/i.test(ans.changeover || ''),
-      (ans.changeover || '(silent)').slice(0, 150));
+    console.log(`  ..    filed ${(bulk.filed || []).length} of ${rows.length}`);
+    console.log(`  ..    decided: "${(bulk.changeover || '(none)').slice(0, 140)}"`);
+
+    ok('every row is filed in the one call', (bulk.filed || []).length === rows.length,
+      `${(bulk.filed || []).length}/${rows.length}`);
+    ok('and one decision comes back with it', !!bulk.changeover,
+      (bulk.changeover || '(silent)').slice(0, 110));
+    ok('the decision used the WHOLE set, not just the first row',
+      (await api('/bootstrap')).driver?.changeoverUnit === parkedUnit,
+      `${(await api('/bootstrap')).driver?.changeoverUnit} vs parked ${parkedUnit}`);
+    ok('and it tells them to reserve it, which is the point of asking early',
+      /own trailer in the ATS trailer manager|mark .* as your own/i.test(bulk.changeover || ''),
+      (bulk.changeover || '(silent)').slice(0, 150));
   } else {
     console.log('  ..    no re-rig rolled for this home time, so there is nothing to ask about');
   }

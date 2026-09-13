@@ -39,6 +39,7 @@ public static class Migrations
         BackfillTrailerTenure(s);
         SettlementsAlreadyBankedAreNotNews(s);
         ReopenTheTrailerQuestionNobodyWasAsked(s);
+        ReopenTheHalfAnsweredTrailerQuestion(s);
         EnsureDropHookIsOnOffer(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
@@ -107,6 +108,68 @@ public static class Migrations
     /// and it is also what keeps a form in step when a settlement lands inside a year already closed.
     /// </summary>
     private static void EnsureW2sForYearsAlreadyRun(AppState s) => W2Service.IssueDue(s);
+
+    /// <summary>
+    /// Takes back a changeover settled on half the answers.
+    ///
+    /// The position questions came with a button on every row, so filing one filed one — and dispatch
+    /// then settled the whole changeover on that single answer before it had heard about the other four
+    /// boxes on the yard. Re-rendering afterwards cleared the rest of the form, so from the driver's seat
+    /// the screen ate the question and produced a decision nobody had finished giving it.
+    ///
+    /// It is one form and one button now, and the decision is made once everything is in. This puts back
+    /// the careers caught by the old shape: the promise goes, and so do the positions it was settled
+    /// from, because a decision made on one row out of five is not a record worth keeping.
+    /// </summary>
+    private static void ReopenTheHalfAnsweredTrailerQuestion(AppState s)
+    {
+        if (s.SchemaVersion >= 16) return;
+        s.SchemaVersion = 16;
+
+        var cancelled = 0;
+        foreach (var o in s.EquipmentOrders.Where(x => x.Status == "Open" && x.Kind == "TrailerSwap"))
+        {
+            o.Status = "Closed";
+            o.CompletedGameTime = s.Status.GameTime;
+            o.Notes = "Withdrawn: settled before all the trailer positions were in.";
+            cancelled++;
+        }
+
+        var hadPromise = !string.IsNullOrWhiteSpace(s.Driver.ChangeoverUnit);
+        s.Driver.ChangeoverUnit = "";
+        s.Driver.ChangeoverType = "";
+        s.Driver.ChangeoverReserve = false;
+        s.Driver.ChangeoverGameTime = "";
+
+        var yard = HomeTime.HomeTerminal(s);
+        var wiped = 0;
+        if (yard != null)
+            foreach (var t in s.Trailers.Where(x => !x.Retired
+                                                    && x.HomeTerminalId.Equals(yard.Id, StringComparison.OrdinalIgnoreCase)
+                                                    && !string.IsNullOrWhiteSpace(x.Whereabouts)))
+            {
+                t.Whereabouts = "";
+                t.WhereaboutsCity = "";
+                t.WhereaboutsState = "";
+                t.WhereaboutsGameTime = "";
+                wiped++;
+            }
+
+        if (cancelled == 0 && !hadPromise && wiped == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "career",
+            GameTime = s.Status.GameTime,
+            Message =
+                "Trailer question reopened. It used to file one row at a time and decide off the first " +
+                "one, so anything settled that way is off the record — " +
+                (cancelled > 0 ? $"{cancelled} swap order(s) withdrawn, " : "") +
+                (wiped > 0 ? $"{wiped} yard position(s) cleared. " : "") +
+                "Next time you are told to head home, fill the whole form in and press the one button; I " +
+                "will decide once I have the lot.",
+        });
+    }
 
     /// <summary>
     /// Takes back a trailer promise made before anybody was asked where the trailers were.

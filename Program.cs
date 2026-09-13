@@ -1359,6 +1359,40 @@ app.MapPost("/api/trips/{id}/window", (string id, WindowFixRequest req) => Resul
 ///
 /// Keyed on the TRAILER. It used to be keyed on the hired driver the app had down as pulling it, which
 /// AI drivers make wrong the first time they hook something else.
+/// Every trailer's position at once, and THEN the decision.
+///
+/// The per-trailer endpoint below stays for a single correction, but it is the wrong shape for the
+/// question the app actually asks: five boxes on a yard, one answer each, one call to make once they are
+/// all in. Filing them one at a time meant dispatch settled the changeover on the first row before it had
+/// heard about the other four — and re-rendering after each one cleared the form underneath the driver,
+/// which is how it was reported.
+app.MapPost("/api/fleetops/whereabouts/all", (WhereaboutsBulkRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var filed = new List<object>();
+    foreach (var one in req.Trailers ?? new List<WhereaboutsRequest>())
+    {
+        var t = s.Trailers.FirstOrDefault(x =>
+            x.Unit.Equals((one.TrailerUnit ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        if (t == null) continue;
+
+        t.Whereabouts = Whereabouts.Normalise(one.Direction);
+        t.WhereaboutsCity = (one.City ?? "").Trim();
+        t.WhereaboutsState = (one.State ?? "").Trim().ToUpperInvariant();
+        t.WhereaboutsGameTime = s.Status.GameTime;
+
+        var est = Whereabouts.Assess(s, t);
+        store.Log(s, "fleet", $"{t.Ref}: {est.Text}");
+        filed.Add(new { unit = t.Unit, trailer = t.Ref, estimate = est });
+    }
+
+    // One decision, once everything is in.
+    var plan = TrailerChangeover.Decide(s);
+    TrailerChangeover.Remember(s, plan);
+    if (plan != null) store.Log(s, "fleet", plan.Note);
+
+    return new { filed, changeover = plan?.Note ?? "", snapshot = Snapshot(s) };
+})));
+
 app.MapPost("/api/fleetops/whereabouts", (WhereaboutsRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
     var t = s.Trailers.FirstOrDefault(x => x.Unit.Equals((req.TrailerUnit ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
@@ -2523,6 +2557,7 @@ record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? 
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
 record ArrivedRequest(string? GameTime);
 record ReportTrailerRequest(string? TrailerUnit, string? Type, string? Subtype, string? GameId, string? Length);
+record WhereaboutsBulkRequest(List<WhereaboutsRequest>? Trailers);
 record ReconcileRequest(string? Account, decimal Amount, string Memo, decimal? FixUnsettledPay, int? FixFreightCounter);
 record CareerActionRequest(string? Rank, string? Note, bool Force);
 record AiRequest(string? Message);

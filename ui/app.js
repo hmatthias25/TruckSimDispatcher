@@ -2510,9 +2510,15 @@ function whereaboutsHtml(b) {
         <label>State<input id="wa-state-${esc(a.unit)}" class="up" maxlength="2"
           value="${esc(a.state || '')}" placeholder="CO"></label>
       </div>
-      <div class="row-actions"><button class="btn tiny" data-act="whereabouts"
-        data-id="${esc(a.unit)}">Tell dispatch</button></div>
     </div>`).join('')}
+    ${/* ONE button for the lot. A button per row filed the answers one at a time, so dispatch settled the
+          changeover off the first row before it had heard about the other four — and re-rendering after
+          each one wiped the form the driver was still filling in. Reported from play exactly that way. */ ''}
+    <div class="row-actions" style="margin-top:10px">
+      <button class="btn primary" data-act="whereabouts-all"
+        data-units="${esc(ask.map((a) => a.unit).join(','))}">Tell dispatch</button>
+      <span class="sub">fill them all in, then one button &mdash; I decide once I have the lot</span>
+    </div>
   </div>`;
 }
 
@@ -5920,6 +5926,23 @@ async function handleAction(act, d, ev) {
       });
       absorb(r);
       toast(r.message, 'ok');
+    });
+
+    case 'whereabouts-all': return run(async () => {
+      const units = (d.units || '').split(',').filter(Boolean);
+      const r = await api('/fleetops/whereabouts/all', 'POST', {
+        trailers: units.map((u) => ({
+          trailerUnit: u, direction: sv(`wa-dir-${u}`) || 'Unknown',
+          city: sv(`wa-city-${u}`), state: sv(`wa-state-${u}`),
+        })),
+      });
+      absorb(r);
+      if (r.changeover) queueModals([() => modal(
+        `<div class="panel-head"><h2>Your next trailer</h2>
+          <div class="spacer"></div>
+          <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+         <div class="callout go"><p style="margin:0">${esc(r.changeover)}</p></div>`)]);
+      else toast(`${(r.filed || []).length} position(s) noted.`, 'ok');
     });
 
     case 'whereabouts': return run(async () => {
