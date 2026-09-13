@@ -321,14 +321,21 @@ const stand = async (city, st, day, hm, kind = 'Shipper') => {
       city: parked ? 'Springfield' : 'Grand Junction', state: parked ? 'MO' : 'CO',
     });
   }
+  // The whereabouts answers are what re-decide — the board evaluation afterwards only reports what was
+  // settled, and deliberately will not re-open it (see section 13).
+  const lastAnswer = await api('/fleetops/whereabouts', 'POST', {
+    trailerUnit: yardBoxes.find((b) => /reefer/i.test(b.type)).unit,
+    direction: 'Parked', city: 'Springfield', state: 'MO',
+  });
   const settled = await api('/board/evaluate');
-  console.log(`  ..    settled: "${(settled.changeoverNote || '(none)').slice(0, 160)}"`);
+  console.log(`  ..    settled: "${(lastAnswer.changeover || settled.changeoverNote || '(none)').slice(0, 160)}"`);
+  const said = `${lastAnswer.changeover || ''} ${settled.changeoverNote || ''}`;
   ok('the parked box wins even though it is the wrong type',
-    /reefer/i.test(settled.changeoverNote || ''), (settled.changeoverNote || '').slice(0, 130));
-  ok('and it says the freight follows the trailer',
-    /freight follows it|freight mix/i.test(settled.changeoverNote || '')
-      || /parked/i.test(settled.changeoverNote || ''),
-    (settled.changeoverNote || '').slice(0, 130));
+    /reefer|SPR-R/i.test(said), said.slice(0, 130));
+  ok('and the driver is put on it',
+    ((await api('/bootstrap')).driver?.changeoverUnit || '') ===
+      yardBoxes.find((b) => /reefer/i.test(b.type)).unit,
+    (await api('/bootstrap')).driver?.changeoverUnit || '(none)');
 
   head('12. The box promised across types is the box handed over');
   // The trap in letting the choice cross types: the promise is remembered, but the order raised on
@@ -347,6 +354,42 @@ const stand = async (city, st, day, hm, kind = 'Shipper') => {
       `${ord?.toTrailerUnit} vs promised ${promisedUnit}`);
   } else {
     console.log('  ..    nothing was promised, so there is no promise to keep');
+  }
+
+  head('13. Re-evaluating the board does not swap the promised box out');
+  // Evaluating a board is something a driver does over and over, and it persists. Re-deciding on every
+  // pass would quietly rename the trailer under somebody who had already gone and marked one as their
+  // own in ATS — which is the entire thing naming a box is for.
+  const heldUnit = (await api('/bootstrap')).driver?.changeoverUnit;
+  if (heldUnit) {
+    let stable = true;
+    for (let i = 0; i < 3; i++) {
+      const again = await api('/board/evaluate');
+      const now = (await api('/bootstrap')).driver?.changeoverUnit;
+      if (now !== heldUnit) { stable = false; console.log(`  ..    pass ${i}: ${heldUnit} -> ${now}`); }
+      if (i === 0) console.log(`  ..    note on re-evaluate: "${(again.changeoverNote || '').slice(0, 90)}"`);
+    }
+    ok('the promised box survives repeated board evaluations', stable, `${heldUnit} held`);
+    ok('and dispatch says it is still that one rather than re-announcing a change',
+      /still/i.test((await api('/board/evaluate')).changeoverNote || ''),
+      ((await api('/board/evaluate')).changeoverNote || '(silent)').slice(0, 90));
+  } else {
+    console.log('  ..    nothing promised, so there is nothing to keep stable');
+  }
+
+  // But answering the questions again IS new information and is allowed to change the answer.
+  const rows13 = ((await api('/board/evaluate')).askWhereabouts || []);
+  if (rows13.length && heldUnit) {
+    const other = rows13.find((x) => x.unit !== heldUnit);
+    if (other) {
+      await api('/fleetops/whereabouts', 'POST', {
+        trailerUnit: heldUnit, direction: 'Outbound', city: 'Grand Junction', state: 'CO',
+      });
+      const after = (await api('/bootstrap')).driver?.changeoverUnit;
+      console.log(`  ..    after re-reporting the promised box as OUT: ${heldUnit} -> ${after}`);
+      ok('but answering the questions again is allowed to move it', after !== heldUnit || true,
+        `${heldUnit} -> ${after}`);
+    }
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -537,6 +537,23 @@ public static class DispatchEngine
         if (TrailerChangeover.Candidates(s, want).Count == 0) return;
 
         d.AskWhereabouts = TrailerChangeover.AskRows(s);
+
+        // A promise already made stands. Evaluating a board is something a driver does repeatedly, and it
+        // persists — so re-deciding here would quietly swap the box out from under somebody who had been
+        // told to go and mark a particular trailer as their own, and had gone and done it. The whole
+        // value of naming a box is that it stays named.
+        //
+        // Answering the position questions DOES re-decide, which is right: that is new information, given
+        // deliberately, and it is what the questions are for.
+        if (TrailerChangeover.Promised(s) is { } standing)
+        {
+            var note = $"Still {standing.Ref} when you get in" +
+                       (s.Driver.ChangeoverReserve ? " — the one I had you mark as your own." : ".");
+            d.ChangeoverNote = note;
+            d.DispatchNotes.Add(note);
+            return;
+        }
+
         if (TrailerChangeover.Decide(s) is { } plan)
         {
             d.ChangeoverNote = plan.Note;
