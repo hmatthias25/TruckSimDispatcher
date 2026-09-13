@@ -197,6 +197,17 @@ public static class EquipmentService
             }
         }
 
+        // If the books had a hired driver on this box, they do not have it — the player is looking at it
+        // hooked to their own truck. The record was wrong and this is the correction; leaving it would put
+        // two drivers on one trailer and quietly break every assignment decision that reads it.
+        var taken = new List<string>();
+        foreach (var h in s.HiredDrivers.Where(h =>
+                     h.AssignedTrailerUnit.Equals(trailer.Unit, StringComparison.OrdinalIgnoreCase)))
+        {
+            h.AssignedTrailerUnit = "";
+            taken.Add(h.Name);
+        }
+
         trailer.AssignedTruckUnit = s.Driver.AssignedTruckUnit;
         trailer.CurrentLocation = here;
         if (!DropHook.Is(trailer.Type))
@@ -214,6 +225,9 @@ public static class EquipmentService
 
         // Any swap we were still waiting on is settled: they are on something, and this is what.
         var msg = $"Noted — you are on {trailer.Ref} ({TrailerSpec.Describe(trailer.Type, trailer.Subtype)}) at {here}.";
+        if (taken.Count > 0)
+            msg += $" We had {string.Join(" and ", taken)} down for it, so that is off their record — " +
+                   "they will need something else.";
         var open = s.EquipmentOrders.FirstOrDefault(o => o.Status == "Open" && o.Kind == "TrailerSwap");
         if (open != null)
         {

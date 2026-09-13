@@ -146,6 +146,32 @@ const at = (city, st, day, kind = 'Terminal') => api('/status', 'POST', {
   ok('the driver is on the box they reported', S.driver.assignedTrailerUnit === 'SPR-2',
     S.driver.assignedTrailerUnit);
 
+  head('6. Taking a box the books had a hired driver on');
+  // The ordinary case, as reported: "the tanker IS in the fleet, I just need to tell the app I am using
+  // it." If the company had somebody else down for it, the record was simply wrong — the player is
+  // looking at it hooked to their own truck — and two drivers on one trailer breaks every assignment
+  // decision that reads it.
+  await api('/fleet/trailer', 'POST', {
+    unit: 'SPR-3', type: 'Tanker', subtype: 'Food Grade', division: 'Tanker', year: 2021,
+    make: 'Polar', length: "48'", inGameGarage: true, status: 'InService', homeTerminalId: yard.id,
+  });
+  const hires = (await api('/bootstrap')).hiredDrivers || [];
+  if (hires.length) {
+    const h = hires[0];
+    await api(`/fleet/drivers/${encodeURIComponent(h.id || h.name)}`, 'POST',
+      { ...h, assignedTrailerUnit: 'SPR-3' }).catch(() => {});
+  }
+  const rep6 = await api('/equipment/report-trailer', 'POST', { trailerUnit: 'SPR-3' });
+  S = un(rep6);
+  ok('the driver is on the tanker they said they hooked',
+    S.driver.assignedTrailerUnit === 'SPR-3', S.driver.assignedTrailerUnit);
+  ok('and nobody else is still down for it',
+    !(S.hiredDrivers || []).some((x) => x.assignedTrailerUnit === 'SPR-3'),
+    (S.hiredDrivers || []).map((x) => `${x.name}:${x.assignedTrailerUnit || '-'}`).join(', ') || '(no hires)');
+  ok('the type and subtype come through',
+    // TrailerSpec.Describe renders it as "food-grade tanker", so match the sense not the casing.
+    /food.?grade/i.test(rep6.message || ''), (rep6.message || '').slice(0, 90));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); process.exit(1); });
