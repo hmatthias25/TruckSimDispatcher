@@ -274,6 +274,20 @@ const stand = async (city, st, day, hm, kind = 'Shipper') => {
   ok('naming what it is settling while there is still a drive to act in',
     !!goingHome.changeoverNote, (goingHome.changeoverNote || '').slice(0, 110));
 
+  head('9. A career carrying an old promise gets the question reopened');
+  // Migration 15. A swap order raised under the old rules stops the next change being ANNOUNCED at all,
+  // and a remembered unit is handed over without asking — so a career already carrying either would
+  // never see the new sequence. Both come off, and the positions they were chosen from go with them.
+  const before9 = (await api('/bootstrap'));
+  console.log(`  ..    schema now ${before9.schemaVersion ?? '(unstamped)'}`);
+  ok('the career is migrated to the reopened-question schema',
+    (before9.schemaVersion ?? 0) >= 15, `${before9.schemaVersion}`);
+  ok('no trailer swap is left open from the old rules',
+    !(before9.equipmentOrders || []).some((o) => o.status === 'Open' && o.kind === 'TrailerSwap'),
+    (before9.equipmentOrders || []).filter((o) => o.status === 'Open').map((o) => o.kind).join(', ') || 'none open');
+  ok('and the driver is still pulling whatever they were pulling',
+    !!before9.driver.assignedTrailerUnit, before9.driver.assignedTrailerUnit || '(nothing)');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); process.exit(1); });

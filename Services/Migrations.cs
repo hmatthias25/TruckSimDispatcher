@@ -38,6 +38,7 @@ public static class Migrations
         MoveWhereaboutsOntoTheTrailer(s);
         BackfillTrailerTenure(s);
         SettlementsAlreadyBankedAreNotNews(s);
+        ReopenTheTrailerQuestionNobodyWasAsked(s);
         EnsureDropHookIsOnOffer(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
@@ -106,6 +107,78 @@ public static class Migrations
     /// and it is also what keeps a form in step when a settlement lands inside a year already closed.
     /// </summary>
     private static void EnsureW2sForYearsAlreadyRun(AppState s) => W2Service.IssueDue(s);
+
+    /// <summary>
+    /// Takes back a trailer promise made before anybody was asked where the trailers were.
+    ///
+    /// The changeover used to pick a box from whatever was on file and hand it over — no question asked,
+    /// and the file could be months stale or simply wrong. Reported from play: a trailer the app called
+    /// parked at the yard while it was actually sitting in Grand Junction, a thousand miles away. The
+    /// driver quite reasonably turned it down, and turning it down left the career with no trailer at all.
+    ///
+    /// The question is now asked at the moment the driver is told to head home, which is the only moment
+    /// the answer is worth anything — early enough to go and mark a parked box as your own before setting
+    /// off. But a career already carrying one of the old promises would never see it: an open swap order
+    /// stops the next change being announced at all, and a remembered unit is handed over without asking.
+    ///
+    /// So both come off, and the positions they were chosen from go with them. Nothing is lost that was
+    /// worth keeping — a guess nobody verified is not a record, and the driver is about to be asked
+    /// properly. What they are PULLING is untouched; this only clears what they were promised next.
+    /// </summary>
+    private static void ReopenTheTrailerQuestionNobodyWasAsked(AppState s)
+    {
+        if (s.SchemaVersion >= 15) return;
+        s.SchemaVersion = 15;
+
+        var cancelled = 0;
+        foreach (var o in s.EquipmentOrders.Where(x => x.Status == "Open" && x.Kind == "TrailerSwap"))
+        {
+            o.Status = "Closed";
+            o.CompletedGameTime = s.Status.GameTime;
+            o.Notes = "Withdrawn: issued before anybody was asked where the trailers were.";
+            cancelled++;
+        }
+
+        var hadPromise = !string.IsNullOrWhiteSpace(s.Driver.ChangeoverUnit);
+        s.Driver.ChangeoverUnit = "";
+        s.Driver.ChangeoverType = "";
+        s.Driver.ChangeoverReserve = false;
+        s.Driver.ChangeoverGameTime = "";
+
+        // And the positions those choices were made from. Only the home yard's boxes — those are the ones
+        // the changeover asks about, and a position the driver reported about anything else is still
+        // theirs and still true.
+        var yard = HomeTime.HomeTerminal(s);
+        var wiped = 0;
+        if (yard != null)
+            foreach (var t in s.Trailers.Where(x => !x.Retired
+                                                    && x.HomeTerminalId.Equals(yard.Id, StringComparison.OrdinalIgnoreCase)
+                                                    && !string.IsNullOrWhiteSpace(x.Whereabouts)))
+            {
+                t.Whereabouts = "";
+                t.WhereaboutsCity = "";
+                t.WhereaboutsState = "";
+                t.WhereaboutsGameTime = "";
+                wiped++;
+            }
+
+        if (cancelled == 0 && !hadPromise && wiped == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "career",
+            GameTime = s.Status.GameTime,
+            Message =
+                "Trailer changeover reopened. " +
+                (cancelled > 0 ? $"{cancelled} swap order(s) withdrawn — they were raised before anybody " +
+                                 "asked where the trailers were. " : "") +
+                (hadPromise ? "The box you were promised next is off the record too. " : "") +
+                (wiped > 0 ? $"{wiped} yard trailer position(s) cleared so they are asked fresh. " : "") +
+                "You are still pulling whatever you are pulling. Next time you are told to head home I " +
+                "will ask where the yard's boxes are and settle it then, while there is still a drive in " +
+                "which to go and reserve one.",
+        });
+    }
 
     /// <summary>
     /// Puts the GDC service clocks back on a career that was switched onto the schedule before the
