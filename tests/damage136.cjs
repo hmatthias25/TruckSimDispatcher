@@ -89,8 +89,9 @@ async function offer(dc, ds, miles) {
   await stand('Las Vegas', 'NV', 11, 5);
   S = await api('/bootstrap');
   const away = await offer('Portland', 'OR', 980);
-  ok('a load further from home is refused',
-    away.rejectAll === true || (away.evaluations || []).every((e) => e.recommendation === 'Reject'),
+  ok('a load further from home is not taken',
+    away.rejectAll === true || away.wantCityBoard === true
+      || (away.evaluations || []).every((e) => e.recommendation !== 'Authorize'),
     away.headline?.slice(0, 80));
   const why = JSON.stringify(away).toLowerCase();
   ok('and the reason names the truck, not home time',

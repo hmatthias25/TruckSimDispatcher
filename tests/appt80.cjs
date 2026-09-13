@@ -141,8 +141,8 @@ async function offer(cargo, opensHours = 8, deadlineHours = 20) {
       !((e2.feasibility.warnings) || []).some((w) => /wait at the receiver/i.test(w)),
       (e2.feasibility.warnings || []).join(' | ').slice(0, 90) || 'no wait');
     ok('and it is a PRO on the card, before you commit',
-      (e2.pros || []).some((p) => /take it whenever you arrive/i.test(p)),
-      (e2.pros || []).find((p) => /whenever/.test(p)) || '(not mentioned)');
+      (e2.pros || []).some((p) => /no booked slot/i.test(p)),
+      (e2.pros || []).find((p) => /booked slot/i.test(p)) || '(not mentioned)');
     ok('with no slot to aim at', !e2.appointmentGameTime, e2.appointmentGameTime || 'none');
 
     head('5. Dispatch repeats it at authorisation, where the driver acts on it');

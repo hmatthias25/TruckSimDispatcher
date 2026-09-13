@@ -59,7 +59,12 @@ public static class ReceiverCall
     {
         if (trip.Kind != "Freight") return null;
 
-        var booked = GameClock.TryParse(trip.AppointmentOpensGameTime);
+        // Booked means a SLOT — a time somebody is holding a door for. The window merely opening is not
+        // that, and reading it as one sent a tanker down the dock branch and handed it a 19:00 appointment
+        // nobody had made. Reported from play: arrived at 16:00 against a window opening at 17:16 and was
+        // told to wait three hours, which ran the shift out and forced a ten on the property.
+        var booked = GameClock.TryParse(trip.AppointmentGameTime);
+        var opens = GameClock.TryParse(trip.AppointmentOpensGameTime);
         var isSite = FacilityProfile.KindOf(trip.TrailerType) == FacilityProfile.Kind.Site;
 
         // The seed. The hour they arrived is in it because arriving at three and arriving at seven are
@@ -67,9 +72,57 @@ public static class ReceiverCall
         // reported twice does.
         var seed = $"{s.Driver.EmployeeId}|call|{trip.Id}|{arrived:yyyy-MM-ddTHH}";
 
+        // Nobody is taken before the window opens, wherever they are going. That is the game's own word on
+        // the place and it outranks both our seeded working day and any slot inside it.
+        if (booked == null && opens is { } openAt && arrived < openAt)
+            return BeforeTheyOpen(s, trip, arrived, openAt, isSite, seed);
+
         return isSite && booked == null
             ? AtSite(s, trip, arrived, seed)
             : AtDock(s, trip, arrived, booked, seed);
+    }
+
+    /// <summary>
+    /// Turned up before the window the game stated. Nobody is booked in and nobody is being difficult —
+    /// they are simply not taking freight yet, and the card has said so since the load was authorised.
+    /// </summary>
+    private static Call BeforeTheyOpen(AppState s, Trip trip, DateTime arrived, DateTime opensAt,
+                                       bool isSite, string seed)
+    {
+        var waiting = (opensAt - arrived).TotalHours;
+        var start = opensAt;
+        var ahead = 0;
+
+        // A site still has a gate, and being here early is what puts you at the front of it.
+        if (isSite)
+        {
+            var peak = FacilityProfile.QueuePeakHours(s, trip.DestCity, trip.DestState, trip.Receiver);
+            var busiest = (int)Math.Round(peak / HoursPerTruckAhead);
+            var earned = Math.Clamp(waiting / EarlyEnoughHours, 0, 1);
+            ahead = (int)Math.Round(busiest * (1 - earned));
+            start = opensAt.AddHours(ahead * HoursPerTruckAhead);
+        }
+
+        var who = string.IsNullOrWhiteSpace(trip.Receiver) ? "They" : trip.Receiver.Trim();
+        return new Call
+        {
+            Kind = "Queued",
+            ArrivedGameTime = GameClock.Format(arrived),
+            WorkStartsGameTime = GameClock.Format(start),
+            WaitHours = Math.Round((start - arrived).TotalHours, 2),
+            Position = ahead + 1,
+            Ahead = ahead,
+            Headline = $"They open at {GameClock.Pretty(GameClock.Format(opensAt))}",
+            Instruction =
+                $"You are {Hhmm.Of(waiting)} ahead of the window. {who} do not take freight before " +
+                $"{GameClock.Pretty(GameClock.Format(opensAt))}" +
+                (ahead > 0
+                    ? $", and there are {ahead} in front of you when it opens, so you start at " +
+                      $"{GameClock.Pretty(GameClock.Format(start))}. "
+                    : ", and nobody is ahead of you. ") +
+                $"Set the game clock to {GameClock.Pretty(GameClock.Format(start))} and log Begin unload " +
+                "then, so the wait lands on your clocks where it actually went.",
+        };
     }
 
     /// <summary>

@@ -178,9 +178,15 @@ const gday = (day, hm) => {
   const overnightEv = overnight.evaluations[0];
   f = overnightEv.feasibility;
   if (overnightEv.receiverTakesEarly) {
-    ok('taking it early, so there is no wait to take as a reset',
-      !f.waitForAppointmentHours,
-      (overnightEv.pros || []).find((p) => /take it whenever/.test(p)) || 'no wait planned');
+    // Unbooked, so no slot — but the window the game stated still governs when they take freight, and an
+    // eighteen-hour wait for it is exactly the wait this section is about. What must not happen is the
+    // wait being spent on duty.
+    ok('unbooked, so the wait is to their window and nothing more',
+      !overnightEv.appointmentGameTime, overnightEv.appointmentGameTime || 'no slot');
+    ok('and a long one is still sat as the reset rather than on duty',
+      !(f.waitForAppointmentHours > 10)
+        || (f.warnings || []).some((w) => /reset/.test(w) || /sleep/i.test(w) || /rest/i.test(w)),
+      (f.warnings || []).join(' | ').slice(0, 120) || '(none)');
   } else {
     ok('the long wait is recognised', f.waitForAppointmentHours > 10, `${hhmm(f.waitForAppointmentHours || 0)}`);
     ok('and sat as the reset, not spent on duty',

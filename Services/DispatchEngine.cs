@@ -358,6 +358,26 @@ public static class DispatchEngine
         var repair = Shop.Assess(s, truck, trailer);
         if (repair.Kind == "RunHome")
         {
+            // One dock's worth of freight is not the town, and sending a truck home empty is an expensive
+            // thing to decide off it. Reported from play: a shipper board with nothing going the right
+            // way, and the empty run home ordered without the city ever being looked at.
+            //
+            // Same hold the city gate uses elsewhere — the board stays up, nothing is rejected, and if the
+            // city comes back with nothing either then the run home is ordered on a full answer.
+            if (onlyLocalBoard(decision))
+            {
+                decision.WantCityBoard = true;
+                decision.Headline = $"Before I run you in empty — show me the city board for " +
+                                    $"{Place(s.Status.LocationCity, s.Status.LocationState)}.";
+                decision.Rationale =
+                    $"Nothing at this dock finishes at {repair.HomeLabel}, but that was one dock's worth. " +
+                    "The truck has to get to the shop either way, so a load going even part of the way there " +
+                    "is worth more than an empty run. Pull the full city board and I will look again.";
+                decision.DispatchNotes.Add(decision.Rationale);
+                foreach (var e in decision.Evaluations) e.Recommendation = "Backup";
+                return decision;
+            }
+
             decision.RejectAll = true;
             decision.Headline = $"Nothing here goes to {repair.HomeLabel}. Run it in empty.";
             decision.Rationale = repair.Headline;
@@ -380,6 +400,23 @@ public static class DispatchEngine
         if (homeSt.Overdue && decision.Evaluations.Count > 0
             && decision.Evaluations.All(e => e.HomeTimeFails.Count > 0))
         {
+            // Again: ask the city before concluding the whole town is wrong. The note below used to say
+            // "if you want to be sure, open the full board" as an afterthought, which is not the same as
+            // asking — the driver had already been told to go home by then.
+            if (onlyLocalBoard(decision))
+            {
+                decision.WantCityBoard = true;
+                decision.Headline = $"Before I send you home — show me the city board for " +
+                                    $"{Place(s.Status.LocationCity, s.Status.LocationState)}.";
+                decision.Rationale =
+                    $"Everything at this dock runs further from {homeSt.TerminalLabel} and you are " +
+                    $"{homeSt.DaysLate:0.#} days late, but that was one dock. If the town has something " +
+                    "heading that way I would rather you were paid for the miles than run them empty.";
+                decision.DispatchNotes.Add(decision.Rationale);
+                foreach (var e in decision.Evaluations) e.Recommendation = "Backup";
+                return decision;
+            }
+
             decision.RejectAll = true;
             decision.Headline = $"Every load here runs further from {homeSt.TerminalLabel}, and you are " +
                                 $"{homeSt.DaysLate:0.#} days late for home.";
@@ -920,7 +957,19 @@ public static class DispatchEngine
         // minority that ARE booked behave like a dock for this purpose: somebody is expecting the truck at
         // a stated time, so there is no gate to queue at and no morning to wait for.
         var takesEarly = DeliveryWindow.TakesEarly(s, load, dockKind.TakesEarlyPct);
-        var siteHours = dockKind.Kind == FacilityProfile.Kind.Site && takesEarly;
+
+        // Whether anybody booked this truck in. Unbooked means any hour inside the stated window works;
+        // booked means a slot somewhere inside it that the driver is expected to hit.
+        var booked = !takesEarly && load.AppointmentOpensHours > 0;
+
+        // Our own reading of a working day is the BACKSTOP, not the authority. Where the game stated a
+        // window that window is when they are open, and printing a seeded 07:00-16:00 against a stated
+        // 17:16-23:57 is the app arguing with the only fact it has. Reported from play in exactly those
+        // terms — "someone has to be there between 8AM and 3PM makes no sense when we have a dropoff
+        // range indicated that can be out of this range."
+        var siteHours = dockKind.Kind == FacilityProfile.Kind.Site
+                        && takesEarly
+                        && load.AppointmentOpensHours <= 0;
 
         var planReq = new PlanRequest
         {
@@ -954,11 +1003,18 @@ public static class DispatchEngine
             // An unbooked site waits for nothing at dispatch: it waits for the morning, and that is the
             // SiteOpenHour below. The game's delivery range is its deadline, not its working day — a
             // flatbed job listed 16:04 to 22:04 does not mean the site is open in the evening.
+            //
+            // Nobody takes it before the window opens — the game said when that is, and the card has said
+            // so all along. What the booking changes is only what happens INSIDE the window: a slot to hit,
+            // or a gate you can roll through at any hour of it.
+            //
+            // This read 0 for every unbooked load, which is how a tanker with a window opening at 17:16
+            // was planned as though the plant would take it at four in the morning.
             WaitUntilHours = siteHours
                 ? 0
-                : takesEarly
-                    ? 0
-                    : AppointmentHoursFor(s, load),
+                : booked
+                    ? AppointmentHoursFor(s, load)
+                    : Math.Max(0, load.AppointmentOpensHours),
 
             // And a site with NO window is the case that used to plan as though the place never closed.
             // Here the app is guessing, so it may only hold a driver until the morning of the day they
@@ -1008,11 +1064,12 @@ public static class DispatchEngine
         // ---- economics
         // Said on the card, before the load is picked. A receiver taking it early is worth hours, and
         // hours are only worth planning around if you know about them in time to plan.
-        // "They will take it whenever you arrive" is a thing a booked dock does as a favour. A job site
-        // does not do it at all — it is open or it is not, and turning up inside its day was never early.
-        // Saying it of a site would put a pro on the card at the same time as the plan waits for morning.
-        e.ReceiverTakesEarly = !siteHours && takesEarly && load.AppointmentOpensHours > 0;
-        if (!e.ReceiverTakesEarly && load.AppointmentOpensHours > 0
+        // Unbooked: no slot to hit, and any hour inside their window will do. It is NOT "they will take it
+        // before the window opens" — nobody does that, and treating it that way is what let two halves of
+        // this card contradict each other, one printing a 19:00 slot while the other said there was no
+        // appointment at all.
+        e.ReceiverTakesEarly = !booked && load.AppointmentOpensHours > 0;
+        if (booked && load.AppointmentOpensHours > 0
             && GameClock.TryParse(s.Status.GameTime) is { } evalNow)
         {
             var shown = evalNow.AddHours(AppointmentHoursFor(s, load));
@@ -1024,8 +1081,8 @@ public static class DispatchEngine
         }
 
         if (e.ReceiverTakesEarly)
-            e.Pros.Add($"{Place(load.DestCity, load.DestState)} is quiet — they will take it whenever you " +
-                       "arrive, so none of the window is spent sitting.");
+            e.Pros.Add($"No booked slot at {Place(load.DestCity, load.DestState)} — any hour inside their " +
+                       "window works, so none of it is spent waiting on a door.");
         else if (!string.IsNullOrWhiteSpace(e.AppointmentGameTime))
             e.Cons.Add($"Booked in at {GameClock.Pretty(e.AppointmentGameTime)}. Arriving before that is " +
                        "sitting on their gate, not slack.");
@@ -1718,7 +1775,13 @@ public static class DispatchEngine
 
         // The slot the dock is expecting, stamped once so the plan, the close-out and the report all
         // measure against the same time.
-        if (GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opensAt
+        //
+        // Only where somebody actually booked one. This fired on any load with a window at all, which is
+        // how an UNBOOKED tanker — whose whole card said "no appointment, they take it when you get
+        // there" — also carried a 19:00 appointment it was then told to aim for. A window opening is not
+        // a door being held.
+        if (!trip.ReceiverTakesEarly
+            && GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opensAt
             && GameClock.TryParse(trip.DueGameTime) is { } dueAt && dueAt > opensAt)
         {
             // Straight off the same helper the plan waits on, so the stated slot and the planned slot

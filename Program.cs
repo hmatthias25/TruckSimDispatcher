@@ -1582,6 +1582,17 @@ app.MapPost("/api/incidents", (Incident inc) => Results.Ok(store.Mutate<object>(
         s.Status.TruckDamagePct = truck.DamagePct;
     }
 
+    // And the trailer, which had nowhere to go at all. Filed the same way and for the same reason: this
+    // is the screen where somebody says what an accident did to the equipment, and it was taking half the
+    // answer. Written through to status as well, so the dispatch screen already knows it and the driver
+    // does not type the same figure twice.
+    var box = DispatchEngine.AssignedTrailer(s);
+    if (inc.TrailerDamagePctAfter >= 0 && box != null)
+    {
+        box.DamagePct = Math.Clamp(inc.TrailerDamagePctAfter, 0, 100);
+        s.Status.TrailerDamagePct = box.DamagePct;
+    }
+
     var (created, action) = SafetyService.FileAndDecide(s, inc);
     store.Log(s, "safety", $"{created.Number} {created.Kind} ({created.FaultAttribution} fault): {created.Description}", created.Number);
     if (action != null)
@@ -1600,7 +1611,16 @@ app.MapPost("/api/incidents", (Incident inc) => Results.Ok(store.Mutate<object>(
             wrecked.Unit);
     }
 
-    return new { incident = created, action, writeOff, snapshot = Snapshot(s) };
+    // What follows from the damage, said here rather than left to be discovered two loads later. The shop
+    // already works this out; Safety just was not passing it on, so a driver who reported 11% on the
+    // trailer was told what it meant for their RECORD and nothing about what it meant for their week.
+    var assessed = Shop.Assess(s, truck, box);
+    var equipmentNext = assessed.Kind == "None"
+        ? new List<string>()
+        : new[] { assessed.Headline }.Concat(assessed.Instructions).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+    foreach (var line in equipmentNext) store.Log(s, "safety", line, created.Number);
+
+    return new { incident = created, action, writeOff, equipmentNext, snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/incidents/{number}/forgive", (string number, ForgiveRequest req) => Results.Ok(store.Mutate(s =>

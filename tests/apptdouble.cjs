@@ -122,10 +122,13 @@ const term = (ev, re) => {
   const early = (await api('/board/add', 'POST', {
     ...common, cargo: 'Paper Reels', destCity: 'Pueblo', destState: 'CO', appointmentOpensHours: 7,
   })).evaluations[0];
-  ok('a receiver that takes it whenever spends none of the window sitting',
-    !(early.feasibility?.idleHours > 0.25), `idle=${early.feasibility?.idleHours}`);
+  // Unbooked means no SLOT to hit, not that the doors open early for you. The window the game stated is
+  // still when they take freight — so the wait to the opening is real and is counted; what is gone is the
+  // extra sit from an appointment somewhere inside it.
+  ok('an unbooked receiver holds you only to their window, not to a slot',
+    !early.appointmentGameTime, early.appointmentGameTime || 'no slot');
   ok('and it is said as a pro, not smuggled in through the arithmetic',
-    (early.pros || []).some((x) => /take it whenever you arrive/i.test(x)),
+    (early.pros || []).some((x) => /no booked slot/i.test(x)),
     (early.pros || []).join(' | ').slice(0, 140) || '(silent)');
 
   console.log(`\n${pass} passed, ${fail} failed`);

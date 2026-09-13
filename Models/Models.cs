@@ -1803,6 +1803,19 @@ public class Incident
     public double TruckDamagePctAfter { get; set; } = -1;
 
     /// <summary>
+    /// Trailer damage after the event, read off the game the same way the tractor figure is.
+    ///
+    /// There was nowhere to put this at all. Reported from play: 11% on the trailer from a hit that was
+    /// not the driver's fault, and Safety had no field for it — so the one screen whose whole job is
+    /// recording what an accident did to the equipment took half the answer, and the figure had to be
+    /// typed again on the dispatch screen afterwards.
+    ///
+    /// Negative means not reported, which is not the same as zero: a driver who does not mention the
+    /// trailer has not told us it is undamaged.
+    /// </summary>
+    public double TrailerDamagePctAfter { get; set; } = -1;
+
+    /// <summary>
     /// Damage the event actually caused, in points — <b>after minus before</b>.
     ///
     /// The record had only damage AFTER, which says what the truck is worth fixing and nothing about

@@ -96,7 +96,14 @@ public static class TrailerChangeover
     public static bool AskAtDrop(AppState s)
     {
         var st = HomeTime.Status(s);
-        if (!st.Tracked || !(st.DueSoon || st.Overdue)) return false;
+
+        // Any reason the truck is being pointed at the yard counts, not just the schedule. Reported from
+        // play after a damaged trailer put a driver under a run-home order: no positions were asked for,
+        // and a box was promised anyway on a record that turned out to be a thousand miles stale.
+        var runningHome = st.Tracked && (st.DueSoon || st.Overdue);
+        if (!runningHome
+            && Shop.Assess(s, DispatchEngine.AssignedTruck(s), DispatchEngine.AssignedTrailer(s)).Kind != "RunHome")
+            return false;
         if (st.AtYard) return false;                  // already there; the home brief has this
 
         var want = ComingType(s);
@@ -190,6 +197,22 @@ public static class TrailerChangeover
             .ToList();
 
         var best = scored[0];
+
+        // Nothing on file for any of them. Do NOT pick one — a box whose position nobody has reported is
+        // a box we know nothing about, and naming it anyway is how a driver was promised a trailer the
+        // app called parked while it sat in Grand Junction, a thousand miles from the yard.
+        //
+        // Ask instead. The positions are the decision, not decoration on one already made.
+        if (!scored.Any(x => x.E.Known))
+            return new Plan
+            {
+                Type = want,
+                Note = $"Operations wants you on {want.ToLowerInvariant()} for the tour after this home time, " +
+                       $"and we have {cands.Count} on the yard I could put you on — but I have nothing " +
+                       "current on where any of them are, and I am not promising you one I cannot vouch " +
+                       "for. Have a look at the trailer screen and tell me, and I will name the box.",
+            };
+
         var plan = new Plan
         {
             Type = want,

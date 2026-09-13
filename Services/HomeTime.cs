@@ -527,8 +527,16 @@ public static class HomeTime
         // The box named at the drop that ended the tour, where it is still a sensible thing to hand over.
         // Re-picking here would quietly break a promise the driver may have acted on — a parked trailer
         // they were told to mark as their own is one they have already walked over and claimed.
-        var order = EquipmentService.IssueTrailerReassignment(s, pick, reason,
-                                                              TrailerChangeover.Promised(s, pick));
+        var promised = TrailerChangeover.Promised(s, pick);
+
+        // Where nothing was promised because nobody could say where anything was, the order still goes out
+        // — it just does not pretend. IssueTrailerReassignment has a branch for exactly this and says "I
+        // have nothing current on where it is, so I cannot tell you what it will cost."
+        //
+        // Holding it instead was tried and is wrong: a driver who never answers the position questions
+        // would then never be re-rigged at all, which is a worse failure than an unpriced swap. The place
+        // to catch this is the ASK at the tour-ending drop, not a refusal to act at the yard.
+        var order = EquipmentService.IssueTrailerReassignment(s, pick, reason, promised);
 
         // Kept or not, the promise is spent: the next one is decided at the next tour-ending drop.
         if (order != null) TrailerChangeover.Forget(s);

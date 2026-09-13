@@ -58,8 +58,12 @@ public static class FacilityProfile
 
         return t switch
         {
-            "Dry Van" or "Reefer" or "Refrigerated" or "Van" => Kind.Dock,
-            "Flatbed" or "Step Deck" or "Lowboy" or "Tanker" or "Dump"
+            // Tanker is a DOCK. It sat with the open-ground types on the shape of the trailer, which is
+            // the wrong test: a food-grade tanker goes to a bottling plant and a fuel tanker to a
+            // terminal, and both are buildings with a gate and receiving hours. Reported from play as a
+            // Coca-Cola delivery being described to the driver as a construction site.
+            "Dry Van" or "Reefer" or "Refrigerated" or "Van" or "Tanker" => Kind.Dock,
+            "Flatbed" or "Step Deck" or "Lowboy" or "Dump"
                 or "Hopper" or "Log" or "Livestock" or "Car Hauler" => Kind.Site,
             _ => Kind.Dock,      // unknown freight is treated as the gentler case
         };
@@ -125,6 +129,10 @@ public static class FacilityProfile
         // queue at the gate instead.
         if (KindOf(t) == Kind.Site) return 85;
         if (DropHook.Is(t)) return 40;    // the trailer is already there; it is the dock time that is booked
+
+        // A tanker is a dock, but rarely a BOOKED one. You pull onto the plant and they put you on a bay
+        // when a bay is free; the window the game states is the whole of the arrangement.
+        if (t == "Tanker") return 80;
 
         // Perishables move to a schedule. A reefer hauling something that does not need the box running
         // is a dry van with an expensive trailer.
@@ -252,6 +260,11 @@ public static class FacilityProfile
         if (trip == null || trip.Kind != "Freight") return null;
         if (KindOf(trip.TrailerType) != Kind.Site) return null;
         if (string.IsNullOrWhiteSpace(trip.DestCity) && string.IsNullOrWhiteSpace(trip.Receiver)) return null;
+
+        // Silent where the game gave a window. That window IS their day, the card already shows it, and a
+        // seeded working day printed alongside it is the app arguing with the only fact it has — reported
+        // from play as a 07:00-16:00 line against a stated 17:16-23:57 range.
+        if (!string.IsNullOrWhiteSpace(trip.AppointmentOpensGameTime)) return null;
 
         var h = SeededHours(s, trip.DestCity, trip.DestState, trip.Receiver);
         var queue = QueuePeakHours(s, trip.DestCity, trip.DestState, trip.Receiver);

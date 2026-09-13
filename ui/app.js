@@ -1753,22 +1753,6 @@ function viewActive() {
         close-out landed between the arrival panel and the log it feeds. */ ''}
   <div class="cols">
    <div style="display:flex;flex-direction:column;gap:15px">
-    ${!t.arrivedGameTime ? `<div class="panel">
-      <div class="panel-head"><h2>At the receiver?</h2>
-        <span class="sub">Say when you got there and I will tell you when they will actually take it.</span></div>
-      ${/* ATS delivers the second you back up to it, whatever the hour and whoever is expecting you. This
-            is where that gets a second opinion: a site that is shut, a line at the gate, or a warehouse
-            running two hours behind its own appointment. Rolled once, here, so refreshing cannot shop for
-            a free door. */ ''}
-      <div class="grid2">
-        ${dayTimeInput('arr-time', S.status.gameTime, 'Game time you pulled in')}
-        <div class="row-actions" style="align-items:end">
-          <button class="btn" data-act="arrived" data-id="${esc(t.id)}">I have arrived</button>
-        </div>
-      </div>
-      <p class="hint">Do this before you unload in game. If they cannot take you yet I will give you a
-        time to set the clock to and the reason, so the waiting lands on your hours where it really went.</p>
-    </div>` : ''}
 
     <div class="panel">
       <div class="panel-head"><h2>Trip log</h2><span class="sub">Log events as they happen.</span></div>
@@ -1826,6 +1810,22 @@ function viewActive() {
    </div>
 
    <div style="display:flex;flex-direction:column;gap:15px">
+    ${!t.arrivedGameTime ? `<div class="panel">
+      <div class="panel-head"><h2>At the receiver?</h2>
+        <span class="sub">Say when you got there and I will tell you when they will actually take it.</span></div>
+      ${/* ATS delivers the second you back up to it, whatever the hour and whoever is expecting you. This
+            is where that gets a second opinion: a site that is shut, a line at the gate, or a warehouse
+            running two hours behind its own appointment. Rolled once, here, so refreshing cannot shop for
+            a free door. */ ''}
+      <div class="grid2">
+        ${dayTimeInput('arr-time', S.status.gameTime, 'Game time you pulled in')}
+        <div class="row-actions" style="align-items:end">
+          <button class="btn" data-act="arrived" data-id="${esc(t.id)}">I have arrived</button>
+        </div>
+      </div>
+      <p class="hint">Do this before you unload in game. If they cannot take you yet I will give you a
+        time to set the clock to and the reason, so the waiting lands on your hours where it really went.</p>
+    </div>` : ''}
     <div class="panel">
       <div class="panel-head"><h2>Close the load out</h2><span class="sub">Operations audits the trip from these numbers.</span></div>
       <div class="grid2">
@@ -4824,6 +4824,14 @@ function viewSafety() {
         <label>Type<select id="in-kind">${['Collision', 'Late', 'Damage', 'Citation', 'Fatigue', 'Fuel', 'Overweight', 'Other'].map((x) => `<option>${x}</option>`).join('')}</select></label>
         <label>Damage incurred %<input id="in-damage" type="number" step="0.1" min="0" max="100"
           placeholder="how much this put on the truck"></label>
+        ${/* What each unit reads NOW, off the game. The damage-incurred box above is what the event added
+              and it is what severity is graded on; these two are the condition the shop works from. The
+              trailer had no box at all, so a driver who took 11% on the box had nowhere to put it and had
+              to type it again on the dispatch screen afterwards. */ ''}
+        <label>Tractor now reads %<input id="in-truck-now" type="number" step="0.1" min="0" max="100"
+          placeholder="${esc(String(Math.round(S.status.truckDamagePct || 0)))}"></label>
+        <label>Trailer now reads %<input id="in-trailer-now" type="number" step="0.1" min="0" max="100"
+          placeholder="${esc(String(Math.round(S.status.trailerDamagePct || 0)))}"></label>
         <label>Fault<select id="in-fault">${['Driver', 'Dispatcher', 'Unavoidable', 'Mechanical', 'GameLimitation'].map((x) => `<option>${x}</option>`).join('')}</select></label>
         <label>Cost $<input id="in-cost" type="number" step="0.01" value="0"></label>
         <label>Trip number<input id="in-trip" value="${esc(S.views.activeTrip?.number || '')}"></label>
@@ -6732,12 +6740,24 @@ async function handleAction(act, d, ev) {
           // it. -1 is how the model says unreported, and it is what keeps the severity box meaningful
           // for a citation or a fatigue call.
           damageIncurredPct: sv('in-damage') === '' ? -1 : fv('in-damage'),
+          // Same rule for both: blank is "I did not look", which is not zero.
+          truckDamagePctAfter: sv('in-truck-now') === '' ? -1 : fv('in-truck-now'),
+          trailerDamagePctAfter: sv('in-trailer-now') === '' ? -1 : fv('in-trailer-now'),
           description: sv('in-desc'), locationCity: S.status.locationCity, locationState: S.status.locationState,
         }));
         const graded = `${r.incident.number} filed as ${String(r.incident.severity || '').toLowerCase()}`;
         toast(r.action
           ? `${graded}. Safety has issued ${r.action.level} — acknowledge it below.`
           : `${graded}. No discipline attaches.`, r.action ? 'bad' : 'ok');
+
+        // What it means for the week, not just for the record. A driver who has just reported damage
+        // should hear that it is a trip to the yard from the screen they reported it on.
+        if ((r.equipmentNext || []).length) queueModals([() => modal(
+          `<div class="panel-head"><h2>What happens to the equipment</h2>
+            <div class="spacer"></div>
+            <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+           <div class="callout warn"><ul>${r.equipmentNext.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+           <p class="hint">Both damage figures are on file now — the dispatch screen already has them.</p>`)]);
       });
     }
     case 'forgive-incident': {
