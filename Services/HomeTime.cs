@@ -527,7 +527,11 @@ public static class HomeTime
         // The box named at the drop that ended the tour, where it is still a sensible thing to hand over.
         // Re-picking here would quietly break a promise the driver may have acted on — a parked trailer
         // they were told to mark as their own is one they have already walked over and claimed.
-        var promised = TrailerChangeover.Promised(s, pick);
+        var promised = TrailerChangeover.Promised(s);
+
+        // Where a box was promised, IT is what the order is for — including when it is not the type the
+        // freight-mix roll asked for, because that choice was made on purpose and the driver was told.
+        if (promised != null) pick = promised.Type;
 
         // Where nothing was promised because nobody could say where anything was, the order still goes out
         // — it just does not pretend. IssueTrailerReassignment has a branch for exactly this and says "I
@@ -698,7 +702,7 @@ public static class HomeTime
             : plan.Note;
     }
 
-    private static bool Qualified(AppState s, string trailerType)
+    public static bool Qualified(AppState s, string trailerType)
     {
         var app = s.Application;
         if (app == null) return true;

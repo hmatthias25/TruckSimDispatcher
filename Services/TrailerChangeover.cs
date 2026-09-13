@@ -77,15 +77,34 @@ public static class TrailerChangeover
         var yard = HomeTime.HomeTerminal(s);
         if (yard == null || string.IsNullOrWhiteSpace(wantedType)) return new List<Trailer>();
 
-        // DH-1 excluded before anything else. It is not standing on a yard and it is never in use, so it
-        // would take the idle preference every time it happened to cover the wanted type.
+        // EVERY box on the yard the driver could legally pull, not just the ones covering the type the
+        // freight-mix roll asked for.
+        //
+        // Narrowing to the wanted type was wrong, and wrong in the way that matters: reported from play
+        // as five trailers on the yard and one question asked. The point of asking is to find out what is
+        // actually available, and "operations wants you on flatbed" is a preference, not a constraint —
+        // if the only flatbed is three days out and a reefer is sitting there doing nothing, the reefer
+        // is the better answer and the freight mix moves with it. That was the player's own example.
+        //
+        // DH-1 is still excluded. It is not standing on a yard and it is never in use, so it would take
+        // the idle preference every single time.
         return s.Trailers
             .Where(t => !t.Retired && !DropHook.Is(t.Type))
             .Where(t => !t.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase))
             .Where(t => t.HomeTerminalId.Equals(yard.Id, StringComparison.OrdinalIgnoreCase))
-            .Where(t => EquipmentService.TypeCovers(t.Type, wantedType))
             .ToList();
     }
+
+    /// <summary>
+    /// The ones operations could actually put this driver on.
+    ///
+    /// Asking is not the same as choosing, and they are filtered at different points on purpose. A
+    /// position is cheap to give and useful to have whatever the box is, so the driver is asked about
+    /// every trailer on the yard. Being PUT on one they are restricted from, or said they would not haul,
+    /// is a different matter and does not happen.
+    /// </summary>
+    private static List<Trailer> Assignable(AppState s, IEnumerable<Trailer> boxes) =>
+        boxes.Where(t => HomeTime.Qualified(s, t.Type)).ToList();
 
     /// <summary>
     /// Whether to put the position questions in front of the driver at this drop.
@@ -184,15 +203,32 @@ public static class TrailerChangeover
                        "take your days first rather than sitting on top of it.",
             };
 
-        var scored = cands
+        // Ask about everything; choose from what they can legally pull.
+        var pickFrom = Assignable(s, cands);
+        if (pickFrom.Count == 0)
+            return new Plan
+            {
+                Type = want,
+                Note = $"Operations wants you on {want.ToLowerInvariant()} next tour and there is nothing " +
+                       "standing at your yard you are cleared to pull, so they will be sourcing one. " +
+                       "Expect a wait when you get in.",
+            };
+
+        var scored = pickFrom
             .Select(t => new { T = t, E = Whereabouts.Assess(s, t) })
             .Select(x => new
             {
                 x.T,
                 x.E,
                 Idle = x.E.Known && x.E.Direction.Equals("Parked", StringComparison.OrdinalIgnoreCase),
+                Wanted = EquipmentService.TypeCovers(x.T.Type, want),
             })
+            // Sitting still beats being the right kind of trailer. A box nobody is on is a hook and a
+            // pull; the one operations asked for, three days out, costs days off the home time to fetch.
+            // Within each group the wanted type still wins, so the freight mix is honoured wherever it
+            // can be had for nothing.
             .OrderByDescending(x => x.Idle)
+            .ThenByDescending(x => x.Wanted)
             .ThenBy(x => x.E.Days ?? 99)
             .ToList();
 
@@ -222,8 +258,15 @@ public static class TrailerChangeover
             Reserve = best.Idle,
         };
 
-        var head = $"Operations wants you on {want.ToLowerInvariant()} for the tour after this home time, so " +
-                   $"you are changing trailers when you get in — onto {best.T.Ref}. ";
+        // Where the box that won is not the kind operations asked for, say so — the freight they put the
+        // driver on next moves with the trailer, and that is not a detail to discover from the board.
+        var head = best.Wanted
+            ? $"Operations wants you on {want.ToLowerInvariant()} for the tour after this home time, so " +
+              $"you are changing trailers when you get in — onto {best.T.Ref}. "
+            : $"Operations wanted you on {want.ToLowerInvariant()} next tour, but the best box we have " +
+              $"standing at the yard is {best.T.Ref} — " +
+              $"{TrailerSpec.Describe(best.T.Type, best.T.Subtype).ToLowerInvariant()}. You are going on " +
+              "that and the freight follows it, rather than losing days fetching the other. ";
 
         if (best.Idle)
             plan.Note = head +
@@ -260,7 +303,10 @@ public static class TrailerChangeover
         }
 
         s.Driver.ChangeoverUnit = plan.Trailer.Unit;
-        s.Driver.ChangeoverType = plan.Type;
+        // The type of the box actually chosen, which since the choice can cross types is not always the
+        // one the freight-mix roll asked for. Storing the wanted type meant the order raised on arrival
+        // went looking for a flatbed while the driver had been promised a reefer.
+        s.Driver.ChangeoverType = plan.Trailer.Type;
         s.Driver.ChangeoverReserve = plan.Reserve;
         s.Driver.ChangeoverGameTime = s.Status.GameTime;
     }
@@ -280,7 +326,7 @@ public static class TrailerChangeover
     /// Checked rather than trusted: a promise made a fortnight ago is about a trailer that may since have
     /// been retired, sold, or hooked to the driver already.
     /// </summary>
-    public static Trailer? Promised(AppState s, string wantedType)
+    public static Trailer? Promised(AppState s)
     {
         if (string.IsNullOrWhiteSpace(s.Driver.ChangeoverUnit)) return null;
 
@@ -289,6 +335,11 @@ public static class TrailerChangeover
 
         if (t == null || t.Retired) return null;
         if (t.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)) return null;
-        return EquipmentService.TypeCovers(t.Type, wantedType) ? t : null;
+
+        // No type check. The promise is a specific unit, chosen deliberately and sometimes ACROSS types —
+        // an idle reefer taken over a flatbed three days out. Checking it against the rolled type threw
+        // exactly those picks away and handed the driver something else, which is the broken promise this
+        // whole mechanism exists to prevent.
+        return t;
     }
 }

@@ -288,6 +288,67 @@ const stand = async (city, st, day, hm, kind = 'Shipper') => {
   ok('and the driver is still pulling whatever they were pulling',
     !!before9.driver.assignedTrailerUnit, before9.driver.assignedTrailerUnit || '(nothing)');
 
+  head('10. Every box on the yard is asked about, not just the rolled type');
+  // Reported from play: five trailers on the yard and one question asked, because Candidates narrowed to
+  // the type the freight-mix roll happened to want. The point of asking is to find out what is actually
+  // there — "operations wants you on flatbed" is a preference, not a constraint, and an idle reefer beats
+  // a flatbed three days out. The player's own example.
+  const yardBoxes = (S.trailers || [])
+    .filter((x) => !x.retired && x.homeTerminalId === yard.id
+                   && x.unit !== S.driver.assignedTrailerUnit && !/drop/i.test(x.type));
+  const asked = (goingHome.askWhereabouts || []).map((x) => x.unit);
+  console.log(`  ..    on the yard: ${yardBoxes.map((x) => `${x.unit}/${x.type}`).join(', ')}`);
+  console.log(`  ..    asked about: ${asked.join(', ')}`);
+
+  ok('more than one type is asked about', new Set(
+    (goingHome.askWhereabouts || []).map((x) => x.trailerType)).size > 1,
+    [...new Set((goingHome.askWhereabouts || []).map((x) => x.trailerType))].join(', '));
+  ok('every box on the yard is asked about',
+    yardBoxes.every((b) => asked.includes(b.unit)),
+    `${asked.length} asked of ${yardBoxes.length} on the yard`);
+  ok('drop and hook is not among them — it is a posting, not a box',
+    !asked.some((u) => /^DH-/i.test(u)), asked.join(', '));
+  ok('and neither is the one already hooked to them',
+    !asked.includes(S.driver.assignedTrailerUnit), S.driver.assignedTrailerUnit);
+
+  head('11. An idle box beats the rolled type when the rolled type is out');
+  // Park a reefer and send every flatbed away, then check which one operations settles on.
+  for (const b of yardBoxes) {
+    const parked = /reefer/i.test(b.type);
+    await api('/fleetops/whereabouts', 'POST', {
+      trailerUnit: b.unit,
+      direction: parked ? 'Parked' : 'Outbound',
+      city: parked ? 'Springfield' : 'Grand Junction', state: parked ? 'MO' : 'CO',
+    });
+  }
+  const settled = await api('/board/evaluate');
+  console.log(`  ..    settled: "${(settled.changeoverNote || '(none)').slice(0, 160)}"`);
+  ok('the parked box wins even though it is the wrong type',
+    /reefer/i.test(settled.changeoverNote || ''), (settled.changeoverNote || '').slice(0, 130));
+  ok('and it says the freight follows the trailer',
+    /freight follows it|freight mix/i.test(settled.changeoverNote || '')
+      || /parked/i.test(settled.changeoverNote || ''),
+    (settled.changeoverNote || '').slice(0, 130));
+
+  head('12. The box promised across types is the box handed over');
+  // The trap in letting the choice cross types: the promise is remembered, but the order raised on
+  // arrival went looking for the type the ROLL wanted. Promised an idle reefer, handed a flatbed — the
+  // exact broken promise the changeover exists to prevent.
+  const promisedUnit = S.driver?.changeoverUnit
+    || (await api('/bootstrap')).driver?.changeoverUnit;
+  console.log(`  ..    promised: ${promisedUnit || '(none)'}`);
+  if (promisedUnit) {
+    await stand('Springfield', 'MO', 232, '09:00', 'Terminal');
+    const arrived = await api('/bootstrap');
+    const ord = arrived.views?.equipmentOrder;
+    console.log(`  ..    order on arrival: ${ord ? `${ord.kind} -> ${ord.toTrailerUnit}` : '(none)'}`);
+    ok('the order names the box that was promised, whatever type it is',
+      !ord || ord.kind !== 'TrailerSwap' || ord.toTrailerUnit === promisedUnit,
+      `${ord?.toTrailerUnit} vs promised ${promisedUnit}`);
+  } else {
+    console.log('  ..    nothing was promised, so there is no promise to keep');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); process.exit(1); });
