@@ -40,6 +40,7 @@ public static class Migrations
         SettlementsAlreadyBankedAreNotNews(s);
         ReopenTheTrailerQuestionNobodyWasAsked(s);
         ReopenTheHalfAnsweredTrailerQuestion(s);
+        PayHiredDriversForTheLevelTheyAre(s);
         EnsureDropHookIsOnOffer(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
@@ -108,6 +109,49 @@ public static class Migrations
     /// and it is also what keeps a form in step when a settlement lands inside a year already closed.
     /// </summary>
     private static void EnsureW2sForYearsAlreadyRun(AppState s) => W2Service.IssueDue(s);
+
+    /// <summary>
+    /// Puts existing hired drivers on the share their level earns.
+    ///
+    /// Everybody was on a flat 30% of what they brought in, which said a level 9 and a rookie cost the
+    /// company exactly the same — and so nobody was ever worth keeping in particular. Pay follows the
+    /// level ATS gives them now; see <see cref="DriverConduct.ShareForLevel"/>.
+    ///
+    /// Only where the share is still the old default. A figure the player typed themselves is theirs, and
+    /// a migration that overwrites a deliberate decision is worse than one that does nothing.
+    ///
+    /// Nothing else is backdated. Nobody arrives carrying a preventable they never had, and no career is
+    /// re-judged on conduct that did not exist until now — the first report filed after this is where any
+    /// of that starts.
+    /// </summary>
+    private static void PayHiredDriversForTheLevelTheyAre(AppState s)
+    {
+        if (s.SchemaVersion >= 17) return;
+        s.SchemaVersion = 17;
+
+        var moved = 0;
+        foreach (var d in s.HiredDrivers.Where(x => x.Status == "Active"))
+        {
+            if (Math.Abs(d.WageShare - 0.30) > 0.0001) continue;   // theirs, not ours
+            var share = DriverConduct.ShareForLevel(d.Level);
+            if (Math.Abs(share - d.WageShare) < 0.0001) continue;
+            d.WageShare = share;
+            moved++;
+        }
+
+        if (moved == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "ledger",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"{moved} driver(s) moved onto the share their level earns, between 25% and 40% of what " +
+                "they bring in — a flat thirty for everybody meant a level 9 and a rookie cost the same. " +
+                "Anyone whose share you had set by hand keeps it. Nothing is backdated: the first fleet " +
+                "report from here is where it starts counting.",
+        });
+    }
 
     /// <summary>
     /// Takes back a changeover settled on half the answers.

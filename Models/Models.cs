@@ -1,4 +1,4 @@
-namespace TruckSimDispatcher.Models;
+﻿namespace TruckSimDispatcher.Models;
 
 /// <summary>Root persisted document. One file = one driver career.</summary>
 public class AppState
@@ -7,8 +7,8 @@ public class AppState
     /// When the truck first went over the run-home damage line, or empty.
     ///
     /// A clock of its own, and pointedly not the home-time one. From the moment it is set the driver is
-    /// filtered as though home time were due — zero days overdue on the day it happens, one day overdue
-    /// the day after — so the room to work outward narrows exactly the way it does when the company is
+    /// filtered as though home time were due â€” zero days overdue on the day it happens, one day overdue
+    /// the day after â€” so the room to work outward narrows exactly the way it does when the company is
     /// late getting them home. What it must never do is appear on their record as lateness: being sent
     /// in to fix a truck is not the company breaking its word about home time.
     ///
@@ -42,9 +42,9 @@ public class AppState
     /// came off an older build and gets brought forward once.
     ///
     /// <list type="bullet">
-    ///   <item><b>1</b> — day numbers were one ahead of the game's.</item>
-    ///   <item><b>2</b> — day numbers match the game.</item>
-    ///   <item><b>3</b> — safety record cleared; it was written under rules that were wrong.</item>
+    ///   <item><b>1</b> â€” day numbers were one ahead of the game's.</item>
+    ///   <item><b>2</b> â€” day numbers match the game.</item>
+    ///   <item><b>3</b> â€” safety record cleared; it was written under rules that were wrong.</item>
     /// </list>
     ///
     /// This has to be the default on a fresh <see cref="AppState"/> rather than a flag set during
@@ -54,7 +54,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 16;
+    public const int Current = 17;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -114,7 +114,7 @@ public class AppState
     /// Open instruction for bringing ATS into line with a change of employer, if there is one.
     ///
     /// Kept on state rather than handed back once, because it is a list of things to do in the game over
-    /// the next few sessions — a reply the player closes and never sees again is not an instruction.
+    /// the next few sessions â€” a reply the player closes and never sees again is not an instruction.
     /// </summary>
     public ChangeoverOrder? Changeover { get; set; }
     public List<LogEvent> Events { get; set; } = new();
@@ -136,7 +136,7 @@ public class DriverApplication
     public string PreferredTripLength { get; set; } = "medium";
     /// <summary>
     /// How long the driver is willing to stay out: weekly | biweekly | threeweeks | monthly |
-    /// sixweeks | none. A key rather than free text, because dispatch actually routes for it —
+    /// sixweeks | none. A key rather than free text, because dispatch actually routes for it â€”
     /// see <see cref="Driver.HomeTimeIntervalDays"/>.
     /// </summary>
     public string HomeTimePreference { get; set; } = "biweekly";
@@ -179,7 +179,7 @@ public class Terminal
     public string Name { get; set; } = "";
     public string City { get; set; } = "";
     public string State { get; set; } = "";
-    /// <summary>Small | Medium | Large — the ATS garage tiers.</summary>
+    /// <summary>Small | Medium | Large â€” the ATS garage tiers.</summary>
     public string Level { get; set; } = "Small";
     /// <summary>Tractors the yard can hold. ATS tiers are roughly 1 / 3 / 5.</summary>
     public int TruckCapacity { get; set; } = 1;
@@ -190,7 +190,7 @@ public class Terminal
     /// <summary>
     /// Retained so older career files load, and no longer enforced anywhere.
     ///
-    /// ATS puts no limit on how many trailers a garage holds — only on tractors — so refusing a
+    /// ATS puts no limit on how many trailers a garage holds â€” only on tractors â€” so refusing a
     /// purchase because a yard was "full at 6" was telling the player to buy a garage upgrade to solve
     /// a problem the game does not have.
     /// </summary>
@@ -217,7 +217,7 @@ public class Terminal
 /// One thing the player has to do in ATS to bring the game into line with a change of employer.
 ///
 /// The app cannot sell a garage or buy a tractor, so each of these is confirmed by the player once they
-/// have actually done it — the same contract as an <see cref="EquipmentOrder"/>. See
+/// have actually done it â€” the same contract as an <see cref="EquipmentOrder"/>. See
 /// <see cref="Services.Changeover"/>.
 /// </summary>
 public class ChangeoverStep
@@ -267,7 +267,7 @@ public class Company
     public List<Terminal> Terminals { get; set; } = new();
 
     /// <summary>
-    /// Cities this carrier runs terminals in, as "City,ST" — headquarters plus its published yards.
+    /// Cities this carrier runs terminals in, as "City,ST" â€” headquarters plus its published yards.
     ///
     /// A company driver does not decide where their employer opens terminals, so this is what garage
     /// opportunities are checked against. Empty means a fictional carrier with no real network to be
@@ -285,7 +285,7 @@ public class Company
     public int PayStars { get; set; }
     public int HomeTimeStars { get; set; }
 
-    /// <summary>Overall standing as an employer — the average of the three, 1-5. Zero means unknown.</summary>
+    /// <summary>Overall standing as an employer â€” the average of the three, 1-5. Zero means unknown.</summary>
     public double EmployerStars =>
         EquipmentStars + PayStars + HomeTimeStars <= 0
             ? 0
@@ -332,7 +332,7 @@ public class Driver
     /// Operations approved a home-time request, so dispatch is routing home whether or not the
     /// interval says they are due. Cleared when they actually get there.
     ///
-    /// For a driver on no arrangement this is the only thing that ever routes them home — which is the
+    /// For a driver on no arrangement this is the only thing that ever routes them home â€” which is the
     /// deal they signed when they elected to stay out.
     /// </summary>
     public bool HomeTimeGranted { get; set; }
@@ -355,7 +355,7 @@ public class Driver
     public string RankTitle { get; set; } = "Probationary Company Driver";
     public PayPlan Pay { get; set; } = new();
     /// <summary>
-    /// Company unlocks — what the carrier permits this driver to run. Written by rank promotion.
+    /// Company unlocks â€” what the carrier permits this driver to run. Written by rank promotion.
     /// NOT the driver's licence: see <see cref="Endorsements"/>.
     /// </summary>
     public List<string> Qualifications { get; set; } = new();
@@ -364,7 +364,7 @@ public class Driver
     /// CDL endorsements the driver actually holds. Hazmat, Tanker, Doubles/Triples.
     ///
     /// Deliberately separate from <see cref="Qualifications"/>. Promotion to company driver lifts the
-    /// company's hazmat restriction, which is not the same thing as the driver having sat the exam —
+    /// company's hazmat restriction, which is not the same thing as the driver having sat the exam â€”
     /// conflating the two hands out an endorsement nobody earned. Both have to be true to haul it.
     /// </summary>
     public List<string> Endorsements { get; set; } = new();
@@ -374,7 +374,7 @@ public class Driver
     ///
     /// Reported by the player, never inferred: these live in ATS where only they can read them, and
     /// guessing at a level would let somebody take work they are not cleared for. Dangerous Cargo is
-    /// absent on purpose — it is modelled properly as hazmat classes on <see cref="Endorsements"/>.
+    /// absent on purpose â€” it is modelled properly as hazmat classes on <see cref="Endorsements"/>.
     /// Fuel economy is absent because nothing here turns on it.
     /// </summary>
     public DriverSkills Skills { get; set; } = new();
@@ -385,18 +385,18 @@ public class Driver
     /// <summary>
     /// Home times completed on the trailer currently assigned. Reset to zero whenever it changes.
     ///
-    /// The reassignment roll used to be flat — the same one-in-three every time home, however long the
+    /// The reassignment roll used to be flat â€” the same one-in-three every time home, however long the
     /// driver had been on the same box. Flat means a run of bad luck leaves somebody on one trailer
     /// indefinitely with nothing building toward a change, which is both the least interesting outcome
     /// for the player and not how a carrier behaves: four tours on the same freight makes a move MORE
     /// likely, not equally likely. See <see cref="HomeTime.ReassignChancePercent"/>.
     ///
     /// A trailer the driver ASKED for is an arrangement and never rolls at all, so this does not apply
-    /// to one — see <see cref="TrailerByRequest"/>.
+    /// to one â€” see <see cref="TrailerByRequest"/>.
     /// </summary>
     public int HomeTimesOnTrailer { get; set; }
 
-    /// <summary>Terminal the driver is domiciled out of — where home time starts and ends.</summary>
+    /// <summary>Terminal the driver is domiciled out of â€” where home time starts and ends.</summary>
     public string HomeTerminalId { get; set; } = "";
     /// <summary>
     /// Game days the driver agreed to stay out before going home. 0 means no arrangement, so dispatch
@@ -411,7 +411,7 @@ public class Driver
     public int HomeTimesTaken { get; set; }
 
     /// <summary>
-    /// Let go for the work — preventables, or a review that went badly twice.
+    /// Let go for the work â€” preventables, or a review that went badly twice.
     ///
     /// Not the same as quitting or being let go for anything else. This is what puts a driver in front of
     /// second-chance carriers only, and it stays true until they have earned their way back.
@@ -420,7 +420,7 @@ public class Driver
     /// What the last rank change actually meant, kept until the driver has seen it.
     ///
     /// On the state rather than in the endpoint's response because probation usually clears on a yard
-    /// review — <see cref="TruckSimDispatcher.Services.HomeTime"/>, not a button — and that path had
+    /// review â€” <see cref="TruckSimDispatcher.Services.HomeTime"/>, not a button â€” and that path had
     /// nowhere to return anything to. A promotion the driver is never told the shape of is how "you can
     /// now refuse a load a week" stayed a secret.
     /// </summary>
@@ -431,7 +431,7 @@ public class Driver
     ///
     /// A re-rig becomes an equipment order and shows on the banner. "No change" produced nothing at
     /// all, so from the driver's seat a quiet arrival and a message the app had swallowed looked
-    /// identical — which is how it was read in play. The decision is recorded now whichever way it
+    /// identical â€” which is how it was read in play. The decision is recorded now whichever way it
     /// went, because a company that decides something about your equipment and tells you nothing has
     /// not finished the decision.
     /// </summary>
@@ -443,7 +443,7 @@ public class Driver
     /// onto when they get home. Blank for no change coming.
     ///
     /// The promise is kept here so the order raised on arrival lands on the box that was named a fortnight
-    /// earlier. Working it out twice — once for the notice and once for the order — is how a driver gets
+    /// earlier. Working it out twice â€” once for the notice and once for the order â€” is how a driver gets
     /// told about DV-3 and handed DV-7, and it is worse than never having promised anything.
     ///
     /// See <see cref="Services.TrailerChangeover"/> for why the whole decision moved to the drop.
@@ -456,7 +456,7 @@ public class Driver
     /// How many days the driver says they are taking at home, given with the trailer positions.
     ///
     /// It decides how much a trailer being out actually costs. Marking a box as private in ATS makes the
-    /// AI driver holding it finish their current load and switch off it — so a trailer three days out is
+    /// AI driver holding it finish their current load and switch off it â€” so a trailer three days out is
     /// standing on the yard before a driver taking five days is ready to leave, and costs them nothing.
     /// The same box is a real price to somebody home for two over a 34.
     ///
@@ -470,7 +470,7 @@ public class Driver
     ///
     /// Worth recording separately because it changes what is said on arrival: a reserved trailer is one
     /// they already went and claimed, and being told to go and find it again reads as the app having
-    /// forgotten. It also says the swap should cost no skipped days — if it suddenly does, the reservation
+    /// forgotten. It also says the swap should cost no skipped days â€” if it suddenly does, the reservation
     /// did not hold.
     /// </summary>
     public bool ChangeoverReserve { get; set; }
@@ -480,7 +480,7 @@ public class Driver
     ///
     /// It used to exist only as a field on one HTTP response, rendered into one modal. Dismiss it, miss
     /// it, or arrive by a route that did not build it, and the review filed on you and the instruction
-    /// about your trailer were simply gone — with no way back to them. "Not sure if it bugged out and
+    /// about your trailer were simply gone â€” with no way back to them. "Not sure if it bugged out and
     /// forgot" is the reasonable conclusion, and it was reached.
     /// </summary>
     public object? LastArrivalBrief { get; set; }
@@ -501,7 +501,7 @@ public class Driver
     public string RedeemedGameTime { get; set; } = "";
 
     /// <summary>
-    /// The career is finished — let go by the carrier that was the second chance.
+    /// The career is finished â€” let go by the carrier that was the second chance.
     ///
     /// One bad stretch is recoverable and two are not, which is the whole point of the second chance
     /// being a real one. Nothing here deletes anything: the file stays readable so the driver can see how
@@ -518,13 +518,13 @@ public class Driver
     /// <summary>
     /// Game day of the last time the books were trued against the ATS bank balance. -1 means never.
     ///
-    /// The two drift the moment anything is bought in game that the app does not post — a garage, a
-    /// couple of tractors — so they are squared up weekly rather than left to diverge quietly.
+    /// The two drift the moment anything is bought in game that the app does not post â€” a garage, a
+    /// couple of tractors â€” so they are squared up weekly rather than left to diverge quietly.
     /// </summary>
     public int LastTrueUpDay { get; set; } = -1;
 
     /// <summary>
-    /// Reaching the top of the ladder earns the pick of a truck. Offered once and it waits — a reward
+    /// Reaching the top of the ladder earns the pick of a truck. Offered once and it waits â€” a reward
     /// that expires is a deadline, and this one is meant to be enjoyed.
     /// </summary>
     public bool ShowcaseOffered { get; set; }
@@ -543,7 +543,7 @@ public class Driver
     /// The driver is on a dedicated account: assigned to one customer, hauling their freight only.
     ///
     /// Set when the carrier runs a Dedicated division and the driver asked for it. The customer is
-    /// NOT invented — the app cannot see which shippers exist in the player's game or their mods, so
+    /// NOT invented â€” the app cannot see which shippers exist in the player's game or their mods, so
     /// the player names it from what they actually see on the board, and dispatch filters to it.
     /// </summary>
     /// <summary>
@@ -551,7 +551,7 @@ public class Driver
     ///
     /// A trailer handed out by operations is a posting and gets moved around with the freight mix. One
     /// the driver asked for is an arrangement, and moving them off it would make the asking pointless.
-    /// So while this is set they are left alone, and only another request changes it — including a
+    /// So while this is set they are left alone, and only another request changes it â€” including a
     /// request to go back to whatever operations wants, which clears it.
     /// </summary>
     public bool TrailerByRequest { get; set; }
@@ -601,7 +601,7 @@ public class EmploymentRecord
     /// <summary>
     /// Days at this employer, split across the freight actually hauled there.
     ///
-    /// Written when the driver leaves, off the trips, while those still exist — a changeover clears
+    /// Written when the driver leaves, off the trips, while those still exist â€” a changeover clears
     /// them. Without it the record keeps a carrier code and nothing about the work, so two years of
     /// flatbed at a mixed carrier became two years of whatever that carrier mostly ran, the moment the
     /// driver changed jobs.
@@ -705,7 +705,7 @@ public class PayPlan
     /// <summary>
     /// The driver's share of what they saved buying fuel under the reference price.
     ///
-    /// A share rather than the lot, because it is the company's fuel and the company's money — the
+    /// A share rather than the lot, because it is the company's fuel and the company's money â€” the
     /// driver is being paid for the judgement, not handed the saving. 0 turns it off.
     /// </summary>
     public decimal FuelSavingShare { get; set; } = 0.25m;
@@ -723,8 +723,8 @@ public class ProbationPlan
     /// Driver-fault late deliveries the period allows, counted the way the career ladder counts them:
     /// inside a recent window, so clean work walks them off.
     ///
-    /// The same shape as the damage rule — a countable allowance rather than a percentage that one bad
-    /// load exhausts — and the same principle as everywhere else: lateness nobody blamed the driver for
+    /// The same shape as the damage rule â€” a countable allowance rather than a percentage that one bad
+    /// load exhausts â€” and the same principle as everywhere else: lateness nobody blamed the driver for
     /// is not evidence about the driver. A bad first fortnight followed by eighty clean days is a driver
     /// who improved, which is the thing a probationary period exists to find out.
     /// </summary>
@@ -734,7 +734,7 @@ public class ProbationPlan
     /// Preventable "weight" the period allows, where a light bump is worth less than a wreck.
     ///
     /// This used to be a headcount, so a 2% pole tap and a 24% rollover were both "1 incident" against
-    /// an allowance of 1 — the damage tiers scaled the discipline ladder and then the review threw that
+    /// an allowance of 1 â€” the damage tiers scaled the discipline ladder and then the review threw that
     /// away. Counted by severity now: see <see cref="TruckSimDispatcher.Services.CareerService"/>.
     /// </summary>
     public int MaxDriverFaultIncidents { get; set; } = 2;
@@ -743,8 +743,8 @@ public class ProbationPlan
     /// <summary>
     /// Consecutive good reviews this probation takes.
     ///
-    /// Was a constant 3 for everybody. Scaled now — see
-    /// <see cref="TruckSimDispatcher.Services.ProbationPlanner"/> — because it was the one dimension
+    /// Was a constant 3 for everybody. Scaled now â€” see
+    /// <see cref="TruckSimDispatcher.Services.ProbationPlanner"/> â€” because it was the one dimension
     /// that did not move with history and so became the binding one, and it bound backwards: the
     /// veteran's shortened 45-day window allowed exactly three reviews for the three it required, so a
     /// single bad fortnight made the plan impossible while the rookie had two spare.
@@ -755,7 +755,7 @@ public class ProbationPlan
 
     /// <summary>
     /// Which look this is. 1 is the standard period; 2 is the thirty days granted after a failed first
-    /// review. There is no third — failing the second ends the job.
+    /// review. There is no third â€” failing the second ends the job.
     /// </summary>
     public int Attempt { get; set; } = 1;
 
@@ -781,7 +781,7 @@ public class Truck
     ///
     /// This is the name the player can actually read off the truck when they walk up to it, so it is
     /// what the app calls the unit everywhere the player reads about one. It is a <b>display name
-    /// only</b> — <see cref="Unit"/> stays the key that work orders, trips and driver assignments are
+    /// only</b> â€” <see cref="Unit"/> stays the key that work orders, trips and driver assignments are
     /// filed against, because a career file full of cross-references must not break because somebody
     /// typed a plate in. Blank means nothing changes.
     /// </summary>
@@ -806,14 +806,14 @@ public class Truck
     public List<string> AssignedFreightTypes { get; set; } = new();
     /// <summary>
     /// True when this unit actually exists in the driver's ATS garage, so its damage and odometer
-    /// are real values reported from the game. False means it is company backdrop — the carrier
+    /// are real values reported from the game. False means it is company backdrop â€” the carrier
     /// "owns" it for roleplay, but ATS knows nothing about it, so the app must not invent damage
     /// for it or raise shop directives against it.
     /// </summary>
     public bool InGameGarage { get; set; }
     /// <summary>
     /// <b>The odometer.</b> What the company's books say this unit has done, and the only figure any
-    /// decision reads — write-off, trade cycle, preventive maintenance, replacement.
+    /// decision reads â€” write-off, trade cycle, preventive maintenance, replacement.
     ///
     /// It has to be this one, because the odometer cannot be set in ATS. Issue a driver a unit the books
     /// call 200,000 miles and they will buy whatever the dealer has, most likely reading zero. The two
@@ -839,7 +839,7 @@ public class Truck
     /// Condition as ATS shows it for a unit the player is NOT driving: a star rating, five down to one.
     ///
     /// The game gives no damage percentage for a truck under a hired driver, only stars. So an AI unit's
-    /// maintenance rules are written in stars and its <see cref="DamagePct"/> is left alone — asking the
+    /// maintenance rules are written in stars and its <see cref="DamagePct"/> is left alone â€” asking the
     /// player for a percentage the game never displays is asking them to invent one.
     /// </summary>
     public double Stars { get; set; }
@@ -848,7 +848,7 @@ public class Truck
     public string AssignedDriver { get; set; } = "";
     /// <summary>InService | Shop | OutOfService | Reserve</summary>
     public string Status { get; set; } = "InService";
-    /// <summary>Terminal this unit is based out of. Authoritative — counts against yard capacity.</summary>
+    /// <summary>Terminal this unit is based out of. Authoritative â€” counts against yard capacity.</summary>
     public string HomeTerminalId { get; set; } = "";
     [Obsolete("Superseded by HomeTerminalId; kept so older career files still load.")]
     public string HomeTerminal { get; set; } = "";
@@ -857,7 +857,7 @@ public class Truck
     /// <summary>
     /// How many times a scheduled service on this unit has been put off.
     ///
-    /// Only ever set on tractors a hired driver runs — the player takes their own to a shop in ATS, and
+    /// Only ever set on tractors a hired driver runs â€” the player takes their own to a shop in ATS, and
     /// nothing here second-guesses that. Defaults to 0, which is the right answer for every career that
     /// predates this: the mileage those units are past due piled up while the app offered no way to
     /// service them, and that is not neglect on anybody's part.
@@ -869,7 +869,7 @@ public class Truck
     /// Per-checkpoint service history, used when the GDC schedule is in force.
     ///
     /// Empty means nothing has been recorded, which is taken as the dealer baseline being complete at
-    /// <see cref="BaselineOdometer"/> — the guide's own rule for a used truck purchase, and the only
+    /// <see cref="BaselineOdometer"/> â€” the guide's own rule for a used truck purchase, and the only
     /// reading that does not open a career by declaring a new tractor hopelessly overdue.
     /// </summary>
     public List<ServiceRecord> ServiceLog { get; set; } = new();
@@ -886,7 +886,7 @@ public class Truck
     /// whatever the odometer says.
     /// </summary>
     public decimal LifetimeRepairCost { get; set; }
-    /// <summary>Retired from the fleet — kept on the book so its trip history still resolves.</summary>
+    /// <summary>Retired from the fleet â€” kept on the book so its trip history still resolves.</summary>
     public bool Retired { get; set; }
     public string RetiredGameTime { get; set; } = "";
     public decimal PurchasePrice { get; set; }
@@ -902,7 +902,7 @@ public class Trailer
     ///
     /// This is the name the player can actually read off the truck when they walk up to it, so it is
     /// what the app calls the unit everywhere the player reads about one. It is a <b>display name
-    /// only</b> — <see cref="Unit"/> stays the key that work orders, trips and driver assignments are
+    /// only</b> â€” <see cref="Unit"/> stays the key that work orders, trips and driver assignments are
     /// filed against, because a career file full of cross-references must not break because somebody
     /// typed a plate in. Blank means nothing changes.
     /// </summary>
@@ -914,7 +914,7 @@ public class Trailer
     public string Type { get; set; } = "";
     /// <summary>
     /// What kind of tanker: Fuel, Chemical, Food Grade, Dry Bulk, Gas. "Tanker" on its own is not
-    /// something a driver can act on — a fuel tanker, a food-grade tanker and a pneumatic dry-bulk
+    /// something a driver can act on â€” a fuel tanker, a food-grade tanker and a pneumatic dry-bulk
     /// tanker are different trailers hauling different freight under different endorsements, and
     /// "buy a tanker" sends someone to a dealer with the decision still to make.
     /// </summary>
@@ -924,13 +924,13 @@ public class Trailer
     public string Make { get; set; } = "";
     public string Length { get; set; } = "53'";
     public string Axles { get; set; } = "Tandem";
-    /// <summary>See <see cref="Truck.InGameGarage"/> — real ATS equipment vs company backdrop.</summary>
+    /// <summary>See <see cref="Truck.InGameGarage"/> â€” real ATS equipment vs company backdrop.</summary>
     public bool InGameGarage { get; set; }
     public double DamagePct { get; set; }
     public double ServiceMiles { get; set; }
 
     /// <summary>
-    /// Condition as ATS shows it for a trailer under a hired driver — a star rating, five down to one.
+    /// Condition as ATS shows it for a trailer under a hired driver â€” a star rating, five down to one.
     /// Same reasoning as <see cref="Truck.Stars"/>: the game shows stars, not a percentage.
     /// </summary>
     public double Stars { get; set; }
@@ -949,7 +949,7 @@ public class Trailer
     /// The three lifetime figures ATS keeps on a trailer: <b>Distance on Job</b>, <b>Cargo transported</b>
     /// (loads) and <b>Weight transported</b>.
     ///
-    /// Cumulative totals rather than period figures, which is what makes them worth having — they say
+    /// Cumulative totals rather than period figures, which is what makes them worth having â€” they say
     /// what a box has done in its whole life, and a trailer is worth keeping or not on exactly that.
     /// Utilisation says whether it is working now; these say whether it ever has.
     ///
@@ -964,7 +964,7 @@ public class Trailer
     /// <summary>
     /// Consecutive fleet reports in which no driver was assigned to this box.
     ///
-    /// Utilisation only ever arrives on a report line, and a line exists per DRIVER — so a trailer
+    /// Utilisation only ever arrives on a report line, and a line exists per DRIVER â€” so a trailer
     /// nobody is on produced no line, kept its <c>-1</c>, and failed the <c>UtilisationPct >= 0</c> test
     /// forever. The one box the company should obviously be asking about was the only one it could not
     /// see.
@@ -989,7 +989,7 @@ public class Trailer
 
     /// <summary>
     /// When this trailer joined the fleet. Trailers carry no odometer, so age is the only independent
-    /// signal of a tired unit — and star loss on a trailer may never come. An old box still earning is
+    /// signal of a tired unit â€” and star loss on a trailer may never come. An old box still earning is
     /// fine; an old box earning nothing is the one to replace.
     /// </summary>
     public string AcquiredGameTime { get; set; } = "";
@@ -1007,7 +1007,7 @@ public class Trailer
     /// Roughly where this trailer is, as the player last saw it on the ATS trailer screen.
     ///
     /// Inbound | Outbound | Parked | Unknown. Filed against the TRAILER because the trailer is the thing
-    /// being asked about — it used to hang off the hired driver the app had down as pulling it, and AI
+    /// being asked about â€” it used to hang off the hired driver the app had down as pulling it, and AI
     /// drivers change trailers on their own, so every answer ended up against the wrong box.
     ///
     /// See <see cref="Services.Whereabouts"/> for what it is worth and what it decides.
@@ -1021,7 +1021,7 @@ public class Trailer
     /// <summary>Game time that was reported, so a stale answer can be treated as stale.</summary>
     public string WhereaboutsGameTime { get; set; } = "";
 
-    /// <summary>Replaced and out of the fleet — kept on the book so its trip history still resolves.</summary>
+    /// <summary>Replaced and out of the fleet â€” kept on the book so its trip history still resolves.</summary>
     public bool Retired { get; set; }
     public string RetiredGameTime { get; set; } = "";
     /// <summary>What the player actually paid for it in ATS. Never estimated.</summary>
@@ -1049,7 +1049,7 @@ public class DriverStatus
     /// <summary>
     /// Why the board is empty, when the app is the one that emptied it.
     ///
-    /// Out of hours clears the board on purpose — by the time the driver is legal these jobs have turned
+    /// Out of hours clears the board on purpose â€” by the time the driver is legal these jobs have turned
     /// over. Without this the reason went with it, and one read later the answer was "No board submitted.
     /// Send me the jobs you can see and I will pick one", which is the app asking for the thing it had
     /// just deleted. Found in a QA sweep; from the driver's seat it is a loop with no way out.
@@ -1060,7 +1060,7 @@ public class DriverStatus
     public string BoardClearedReason { get; set; } = "";
     public double BoardClearedAtShiftHours { get; set; }
     /// <summary>
-    /// The bank balance shown in ATS. This IS the company's cash — the game already deducts fuel,
+    /// The bank balance shown in ATS. This IS the company's cash â€” the game already deducts fuel,
     /// repairs, garages, trucks and AI driver wages from it, so the app reconciles to it rather than
     /// keeping a parallel pot of imaginary money.
     /// </summary>
@@ -1071,7 +1071,7 @@ public class DriverStatus
     public string ActiveTripId { get; set; } = "";
     /// <summary>
     /// Trip number whose close-out produced these readings. Closing a load already reports where the
-    /// truck is, its fuel, damage and odometer — so the next dispatch inherits them instead of asking
+    /// truck is, its fuel, damage and odometer â€” so the next dispatch inherits them instead of asking
     /// for the same numbers a second time. The driver confirms, or edits what actually changed.
     /// </summary>
     public string CarriedForwardFrom { get; set; } = "";
@@ -1084,7 +1084,7 @@ public class DriverStatus
 }
 
 /// <summary>
-/// Driver-reported HOS clocks. This is the authoritative source per company policy —
+/// Driver-reported HOS clocks. This is the authoritative source per company policy â€”
 /// the app never invents clock values, it only projects forward from what the driver reports.
 /// </summary>
 public class HosSnapshot
@@ -1094,7 +1094,7 @@ public class HosSnapshot
     /// <summary>
     /// True when these clocks were <b>worked out</b> rather than read off the game.
     ///
-    /// The app projects them across an unload when the driver had no chance to read them — ATS's
+    /// The app projects them across an unload when the driver had no chance to read them â€” ATS's
     /// "loads from this location" button finishes the unload and drops you straight onto the load board,
     /// so the hours are already spent by the time anything is visible. Planning the next load on the
     /// pre-unload reading would plan with hours the driver does not have.
@@ -1127,7 +1127,7 @@ public class HosSnapshot
     /// True once the driver has settled the break-cap question about THIS reading.
     ///
     /// Cleared on every write of the clocks, because a new reading is a new chance to have copied a
-    /// capped drive figure off the display — the same four numbers typed again included.
+    /// capped drive figure off the display â€” the same four numbers typed again included.
     /// See <see cref="Services.ClockCheck"/>.
     /// </summary>
     public bool CapQueryAnswered { get; set; }
@@ -1162,17 +1162,17 @@ public class BoardLoad
     /// <summary>Hours until the load is late, from the ATS job listing.</summary>
     public double DeadlineHours { get; set; }
     /// <summary>
-    /// Hours until the receiver will actually take the load — the first time in the ATS window range.
+    /// Hours until the receiver will actually take the load â€” the first time in the ATS window range.
     /// Zero means unknown, and unknown plans exactly as it always did.
     /// </summary>
     public double AppointmentOpensHours { get; set; }
 
     /// <summary>
-    /// The delivery window as ATS printed it — "6:15 AM to 12:55 PM", both times and all.
+    /// The delivery window as ATS printed it â€” "6:15 AM to 12:55 PM", both times and all.
     ///
     /// The preferred way to give a window, because it is a transcription rather than a calculation. The
     /// two hour fields ask "how long from now", which makes the driver subtract the game clock from a
-    /// listing — and a next-day window subtracted wrongly is how a load gets planned to deliver most of
+    /// listing â€” and a next-day window subtracted wrongly is how a load gets planned to deliver most of
     /// a day before the receiver will take it.
     /// </summary>
     public string WindowText { get; set; } = "";
@@ -1180,7 +1180,7 @@ public class BoardLoad
     public bool IsFragile { get; set; }
     public bool IsHazmat { get; set; }
     /// <summary>
-    /// Which ATS HazMat class this load needs — "1", "2", "3", "4", "6" or "8".
+    /// Which ATS HazMat class this load needs â€” "1", "2", "3", "4", "6" or "8".
     ///
     /// Blank on a hazmat load means the listing did not say, and dispatch falls back to requiring at
     /// least one class rather than guessing which.
@@ -1188,7 +1188,7 @@ public class BoardLoad
     public string HazmatClass { get; set; } = "";
 
     /// <summary>
-    /// The trailer is already loaded — back in, pin it, leave.
+    /// The trailer is already loaded â€” back in, pin it, leave.
     ///
     /// True for anything taken off a facility's own board in ATS, which hands over a loaded trailer
     /// and charges no loading time at all. That is not the game being wrong: it is drop-and-hook, and
@@ -1201,7 +1201,7 @@ public class BoardLoad
     /// Set when this row looks like one already on the board.
     ///
     /// Switching from the dock board to the city board does not clear what was entered, which is
-    /// deliberate — dock loads carry no deadhead and stay worth comparing. But if the city list
+    /// deliberate â€” dock loads carry no deadhead and stay worth comparing. But if the city list
     /// repeats a job already on offer where the driver is parked, entering it twice would have
     /// dispatch weigh one load as two.
     /// </summary>
@@ -1210,7 +1210,7 @@ public class BoardLoad
     public bool RequiresTarp { get; set; }
     public int ExtraStops { get; set; }
     /// <summary>
-    /// This job was offered right where the truck is standing — the "find other load from this
+    /// This job was offered right where the truck is standing â€” the "find other load from this
     /// location" list in ATS, rather than the wider city board.
     ///
     /// Dispatch looks at these first, because that is the order the driver actually meets them: you
@@ -1288,7 +1288,7 @@ public class Trip
     public double DeadheadMiles { get; set; }
     public double ActualMiles { get; set; }
     /// <summary>
-    /// The odometer as it read when this load was authorised — before driving to the shipper.
+    /// The odometer as it read when this load was authorised â€” before driving to the shipper.
     ///
     /// The other half of the empty-miles measurement. The driver reports a reading at the truck stop,
     /// takes the load, drives to the shipper, and reports again after loading; the gap between the two is
@@ -1348,7 +1348,7 @@ public class Trip
     public double LoadingHours { get; set; }
     public double UnloadingHours { get; set; }
     /// <summary>
-    /// BILLABLE detention hours — already net of the free window, worked out per stop from the
+    /// BILLABLE detention hours â€” already net of the free window, worked out per stop from the
     /// Begin/End pairs in the trip log. Pay multiplies this directly; do not subtract free time again.
     /// </summary>
     public double DetentionHours { get; set; }
@@ -1361,7 +1361,7 @@ public class Trip
     public string HazmatClass { get; set; } = "";
 
     /// <summary>
-    /// The trailer is already loaded — back in, pin it, leave.
+    /// The trailer is already loaded â€” back in, pin it, leave.
     ///
     /// True for anything taken off a facility's own board in ATS, which hands over a loaded trailer
     /// and charges no loading time at all. That is not the game being wrong: it is drop-and-hook, and
@@ -1376,14 +1376,14 @@ public class Trip
     /// <summary>
     /// The driver said they were on the receiver's property, and what happened when they did.
     ///
-    /// This is the moment the receiver gets an opinion. ATS has none — back up to the trailer and the load
+    /// This is the moment the receiver gets an opinion. ATS has none â€” back up to the trailer and the load
     /// is delivered, at 3am, at a construction site, four hours before a booked slot. So the driver says
     /// "I am here" with the clock they are looking at, and the app answers with the time to set before
     /// logging Begin unload, and why. See <see cref="Services.ReceiverCall"/>.
     ///
     /// Recorded rather than recomputed on every read: the answer is rolled once, at arrival, and a driver
     /// must not be able to refresh their way to a free door. Blank on every load that was already running
-    /// when this arrived, which is exactly right — they have not arrived yet, and the button is waiting.
+    /// when this arrived, which is exactly right â€” they have not arrived yet, and the button is waiting.
     /// </summary>
     public string ArrivedGameTime { get; set; } = "";
     public string ReceiverCallKind { get; set; } = "";
@@ -1393,7 +1393,7 @@ public class Trip
 
     /// <summary>
     /// The booked slot, somewhere between the window opening and its close. What the plan targets and
-    /// what dispatch tells the driver to aim for — the opening is when the doors unlock, not when the
+    /// what dispatch tells the driver to aim for â€” the opening is when the doors unlock, not when the
     /// dock is expecting you.
     /// </summary>
     public string AppointmentGameTime { get; set; } = "";
@@ -1408,7 +1408,7 @@ public class Trip
     public double EarlyTakeHoursSaved { get; set; }
 
     /// <summary>
-    /// Empty miles run between the last load closing and this one being dispatched — getting from the
+    /// Empty miles run between the last load closing and this one being dispatched â€” getting from the
     /// receiver or the truck stop to where this job starts. Derived from the two odometer readings the
     /// driver reported, never estimated. Separate from <see cref="DeadheadMiles"/>, which is the
     /// deadhead the job listing itself quotes.
@@ -1421,7 +1421,7 @@ public class Trip
     ///
     /// The window is the appointment this load is judged against, so one that came from a bad read is
     /// worth questioning before it decides whether the driver was late. The app never rewrites it on
-    /// its own — it cannot know what the board said — it asks.
+    /// its own â€” it cannot know what the board said â€” it asks.
     /// </summary>
     public string WindowWarning { get; set; } = "";
     public bool IsOversize { get; set; }
@@ -1465,7 +1465,7 @@ public class TripEvent
     /// The load and unload events are paired deliberately: their timestamps are what loading,
     /// unloading and detention are computed from, so the driver never hand-calculates time that the
     /// log already knows. "Loaded", "Departed" and "Arrived" are retained only so older trips still
-    /// read correctly — they are not offered for new entries.
+    /// read correctly â€” they are not offered for new entries.
     /// </summary>
     public string Kind { get; set; } = "Note";
     public string Detail { get; set; } = "";
@@ -1610,16 +1610,16 @@ public class Settlement
     public double OnTimePct { get; set; }
     /// <summary>Game days this settlement actually covered.</summary>
     public double PeriodDays { get; set; }
-    /// <summary>Fraction of a full pay period covered — what the flat safety bonus is scaled by.</summary>
+    /// <summary>Fraction of a full pay period covered â€” what the flat safety bonus is scaled by.</summary>
     public double SafetyBonusShare { get; set; } = 1;
     public string Notes { get; set; } = "";
     public List<string> Lines { get; set; } = new();
     /// <summary>
-    /// Gross-to-net breakdown. Null on settlements issued before pay stubs existed — those still
+    /// Gross-to-net breakdown. Null on settlements issued before pay stubs existed â€” those still
     /// render, they simply show gross only.
     /// </summary>
     public PayStub? Stub { get; set; }
-    /// <summary>Payday | JobChange — why this settlement ran.</summary>
+    /// <summary>Payday | JobChange â€” why this settlement ran.</summary>
     public string Trigger { get; set; } = "Payday";
 
     /// <summary>
@@ -1636,7 +1636,7 @@ public class Settlement
     /// <summary>
     /// Whether the driver has actually been shown this settlement.
     ///
-    /// Paydays settle on whatever call happens to move the clock across a Friday — a status report, a
+    /// Paydays settle on whatever call happens to move the clock across a Friday â€” a status report, a
     /// close-out, a fuel-stop log, a loaded report. Two of those four had UI that showed the result and
     /// two threw it away, so a driver got paid on a fuel stop and was never told: the money was right,
     /// the record was right, and nothing said so. By the next status report there was nothing left to
@@ -1650,7 +1650,7 @@ public class Settlement
 }
 
 /// <summary>
-/// What actually reaches the driver's bank. A game approximation of real withholding — enough to make
+/// What actually reaches the driver's bank. A game approximation of real withholding â€” enough to make
 /// the gap between gross and net feel real, not enough to file a return from.
 /// </summary>
 public class PayStub
@@ -1667,7 +1667,7 @@ public class PayStub
     public decimal StateTax { get; set; }
     public string StateCode { get; set; } = "";
     public decimal StateRate { get; set; }
-    /// <summary>False for the nine states with no wage income tax — shown as a zero line, not hidden.</summary>
+    /// <summary>False for the nine states with no wage income tax â€” shown as a zero line, not hidden.</summary>
     public bool StateHasTax { get; set; }
 
     public decimal TotalTaxes { get; set; }
@@ -1681,7 +1681,7 @@ public class PayStub
 /// A W-2 for one career year at one employer.
 ///
 /// The boxes are the real form's, in the real order, because that is the whole point of the thing: a
-/// driver who has seen a W-2 should recognise this one. What it cannot be is tax software — the
+/// driver who has seen a W-2 should recognise this one. What it cannot be is tax software â€” the
 /// withholding underneath it is <see cref="TruckSimDispatcher.Services.PayrollTax"/>'s approximation
 /// and the form says so.
 ///
@@ -1693,7 +1693,7 @@ public class W2Form
     public string Number { get; set; } = "";
     /// <summary>Career year: 1 for the first 365 days, 2 for the next, and so on.</summary>
     public int TaxYear { get; set; }
-    /// <summary>Game day the year opened and the day it closed — the period these figures cover.</summary>
+    /// <summary>Game day the year opened and the day it closed â€” the period these figures cover.</summary>
     public int YearStartDay { get; set; }
     public int YearEndDay { get; set; }
     public string IssuedGameTime { get; set; } = "";
@@ -1714,20 +1714,20 @@ public class W2Form
     public string ControlNumber { get; set; } = "";
 
     // ---- boxes 1-6
-    /// <summary>Box 1 — wages, tips, other compensation. Gross less pre-tax medical.</summary>
+    /// <summary>Box 1 â€” wages, tips, other compensation. Gross less pre-tax medical.</summary>
     public decimal Box1Wages { get; set; }
-    /// <summary>Box 2 — federal income tax withheld.</summary>
+    /// <summary>Box 2 â€” federal income tax withheld.</summary>
     public decimal Box2FederalWithheld { get; set; }
-    /// <summary>Box 3 — Social Security wages, capped at the year's wage base.</summary>
+    /// <summary>Box 3 â€” Social Security wages, capped at the year's wage base.</summary>
     public decimal Box3SocialSecurityWages { get; set; }
-    /// <summary>Box 4 — Social Security tax withheld.</summary>
+    /// <summary>Box 4 â€” Social Security tax withheld.</summary>
     public decimal Box4SocialSecurityWithheld { get; set; }
-    /// <summary>Box 5 — Medicare wages and tips. Uncapped, so it can exceed box 3.</summary>
+    /// <summary>Box 5 â€” Medicare wages and tips. Uncapped, so it can exceed box 3.</summary>
     public decimal Box5MedicareWages { get; set; }
-    /// <summary>Box 6 — Medicare tax withheld.</summary>
+    /// <summary>Box 6 â€” Medicare tax withheld.</summary>
     public decimal Box6MedicareWithheld { get; set; }
 
-    /// <summary>Box 12 — coded amounts. Empty where the career has nothing to report in one.</summary>
+    /// <summary>Box 12 â€” coded amounts. Empty where the career has nothing to report in one.</summary>
     public List<W2CodedAmount> Box12 { get; set; } = new();
 
     // ---- box 13
@@ -1735,7 +1735,7 @@ public class W2Form
     public bool RetirementPlan { get; set; }
     public bool ThirdPartySickPay { get; set; }
 
-    /// <summary>Box 14 — other. Where the section 125 medical goes, since it explains box 1.</summary>
+    /// <summary>Box 14 â€” other. Where the section 125 medical goes, since it explains box 1.</summary>
     public List<W2CodedAmount> Box14 { get; set; } = new();
 
     /// <summary>Boxes 15-17. One line per state, because a driver can re-domicile mid-year.</summary>
@@ -1787,11 +1787,11 @@ public class WorkOrder
     public decimal Cost { get; set; }
     /// <summary>
     /// What the repair was quoted at when the order was raised. An open work order has no actual cost
-    /// yet — nothing has been paid — but the figure the driver was quoted should not be thrown away.
+    /// yet â€” nothing has been paid â€” but the figure the driver was quoted should not be thrown away.
     /// It pre-fills the cost when the order is closed.
     /// </summary>
     public decimal EstimatedCost { get; set; }
-    /// <summary>Company | Driver — driver chargebacks only for abuse/unauthorized mods.</summary>
+    /// <summary>Company | Driver â€” driver chargebacks only for abuse/unauthorized mods.</summary>
     public string PaidBy { get; set; } = "Company";
     public double DamageBefore { get; set; }
     public double DamageAfter { get; set; }
@@ -1825,7 +1825,7 @@ public class Incident
     /// Tractor damage after the event, as the driver reads it off the game.
     ///
     /// Reported here because this is where somebody says what happened to the truck. It is what decides
-    /// whether the tractor is repairable — and that question has nothing to do with fault, which only
+    /// whether the tractor is repairable â€” and that question has nothing to do with fault, which only
     /// changes the deductible and the record.
     /// </summary>
     public double TruckDamagePctAfter { get; set; } = -1;
@@ -1834,7 +1834,7 @@ public class Incident
     /// Trailer damage after the event, read off the game the same way the tractor figure is.
     ///
     /// There was nowhere to put this at all. Reported from play: 11% on the trailer from a hit that was
-    /// not the driver's fault, and Safety had no field for it — so the one screen whose whole job is
+    /// not the driver's fault, and Safety had no field for it â€” so the one screen whose whole job is
     /// recording what an accident did to the equipment took half the answer, and the figure had to be
     /// typed again on the dispatch screen afterwards.
     ///
@@ -1844,7 +1844,7 @@ public class Incident
     public double TrailerDamagePctAfter { get; set; } = -1;
 
     /// <summary>
-    /// Damage the event actually caused, in points — <b>after minus before</b>.
+    /// Damage the event actually caused, in points â€” <b>after minus before</b>.
     ///
     /// The record had only damage AFTER, which says what the truck is worth fixing and nothing about
     /// what happened. A driver at 24% who scrapes a pole to 25% and a driver who rolls a clean truck to
@@ -1863,19 +1863,19 @@ public class Incident
     public bool CountedOnProbation { get; set; }
 
     /// <summary>
-    /// Clean loads that must pass before this stops counting against hiring. Scaled by severity —
+    /// Clean loads that must pass before this stops counting against hiring. Scaled by severity â€”
     /// a scraped mirror is not a rollover. It stays on the record for ever either way; ageing off
     /// only stops it barring the driver from carriers.
     ///
     /// Without this a single preventable on load one permanently locks a driver out of every carrier
     /// that demands a spotless record, which is most of the good ones.
     /// </summary>
-    /// <remarks>0 means "not set yet" — <c>RecordIncident</c> fills it in from the severity. A
+    /// <remarks>0 means "not set yet" â€” <c>RecordIncident</c> fills it in from the severity. A
     /// non-zero default here would silently override that scaling for every incident.</remarks>
     public int AgesOffAfterLoads { get; set; }
     /// <summary>Loads delivered when this happened, so "clean loads since" can be measured.</summary>
     public int LoadCountAtIncident { get; set; }
-    /// <summary>Set when Safety has cleared it early — remedial training, review, or re-attribution.</summary>
+    /// <summary>Set when Safety has cleared it early â€” remedial training, review, or re-attribution.</summary>
     public string ForgivenGameTime { get; set; } = "";
     public string ForgivenReason { get; set; } = "";
     public string Notes { get; set; } = "";
@@ -1902,7 +1902,7 @@ public class DisciplineAction
 
 /// <summary>
 /// An AI driver hired in ATS and running one of the company's units. The app never invents their
-/// numbers — the player reads revenue, miles and damage off the game and files a fleet report.
+/// numbers â€” the player reads revenue, miles and damage off the game and files a fleet report.
 /// </summary>
 public class HiredDriver
 {
@@ -1914,11 +1914,11 @@ public class HiredDriver
     public string AssignedTruckUnit { get; set; } = "";
     public string AssignedTrailerUnit { get; set; } = "";
     public string HomeTerminalId { get; set; } = "";
-    /// <summary>Trainee | Competent | Experienced | Veteran — mirrors the ATS driver skill tiers.</summary>
+    /// <summary>Trainee | Competent | Experienced | Veteran â€” mirrors the ATS driver skill tiers.</summary>
     public string Skill { get; set; } = "Competent";
 
     /// <summary>
-    /// Driver level as ATS shows it. Open-ended — they keep climbing as they haul.
+    /// Driver level as ATS shows it. Open-ended â€” they keep climbing as they haul.
     ///
     /// This is the number that makes a driver worth poaching. A developed driver has options, and the
     /// place they are most likely to use them is a company that cannot match what those options pay.
@@ -1932,8 +1932,8 @@ public class HiredDriver
     /// When this driver is due back at the yard with their trailer, <b>if the player has told us</b>.
     ///
     /// Optional and always empty unless reported. The app has no way to work it out: nothing on the
-    /// fortnightly report carries a location or an ETA. It used to invent one — a seeded one-to-four
-    /// days printed as a fact — which is exactly the fabrication this app refuses everywhere else.
+    /// fortnightly report carries a location or an ETA. It used to invent one â€” a seeded one-to-four
+    /// days printed as a fact â€” which is exactly the fabrication this app refuses everywhere else.
     /// </summary>
     /// <summary>
     /// Where this driver said the company's trailer was. <b>Moved to <see cref="Trailer.Whereabouts"/>.</b>
@@ -1946,7 +1946,7 @@ public class HiredDriver
     /// Kept on the model so existing career files load unchanged; a migration copies what is here onto
     /// the trailer each driver was down for. Nothing reads these.
     /// </summary>
-    [Obsolete("Moved to Trailer.Whereabouts — the question is about the trailer, not who is pulling it.")]
+    [Obsolete("Moved to Trailer.Whereabouts â€” the question is about the trailer, not who is pulling it.")]
     public string TrailerWhereabouts { get; set; } = "";
 
     [Obsolete("Moved to Trailer.WhereaboutsCity.")]
@@ -1957,7 +1957,7 @@ public class HiredDriver
     public string TrailerWhereaboutsGameTime { get; set; } = "";
 
     /// <summary>
-    /// On notice after a bad period. A carrier does not sack someone over one weak fortnight — it says
+    /// On notice after a bad period. A carrier does not sack someone over one weak fortnight â€” it says
     /// what has to change and looks again next report. Empty means not on probation.
     /// </summary>
     public string ProbationSince { get; set; } = "";
@@ -1981,7 +1981,7 @@ public class HiredDriver
     /// than on one bad fortnight. A carrier does not sack a driver for a single slow period.
     /// </summary>
     public List<DriverPeriodResult> Periods { get; set; } = new();
-    /// <summary>Resigned | Terminated — set when they leave, alongside <see cref="Status"/>.</summary>
+    /// <summary>Resigned | Terminated â€” set when they leave, alongside <see cref="Status"/>.</summary>
     public string SeparationReason { get; set; } = "";
     public string SeparatedGameTime { get; set; } = "";
     public string Notes { get; set; } = "";
@@ -2014,7 +2014,7 @@ public class DriverPeriodResult
 
     /// <summary>
     /// True when the player gave the figures the game shows. A period filed before the app collected
-    /// them is incomplete, not a period where the driver earned nothing — and the difference decides
+    /// them is incomplete, not a period where the driver earned nothing â€” and the difference decides
     /// whether it can be used as evidence against them.
     /// </summary>
     public bool GameFiguresReported { get; set; }
@@ -2024,7 +2024,7 @@ public class DriverPeriodResult
 /// Something happening to a driver, resolved on the fleet report once the period's numbers are in.
 ///
 /// All of it is decided by the company and applied on the spot. The player is an employee here, not the
-/// owner, so a termination is news to them in exactly the way a resignation is — see
+/// owner, so a termination is news to them in exactly the way a resignation is â€” see
 /// <see cref="TruckSimDispatcher.Services.FleetOpsService"/>.
 /// </summary>
 public class PersonnelChange
@@ -2034,8 +2034,8 @@ public class PersonnelChange
     /// <summary>Terminated | Resigned | Probation | ProbationExtended | ProbationLifted</summary>
     public string Kind { get; set; } = "Resigned";
     /// <summary>
-    /// Was: raised but waiting on the player to confirm a sacking. Nothing sets it now — the company
-    /// decides — and the migration clears the last of them. Kept only so older career files still load.
+    /// Was: raised but waiting on the player to confirm a sacking. Nothing sets it now â€” the company
+    /// decides â€” and the migration clears the last of them. Kept only so older career files still load.
     /// </summary>
     public bool Pending { get; set; }
     public string Headline { get; set; } = "";
@@ -2061,7 +2061,7 @@ public class PeriodicReviewRecord
 
     /// <summary>
     /// Damage on the tractor when this review was taken, so the next one has something to measure wear
-    /// against. -1 means it was not recorded — every review filed before this was kept, and the first
+    /// against. -1 means it was not recorded â€” every review filed before this was kept, and the first
     /// one after. See <see cref="TruckSimDispatcher.Services.WearReview"/>.
     /// </summary>
     public double TruckDamagePct { get; set; } = -1;
@@ -2086,7 +2086,7 @@ public class PeriodicReviewRecord
 /// <summary>
 /// A trailer operations has an eye on but has not decided about.
 ///
-/// One soft reason is a quiet fortnight, not a verdict, and those used to be dropped on the floor — so
+/// One soft reason is a quiet fortnight, not a verdict, and those used to be dropped on the floor â€” so
 /// the first the driver heard was a replacement decision. This is the warning shot: nothing to do, but
 /// nothing arrives out of nowhere either.
 /// </summary>
@@ -2120,7 +2120,7 @@ public class TrailerReportLine
     public double LoadsTransported { get; set; } = -1;
     public double WeightTransportedLbs { get; set; } = -1;
 
-    /// <summary>Keep | Worn | Idle — what the company makes of it.</summary>
+    /// <summary>Keep | Worn | Idle â€” what the company makes of it.</summary>
     public string Verdict { get; set; } = "Keep";
     public string Headline { get; set; } = "";
     public List<string> Evidence { get; set; } = new();
@@ -2128,6 +2128,31 @@ public class TrailerReportLine
     /// <summary>What to buy instead, where the answer is not "another one of these".</summary>
     public string ReplaceWithType { get; set; } = "";
     public string ReplaceWithSubtype { get; set; } = "";
+}
+
+/// <summary>The company's condition on a filed report, and what it decided to do about it.</summary>
+public class CompanyHealthLine
+{
+    /// <summary>Thriving | Steady | Tight | Struggling</summary>
+    public string Band { get; set; } = "Steady";
+    public string Headline { get; set; } = "";
+    public List<string> Evidence { get; set; } = new();
+    public List<string> Actions { get; set; } = new();
+    public decimal NetOverWindow { get; set; }
+    public decimal NetPerReport { get; set; }
+    public int ReportsCounted { get; set; }
+    public bool Improving { get; set; }
+}
+
+/// <summary>One thing a hired driver did, as opposed to one thing their figures said.</summary>
+public class DriverConductLine
+{
+    public string DriverName { get; set; } = "";
+    /// <summary>Minor | Serious | Terminal | WriteOff</summary>
+    public string Severity { get; set; } = "Minor";
+    public string Outcome { get; set; } = "";
+    public string TruckUnit { get; set; } = "";
+    public double DamagePct { get; set; }
 }
 
 public class RetirementRecommendation
@@ -2164,7 +2189,7 @@ public class FleetReport
     public List<TrailerWatchNote> Watching { get; set; } = new();
 
     /// <summary>
-    /// What the player has to go and do in ATS now the report is filed — sell a truck, buy a
+    /// What the player has to go and do in ATS now the report is filed â€” sell a truck, buy a
     /// replacement, and which. A recommendation nobody is told about is not a recommendation.
     /// </summary>
     public List<string> Instructions { get; set; } = new();
@@ -2178,6 +2203,17 @@ public class FleetReport
 
     /// <summary>Every trailer on the books, whoever is or is not pulling it.</summary>
     public List<TrailerReportLine> Trailers { get; set; } = new();
+
+    /// <summary>
+    /// How the company is doing, and what it is doing about it.
+    ///
+    /// The point of the books now that they have stopped pretending to be the ATS bank: a profit and loss
+    /// is free to say something a reconciliation never could.
+    /// </summary>
+    public CompanyHealthLine? Health { get; set; }
+
+    /// <summary>Conduct, as opposed to what the numbers say â€” see <see cref="Services.DriverConduct"/>.</summary>
+    public List<DriverConductLine> Conduct { get; set; } = new();
 
     /// <summary>
     /// The trailer rows as the player filled them in, on the way IN.
@@ -2194,13 +2230,13 @@ public class FleetReport
 /// The company asking for another trailer at a yard.
 ///
 /// The app cannot buy anything in ATS, so this is a request with a reason attached: which yard, what
-/// type, and why. The player buys it in game if they want it and reports what they paid — nothing is
+/// type, and why. The player buys it in game if they want it and reports what they paid â€” nothing is
 /// booked against a price the app made up.
 /// </summary>
 /// <summary>
 /// A driver asking to go home.
 ///
-/// Not answered on the spot — a dispatcher does not drop what they are doing to answer a text
+/// Not answered on the spot â€” a dispatcher does not drop what they are doing to answer a text
 /// mid-lane. It is answered when the next load closes out, which also stops the request being a free
 /// "cancel my current load" button.
 /// </summary>
@@ -2208,12 +2244,12 @@ public class FleetReport
 /// One fortnightly look at a probationary driver, written when they report in at the yard.
 ///
 /// Kept on the file after probation ends. It is the driver's record of how they started, and a fail is
-/// not discipline — it never touches the safety record, it means the probation carries on.
+/// not discipline â€” it never touches the safety record, it means the probation carries on.
 /// </summary>
 public class ProbationReview
 {
     /// <summary>
-    /// True where this review ended the job — the second look after a failed period, failed too.
+    /// True where this review ended the job â€” the second look after a failed period, failed too.
     ///
     /// The periodic review has carried this for a while; probation could not end a career at all, which
     /// was fine when it was a streak nobody could fail permanently and wrong once it became a period
@@ -2234,7 +2270,7 @@ public class ProbationReview
 
     /// <summary>
     /// Damage on the tractor when this review was taken, so the next one has something to measure wear
-    /// against. -1 means it was not recorded — every review filed before this was kept, and the first
+    /// against. -1 means it was not recorded â€” every review filed before this was kept, and the first
     /// one after. See <see cref="TruckSimDispatcher.Services.WearReview"/>.
     /// </summary>
     public double TruckDamagePct { get; set; } = -1;
@@ -2292,7 +2328,7 @@ public class TrailerTypeRequest
 /// A re-rig ordered while the driver is out on the road, at a yard they are passing.
 ///
 /// Distinct from the home-time reassignment because the driver has to go somewhere and the box may not
-/// be there when they arrive — the app cannot see whether an AI driver still has it. See
+/// be there when they arrive â€” the app cannot see whether an AI driver still has it. See
 /// <see cref="TruckSimDispatcher.Services.TrailerSwap"/>.
 /// </summary>
 public class TrailerSwapOrder
@@ -2320,7 +2356,7 @@ public class TrailerSwapOrder
     /// <summary>How long until the box is back, when the driver got there and it was gone.</summary>
     public double HoursUntilBack { get; set; }
     public string MissingNote { get; set; } = "";
-    /// <summary>Sit it out, or take the 34 — worked out from the wait against the cycle.</summary>
+    /// <summary>Sit it out, or take the 34 â€” worked out from the wait against the cycle.</summary>
     public string WaitAdvice { get; set; } = "";
 }
 
@@ -2328,12 +2364,12 @@ public class TrailerRequest
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
     public string Number { get; set; } = "";
-    /// <summary>Add | Replace — a new box for the yard, or one swapped out.</summary>
+    /// <summary>Add | Replace â€” a new box for the yard, or one swapped out.</summary>
     public string Kind { get; set; } = "Add";
     public string TerminalId { get; set; } = "";
     public string TerminalLabel { get; set; } = "";
     public string TrailerType { get; set; } = "";
-    /// <summary>Which tanker, flatbed variant and so on — "buy a tanker" is not an instruction.</summary>
+    /// <summary>Which tanker, flatbed variant and so on â€” "buy a tanker" is not an instruction.</summary>
     public string Subtype { get; set; } = "";
     /// <summary>The unit being replaced, when this is a Replace.</summary>
     public string ReplacingUnit { get; set; } = "";
@@ -2345,8 +2381,8 @@ public class TrailerRequest
     /// <summary>
     /// The backdrop box put on the yard when this was raised.
     ///
-    /// The company adds it to its own books immediately — real for planning, not yet bought in the
-    /// game — and the driver ticks <b>in garage</b> once they have bought it, exactly as they do for
+    /// The company adds it to its own books immediately â€” real for planning, not yet bought in the
+    /// game â€” and the driver ticks <b>in garage</b> once they have bought it, exactly as they do for
     /// every other unit. Raising an ask with no equipment behind it meant the fleet did not know about
     /// a trailer the company had already decided it wanted.
     /// </summary>
@@ -2363,7 +2399,7 @@ public class TrailerRequest
 /// A 34-hour restart the company has ordered and the driver has to actually sit.
 ///
 /// Two-stage on purpose. The driver reports arriving, which starts the clock, and reports again when it
-/// is done — and the app checks the elapsed game time and the cycle before it puts freight back on the
+/// is done â€” and the app checks the elapsed game time and the cycle before it puts freight back on the
 /// truck. An interrupted one is recoverable because the order persists between the two reports.
 /// </summary>
 public class RestartOrder
@@ -2374,19 +2410,19 @@ public class RestartOrder
     public string Status { get; set; } = "Ordered";
 
     public string OrderedGameTime { get; set; } = "";
-    /// <summary>Cycle hours left when the order went out — the reason it went out.</summary>
+    /// <summary>Cycle hours left when the order went out â€” the reason it went out.</summary>
     public double CycleAtOrder { get; set; }
 
     /// <summary>
     /// Cycle | Operational. A cycle restart is the driver's hours running down. An operational one is
-    /// the company parking them for its own reasons — freight not ready, weather, a pushed appointment —
+    /// the company parking them for its own reasons â€” freight not ready, weather, a pushed appointment â€”
     /// and is emphatically not a performance or safety matter.
     /// </summary>
     public string Trigger { get; set; } = "Cycle";
 
     /// <summary>
     /// Why the company parked the driver, on an operational order. Kept separate from
-    /// <see cref="Reason"/> — which explains the choice of city and is rewritten as the truck moves —
+    /// <see cref="Reason"/> â€” which explains the choice of city and is rewritten as the truck moves â€”
     /// so re-targeting can never lose the only explanation the driver was given.
     /// </summary>
     public string WhyParked { get; set; } = "";
@@ -2434,7 +2470,7 @@ public class FleetReportLine
     /// Which trailer this line is about, chosen by the player from the ones in that driver's garage.
     ///
     /// It used to be inferred from whatever was already on the driver's record, which meant the report
-    /// asked for a trailer's condition while giving the player no way to say — or correct — which trailer
+    /// asked for a trailer's condition while giving the player no way to say â€” or correct â€” which trailer
     /// it meant. Setting it here re-rigs the driver onto it.
     /// </summary>
     public string TrailerUnit { get; set; } = "";
@@ -2451,7 +2487,7 @@ public class FleetReportLine
     /// True for the player's own row.
     ///
     /// A review is how every truck in the fleet gets its condition brought up to date, and the player is
-    /// sitting in one of them. Their row records <b>equipment only</b> — they are not an AI driver being
+    /// sitting in one of them. Their row records <b>equipment only</b> â€” they are not an AI driver being
     /// appraised, so there is no level, rating, dollars a mile, revenue or wage on it.
     /// </summary>
     public bool IsPlayerLine { get; set; }
@@ -2488,12 +2524,12 @@ public class FleetReportLine
     /// Trailer utilisation, as ATS reports it: the percentage of the past week the trailer was in use.
     ///
     /// A real readable figure from the Trailer Manager, and a far better basis for retiring a trailer
-    /// than anything the app had. Low utilisation means the box is not earning — a candidate to sell and
+    /// than anything the app had. Low utilisation means the box is not earning â€” a candidate to sell and
     /// re-rig onto whatever the lanes are actually asking for. Negative means not reported.
     ///
     /// Replaces a due-back time that used to be asked for here, which made no sense on a review line: it
     /// was a question about where somebody is right now, asked in the wrong place. It is asked when the
-    /// driver reports in at the yard instead — see <see cref="HiredDriver.TrailerWhereabouts"/>.
+    /// driver reports in at the yard instead â€” see <see cref="HiredDriver.TrailerWhereabouts"/>.
     /// </summary>
     public double TrailerUtilisationPct { get; set; } = -1;
 
@@ -2508,8 +2544,8 @@ public class FleetReportLine
     /// <summary>
     /// How the revenue on this line was arrived at, when the app worked it out rather than being told.
     ///
-    /// Shown back to the player because a number that appears from nowhere is a number nobody trusts —
-    /// and because seeing "$1.92/mi × 4,180 mi" is what makes it obvious when a figure was typed wrong.
+    /// Shown back to the player because a number that appears from nowhere is a number nobody trusts â€”
+    /// and because seeing "$1.92/mi Ã— 4,180 mi" is what makes it obvious when a figure was typed wrong.
     /// Empty when the revenue was given directly.
     /// </summary>
     public string RevenueBasis { get; set; } = "";
@@ -2518,7 +2554,7 @@ public class FleetReportLine
 
 /// <summary>
 /// An instruction to change equipment: report to a yard and swap units. Issued rather than applied
-/// silently, because only the player can actually do it in ATS — the app records the change once
+/// silently, because only the player can actually do it in ATS â€” the app records the change once
 /// they confirm it happened.
 /// </summary>
 public class EquipmentOrder
@@ -2543,13 +2579,13 @@ public class EquipmentOrder
     public int LoadCountAtIssue { get; set; }
     /// <summary>
     /// Game time the equipment is actually available. Set when the trailer we want is out with a
-    /// hired driver — you cannot hook to a trailer that is three states away under someone else, so
+    /// hired driver â€” you cannot hook to a trailer that is three states away under someone else, so
     /// the driver waits at the yard until it comes back. That wait is spent at home.
     /// </summary>
     public string AvailableFromGameTime { get; set; } = "";
     /// <summary>Hired driver currently on the trailer, if we are waiting for one.</summary>
     public string HeldByDriverName { get; set; } = "";
-    /// <summary>The company has no trailer of this type — the player has to buy one in ATS.</summary>
+    /// <summary>The company has no trailer of this type â€” the player has to buy one in ATS.</summary>
     public bool MustPurchase { get; set; }
     public string Notes { get; set; } = "";
     public string CreatedUtc { get; set; } = DateTime.UtcNow.ToString("o");
@@ -2572,13 +2608,13 @@ public class AppSettings
     // --- game environment
     //
     // Read by nothing, and no longer asked for. These sat on a Settings panel looking like configuration
-    // and configuring nothing — "I use an HOS mod" in particular reads exactly like the switch that would
+    // and configuring nothing â€” "I use an HOS mod" in particular reads exactly like the switch that would
     // make the planner respect a mod's rules, and a player could reasonably tick it and expect something
     // to change. Nothing did: the clocks come from the HOS rule set typed in below it, and the money from
     // the revenue factor and pay multiplier under Economics.
     //
     // Kept on the model rather than deleted so an existing career file loads unchanged and whatever
-    // somebody wrote in them is still there. Do not wire these up — put the setting where its effect is.
+    // somebody wrote in them is still there. Do not wire these up â€” put the setting where its effect is.
     [Obsolete("Never read. Removed from the Settings screen; the HOS rule set and Economics are what drive the planner.")]
     public string AtsVersion { get; set; } = "";
     [Obsolete("Never read. See AtsVersion.")]
@@ -2637,8 +2673,8 @@ public class AppSettings
     /// <summary>
     /// How often a receiver takes a load ahead of its appointment, as a percentage of loads.
     ///
-    /// A quiet week and a free dock, and they will have you early. Deliberately uncommon — roughly one
-    /// load in eight — because a window nobody keeps is not a window. Seeded on the trip, so it cannot
+    /// A quiet week and a free dock, and they will have you early. Deliberately uncommon â€” roughly one
+    /// load in eight â€” because a window nobody keeps is not a window. Seeded on the trip, so it cannot
     /// be re-rolled by reloading the page.
     /// </summary>
     public double ReceiverTakesEarlyPct { get; set; } = 12;
@@ -2655,7 +2691,7 @@ public class AppSettings
     /// <summary>
     /// Trailer types that must be <b>live loaded</b> even when the load comes off a facility's own board.
     ///
-    /// Dry vans and reefers come hooked to a loaded trailer and no time passes — that is the whole
+    /// Dry vans and reefers come hooked to a loaded trailer and no time passes â€” that is the whole
     /// drop-and-hook case. A flatbed does not: the cargo has to be put on and secured, so the driver
     /// drives to a loading spot and waits, and the clock moves.
     ///
@@ -2677,7 +2713,7 @@ public class AppSettings
 
     public double PreTripHours { get; set; } = 0.25;
     public double PostTripHours { get; set; } = 0.25;
-    /// <summary>Fallback only. Real dock time is learned per trailer type — see <see cref="FacilityTimes"/>.</summary>
+    /// <summary>Fallback only. Real dock time is learned per trailer type â€” see <see cref="FacilityTimes"/>.</summary>
     public double DefaultLoadingHours { get; set; } = 1.0;
     public double DefaultUnloadingHours { get; set; } = 1.0;
     /// <summary>
@@ -2700,7 +2736,7 @@ public class AppSettings
     public double PayMileMultiplier { get; set; } = 1.0;
     /// <summary>
     /// One cash account, reconciled to the ATS bank balance. Reserves become earmarks computed
-    /// against that single balance rather than separate pots — the game only has one bank account,
+    /// against that single balance rather than separate pots â€” the game only has one bank account,
     /// so pretending otherwise double-counts the money.
     /// </summary>
     public bool SingleCashAccount { get; set; } = true;
@@ -2710,7 +2746,7 @@ public class AppSettings
     public double PayrollReservePct { get; set; } = 0.30;
     /// <summary>
     /// Fixed overhead charged per completed load (insurance, admin, plates, ELD). Kept modest
-    /// because ATS distances are scaled — a real-world per-load figure spread over a short in-game
+    /// because ATS distances are scaled â€” a real-world per-load figure spread over a short in-game
     /// haul swamps the genuine per-mile costs.
     /// </summary>
     public decimal OverheadPerLoad { get; set; } = 20m;
@@ -2746,7 +2782,7 @@ public class AppSettings
     public int FleetReportIntervalDays { get; set; } = 15;
 
     /// <summary>
-    /// "Real" uses actual US carriers — real names, headquarters and freight specialities, with
+    /// "Real" uses actual US carriers â€” real names, headquarters and freight specialities, with
     /// roleplay pay and standards. "Fictional" uses invented carriers instead.
     /// </summary>
     public string CarrierRoster { get; set; } = "Real";
@@ -2777,7 +2813,7 @@ public class HosRules
     ///
     /// A property of their mod, not of any one reading, so it is remembered here: "" not asked yet,
     /// "yes" it does, "no" it does not and the app stops raising it. Never used to rewrite a clock on
-    /// its own — see <see cref="Services.ClockCheck"/>.
+    /// its own â€” see <see cref="Services.ClockCheck"/>.
     /// </summary>
     public string DriveDisplayCaps { get; set; } = "";
     public double BreakLength { get; set; } = 0.5;
@@ -2809,7 +2845,7 @@ public class HosRules
 
     /// <summary>
     /// How close home time has to be before it is worth combining with the restart. Overdue always
-    /// counts. "Due soon" on its own does not — on a thirty-day arrangement that is still a week away.
+    /// counts. "Due soon" on its own does not â€” on a thirty-day arrangement that is still a week away.
     /// </summary>
     public double RestartHomeMaxDaysUntilDue { get; set; } = 2;
     public bool SleeperSplitAllowed { get; set; } = true;
@@ -2844,18 +2880,18 @@ public class MaintenanceThresholds
     /// <summary>At or above this: out of service, stop and contact operations.</summary>
     public double OutOfServicePct { get; set; } = 30;
 
-    // (dock-margin setting lives on AppSettings — see StrandedMarginHours)
+    // (dock-margin setting lives on AppSettings â€” see StrandedMarginHours)
     public double PreventiveIntervalMiles { get; set; } = 25000;
 
     /// <summary>
-    /// At or above this on tractor or trailer, no new loads are issued — the driver goes to a shop.
+    /// At or above this on tractor or trailer, no new loads are issued â€” the driver goes to a shop.
     /// A default, not a law: some players want a harder line and some want none at all.
     /// </summary>
     public double StopDispatchPct { get; set; } = 10;
 
     /// <summary>
     /// Write-off line for a <b>fresh</b> tractor. The line a given unit is actually held to falls with
-    /// its odometer — see <see cref="WriteOffLifeMiles"/>. Nobody scraps a truck with 60,000 miles on
+    /// its odometer â€” see <see cref="WriteOffLifeMiles"/>. Nobody scraps a truck with 60,000 miles on
     /// it over damage they would happily fix; nobody puts that money into one with 600,000.
     /// </summary>
     public double TotalLossPct { get; set; } = 40;
@@ -2870,16 +2906,16 @@ public class MaintenanceThresholds
     public double TrailerReplaceStars { get; set; } = 3;
 
     /// <summary>
-    /// Years before a trailer counts as old. Age alone is not a reason to replace one — an old box
-    /// still earning is fine — but old and unproductive together is.
+    /// Years before a trailer counts as old. Age alone is not a reason to replace one â€” an old box
+    /// still earning is fine â€” but old and unproductive together is.
     /// </summary>
     public double TrailerOldYears { get; set; } = 8;
 
     /// <summary>
     /// Utilisation below which a trailer is a candidate to sell, as a percentage of the week.
     ///
-    /// A box working a third of the time is not earning its place. Paired with something else — age, or
-    /// condition — the same way a truck needs two reasons, because a quiet fortnight is not a reason to
+    /// A box working a third of the time is not earning its place. Paired with something else â€” age, or
+    /// condition â€” the same way a truck needs two reasons, because a quiet fortnight is not a reason to
     /// sell a good trailer.
     /// </summary>
     public double TrailerLowUtilisationPct { get; set; } = 35;
@@ -2887,7 +2923,7 @@ public class MaintenanceThresholds
     /// <summary>
     /// Utilisation across a yard's boxes at which the company starts looking for another one.
     ///
-    /// The signal used to be headcount — drivers times 1.5 — which is not what decides how many
+    /// The signal used to be headcount â€” drivers times 1.5 â€” which is not what decides how many
     /// trailers a fleet needs. The work does, and utilisation is the app's only honest reading of it.
     /// </summary>
     public double TrailerBusyPct { get; set; } = 75;
@@ -2908,7 +2944,7 @@ public class MaintenanceThresholds
     /// </summary>
     public double IncidentNoiseFloorPct { get; set; } = 1;
 
-    /// <summary>Damage up to which an event is Minor — real, but it takes several before it bites.</summary>
+    /// <summary>Damage up to which an event is Minor â€” real, but it takes several before it bites.</summary>
     public double IncidentMinorPct { get; set; } = 5;
 
     /// <summary>Damage at which an event skips the early rungs. A serious hit, not a scrape.</summary>
@@ -2931,7 +2967,7 @@ public class MaintenanceThresholds
     /// instead of that driver.
     ///
     /// Deliberately not a certainty. A carrier that always handed its best driver the new truck would be
-    /// a reward table rather than a company — the point is that this is somebody else's decision and it
+    /// a reward table rather than a company â€” the point is that this is somebody else's decision and it
     /// does not always fall your way, however well you are running. Seeded on the report and the unit, so
     /// it cannot be re-rolled by filing again.
     /// </summary>
@@ -2940,7 +2976,7 @@ public class MaintenanceThresholds
     /// <summary>
     /// The driver level at which somebody becomes worth headhunting.
     ///
-    /// Below it a driver still leaves — people leave jobs — but for their own reasons rather than for a
+    /// Below it a driver still leaves â€” people leave jobs â€” but for their own reasons rather than for a
     /// competitor, and no flight-risk warning is raised, because warning about a driver nobody is
     /// bidding for is noise that teaches the player to skip the panel.
     ///
@@ -2953,7 +2989,7 @@ public class MaintenanceThresholds
     /// <summary>
     /// Game days after being put in a tractor during which the player is not handed another one.
     ///
-    /// Somebody who has just been given a new truck does not need the next one as well — it goes to the
+    /// Somebody who has just been given a new truck does not need the next one as well â€” it goes to the
     /// hired driver whose old unit is being replaced, which is where it was going anyway.
     /// </summary>
     public double PlayerNewTruckCoolOffDays { get; set; } = 60;
@@ -2963,7 +2999,7 @@ public class MaintenanceThresholds
 
     /// <summary>
     /// How much of the write-off line a full life of miles eats. At 0.6, a worn-out tractor is written
-    /// off at 40% of the fresh threshold — around 16% damage against 40% for a new one.
+    /// off at 40% of the fresh threshold â€” around 16% damage against 40% for a new one.
     /// </summary>
     public double WriteOffWearFactor { get; set; } = 0.6;
 
@@ -2971,7 +3007,7 @@ public class MaintenanceThresholds
     public double WriteOffFloorPct { get; set; } = 15;
 
     /// <summary>
-    /// Under this much damage, running home for the repair is preferred to the nearest shop — labour
+    /// Under this much damage, running home for the repair is preferred to the nearest shop â€” labour
     /// is cheaper at a company yard and the truck ends up where it needs to be. Above it the unit is
     /// too far gone to gamble another day's driving on.
     /// </summary>
@@ -2981,14 +3017,14 @@ public class MaintenanceThresholds
     public double RunHomeMaxHours { get; set; } = 11;
 
     /// <summary>
-    /// Shop time per point of tractor damage — forty minutes. A tractor is an engine, a cab, air
+    /// Shop time per point of tractor damage â€” forty minutes. A tractor is an engine, a cab, air
     /// systems and electronics, and real body work on one is a day in the bay, not an afternoon. This
     /// has to be long enough that routing a truck home for it is a decision rather than a detour.
     /// </summary>
     /// <summary>
     /// Hours a unit sits in the shop before any labour is counted: booked in, looked at, parts found.
     ///
-    /// Without it the estimate was pure labour, so a 10% repair came out under seven hours — a truck
+    /// Without it the estimate was pure labour, so a 10% repair came out under seven hours â€” a truck
     /// that is never in a queue, never waiting on a part and never behind anything else. That is not a
     /// shop. The fixed part is what makes a small job cost a day while leaving a big one merely
     /// expensive rather than absurd.
@@ -3017,7 +3053,7 @@ public class MaintenanceThresholds
     /// Whether the fleet runs the severe-duty schedule.
     ///
     /// A duty cycle, NOT a season. GDC is explicit that seasonal wear tuning does not move a truck onto
-    /// severe service — that is for repeated heavy haul, construction or forestry work, rough access,
+    /// severe service â€” that is for repeated heavy haul, construction or forestry work, rough access,
     /// frequent mountain running, high idle. One setting for the career, because a carrier that runs
     /// that kind of work runs it, and asking per unit would be asking the same question over and over.
     /// </summary>
@@ -3039,7 +3075,7 @@ public class MaintenanceThresholds
     public double RepairHoursPerPoint { get; set; } = 0.9;
 
     /// <summary>
-    /// Trailer work runs at a fraction of the tractor rate — a box on wheels has far less to take
+    /// Trailer work runs at a fraction of the tractor rate â€” a box on wheels has far less to take
     /// apart, and a shop turns one round in a morning.
     /// </summary>
     public double TrailerRepairFactor { get; set; } = 0.35;
@@ -3069,7 +3105,7 @@ public class ScoringWeights
     /// What idle hours cost a load's score.
     ///
     /// Sized against HosSlack, which is the term it has to argue with: slack is scored as a good thing
-    /// — and it is, as protection against a late delivery — but a load that holds the truck nine hours
+    /// â€” and it is, as protection against a late delivery â€” but a load that holds the truck nine hours
     /// to hit an appointment has MORE slack, so on the only measure that noticed the hours at all it
     /// scored better for wasting them.
     /// </summary>
@@ -3089,7 +3125,7 @@ public class ScoringWeights
     /// applied as a credit to the load that does not incur it.
     ///
     /// Deliberately BELOW the home-time pull. A first attempt at one market tier (0.9) outranked the
-    /// 0.77 a near-due home run scores, so a dock load beat the road home — which is precisely the
+    /// 0.77 a near-due home run scores, so a dock load beat the road home â€” which is precisely the
     /// thing this was not supposed to do. It breaks ties; it does not overrule getting the driver home
     /// or avoiding a market that will strand them.
     /// </summary>
@@ -3128,7 +3164,7 @@ public class ScoringWeights
 ///
 /// This exists because of a real game behaviour: a city revealed with a save editor rather than
 /// driven to is not truly "discovered", and ATS never generates cargo for it. So the carrier cannot
-/// treat the whole map as its network on day one — it grows as the driver physically gets there.
+/// treat the whole map as its network on day one â€” it grows as the driver physically gets there.
 /// A yard is only worth buying in a city that will actually offer freight.
 /// </summary>
 public class DiscoveredCity
@@ -3141,7 +3177,7 @@ public class DiscoveredCity
     public string TripNumber { get; set; } = "";
     /// <summary>ATS sells a garage here.</summary>
     public bool GarageAvailable { get; set; } = true;
-    /// <summary>We own a yard here — mirrors a <see cref="Terminal"/> existing in this city.</summary>
+    /// <summary>We own a yard here â€” mirrors a <see cref="Terminal"/> existing in this city.</summary>
     public bool GarageOwned { get; set; }
     /// <summary>The "you can buy a yard here" notice has been shown, so it does not nag.</summary>
     public bool Notified { get; set; }
@@ -3194,7 +3230,7 @@ public class FeasibilityResult
     public double CycleRemainingAfter { get; set; }
     /// <summary>
     /// The 14-hour window left once the driver is empty at the receiver. Thin here means a dock that
-    /// holds them even briefly closes the window while they are still on the property — at which point
+    /// holds them even briefly closes the window while they are still on the property â€” at which point
     /// they cannot legally move the truck and are parked there for a 10.
     /// </summary>
     public double ShiftRemainingOnArrival { get; set; }
@@ -3218,8 +3254,8 @@ public class FeasibilityResult
     /// <summary>
     /// Hours added to a rest already in the plan rather than sat on duty at the gate.
     ///
-    /// The same wall-clock time either way — the truck is parked for those hours whichever end of the
-    /// run they fall at — but held onto a rest they do not come off the 14-hour window. Reported from
+    /// The same wall-clock time either way â€” the truck is parked for those hours whichever end of the
+    /// run they fall at â€” but held onto a rest they do not come off the 14-hour window. Reported from
     /// play as arriving seven hours early and burning seven hours of shift for no reason.
     /// </summary>
     public double SleptInHours { get; set; }
@@ -3227,7 +3263,7 @@ public class FeasibilityResult
     /// <summary>
     /// Hours the tractor is tied up and earning nothing, waiting on an appointment.
     ///
-    /// The wait at the gate plus any rest held longer to avoid it — both are the truck parked because
+    /// The wait at the gate plus any rest held longer to avoid it â€” both are the truck parked because
     /// the receiver will not take it yet, and neither is a rest the driver needed. The mandatory reset
     /// is deliberately NOT in here: that is the law, not a cost of this particular load, and every load
     /// long enough to need one pays it equally.
@@ -3243,7 +3279,7 @@ public class FeasibilityResult
     /// <b>Not idle.</b> The truck is on the property with the engine running and it comes off the fourteen
     /// exactly the way the unload does, so it lives on the dock clock. <see cref="IdleHours"/> prices a
     /// truck parked outside a gate it is not allowed through yet, which is a different cost with a
-    /// different remedy — you can sleep through one and not the other.
+    /// different remedy â€” you can sleep through one and not the other.
     /// </summary>
     public double QueueHours { get; set; }
 
@@ -3256,7 +3292,7 @@ public class FeasibilityResult
     /// </summary>
     public bool WaitedForSiteToOpen { get; set; }
     /// <summary>
-    /// When the receiver opens, as a game time. Empty when the listing showed no window — and the app
+    /// When the receiver opens, as a game time. Empty when the listing showed no window â€” and the app
     /// then behaves exactly as it did before windows were read, which keeps older loads intact.
     /// </summary>
     public string AppointmentOpensGameTime { get; set; } = "";
@@ -3295,13 +3331,13 @@ public class LoadEvaluation
     /// Disqualified for running too far from home while the arrangement is in play.
     ///
     /// Bars the load exactly as hard as <see cref="HardFails"/> does. It is a separate list only so the
-    /// reason reads as what it is — a promise the company made about a date — rather than being filed
+    /// reason reads as what it is â€” a promise the company made about a date â€” rather than being filed
     /// beside a missing endorsement or a truck that is out of service.
     ///
     /// It was briefly overridable: dispatch would not choose one, but the driver could authorize it
     /// directly and it went on the trip as their call. That was the wrong shape. A load that takes an
     /// overdue driver further from the yard should not be on the table at all, and the only reason it
-    /// was is that disqualifying it left the city-board hold with no backup to name — a problem with the
+    /// was is that disqualifying it left the city-board hold with no backup to name â€” a problem with the
     /// hold, which now names one from the loads that are genuinely takeable.
     /// </summary>
     public List<string> HomeTimeFails { get; set; } = new();
@@ -3327,7 +3363,7 @@ public class LoadEvaluation
 
     /// <summary>
     /// This receiver will take the load whenever it arrives. On the evaluation and not only on the
-    /// authorised trip, because the hours it frees are worth knowing BEFORE you pick the load — that is
+    /// authorised trip, because the hours it frees are worth knowing BEFORE you pick the load â€” that is
     /// the difference between banking them against a reload and finding out on the gate.
     /// </summary>
     public bool ReceiverTakesEarly { get; set; }
@@ -3359,13 +3395,13 @@ public class BoardDecision
     public bool RejectAll { get; set; }
     /// <summary>
     /// Everything considered was offered at the driver's current location. A rejection here means
-    /// "show me the wider city board", not "reposition" — the city has not been looked at yet.
+    /// "show me the wider city board", not "reposition" â€” the city has not been looked at yet.
     /// </summary>
     public bool LocalOnly { get; set; }
 
     /// <summary>
     /// Dispatch wants the full city board before it commits: this one came off a single dock, home time
-    /// is close, and nothing on it finishes near the yard. Not a rejection — the load operations would
+    /// is close, and nothing on it finishes near the yard. Not a rejection â€” the load operations would
     /// have taken is on <see cref="HeldLoadId"/>, and authorizing it directly is the override.
     /// </summary>
     public bool WantCityBoard { get; set; }
@@ -3374,12 +3410,12 @@ public class BoardDecision
     public string HeldLoadId { get; set; } = "";
 
     /// <summary>
-    /// Company trailers whose position operations wants before it picks the next box — asked HERE, at the
+    /// Company trailers whose position operations wants before it picks the next box â€” asked HERE, at the
     /// moment the driver is told to run home.
     ///
     /// This is the point the question is actually worth asking at. It was only ever asked at the
     /// tour-ending drop and in the home brief, so a driver rejected off a board and pointed at the yard
-    /// got no prompt at all, and the box was chosen on whatever record happened to be on file — reported
+    /// got no prompt at all, and the box was chosen on whatever record happened to be on file â€” reported
     /// from play as a trailer described as parked while it sat in Grand Junction, a thousand miles away.
     /// </summary>
     public List<object> AskWhereabouts { get; set; } = new();
@@ -3388,11 +3424,11 @@ public class BoardDecision
     public string ChangeoverNote { get; set; } = "";
     /// <summary>
     /// Every load failed on the clock rather than on the freight. The driver is not looking at a bad
-    /// board — they are out of hours, and the answer is a rest, not a reposition. The board is cleared
+    /// board â€” they are out of hours, and the answer is a rest, not a reposition. The board is cleared
     /// when this is set, because it will have turned over by the time they are legal again.
     /// </summary>
     public bool OutOfHours { get; set; }
-    /// <summary>The 34-hour restart is required — a normal overnight will not fix the cycle.</summary>
+    /// <summary>The 34-hour restart is required â€” a normal overnight will not fix the cycle.</summary>
     public bool NeedsRestart { get; set; }
     public bool ResetWatch { get; set; }
     public string NextTripNumberPreview { get; set; } = "";

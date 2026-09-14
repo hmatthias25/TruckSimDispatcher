@@ -139,11 +139,36 @@ async function fileReport(lines) {
   // a miss under one run in a thousand — this asserts that resignations happen at all, not how often.
   const WINDOW = 80;
   let resigned = SEEN_RESIGNATION;
+  let who = solid;
+  let replaced = 0;
+
   for (let i = 0; i < WINDOW && !resigned; i++) {
-    rep = await fileReport([{ driverId: solid.id, truckUnit: solid.assignedTruckUnit, level: 6, rating: 8.5,
+    // Conduct can END this driver mid-window — a preventable bad enough to sack somebody for, or a
+    // tractor rolled. Filing eighty periods against a terminated driver proves nothing, and quietly did:
+    // the loop ran to the end and reported that nobody ever resigned.
+    //
+    // So when the company loses them, the company hires again, which is what a fleet does. The point of
+    // the section is that resignations happen at all, not that one particular person is the one to go.
+    const live = (await api('/fleetops')).drivers.find((d) => d.id === who.id && d.status === 'Active');
+    if (!live) {
+      replaced++;
+      const name = `Stand In ${replaced}`;
+      const fresh = await api('/fleetops/drivers', 'POST', {
+        id: `life-stand-in-${replaced}`,
+        name, status: 'Active', assignedTruckUnit: who.assignedTruckUnit, assignedTrailerUnit: '',
+        homeTerminalId: who.homeTerminalId, skill: 'Experienced', wageShare: 0.3,
+        level: 6, rating: 8.5,
+      }).catch(() => null);
+      const got = fresh && ((fresh.driver) || (fresh.snapshot && null));
+      who = got || (await api('/fleetops')).drivers.find((d) => d.name === name) || who;
+      if (!who || who.status !== 'Active') break;
+    }
+
+    rep = await fileReport([{ driverId: who.id, truckUnit: who.assignedTruckUnit, level: 6, rating: 8.5,
       perMile: 1.62, perDay: 640, revenue: 9000, miles: 4000, truckStars: 5, repairs: 0 }]);
     resigned = rep.personnel.find((p) => p.kind === 'Resigned') || SEEN_RESIGNATION;
   }
+  if (replaced > 0) console.log(`  ..    ${replaced} driver(s) lost to conduct during the window`);
   ok('a driver eventually resigned', !!resigned, resigned ? `${resigned.headline} — ${resigned.evidence[0]}` : `(none in ${WINDOW} periods)`);
   if (resigned) {
     fo = await api('/fleetops');

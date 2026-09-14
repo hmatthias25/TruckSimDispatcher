@@ -1493,6 +1493,13 @@ app.MapPost("/api/terminals", (Terminal t) => Results.Ok(store.Mutate<object>(s 
         if (string.IsNullOrWhiteSpace(t.City)) throw new InvalidOperationException("A terminal needs a city.");
         if (string.IsNullOrWhiteSpace(t.Id)) t.Id = Guid.NewGuid().ToString("N")[..8];
         if (string.IsNullOrWhiteSpace(t.Name)) t.Name = $"{s.Company.Name} — {t.City}";
+
+        // The tier decides the capacity, the fuel price, the shop and the rent. Opening a yard AT a tier
+        // set the label and nothing else, so a yard could call itself Large and refuse the second tractor
+        // — "Oklahoma City is a large yard and holds 1 tractor(s)", which is nonsense on its face. The
+        // re-tier endpoint has always done this; creating one never did.
+        Migrations.ApplyLevel(t, t.Level);
+
         s.Company.Terminals.Add(t);
         store.Log(s, "system", $"Terminal opened: {t.City}, {t.State} ({t.Level}).");
 

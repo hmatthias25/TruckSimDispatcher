@@ -1741,7 +1741,7 @@ function viewActive() {
       ${t.arrivedGameTime ? `<dt>At the receiver</dt><dd>${badge(
           t.receiverCallKind === 'TakenEarly' ? 'ok' : t.receiverCallKind === 'StraightIn' ? 'ok' : 'warn',
           t.workStartsGameTime && t.workStartsGameTime !== t.arrivedGameTime
-            ? `start at ${t.workStartsGameTime.replace('T', ' ')}`
+            ? `start at ${gt(t.workStartsGameTime)}`
             : 'straight in')}
              <div class="sub">${esc(t.receiverCallNote || 'Nothing to wait for — log Begin unload now.')}</div></dd>` : ''}
       <dt>Rationale</dt><dd style="font-family:inherit">${esc(t.authorizationRationale)}</dd>
@@ -2586,6 +2586,28 @@ function fleetReportModal(r) {
       <h4>Sent for repair (${r.repairsNeeded.length})</h4>
       <ul>${r.repairsNeeded.map((f) => `<li><b>${esc(f.unitKind)} ${esc(f.unit)}</b> at ${pct(f.damagePct)} —
         work order ${esc(f.workOrderNumber)}${f.outOfService ? ' · out of service' : ''}</li>`).join('')}</ul>
+    </div>` : ''}
+
+    ${/* How the company is doing, and what it decided to do about it. This is what the books are FOR
+          now that they have stopped trying to be the ATS bank — a profit and loss can say something a
+          reconciliation never could. */ ''}
+    ${r.health ? `<div class="callout ${
+        r.health.band === 'Thriving' ? 'go' : r.health.band === 'Struggling' ? 'stop' : 'info'}">
+      <h4>The company — ${esc(r.health.band.toLowerCase())}</h4>
+      <p style="margin:0 0 6px">${esc(r.health.headline)}</p>
+      <ul class="reasons">${(r.health.evidence || []).map((e) => `<li>${esc(e)}</li>`).join('')}</ul>
+      ${(r.health.actions || []).length ? `<p style="margin:6px 0 0"><b>What it is doing about it</b></p>
+        <ul class="reasons">${r.health.actions.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
+    </div>` : ''}
+
+    ${(r.conduct || []).length ? `<div class="callout ${
+        (r.conduct || []).some((c) => /WriteOff|Terminal/.test(c.severity)) ? 'stop' : 'warn'}">
+      <h4>On the road this period</h4>
+      ${(r.conduct || []).map((c) => `<p style="margin:0 0 4px">${
+        badge(/NotAtFault/.test(c.severity) ? 'info'
+            : c.severity === 'Minor' ? 'warn' : 'bad',
+          /NotAtFault/.test(c.severity) ? 'not at fault' : c.severity.toLowerCase())}
+        ${esc(c.outcome)}</p>`).join('')}
     </div>` : ''}
 
     ${(r.trailers || []).some((x) => x.verdict !== 'Keep') ? `<div class="callout warn">
@@ -5910,7 +5932,10 @@ async function handleAction(act, d, ev) {
           <p style="margin:0">${esc(r.call.instruction)}</p></div>
         ${r.call.workStartsGameTime && r.call.workStartsGameTime !== r.call.arrivedGameTime ? `
           <div class="kv"><span>set the clock to
-            <b>${esc(r.call.workStartsGameTime.replace('T', ' '))}</b></span>
+            ${/* gt(), not the raw stamp. The epoch behind these times is arbitrary and exists only to be
+                  subtracted from — ATS shows its own calendar and the two cannot be reconciled. Printing
+                  it put "2000-01-02 18:00" in front of a driver, which is a date from nowhere. */ ''}
+            <b>${esc(gt(r.call.workStartsGameTime))}</b></span>
             <span>waiting <b>${hhmm(r.call.waitHours)}</b></span>
             ${r.call.position ? `<span>place in line <b>#${r.call.position}</b></span>` : ''}</div>` : ''}`)]);
     });

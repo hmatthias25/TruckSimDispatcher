@@ -81,8 +81,11 @@ async function fileReport(lines, days = 15) {
 
   head('2. #127 Wages follow from the agreed share');
   ok('wages are not zero either', l1.wages > 0, `$${l1.wages}`);
+  // Not a flat thirty any more — a driver is paid the share their LEVEL earns, between a quarter and
+  // two fifths. So this reads the share off the driver rather than assuming everybody costs the same.
+  const share1 = ((await api('/fleetops')).drivers.find((x) => x.id === l1.driverId) || {}).wageShare;
   ok('and they are the driver\'s share of the revenue',
-    near(Number(l1.wages), Number(l1.revenue) * 0.30, 2),
+    near(Number(l1.wages), Number(l1.revenue) * Number(share1), 2),
     `$${l1.wages} on $${l1.revenue}`);
 
   head('3. #127 The summary has real numbers in it');

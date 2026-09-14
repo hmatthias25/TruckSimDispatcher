@@ -19,6 +19,13 @@ public static class FleetOpsService
         if (string.IsNullOrWhiteSpace(d.Id)) d.Id = Guid.NewGuid().ToString("N")[..8];
         if (string.IsNullOrWhiteSpace(d.HiredGameDate)) d.HiredGameDate = s.Status.GameTime;
 
+        // Pay the level. A share left at the model's own default means nobody chose it, so the company
+        // offers what that driver is worth — a quarter of the load at the bottom, two fifths at the top.
+        // The same rule the migration uses on existing drivers, so the two paths cannot drift apart: a
+        // figure somebody actually typed is theirs and is left alone.
+        if (Math.Abs(d.WageShare - 0.30) < 0.0001)
+            d.WageShare = DriverConduct.ShareForLevel(d.Level);
+
         if (!string.IsNullOrWhiteSpace(d.AssignedTruckUnit))
             ClaimUnit(s, d.AssignedTruckUnit, d.Name, d.Id);
         if (!string.IsNullOrWhiteSpace(d.AssignedTrailerUnit))
@@ -419,6 +426,19 @@ public static class FleetOpsService
         foreach (var v in report.Trailers.Where(x => x.Verdict != "Keep"))
             report.Findings.Add(v.Headline);
 
+        // Conduct, which the report never had. The figures said whether a driver was earning; nothing
+        // said whether they had put a tractor into a dock post. Rolled before the health verdict, so a
+        // written-off truck is part of the picture the company is judging itself on.
+        foreach (var ev in DriverConduct.Resolve(s, report))
+            report.Conduct.Add(new DriverConductLine
+            {
+                DriverName = ev.DriverName,
+                Severity = ev.Severity,
+                Outcome = ev.Outcome,
+                TruckUnit = ev.TruckUnit,
+                DamagePct = ev.DamagePct,
+            });
+
         TrailerFleet.Consider(s, report);
 
         report.NetContribution = Math.Round(report.TotalRevenue - report.TotalWages - report.TotalRepairs, 2);
@@ -426,6 +446,23 @@ public static class FleetOpsService
             report.Findings.Add("The hired fleet lost money this period. Check wages against what they actually brought in.");
         if (report.TotalMiles > 0 && report.TotalRevenue > 0)
             report.Findings.Add($"Fleet averaged ${report.TotalRevenue / (decimal)report.TotalMiles:0.00}/mi over {report.TotalMiles:N0} mi.");
+
+        // How the company is doing, and what it does about it. Last, so the verdict includes everything
+        // this report decided — a tractor written off this period is part of the picture, not a surprise
+        // the next one has to explain.
+        var health = CompanyHealth.Assess(s, report);
+        CompanyHealth.Act(s, report, health);
+        report.Health = new CompanyHealthLine
+        {
+            Band = health.Band,
+            Headline = health.Headline,
+            Evidence = health.Evidence,
+            Actions = health.Actions,
+            NetOverWindow = health.NetOverWindow,
+            NetPerReport = health.NetPerReport,
+            ReportsCounted = health.ReportsCounted,
+            Improving = health.Improving,
+        };
 
         s.FleetReports.Insert(0, report);
         return report;

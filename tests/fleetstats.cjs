@@ -1,4 +1,4 @@
-/* Issues #26-#31: the fleet report records what ATS actually shows, probation precedes termination,
+﻿/* Issues #26-#31: the fleet report records what ATS actually shows, probation precedes termination,
    equipment is judged on stars, trailers on stars and age, trailers can be bought, and good drivers
    at weak carriers leave. */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5640}/api`;
@@ -42,7 +42,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   const app = { driverName: 'Stat Boss', preferredDivision: 'Dry Van', transmissionPreference: 'automatic',
     experienceYears: 8, homeCity: 'Springfield', homeState: 'MO', acceptsProbation: true, homeTimePreference: 'monthly' };
   await api('/onboarding/market', 'POST', app);
-  // Schneider is a 2/2/2 outfit — a deliberately poor employer.
+  // Schneider is a 2/2/2 outfit â€” a deliberately poor employer.
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: gt(), code: 'SNI' }));
   ok('employer standing is stored', S.company.payStars > 0 && S.company.homeTimeStars > 0,
     `equip ${S.company.equipmentStars} pay ${S.company.payStars} home ${S.company.homeTimeStars}`);
@@ -51,7 +51,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   const hq = S.company.terminals[0];
   S = un(await api(`/terminals/${hq.id}/level`, 'POST', { level: 'Large' }));
   // Tractor capacity only. A per-garage trailer limit is not a thing ATS has (#166), so the field was
-  // retired, lost its last reader, and has now stopped being written — asserting a yard holds more
+  // retired, lost its last reader, and has now stopped being written â€” asserting a yard holds more
   // trailers than tractors was asserting a rule the app deliberately does not have.
   ok('levelling a yard up raises what it can hold in tractors',
     S.company.terminals[0].truckCapacity > 1,
@@ -98,7 +98,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   // B. Strong is level 15. Two things moved under this: "developed" now means at or above the
   // poaching threshold, which defaults to 10 for GDC's rookie band (#149), and Schneider is no longer
   // modelled as a 2-star outfit (#155), so the employer multiplier that used to carry a level 7 over
-  // the line is gone. What the suite is actually about — a developed driver is a flight risk — stands.
+  // the line is gone. What the suite is actually about â€” a developed driver is a flight risk â€” stands.
   ok('a developed driver is flagged as a flight risk',
     (fleet().flightRisks || []).length >= 1,
     (fleet().flightRisks || []).join(' | ') || 'none flagged');
@@ -135,7 +135,11 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   ok('it names the figure that failed', /\$\/day|\$\d/.test(prob[0]?.evidence?.[0] || ''), prob[0]?.evidence?.[0]);
   ok('and states a target to clear it', /above the/.test(prob[0]?.evidence?.[1] || ''), prob[0]?.evidence?.[1]);
   ok('applied immediately, not pending', prob[0].pending === false);
-  ok('visible on the fleet tab', (fleet().onProbation || []).length === 1,
+  // Named rather than counted. Conduct feeds the same probation ladder the figures do — deliberately, so
+  // a driver is not told they are fine and not fine at once — which means somebody else can be on it for
+  // a preventable at the same time. What this section is about is the WEAK driver being on it.
+  ok('visible on the fleet tab',
+    (fleet().onProbation || []).some((x) => x.driverName === 'A. Weak'),
     JSON.stringify((fleet().onProbation || []).map((x) => x.driverName)));
   ok('the strong driver is untouched', !prob.some((p) => p.driverName === 'B. Strong'));
 
@@ -150,14 +154,16 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   ]);
   ok('probation lifted', personnelOf(rep, 'ProbationLifted').length === 1,
     personnelOf(rep, 'ProbationLifted').map((p) => p.headline).join('; ') || 'none');
-  ok('no longer on the fleet tab', (fleet().onProbation || []).length === 0);
+  ok('no longer on the fleet tab',
+    !(fleet().onProbation || []).some((x) => x.driverName === 'A. Weak'),
+    JSON.stringify((fleet().onProbation || []).map((x) => x.driverName)));
   roster = (await api('/fleetops')).drivers;
   ok('the recovery is on the record', !!roster.find((d) => d.id === weak.id).lastClearedProbationGameTime);
 
-  head('6. Failing probation is what ends it — and this driver recovered once, so it takes longer');
+  head('6. Failing probation is what ends it â€” and this driver recovered once, so it takes longer');
   // #146: the company decides, and somebody who has pulled themselves off probation before is worth
   // one more period. This driver did exactly that in step 5, so the run is warning, second chance,
-  // then out — and the third probation is where the pattern becomes the evidence.
+  // then out â€” and the third probation is where the pattern becomes the evidence.
   for (let i = 0; i < 3; i++) {
     rep = await fileReport([
       { driverId: weak.id, truckUnit: weak.assignedTruckUnit, trailerUnit: weak.assignedTrailerUnit,
@@ -206,7 +212,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
     (truckRet[0]?.evidence || []).some((e) => /Odometer reads/.test(e)),
     (truckRet[0]?.evidence || []).join(' | '));
 
-  head('8. A trailer at three stars too — but never the player\'s own');
+  head('8. A trailer at three stars too â€” but never the player\'s own');
   const mine = S.driver.assignedTrailerUnit;
   rep = await fileReport([
     { driverId: strong.id, truckUnit: strong.assignedTruckUnit, trailerUnit: strong.assignedTrailerUnit,
@@ -259,10 +265,10 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
     const bought = S.trailers.find((t) => t.unit === 'T990');
     ok('at the price the player reported, not an estimate', bought.purchasePrice === 38500, `${bought.purchasePrice}`);
     ok('with a full star rating and an acquisition date',
-      bought.stars === 5 && !!bought.acquiredGameTime, `${bought.stars}★ ${bought.acquiredGameTime}`);
+      bought.stars === 5 && !!bought.acquiredGameTime, `${bought.stars}â˜… ${bought.acquiredGameTime}`);
     ok('and the request is closed', !fleet().trailerRequest);
   } else {
-    console.log('  (no trailer request fired in 12 periods — occasional by design)');
+    console.log('  (no trailer request fired in 12 periods â€” occasional by design)');
     ok('the mechanism exists and stayed quiet', true, 'seeded roll did not fire');
   }
 
@@ -282,7 +288,7 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
     ok('a resignation does not put anyone on probation',
       !gone.some((d) => d.onProbation), gone.map((d) => `${d.name} prob=${d.onProbation}`).join(', '));
   } else {
-    ok('nobody happened to quit — seeded, so this is a legitimate outcome', true,
+    ok('nobody happened to quit â€” seeded, so this is a legitimate outcome', true,
       finalRoster.map((d) => `${d.name}:${d.status}`).join(', '));
   }
 
