@@ -453,6 +453,18 @@ public class Driver
     public string ChangeoverGameTime { get; set; } = "";
 
     /// <summary>
+    /// How many days the driver says they are taking at home, given with the trailer positions.
+    ///
+    /// It decides how much a trailer being out actually costs. Marking a box as private in ATS makes the
+    /// AI driver holding it finish their current load and switch off it — so a trailer three days out is
+    /// standing on the yard before a driver taking five days is ready to leave, and costs them nothing.
+    /// The same box is a real price to somebody home for two over a 34.
+    ///
+    /// Zero means they have not said, and the app does not guess: with no answer a wait is a wait.
+    /// </summary>
+    public int HomeDaysPlanned { get; set; }
+
+    /// <summary>
     /// The promised box was parked with nobody on it, and the driver was told to mark it as their own in
     /// the ATS trailer manager to hold it.
     ///

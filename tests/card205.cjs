@@ -268,6 +268,52 @@ const stand = async (city, st, day, hm, kind = 'Shipper') => {
     ok('and it tells them to reserve it, which is the point of asking early',
       /own trailer in the ATS trailer manager|mark .* as your own/i.test(bulk.changeover || ''),
       (bulk.changeover || '(silent)').slice(0, 150));
+
+    // How long they are home changes what a box being out actually costs. Marking one private in ATS
+    // makes the AI driver on it finish their load and switch off, so a trailer several days out is
+    // standing on the yard before somebody taking a week is ready to leave.
+    //
+    // Los Angeles rather than somewhere close: an outbound box is costed at twice the distance home, and
+    // anything inside a couple of hundred miles hits the two-day floor where a short stay and a long one
+    // cannot tell each other apart.
+    const farRows = rows.map((x) => ({
+      trailerUnit: x.unit, direction: 'Outbound', city: 'Los Angeles', state: 'CA',
+    }));
+
+    const shortStay = await api('/fleetops/whereabouts/all', 'POST', { homeDays: 2, trailers: farRows });
+    const longStay = await api('/fleetops/whereabouts/all', 'POST', { homeDays: 10, trailers: farRows });
+    console.log(`  ..    home 2:  "${(shortStay.changeover || '(none)').slice(-115)}"`);
+    console.log(`  ..    home 10: "${(longStay.changeover || '(none)').slice(-115)}"`);
+
+    ok('a long stay makes an out-of-service box free',
+      /costs you nothing/i.test(longStay.changeover || ''),
+      (longStay.changeover || '(silent)').slice(-130));
+    ok('and tells them to mark it private so it is dropped for them',
+      /finish their load/i.test(longStay.changeover || ''),
+      (longStay.changeover || '(silent)').slice(-130));
+    ok('the same box on a 34 is still a price',
+      /past the end of your home time/i.test(shortStay.changeover || ''),
+      (shortStay.changeover || '(silent)').slice(-130));
+    ok('so the length of the stay actually changes the call',
+      (shortStay.changeover || '') !== (longStay.changeover || ''), 'two different answers');
+    ok('and the stay is on file', ((await api('/bootstrap')).driver?.homeDaysPlanned || 0) === 10,
+      `${(await api('/bootstrap')).driver?.homeDaysPlanned}`);
+
+    // Put the parked answer back, so the sections after this see the state they were written against.
+    //
+    // Two days deliberately: the section below is about a PARKED box of the wrong type beating an
+    // out-of-service one of the right type, and that only holds while the wait still costs something. On
+    // a long stay the outbound box is free too and the type operations asked for wins — which is the new
+    // rule working, not the old assertion breaking.
+    await api('/fleetops/whereabouts/all', 'POST', {
+      homeDays: 2,
+      trailers: rows.map((x) => ({
+        trailerUnit: x.unit,
+        direction: x.unit === parkedUnit ? 'Parked' : 'Outbound',
+        city: x.unit === parkedUnit ? 'Springfield' : 'Grand Junction',
+        state: x.unit === parkedUnit ? 'MO' : 'CO',
+      })),
+    });
   } else {
     console.log('  ..    no re-rig rolled for this home time, so there is nothing to ask about');
   }

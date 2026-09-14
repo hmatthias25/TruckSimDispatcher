@@ -2511,6 +2511,22 @@ function whereaboutsHtml(b) {
           value="${esc(a.state || '')}" placeholder="CO"></label>
       </div>
     </div>`).join('')}
+    ${/* How long they are staying, which is what decides whether a box being out costs anything.
+          Marking a trailer private in ATS makes the AI driver on it finish their load and switch off —
+          so three days out is free to somebody taking five and dear to somebody taking two. */ ''}
+    <div class="grid3" style="margin-top:10px">
+      <label>How long are you home?
+        <select id="wa-homedays">
+          ${[2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `<option value="${n}"${
+            (S.driver.homeDaysPlanned || 4) === n ? ' selected' : ''}>${
+            n} day${n === 1 ? '' : 's'}${n === 2 ? ' — just the 34' : ''}</option>`).join('')}
+        </select></label>
+      <div style="grid-column:span 2;align-self:end">
+        <p class="hint" style="margin:0">Mark a box private in ATS and whoever has it finishes their load
+          and drops it. So a trailer a few days out costs you nothing if you are home longer than that.</p>
+      </div>
+    </div>
+
     ${/* ONE button for the lot. A button per row filed the answers one at a time, so dispatch settled the
           changeover off the first row before it had heard about the other four — and re-rendering after
           each one wiped the form the driver was still filling in. Reported from play exactly that way. */ ''}
@@ -3895,19 +3911,26 @@ function trailerSectionHtml() {
       <b>Weight transported</b> are lifetime totals, so they only go up. Every box gets a row, including
       the ones nobody is pulling: those are the ones worth a decision.</p>
     <div class="tablewrap"><table>
+      ${/* The header and the cell both carry class="num", so each box sits under its own title. With it
+            on the header alone the text right-aligned while the input stayed left, and every numeric
+            column ended up labelling the gap beside it rather than the box below it. */ ''}
       <thead><tr><th>Trailer</th><th>Type</th><th class="num">Util %</th><th class="num">Distance on job</th>
         <th class="num">Loads</th><th class="num">Weight (lb)</th><th>Where</th></tr></thead>
       <tbody>${boxes.map((b) => `<tr>
         <td><span class="unit">${esc(b.gameId || b.unit)}</span>${b.gameId
             ? `<div class="sub" style="font-size:10px">unit ${esc(b.unit)}</div>` : ''}</td>
         <td>${esc(b.type)}${b.subtype ? `<div class="sub" style="font-size:10px">${esc(b.subtype)}</div>` : ''}</td>
-        <td><input id="ft-util-${esc(b.unit)}" type="number" step="1" min="0" max="100" style="width:70px"
+        <td class="num"><input id="ft-util-${esc(b.unit)}" type="number" step="1" min="0" max="100"
+              style="width:72px;text-align:right"
               value="${b.utilisationPct >= 0 ? Math.round(b.utilisationPct) : ''}" placeholder="—"></td>
-        <td><input id="ft-dist-${esc(b.unit)}" type="number" step="1" min="0" style="width:104px"
+        <td class="num"><input id="ft-dist-${esc(b.unit)}" type="number" step="1" min="0"
+              style="width:108px;text-align:right"
               value="${b.distanceOnJobMi >= 0 ? Math.round(b.distanceOnJobMi) : ''}" placeholder="—"></td>
-        <td><input id="ft-loads-${esc(b.unit)}" type="number" step="1" min="0" style="width:78px"
+        <td class="num"><input id="ft-loads-${esc(b.unit)}" type="number" step="1" min="0"
+              style="width:80px;text-align:right"
               value="${b.loadsTransported >= 0 ? Math.round(b.loadsTransported) : ''}" placeholder="—"></td>
-        <td><input id="ft-wt-${esc(b.unit)}" type="number" step="1" min="0" style="width:110px"
+        <td class="num"><input id="ft-wt-${esc(b.unit)}" type="number" step="1" min="0"
+              style="width:116px;text-align:right"
               value="${b.weightTransportedLbs >= 0 ? Math.round(b.weightTransportedLbs) : ''}" placeholder="—"></td>
         <td class="sub">${esc(b.currentLocation || '—')}</td>
       </tr>`).join('')}</tbody></table></div>`;
@@ -5974,6 +5997,7 @@ async function handleAction(act, d, ev) {
     case 'whereabouts-all': return run(async () => {
       const units = (d.units || '').split(',').filter(Boolean);
       const r = await api('/fleetops/whereabouts/all', 'POST', {
+        homeDays: parseInt(sv('wa-homedays'), 10) || 0,
         trailers: units.map((u) => ({
           trailerUnit: u, direction: sv(`wa-dir-${u}`) || 'Unknown',
           city: sv(`wa-city-${u}`), state: sv(`wa-state-${u}`),

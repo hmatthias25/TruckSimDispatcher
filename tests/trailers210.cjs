@@ -139,6 +139,43 @@ let S;
     !Object.prototype.hasOwnProperty.call(line('TB-VAN') || {}, 'stars'),
     Object.keys(line('TB-VAN') || {}).join(', ').slice(0, 110));
 
+  head('5. Wear counts the trips and the weight, not just the odometer');
+  // From play: "the more a trailer is used and more weight it carries the faster it will wear down."
+  // Distance alone carried the whole verdict, so a box doing short heavy turns looked young forever.
+  //
+  // TB-BUSY has modest miles but a great many heavy loads; TB-EASY has MORE miles on light freight and
+  // far fewer of them. Under the old rule neither was worn and the odometer said TB-EASY was the older
+  // of the two.
+  for (const u of ['TB-BUSY', 'TB-EASY'])
+    await api('/fleet/trailer', 'POST', {
+      unit: u, type: 'Flatbed', division: 'Flatbed', year: 2019, make: 'Fontaine', length: "48'",
+      inGameGarage: true, status: 'InService', homeTerminalId: yard2.id,
+    });
+
+  const wear = await api('/fleetops/report', 'POST', {
+    periodStartGame: iso(16), periodEndGame: iso(30), notes: 'wear', lines: [],
+    trailerLines: [
+      // 180k mi, 800 loads at 45,000 lb a trip.
+      { unit: 'TB-BUSY', utilisationPct: 88, distanceOnJobMi: 180000, loadsTransported: 800, weightTransportedLbs: 36000000 },
+      // 240k mi, 150 loads at 18,000 lb a trip.
+      { unit: 'TB-EASY', utilisationPct: 40, distanceOnJobMi: 240000, loadsTransported: 150, weightTransportedLbs: 2700000 },
+    ],
+  });
+  const wl = (u) => (wear.report.trailers || []).find((x) => x.unit === u);
+  console.log(`  ..    TB-BUSY (180k mi, 800 heavy loads) = ${wl('TB-BUSY')?.verdict}`);
+  console.log(`  ..    TB-EASY (240k mi, 150 light loads) = ${wl('TB-EASY')?.verdict}`);
+
+  ok('the short-haul box working hard is called worn', wl('TB-BUSY')?.verdict === 'Worn',
+    `${wl('TB-BUSY')?.verdict}`);
+  ok('the higher-mileage box on light work is not', wl('TB-EASY')?.verdict !== 'Worn',
+    `${wl('TB-EASY')?.verdict}`);
+  ok('so the odometer alone no longer decides it',
+    wl('TB-BUSY')?.verdict === 'Worn' && wl('TB-EASY')?.verdict !== 'Worn',
+    'fewer miles, more wear');
+  ok('and the working is shown, or "worn out" on 180k reads as a mistake',
+    /mi of wear once the load cycles/i.test((wl('TB-BUSY')?.evidence || []).join(' ')),
+    (wl('TB-BUSY')?.evidence || []).join(' | ').slice(0, 150));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); process.exit(1); });

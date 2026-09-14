@@ -1368,6 +1368,11 @@ app.MapPost("/api/trips/{id}/window", (string id, WindowFixRequest req) => Resul
 /// which is how it was reported.
 app.MapPost("/api/fleetops/whereabouts/all", (WhereaboutsBulkRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
+    // How long they are staying, which is what decides whether a box being out costs anything at all.
+    // Clamped to the range the form offers: two days is a 34 and ten is a long furlough, and a figure
+    // outside that is a typo rather than an answer.
+    if (req.HomeDays is > 0) s.Driver.HomeDaysPlanned = Math.Clamp(req.HomeDays.Value, 2, 10);
+
     var filed = new List<object>();
     foreach (var one in req.Trailers ?? new List<WhereaboutsRequest>())
     {
@@ -2557,7 +2562,7 @@ record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? 
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
 record ArrivedRequest(string? GameTime);
 record ReportTrailerRequest(string? TrailerUnit, string? Type, string? Subtype, string? GameId, string? Length);
-record WhereaboutsBulkRequest(List<WhereaboutsRequest>? Trailers);
+record WhereaboutsBulkRequest(List<WhereaboutsRequest>? Trailers, int? HomeDays);
 record ReconcileRequest(string? Account, decimal Amount, string Memo, decimal? FixUnsettledPay, int? FixFreightCounter);
 record CareerActionRequest(string? Rank, string? Note, bool Force);
 record AiRequest(string? Message);

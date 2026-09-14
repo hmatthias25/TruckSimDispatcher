@@ -222,13 +222,30 @@ public static class TrailerChangeover
                 x.E,
                 Idle = x.E.Known && x.E.Direction.Equals("Parked", StringComparison.OrdinalIgnoreCase),
                 Wanted = EquipmentService.TypeCovers(x.T.Type, want),
+
+                // What the wait ACTUALLY costs, against the days the driver is taking.
+                //
+                // Marking a box as private in ATS makes the AI driver on it finish their load and switch
+                // off it. So a trailer three days out is standing on the yard before somebody taking five
+                // days is ready to leave — it costs them nothing at all. The same box is a real price to a
+                // driver home for two over a 34.
+                //
+                // With no answer on the board the days count in full, because the app does not guess at
+                // how long somebody is staying.
+                CostDays = Math.Max(0, (x.E.Days ?? 99)
+                                       - (s.Driver.HomeDaysPlanned > 0 ? s.Driver.HomeDaysPlanned : 0)),
             })
             // Sitting still beats being the right kind of trailer. A box nobody is on is a hook and a
             // pull; the one operations asked for, three days out, costs days off the home time to fetch.
             // Within each group the wanted type still wins, so the freight mix is honoured wherever it
             // can be had for nothing.
-            .OrderByDescending(x => x.Idle)
+            // What it costs comes first, and a box that is back before the driver leaves costs nothing —
+            // so on a long home time a trailer three days out ranks level with one already parked. Where
+            // two are equally free the type operations asked for wins, which is the whole point of having
+            // asked. Only then does the raw distance break a tie.
+            .OrderBy(x => x.CostDays)
             .ThenByDescending(x => x.Wanted)
+            .ThenByDescending(x => x.Idle)
             .ThenBy(x => x.E.Days ?? 99)
             .ToList();
 
@@ -255,7 +272,11 @@ public static class TrailerChangeover
             Trailer = best.T,
             Idle = best.Idle,
             WaitDays = best.E.Days,
-            Reserve = best.Idle,
+
+            // Reserving is what MAKES a box free, not just a nicety once it already is. Marking one
+            // private tells the AI driver to finish their load and drop it, so any trailer whose wait
+            // lands inside the home time wants the same instruction as a parked one.
+            Reserve = best.Idle || best.CostDays <= 0,
         };
 
         // Where the box that won is not the kind operations asked for, say so — the freight they put the
@@ -276,11 +297,21 @@ public static class TrailerChangeover
                 "back and we are into skipping days to get it off them.";
         else if (best.E.Known && best.E.Days is { } d)
             plan.Note = head + best.E.Text +
-                (d <= Whereabouts.WorthWaitingDays
-                    ? $" Reckon on about {d:0.#} day(s) skipped when you take it. Those come out of your home " +
-                      "time, not your hours."
-                    : $" That is about {d:0.#} day(s) skipped when you take it, which is most of your home " +
-                      "time. Ask me for something else if it is not worth it.");
+                // A wait that finishes inside the home time is not a wait. Mark it private now and the
+                // driver on it finishes their load and drops it; it is standing on the yard before this
+                // driver is ready to leave. That is the mechanic, and it is why the days are worth asking
+                // about — a box three days out is free to somebody taking five and dear to somebody
+                // taking two.
+                (best.CostDays <= 0 && s.Driver.HomeDaysPlanned > 0
+                    ? $" You are home {s.Driver.HomeDaysPlanned} day(s) and it is {d:0.#} out, so it costs " +
+                      $"you nothing — mark {best.T.Ref} as your own in the ATS trailer manager before you " +
+                      "pull out, and whoever has it will finish their load, drop it, and leave it standing " +
+                      "for you."
+                    : best.CostDays <= Whereabouts.WorthWaitingDays
+                        ? $" Reckon on about {best.CostDays:0.#} day(s) of it landing past the end of your " +
+                          "home time. Those come out of your days off, not your hours."
+                        : $" That is about {best.CostDays:0.#} day(s) past the end of your home time, which " +
+                          "is a real price. Ask me for something else if it is not worth it.");
         else
             plan.Note = head +
                 "I have nothing current on where it is. Have a look at the trailer screen and tell me, and I " +

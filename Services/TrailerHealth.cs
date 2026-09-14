@@ -34,6 +34,39 @@ public static class TrailerHealth
     public const double WornLoads = 600;
 
     /// <summary>
+    /// What one load cycle costs a trailer, expressed in miles.
+    ///
+    /// Distance alone is the wrong measure and was carrying the whole verdict. A load is a coupling, a
+    /// set of ramps or straps, a forklift working the deck and a dock hit or two — real wear whatever the
+    /// run length. Four hundred miles a load puts a busy short-haul box and a long-haul one on terms:
+    /// nine hundred loads is worth about as much as the 360,000 mi it would take to do them at distance.
+    /// </summary>
+    public const double MilesPerLoad = 400;
+
+    /// <summary>A normal trip, against which heavier and lighter work is measured.</summary>
+    public const double NominalLoadLbs = 40_000;
+
+    /// <summary>
+    /// Distance, loads and weight as one figure: what this box has actually been through.
+    ///
+    /// Weight tells against the frame and the suspension directly — a trailer averaging 44,000 lb a trip
+    /// is having a harder life than one averaging 20,000 — so it scales the miles rather than being added
+    /// to them. Clamped either side, because no amount of light freight makes a trailer immortal and no
+    /// amount of heavy freight wears one out in a season.
+    /// </summary>
+    public static double EffectiveMiles(Trailer t)
+    {
+        var dist = Math.Max(0, t.DistanceOnJobMi);
+        var loads = Math.Max(0, t.LoadsTransported);
+        var weight = Math.Max(0, t.WeightTransportedLbs);
+
+        var avgLoad = loads > 0 ? weight / loads : 0;
+        var heavy = avgLoad > 0 ? Math.Clamp(avgLoad / NominalLoadLbs, 0.7, 1.5) : 1.0;
+
+        return dist * heavy + loads * MilesPerLoad;
+    }
+
+    /// <summary>
     /// Utilisation below which a trailer is not equipment, it is money standing still.
     ///
     /// Deliberately well under the player's own low-utilisation warning: this is not "keep an eye on it",
@@ -135,7 +168,9 @@ public static class TrailerHealth
                 continue;
             }
 
-            var worn = (t.DistanceOnJobMi >= WornDistanceMi)
+            // Judged on everything the box has done, not on the odometer alone.
+            var effective = EffectiveMiles(t);
+            var worn = effective >= WornDistanceMi
                        || (t.DistanceOnJobMi < 0 && t.LoadsTransported >= WornLoads);
             var idle = t.UtilisationPct >= 0
                        && t.UtilisationPct < IdleUtilisationPct
@@ -177,6 +212,13 @@ public static class TrailerHealth
                 if (t.DistanceOnJobMi >= 0)
                     line.Evidence.Add($"{t.DistanceOnJobMi:N0} mi on the job, {t.LoadsTransported:N0} load(s), " +
                                       $"{t.WeightTransportedLbs / 2000.0:N0} ton(s) moved.");
+
+                // Say the working, because "worn out" on a box showing 180,000 mi reads as wrong unless
+                // the loads and the weight behind it are on the page too.
+                var avg = t.LoadsTransported > 0 ? t.WeightTransportedLbs / t.LoadsTransported : 0;
+                line.Evidence.Add($"That is about {effective:N0} mi of wear once the load cycles and an " +
+                                  $"average trip of {avg:N0} lb are counted — our line is " +
+                                  $"{WornDistanceMi:N0}.");
                 line.Evidence.Add($"It is still working at {t.UtilisationPct:0}%, so replace it with the " +
                                   $"same thing — a {TrailerSpec.Describe(t.Type, t.Subtype)} is what this " +
                                   "company keeps busy.");
