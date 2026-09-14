@@ -132,6 +132,20 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
     /is now Company Driver/.test((promoted?.report?.findings || []).join(' ')),
     (promoted?.report?.findings || []).find((x) => /is now /.test(x))?.slice(0, 80));
 
+  head('4b. Clearing the ninety days shows as due before the report settles it');
+  // The exact gap a player sits in: day 91, hired on day 0, countdown finished and the roster still
+  // says Probationary because no report has been filed since. Saying nothing there makes a driver who
+  // is due look identical to one who is stuck behind a gate.
+  await clock(day + 3);
+  const gap = dz(await api('/fleetops'), 'qa-rank-4');
+  console.log(`  ..    ${drv(await api('/fleetops'), 'qa-rank-4').name}: ${gap.rank}` +
+    `${gap.duePromotion ? ` (due ${gap.dueRank})` : ''}, ${gap.tenureDays}d`);
+  ok('a driver past their ninety days is no longer counting down',
+    gap.servingProbation === false, `${gap.tenureDays}d in`);
+  ok('and the shortfall is not two rungs of bad news',
+    gap.duePromotion ? gap.shortfall.length === 0 : true,
+    gap.shortfall.join(' ') || 'none');
+
   head('5. Pay follows the rung, not the level');
   const rookie = drv(fo, 'qa-rank-1'), veteran = drv(fo, 'qa-rank-2');
   console.log(`  ..    L${rookie.level} on ${rookie.wageShare}, L${veteran.level} on ${veteran.wageShare}`);

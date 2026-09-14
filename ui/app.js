@@ -3724,7 +3724,11 @@ function fleetOpsHtml() {
                 ? ' ' + badge('warn', `${dz.probationDaysLeft}d of 90`) : ''}</td>
           <td><span class="unit">${esc(uref(d.assignedTruckUnit) || '—')}</span></td>
           <td class="num">${d.level ? d.level : '<span class="sub">—</span>'}</td>
-          <td><span title="${esc(dz.rank)}">${esc(dz.rankShort)}</span></td>
+          ${/* A grade only moves when a report is filed, so somebody can clear their ninety days on a
+                Tuesday and still read as Probationary until the next one. Saying nothing there is how
+                a driver who is actually due looks identical to one who is stuck. */ ''}
+          <td><span title="${esc(dz.rank)}">${esc(dz.rankShort)}</span>${
+              dz.duePromotion ? ' ' + badge('ok', `due ${esc(dz.dueRank || '')}`) : ''}</td>
           <td class="num">${d.rating ? num(d.rating, 1) : '<span class="sub">—</span>'}</td>
           <td class="num">${last?.perDay ? money0(last.perDay) : '<span class="sub">—</span>'}</td>
           <td class="num">${last?.perMile ? '$' + (+last.perMile).toFixed(2) : '<span class="sub">—</span>'}</td>
@@ -3998,6 +4002,10 @@ function driverFileModal(id) {
       <h4>Serving their ninety days &mdash; ${dz.probationDaysLeft} to go</h4>
       <p style="margin:0">Every hire does this, whatever level they came in at. Nothing above the bottom
         rung opens until it is behind them.</p>
+    </div>` : dz.duePromotion ? `<div class="callout go">
+      <h4>Due ${esc(dz.dueRank)} at the next fleet report</h4>
+      <p style="margin:0">Everything it asks for is met. A grade is settled when a report is filed, so
+        it lands with the next one rather than the moment the last gate cleared.</p>
     </div>` : dz.shortfall.length ? `<div class="callout info">
       <h4>${dz.nextRank ? `What stands between them and ${esc(dz.nextRank)}` : 'Standing'}</h4>
       <ul style="margin:0">${dz.shortfall.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>

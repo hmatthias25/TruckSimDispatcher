@@ -152,8 +152,14 @@ public static class DriverRank
             return gaps;
         }
 
-        var next = Next(Earned(s, d));
+        // Measured from the rung they are ON, not the one they have earned. Those differ for exactly as
+        // long as it takes the next report to settle it, and reading from the earned rung made the file
+        // answer the wrong question in that gap: a driver who had just cleared their ninety days was
+        // shown what still stood between them and SENIOR, which is two rungs of bad news for somebody
+        // whose promotion was already due.
+        var next = Next(At(d.Grade));
         if (next == null) return gaps;
+        if (Earned(s, d).Index >= next.Index) return gaps;   // already qualified; it lands next report
 
         var days = TenureDays(s, d);
         if (days < next.Days) gaps.Add($"{next.Days - days} more day(s) with us.");
@@ -207,6 +213,14 @@ public static class DriverRank
         if (ServingProbation(s, d))
             return $"On their ninety days — {ProbationDaysLeft(s, d)} to go. Paid {share} until they " +
                    "are through it.";
+
+        // Between clearing a gate and the report that settles it. Worth saying out loud: the roster
+        // still shows the old rung and nothing else on screen explains why.
+        var earned = Earned(s, d);
+        if (earned.Index > d.Grade)
+            return $"{r.Name} on {share}, and due {earned.Name} at the next fleet report — " +
+                   $"{TenureDays(s, d)} day(s) with us, {d.LifetimeMiles:N0} mi, rating {d.Rating:0.0}. " +
+                   $"It takes a report to settle it.";
 
         var next = Next(r);
         return next == null
@@ -274,6 +288,7 @@ public static class DriverRank
         var conduct = ConductFor(s, d);
         var r = At(d.Grade);
         var next = Next(r);
+        var earned = Earned(s, d);
         return new
         {
             id = d.Id,
@@ -281,6 +296,10 @@ public static class DriverRank
             rank = r.Name,
             rankShort = r.Short,
             offeredShare = r.Share,
+            // Earned but not yet settled. A grade only moves when a fleet report is filed, so a driver
+            // can stand here having met everything and still read as the rung below until the next one.
+            duePromotion = earned.Index > d.Grade,
+            dueRank = earned.Index > d.Grade ? earned.Name : null,
             nextRank = next?.Name,
             nextShare = next?.Share,
             summary = Summary(s, d),
