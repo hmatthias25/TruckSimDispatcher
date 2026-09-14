@@ -84,52 +84,11 @@ const views = async () => (await api('/bootstrap')).views;
   await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
   console.log(`     hired on ${named(1)}`);
 
-  head('1. #104 A brand-new career does not open owing a reconciliation');
-  // Making a passed Monday count meant a career hired on a Tuesday would otherwise be asked, on its
-  // first day, to square a week it was not around for.
-  let v = await views();
-  ok('nothing is due on the day of hire', v.trueUp.due === false, `due=${v.trueUp.due}`);
-  await at(3);
-  v = await views();
-  ok('nor mid-week before the first Monday since', v.trueUp.due === false, `due=${v.trueUp.due} on ${named(3)}`);
-
-  head('2. #104 On the Monday itself, as it always did');
-  await at(7);                                       // day 7 is a Monday
-  v = await views();
-  ok('due on the Monday', v.trueUp.due === true, `due=${v.trueUp.due} on ${named(7)}`);
-  ok('and it says which Monday it means', v.trueUp.forDay === 7, `day ${v.trueUp.forDay}`);
-  ok('which is today, so it is not called late', v.trueUp.daysAgo === 0, `${v.trueUp.daysAgo} days ago`);
-  const squared = await api('/finance/true-up', 'POST', { atsBalance: v.trueUp.expected });
-  ok('squaring it works', squared.squared === true, squared.message?.slice(0, 70));
-  ok('and it stops asking', (await views()).trueUp.due === false, 'settled');
-
-  head('3. #104 The reported case: a 34 over a Monday, reporting in on the Wednesday');
-  // Sunday, then straight to Wednesday. The Monday in between never existed as far as the app was
-  // concerned, and the week was silently skipped rather than deferred.
-  await at(13);                                      // Sunday
-  ok('nothing due on the Sunday before it', (await views()).trueUp.due === false, `on ${named(13)}`);
-  await at(16);                                      // Wednesday — day 14's Monday was stepped over
-  v = await views();
-  ok('the skipped Monday is still due on the Wednesday', v.trueUp.due === true,
-    `due=${v.trueUp.due} on ${named(16)}`);
-  ok('and it names the Monday rather than pretending it is today', v.trueUp.forDay === 14,
-    `for day ${v.trueUp.forDay}, today is ${named(16)}`);
-  ok('saying how long ago it was', v.trueUp.daysAgo === 2, `${v.trueUp.daysAgo} days ago`);
-
-  head('4. #104 It is still one week, not one per day stepped over');
-  await api('/finance/true-up', 'POST', { atsBalance: (await views()).trueUp.expected });
-  v = await views();
-  ok('squared once and it is done', v.trueUp.due === false, `due=${v.trueUp.due}`);
-  await at(17);
-  ok('and it does not come back the next day', (await views()).trueUp.due === false, `on ${named(17)}`);
-
-  head('5. #104 A long jump forward still only owes the most recent Monday');
-  await at(40);
-  v = await views();
-  ok('due again after several weeks', v.trueUp.due === true, `due=${v.trueUp.due} on ${named(40)}`);
-  ok('for the most recent Monday, not the first missed one', v.trueUp.forDay === 35,
-    `for day ${v.trueUp.forDay}`);
-  await api('/finance/true-up', 'POST', { atsBalance: (await views()).trueUp.expected });
+  head('1. #215 A career never opens owing a reconciliation, because there is not one');
+  // #104 was about WHEN the weekly true-up fired. It no longer fires at all: squaring the carrier's bank
+  // is not the driver's job, and the app cannot see the transactions behind that balance anyway.
+  ok('no reconciliation is tracked', !(await api('/bootstrap')).views?.trueUp,
+    JSON.stringify((await api('/bootstrap')).views?.trueUp ?? null));
 
   head('6. #105 and #107 A payday nobody has been shown is held, not lost');
   // Fridays are the days where day % 7 == 4 — 4, 11, 18, 25, 32, 39, 46, 53. This load loads on the

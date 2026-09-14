@@ -111,8 +111,8 @@ const kinds = (c, k) => (c.steps || []).filter((x) => x.kind === k);
   ok('a tractor, with the spec to aim for', !!step(c, 'buy-tractor'),
     step(c, 'buy-tractor')?.title || 'missing');
   ok('a trailer', !!step(c, 'buy-trailer'), step(c, 'buy-trailer')?.title || 'missing');
-  ok('and a reminder that the money moved',
-    /true-up|Square the books/i.test(step(c, 'true-up')?.title || ''), step(c, 'true-up')?.title);
+  ok('and no note telling them to go and square the books',
+    !step(c, 'true-up'), step(c, 'true-up')?.title || 'gone, as it should be');
 
   head('6. Selling a yard takes it off our books, because it is really gone');
   const denver = sells.find((x) => /Denver/i.test(x.title));

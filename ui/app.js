@@ -2316,21 +2316,15 @@ function morePending() { return PENDING.length > 0; }
    for it, so a payday landed on a fuel-stop log and was never mentioned. */
 function unannouncedPay() { return (S.views && S.views.unannouncedPay) || []; }
 
-function pendingTrueUp() {
-  const tu = S.views && S.views.trueUp;
-  return tu && tu.due ? tu : null;
-}
+
 
 function afterStatus(r, fallback = 'Status updated.') {
   const paid = unannouncedPay();
-  const tu = pendingTrueUp();
   const shown = queueModals([
     // Moving up the ladder outranks everything a report-in can turn up, so it goes first.
     r.advance ? () => advanceModal(r.advance) : null,
     paid.length ? () => paydayModal(paid) : null,
     r.homeBrief ? () => homeBriefModal(r.homeBrief) : null,
-    // The books, behind anything with money or a career move in it — those are what the driver came for.
-    tu ? () => trueUpModal(tu) : null,
   ]);
   if (!shown) toast(DISCOVERY ? DISCOVERY.headline : fallback, 'ok');
 }
@@ -2369,34 +2363,10 @@ function advanceModal(n) {
 }
 
 /* Payday. Getting paid should not be a line in a log you scroll past. */
-/* ---- Monday: square the books against what the game actually holds.
-   Prompted rather than left on a tab, because the two drift the moment anything is bought in game the app
-   never posted — a garage, a tractor — and nobody goes looking for a discrepancy they cannot see. */
-function trueUpModal(t) {
-  // Name the Monday. It is not necessarily today's — the clock moves in whatever jumps the player's
-  // driving took, and a week stepped over is now deferred rather than skipped. "Monday — true up the
-  // books" on a Wednesday reads like the app has lost the date; it has not.
-  const late = t.daysAgo > 0;
-  modal(`<div class="panel-head"><h2>${late
-      ? `Monday day ${t.forDay} — still to square`
-      : 'Monday — true up the books'}</h2>
-      ${badge(late ? 'warn' : 'info', late
-        ? `${num(t.daysAgo, 0)} day${t.daysAgo === 1 ? '' : 's'} ago` : 'weekly')}<div class="spacer"></div>
-      <button class="btn tiny ghost" data-act="close-modal">Later</button></div>
-    ${late ? `<div class="callout info"><p style="margin:0">You went past this one — a rest, a long run or
-      your home time carried the clock over it. It is still the week that needs squaring, so we do it now
-      rather than pretending it did not happen.</p></div>` : ''}
-    <p>The company reckons it is holding <b>${money(t.expected)}</b> all in — operating cash plus the
-      maintenance and payroll earmarks. Open ATS and tell me what the bank actually shows.</p>
-    ${t.shortfall > 0 ? `<div class="callout warn"><p>Last time it was short by
-      <b>${money(t.shortfall)}</b>. If that has not been put back yet, it will still be short.</p></div>` : ''}
-    <label>ATS bank balance
-      <input id="tu-balance" type="number" step="0.01" value="${(+t.lastReported || 0)}"></label>
-    <div class="row-actions"><button class="btn primary" data-act="true-up-submit">Square it up</button></div>
-    <p class="hint">If the game is short of the books, something was bought in ATS the app never saw. I will
-      tell you by how much — you put it back with a save editor rather than the company quietly writing it
-      off. If the game is level or over, the game wins and the books come up to it.</p>`);
-}
+/* There is no Monday true-up any more.
+   It asked the driver to square the carrier's bank every week, and where ATS held less than the books it
+   told them to put the difference back with a save editor — the app asking somebody to edit their save so
+   its bookkeeping came out right. The game is the world; when the two disagree the books are wrong. */
 
 /* Marks these settlements as actually seen, so nothing chases the driver about them again. Fire and
    forget on purpose: if it fails the worst case is being shown a payday twice, which beats the bug it
@@ -4335,15 +4305,16 @@ function positionHtml() {
 
   return `<div class="panel">
     <div class="panel-head"><h2>Company position</h2>
-      <span class="sub">${p.hasReportedBalance ? 'reconciled to your ATS bank balance' : 'no game balance reported yet'}</span>
-      <div class="spacer"></div>
-      ${p.hasReportedBalance && !p.inSync
-        ? `<button class="btn tiny primary" data-act="true-up">True up to the game</button>` : ''}</div>
+      <span class="sub">${p.hasReportedBalance ? 'as you last read it off the game' : 'no game balance reported yet'}</span>
+      <div class="spacer"></div></div>
 
-    <div class="callout ${p.inSync ? 'info' : 'warn'}">
-      <p><b>Your ATS bank balance is the company's money.</b> The game already takes fuel, repairs,
-        garages, trucks and hired-driver wages out of it, so the books reconcile to it rather than
-        keeping a second pot of imaginary cash.</p>
+    ${/* No reconciliation, no variance, no True up. The app cannot see what moves that balance — ATS
+          emits a number, not transactions — so a gap was never an error to chase, and squaring the
+          carrier's bank is the one piece of bookkeeping a driver would never be handed. */ ''}
+    <div class="callout info">
+      <p><b>ATS keeps one bank, and that balance is the company's.</b> The game takes fuel, repairs,
+        garages, trucks and hired-driver wages straight out of it. What it does not hold is your pay —
+        in ATS you are the owner, so your wages live only here.</p>
       <p style="margin:0">${esc(p.note)}</p>
     </div>
 
@@ -4369,19 +4340,20 @@ function positionHtml() {
           <tbody>
             ${row('ATS bank balance' + (p.balanceReportedAt ? ' (as of ' + gt(p.balanceReportedAt) + ')' : ''),
                   p.hasReportedBalance ? p.atsBankBalance : p.ledgerCash, 'font-weight:600')}
-            ${row('less maintenance earmark', -p.maintenanceEarmark, 'color:var(--amber2)',
-                  pct(S.settings.maintenanceReservePct * 100, 0) + ' of revenue, drawn down by repairs')}
-            ${row('less payroll earmark', -p.payrollEarmark, 'color:var(--amber2)',
-                  pct(S.settings.payrollReservePct * 100, 0) + ' of revenue, drawn down by settlements')}
+            ${/* The two earmarks are gone. Eight per cent for maintenance and thirty for payroll came
+                  off a balance the app cannot see, so this figure was about three fifths of the number
+                  the player was reading in their own game, for no reason they could point at. What is
+                  left is the one deduction that is real — the app originated every settlement behind
+                  it. */ ''}
             ${row('less wages owed to you', -p.wagesOwed, 'color:var(--amber2)', 'unsettled driver pay')}
             <tr><td><b>Spendable</b></td>
               <td class="num" style="font-weight:700;color:${p.spendable < 0 ? 'var(--red)' : 'var(--green)'}">
                 ${money(p.spendable)}</td></tr>
           </tbody></table></div>
         ${p.warning ? `<div class="callout stop" style="margin-top:10px"><p>${esc(p.warning)}</p></div>` : ''}
-        ${!p.inSync ? `<p class="hint">Books say ${money(p.ledgerCash)}, game says ${money(p.atsBankBalance)} —
-          a ${money(Math.abs(p.variance))} gap. <b>True up</b> posts the difference as an explicit adjustment
-          rather than quietly changing a number.</p>` : ''}
+        <p class="hint">What the fleet earns and what it costs is the <b>fleet report</b> — revenue,
+          wages, repairs, net contribution. That is the company's profit and loss. This is just the bank,
+          read off your game when you want to know whether it can afford something.</p>
       </div>
 
       <div>
@@ -6233,14 +6205,12 @@ async function handleAction(act, d, ev) {
       // until they have already taken the next one. A payday that landed on this close-out queues
       // behind it rather than being lost — closing out on a Friday is how most of them arrive.
       const paid = unannouncedPay();
-      const tu = pendingTrueUp();
       queueModals([
         () => auditModal(r.audit),
         // Closing out AT the yard is arriving home, and now says so — the review and the trailer
         // instruction used to be skipped entirely on this path.
         r.homeBrief ? () => homeBriefModal(r.homeBrief) : null,
         paid.length ? () => paydayModal(paid) : null,
-        tu ? () => trueUpModal(tu) : null,
       ]);
     });
     case 'show-report': {
@@ -6292,18 +6262,6 @@ async function handleAction(act, d, ev) {
         toast(`${r.trip.number} authorized — collect ${d.unit} at ${d.where}.`, 'ok');
       });
     }
-
-    case 'true-up-submit': return run(async () => {
-      const r = absorb(await api('/finance/true-up', 'POST', { atsBalance: fv('tu-balance') }));
-      showNextModal();
-      toast(r.message, r.squared ? 'ok' : 'bad');
-    });
-    case 'true-up': return run(async () => {
-      const r = absorb(await api('/finance/true-up', 'POST',
-        { atsBalance: S.status.atsBankBalance }));
-      loadLedger();
-      toast(r.message, 'ok');
-    });
 
     /* ---- cost model */
     case 'calibrate': return run(async () => { CALIB = await api('/economics/calibrate'); });

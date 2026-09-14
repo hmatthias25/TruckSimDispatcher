@@ -75,35 +75,43 @@ public static class LedgerService
             WagesOwed = s.Driver.UnsettledPay
         };
 
-        var revenue = s.Ledger.Where(e => e.Category == "FreightRevenue").Sum(e => e.Amount);
-        var maintSpend = -s.Ledger.Where(e => e.Category is "Repairs" or "Maintenance").Sum(e => e.Amount);
-        var payrollSpend = -s.Ledger.Where(e => e.Category == "Payroll").Sum(e => e.Amount);
-
-        // Earmarks accrue out of revenue and are drawn down by what has actually been spent.
-        p.MaintenanceEarmark = Math.Max(0, Math.Round(revenue * (decimal)s.Settings.MaintenanceReservePct - maintSpend, 2));
-        p.PayrollEarmark = Math.Max(0, Math.Round(revenue * (decimal)s.Settings.PayrollReservePct - payrollSpend, 2));
-
+        // NOT reconciled against the books, and no longer earmarked.
+        //
+        // This used to compute a variance between the ATS balance and the company's ledger and call
+        // anything over a pound out of sync. That was a double-entry ledger shadowing a game which emits
+        // no transactions — only a balance. ATS moves that number constantly for things the app can never
+        // see: a hired driver's income landing, fuel, tolls, ferries, fines, a garage, a trailer. So the
+        // difference was not an error to chase, it was the shape of the problem, and every "true up" was
+        // the app admitting it could not see what happened and then posting an entry pretending it had.
+        //
+        // It also inverted this app's whole stance. Everything here holds that the player is a DRIVER —
+        // not my money — and then asked them to square the carrier's bank, which is the one piece of
+        // bookkeeping a driver would never be handed.
+        //
+        // The two earmarks went with it. Eight per cent for maintenance and thirty for payroll, taken off
+        // a balance the app cannot see, made Spendable about three fifths of the figure the player was
+        // reading in their own game, for no reason they could point at. A driver has no earmarks.
+        //
+        // What is left is the one deduction that is real: money the company owes the driver. The app
+        // originated every settlement behind it, so it knows that figure exactly.
         p.HasReportedBalance = s.Status.AtsBankBalance != 0 || !string.IsNullOrWhiteSpace(s.Status.AtsBalanceGameTime);
         var basis = p.HasReportedBalance ? p.AtsBankBalance : p.LedgerCash;
-        p.Spendable = Math.Round(basis - p.MaintenanceEarmark - p.PayrollEarmark - p.WagesOwed, 2);
-        // Against TOTAL company cash, not just operating. ATS keeps one pot, and the reserves are an
-        // internal earmark rather than money sitting somewhere else — comparing the game against only
-        // part of the books would report a variance that is not really there.
+        p.Spendable = Math.Round(basis - p.WagesOwed, 2);
         p.TotalCash = TotalCompanyCash(s);
-        p.Variance = Math.Round(p.AtsBankBalance - p.TotalCash, 2);
-        p.InSync = !p.HasReportedBalance || Math.Abs(p.Variance) < 1m;
 
-        if (!p.HasReportedBalance)
-            p.Note = "No ATS balance reported yet. Type what your game shows and the books will reconcile to it.";
-        else if (p.InSync)
-            p.Note = "The books match your game.";
-        else
-            p.Note = p.Variance > 0
-                ? $"Your game shows ${p.Variance:N2} more than the books have recorded — likely income or a sale the app has not seen."
-                : $"Your game shows ${Math.Abs(p.Variance):N2} less than the books — likely spending the app has not seen (a truck, a garage, fuel bought off-trip).";
+        p.Note = !p.HasReportedBalance
+            ? "No ATS balance reported yet. Type what your game shows when you want to know what the " +
+              "company can put its hands on."
+            : p.WagesOwed > 0
+                ? $"ATS keeps one bank, and that balance is the company's. ${p.WagesOwed:N2} of it is owed " +
+                  "to you and is not the company's to spend. Your own pay is the settlement figures — a " +
+                  "different thing from this number."
+                : "ATS keeps one bank, and that balance is the company's. Your own pay is the settlement " +
+                  "figures — a different thing from this number.";
 
         if (p.Spendable < 0)
-            p.Warning = "Committed money exceeds the bank balance. The company is over-extended — settle up or cut the reserve percentages.";
+            p.Warning = "The company owes you more than the bank holds. That is worth knowing before it " +
+                        "buys anything else.";
 
         // The driver's own money. Deliberately computed apart from company cash.
         var loadedMiles = s.Settlements.Sum(x => x.LoadedMiles);
@@ -305,80 +313,18 @@ public static class LedgerService
     public static int MondayOnOrBefore(int day) => Math.Max(0, day) - (Math.Max(0, day) % 7);
 
     /// <summary>
-    /// A Monday has gone by unsquared.
+    /// There is no weekly true-up any more.
     ///
-    /// This used to insist the driver be standing ON a Monday: <c>day % 7 == 0</c>. The game clock only
-    /// moves when the player reports it, and it moves in whatever jumps their play took — a 34 over a
-    /// weekend, a two-day run, a home time. Anybody who reported Sunday and then Wednesday never saw
-    /// the prompt at all, and the week was not deferred, it was skipped. Reported from play after a
-    /// restart taken over a Monday.
+    /// It asked the player, every Monday, to square the carrier's books against their game — and where
+    /// ATS held LESS than the books, it told them to put the difference back with a save editor. That is
+    /// the app asking somebody to edit their save so its own bookkeeping comes out right. The game is the
+    /// world; when the two disagree it is the books that are wrong.
     ///
-    /// So the question is not "is today Monday" but "has a Monday passed that we have not squared".
+    /// The company's finances are a profit and loss now, not a bank to be tied out — see the fleet
+    /// report, which says what the fleet earned and what it cost. What the player reads off ATS is used
+    /// where it is actually useful: once, at the moment the company is deciding whether it can buy
+    /// something.
     /// </summary>
-    public static bool TrueUpDue(AppState s)
-    {
-        var day = GameClock.DayOf(s.Status.GameTime);
-        if (day == null) return false;
-        return s.Driver.LastTrueUpDay < MondayOnOrBefore(day.Value);
-    }
-
-    /// <summary>
-    /// Which Monday the outstanding true-up is for, and how long ago it was. Null when nothing is due.
-    ///
-    /// Said out loud because "Monday — true up the books" on a Wednesday reads like the app has lost
-    /// track of the date. It has not; the Monday it means is simply behind them.
-    /// </summary>
-    public static (int Day, double DaysAgo)? TrueUpFor(AppState s)
-    {
-        var day = GameClock.DayOf(s.Status.GameTime);
-        if (day == null || !TrueUpDue(s)) return null;
-        var monday = MondayOnOrBefore(day.Value);
-        return (monday, day.Value - monday);
-    }
-
-    /// <summary>
-    /// Squares the books against what ATS actually holds.
-    ///
-    /// The game is the world and the books follow it — but only upward. If the game is short of what the
-    /// company owns, no amount of bookkeeping fixes that: the money has to be put back with a save
-    /// editor, and the app says by how much rather than leaving it to be worked out.
-    /// </summary>
-    public static (bool Squared, decimal Expected, decimal Shortfall, string Message) TrueUp(AppState s, decimal atsBalance)
-    {
-        var expected = TotalCompanyCash(s);
-        var day = GameClock.DayOf(s.Status.GameTime) ?? 0;
-
-        s.Status.AtsBankBalance = atsBalance;
-        s.Status.AtsBalanceGameTime = s.Status.GameTime;
-        s.Driver.LastTrueUpDay = day;
-
-        if (atsBalance < expected)
-        {
-            var shortfall = expected - atsBalance;
-            s.Driver.TrueUpShortfall = shortfall;
-            return (false, expected, shortfall,
-                $"The books say the company is holding ${expected:N2} and ATS shows ${atsBalance:N2} — " +
-                $"short by ${shortfall:N2}. That usually means something was bought in game the app never " +
-                "posted: a garage, a tractor, a trailer. The game cannot fund what the company owns, so put " +
-                $"${shortfall:N2} back into the ATS account with a save editor and true it up again. " +
-                "Nothing has been changed on the books.");
-        }
-
-        var over = atsBalance - expected;
-        s.Driver.TrueUpShortfall = 0;
-
-        if (over > 0.005m)
-            Post(s, Operating, over, "Adjustment",
-                 $"Weekly true-up: ATS holds ${atsBalance:N2} against ${expected:N2} on the books. " +
-                 "Taking the game as the world and bringing the books up to it.",
-                 isAdjustment: true);
-
-        return (true, expected, 0,
-            over > 0.005m
-                ? $"Squared up. ATS holds ${atsBalance:N2}, which is ${over:N2} over the books — the game is " +
-                  "the world, so the difference is on the books now. Next true-up is Monday."
-                : $"Squared up. ATS and the books agree at ${atsBalance:N2}. Next true-up is Monday.");
-    }
 
     public static Reconciliation Reconcile(AppState s)
     {
@@ -467,14 +413,17 @@ public class CompanyPosition
     public bool HasReportedBalance { get; set; }
     public decimal LedgerCash { get; set; }
 
-    /// <summary>Operating plus the earmarked reserves — what the game has to be able to cover.</summary>
+    /// <summary>What the company's own books say it holds. A profit and loss, not a bank to tie out.</summary>
     public decimal TotalCash { get; set; }
-    public decimal Variance { get; set; }
-    public bool InSync { get; set; }
 
-    // --- committed against that cash
-    public decimal MaintenanceEarmark { get; set; }
-    public decimal PayrollEarmark { get; set; }
+    // No Variance and no InSync. They compared the ledger against the ATS balance and called anything
+    // over a pound an error — but the app sees only that balance, never the transactions behind it, so
+    // the difference was the shape of the problem rather than a fault to chase.
+    //
+    // No earmarks either. Eight per cent for maintenance and thirty for payroll, taken off a figure the
+    // app cannot see, made Spendable about three fifths of what the player was reading in their own game.
+
+    /// <summary>Money the company owes the driver. The one deduction the app knows exactly.</summary>
     public decimal WagesOwed { get; set; }
     public decimal Spendable { get; set; }
 

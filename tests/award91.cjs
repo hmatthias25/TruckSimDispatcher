@@ -40,34 +40,16 @@ async function report(d, balance) {
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: day(2), code: 'PRI' }));
   await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
 
-  head('1. #91 Monday brings the true-up up on its own');
-  await report(7, 100000);                      // 2000-01-07 = game day 6, a Sunday
-  let tu = (await api('/bootstrap')).views.trueUp;
-  ok('not due on a Sunday', tu.due === false, `due=${tu.due}`);
-
-  await report(8, 100000);                      // game day 7 — Monday
-  tu = (await api('/bootstrap')).views.trueUp;
-  ok('due on the Monday', tu.due === true, `due=${tu.due}`);
-  ok('and it says what the books reckon', tu.expected > 0, `$${tu.expected}`);
-
-  head('2. #91 A game that is short is not written off');
-  const expected = tu.expected;
-  const short = await api('/finance/true-up', 'POST', { atsBalance: expected - 50000 });
-  ok('it refuses to square', short.squared === false, `squared=${short.squared}`);
-  ok('and names the shortfall', Math.abs(short.shortfall - 50000) < 1, `$${short.shortfall}`);
-  ok('it says to put it back with a save editor',
-    /save editor/i.test(short.message || ''), (short.message || '').slice(-120));
-  ok('the books are untouched',
-    Math.abs((await api('/bootstrap')).views.trueUp.expected - expected) < 1,
-    `$${(await api('/bootstrap')).views.trueUp.expected} still`);
-
-  head('3. #91 A game that is over wins, and the books come up to it');
-  const over = await api('/finance/true-up', 'POST', { atsBalance: expected + 25000 });
-  ok('it squares', over.squared === true, `squared=${over.squared}`);
-  const after = (await api('/bootstrap')).views.trueUp;
-  ok('the books now match the game', Math.abs(after.expected - (expected + 25000)) < 1,
-    `$${after.expected} against $${expected + 25000}`);
-  ok('and it does not ask again this week', after.due === false, `due=${after.due}`);
+  head('1. #215 There is no reconciliation to owe');
+  // #91 put a weekly true-up on the driver: square the carrier's books against the game, and where ATS
+  // held less, put the difference back with a save editor. That was the app asking somebody to edit
+  // their save so its bookkeeping came out right. The books are a profit and loss now, not a bank to be
+  // tied out, and the game is simply the world.
+  ok('nothing is owed against the books', !(await api('/bootstrap')).views?.trueUp,
+    JSON.stringify((await api('/bootstrap')).views?.trueUp ?? null));
+  ok('and the position does not grade itself against them',
+    (await api('/bootstrap')).views?.position?.inSync === undefined,
+    `inSync=${(await api('/bootstrap')).views?.position?.inSync}`);
 
   head('4. #92 The award is offered at the top of the ladder, not before');
   let sc = (await api('/bootstrap')).views.showcase;

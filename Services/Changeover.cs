@@ -252,18 +252,9 @@ public static class Changeover
                 Unit = trailer.Ref,
             });
 
-        order.Steps.Add(new ChangeoverStep
-        {
-            Id = "true-up",
-            Kind = Buy,
-            Title = "Square the books once the money has moved",
-            Detail =
-                "Selling a garage and a couple of tractors puts a lot back in the bank, and buying replaces " +
-                "it — neither of which I can see. Do the Monday true-up when the dust settles and the " +
-                $"company's cash comes up to whatever ATS actually holds.\n\n" +
-                "It is prompted on a Monday anyway. This is just a note that the figure will have moved.",
-            Why = "The books only ever come up to the game, so the game has to be right first.",
-        });
+        // No "square the books" step. Selling a garage and buying tractors moves the ATS balance by a
+        // lot, and none of it is the driver's to reconcile — the carrier's bank is not a thing this app
+        // audits any more. Report the balance when it matters and get on with the move.
 
         return order;
     }

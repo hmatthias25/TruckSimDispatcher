@@ -1730,20 +1730,10 @@ app.MapPost("/api/finance/balance", (BalanceRequest req) => Results.Ok(store.Mut
     return Snapshot(s);
 })));
 
-// Squaring the books against what ATS actually holds. Takes the balance rather than reading whatever was
-// last reported, because this is the moment the player is looking at the game and typing what they see.
-app.MapPost("/api/finance/true-up", (TrueUpRequest req) => Results.Ok(store.Mutate<object>(s =>
-{
-    var balance = req.AtsBalance ?? s.Status.AtsBankBalance;
-    var (squared, expected, shortfall, message) = LedgerService.TrueUp(s, balance);
-
-    store.Log(s, "ledger", squared
-        ? $"True-up: ATS ${balance:N2} against ${expected:N2} on the books. Squared."
-        : $"True-up: ATS ${balance:N2} against ${expected:N2} on the books — short ${shortfall:N2}, not adjusted.");
-
-    return new { squared, expected, shortfall, message,
-                 position = LedgerService.Position(s), snapshot = Snapshot(s) };
-})));
+// There is no true-up endpoint any more. The carrier's bank is not the driver's to square, and the app
+// cannot see the transactions behind it — only the balance. Reporting the balance on /status is all the
+// app needs, and it is used where it is actually useful: once, when the company is deciding whether it
+// can afford something.
 
 app.MapPost("/api/finance/entry", (LedgerEntry e) => Results.Ok(store.Mutate(s =>
 {
@@ -2426,18 +2416,6 @@ object Snapshot(AppState? given = null)
                     : new List<object>()
             },
 
-            // A Monday has gone by and the books have not been squared against the game. Not necessarily
-            // TODAY's Monday — the clock jumps in whatever steps the player's driving took, and a week
-            // stepped over used to be a week skipped rather than a week deferred.
-            trueUp = new
-            {
-                due = LedgerService.TrueUpDue(s),
-                forDay = LedgerService.TrueUpFor(s)?.Day,
-                daysAgo = LedgerService.TrueUpFor(s)?.DaysAgo,
-                expected = LedgerService.TotalCompanyCash(s),
-                lastReported = s.Status.AtsBankBalance,
-                shortfall = s.Driver.TrueUpShortfall
-            },
 
             // Paydays the driver has not actually been shown.
             //
