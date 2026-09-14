@@ -2602,6 +2602,15 @@ function fleetReportModal(r) {
         work order ${esc(f.workOrderNumber)}${f.outOfService ? ' · out of service' : ''}</li>`).join('')}</ul>
     </div>` : ''}
 
+    ${(r.trailers || []).some((x) => x.verdict !== 'Keep') ? `<div class="callout warn">
+      <h4>Trailers worth a decision</h4>
+      ${(r.trailers || []).filter((x) => x.verdict !== 'Keep').map((x) => `
+        <p style="margin:0 0 4px"><b>${esc(x.ref)}</b> — ${esc(x.headline)}</p>
+        <ul class="reasons">${(x.evidence || []).map((e) => `<li>${esc(e)}</li>`).join('')}</ul>
+        ${x.replaceWithType ? `<p class="hint" style="margin:0 0 8px">Replace with
+          <b>${esc(x.replaceWithType)}${x.replaceWithSubtype ? ` (${esc(x.replaceWithSubtype)})` : ''}</b>.</p>` : ''}`).join('')}
+    </div>` : ''}
+
     ${r.instructions?.length ? `<div class="callout ${r.playerGetsNewTruck ? 'go' : 'warn'}">
       <h4>${r.playerGetsNewTruck ? 'Go and buy it — that one is yours' : 'What to do in ATS now'}</h4>
       <ul>${r.instructions.map((x) => `<li>${esc(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</li>`).join('')}</ul>
@@ -3766,12 +3775,9 @@ function fleetOpsHtml() {
             <td><input id="fr-odo-${esc(d.id)}" type="number" step="1" min="0" style="width:96px"
                   value="${tk ? Math.round(tk.atsOdometer) : ''}" placeholder="—"></td>
             <td style="white-space:nowrap">${trailerPickHtml(d, tl)}</td>
-            <td><input id="fr-lstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
-                  value="${tl?.stars || ''}" placeholder="—"></td>
-            <td><input id="fr-util-${esc(d.id)}" type="number" step="1" min="0" max="100" style="width:74px"
-                  value="${tl && tl.utilisationPct >= 0 ? Math.round(tl.utilisationPct) : ''}" placeholder="—"></td>
           </tr>`; }).join('')}</tbody></table></div>
         ${playerLineHtml()}
+        ${trailerSectionHtml()}
         <label>Report note<input id="fr-note" placeholder="optional"></label>
         <div class="row-actions"><button class="btn go" data-act="file-report">File report &amp; post to the books</button></div>`
         : '<div class="empty">No hired drivers yet. Hire one in ATS, then add them here.</div>'}
@@ -3870,6 +3876,43 @@ function trailerPickHtml(d, current) {
  * Nothing here is performance. The player is not an AI driver being appraised, so there is no level,
  * rating, dollars a mile, revenue or wage on it.
  */
+/**
+ * Every trailer on the books, with the three lifetime figures ATS keeps on one.
+ *
+ * Its own section rather than a column on a driver's row. A trailer is not a driver's possession, and
+ * gathering it per driver meant the box nobody was pulling produced no row at all — invisible to the one
+ * report whose job is to say whether it is worth keeping.
+ *
+ * No stars. ATS rates a tractor's condition; it does not do the same for a trailer, and the field was
+ * carrying weight it had not earned.
+ */
+function trailerSectionHtml() {
+  const boxes = (S.trailers || []).filter((x) => !x.retired && !/drop/i.test(x.type));
+  if (!boxes.length) return '';
+
+  return `<h3 class="sect">Trailers</h3>
+    <p class="hint">Off the ATS Trailer Manager — <b>Distance on Job</b>, <b>Cargo transported</b> and
+      <b>Weight transported</b> are lifetime totals, so they only go up. Every box gets a row, including
+      the ones nobody is pulling: those are the ones worth a decision.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Trailer</th><th>Type</th><th class="num">Util %</th><th class="num">Distance on job</th>
+        <th class="num">Loads</th><th class="num">Weight (lb)</th><th>Where</th></tr></thead>
+      <tbody>${boxes.map((b) => `<tr>
+        <td><span class="unit">${esc(b.gameId || b.unit)}</span>${b.gameId
+            ? `<div class="sub" style="font-size:10px">unit ${esc(b.unit)}</div>` : ''}</td>
+        <td>${esc(b.type)}${b.subtype ? `<div class="sub" style="font-size:10px">${esc(b.subtype)}</div>` : ''}</td>
+        <td><input id="ft-util-${esc(b.unit)}" type="number" step="1" min="0" max="100" style="width:70px"
+              value="${b.utilisationPct >= 0 ? Math.round(b.utilisationPct) : ''}" placeholder="—"></td>
+        <td><input id="ft-dist-${esc(b.unit)}" type="number" step="1" min="0" style="width:104px"
+              value="${b.distanceOnJobMi >= 0 ? Math.round(b.distanceOnJobMi) : ''}" placeholder="—"></td>
+        <td><input id="ft-loads-${esc(b.unit)}" type="number" step="1" min="0" style="width:78px"
+              value="${b.loadsTransported >= 0 ? Math.round(b.loadsTransported) : ''}" placeholder="—"></td>
+        <td><input id="ft-wt-${esc(b.unit)}" type="number" step="1" min="0" style="width:110px"
+              value="${b.weightTransportedLbs >= 0 ? Math.round(b.weightTransportedLbs) : ''}" placeholder="—"></td>
+        <td class="sub">${esc(b.currentLocation || '—')}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+}
+
 function playerLineHtml() {
   const tk = S.trucks.find((t) => t.unit === S.driver.assignedTruckUnit);
   const tl = S.trailers.find((t) => t.unit === S.driver.assignedTrailerUnit);
@@ -6427,13 +6470,26 @@ async function handleAction(act, d, ev) {
         // And for the equipment: stars, plus an odometer on the tractor only. No miles — the odometer
         // reading IS the mileage, and the app does the subtraction.
         truckStars: fv('fr-tstar-' + x.id), truckOdometer: fv('fr-odo-' + x.id),
-        trailerStars: fv('fr-lstar-' + x.id),
-        trailerUtilisationPct: fvn(`fr-util-${x.id}`) ?? -1,
+        // Trailer condition is no longer gathered here. ATS does not star-rate a trailer, and a figure
+        // hung off a DRIVER line could never see the box nobody is pulling — which is the one most worth
+        // asking about. It has its own section now.
         // Revenue, wages and repairs are not asked for any more: ATS shows no period total for a
         // driver you are not sitting next to, so the boxes could only ever be guessed at and were
         // sensibly left at zero. The app works all three out — see FleetOpsService.FileReport.
       })).filter((l) => l.revenue > 0 || l.repairs > 0 || l.perDay > 0 || l.perMile > 0
                         || l.truckStars > 0 || l.truckOdometer > 0);
+
+      // Every trailer on the books, whoever is or is not pulling it. Blank means "not looked at", which
+      // is not zero — an untouched row keeps whatever figure was already on file.
+      const trailerLines = (S.trailers || [])
+        .filter((x) => !x.retired && !/drop/i.test(x.type))
+        .map((b) => ({
+          unit: b.unit,
+          utilisationPct: fvn(`ft-util-${b.unit}`) ?? -1,
+          distanceOnJobMi: fvn(`ft-dist-${b.unit}`) ?? -1,
+          loadsTransported: fvn(`ft-loads-${b.unit}`) ?? -1,
+          weightTransportedLbs: fvn(`ft-wt-${b.unit}`) ?? -1,
+        }));
 
       // The player's own equipment goes on as its own line. Blank boxes mean "not reported" rather than
       // zero, so an untouched row cannot wipe a damage figure or a reading.
@@ -6448,11 +6504,14 @@ async function handleAction(act, d, ev) {
         });
       }
 
-      if (!lines.length) return toast('Nothing to report — enter at least the $/day or $/mile for one driver.', 'bad');
+      // Trailers are their own section, so a report with no hired drivers but a yard full of boxes is
+      // still worth filing — that is precisely the company asking whether it owns too many trailers.
+      if (!lines.length && !trailerLines.some((x) => x.utilisationPct >= 0 || x.distanceOnJobMi >= 0))
+        return toast('Nothing to report - give me a driver figure or a trailer figure.', 'bad');
       return run(async () => {
         const r = absorb(await api('/fleetops/report', 'POST', {
           periodStartGame: readDayTime('fr-start'), periodEndGame: readDayTime('fr-end'),
-          notes: sv('fr-note'), lines,
+          notes: sv('fr-note'), lines, trailerLines,
         }));
         FLEETOPS = await api('/fleetops');
         // In front of them, not on a card below the form. A period where a tractor went through the

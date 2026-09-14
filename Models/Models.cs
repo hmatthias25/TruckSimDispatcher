@@ -934,6 +934,22 @@ public class Trailer
     public double UtilisationPct { get; set; } = -1;
 
     /// <summary>
+    /// The three lifetime figures ATS keeps on a trailer: <b>Distance on Job</b>, <b>Cargo transported</b>
+    /// (loads) and <b>Weight transported</b>.
+    ///
+    /// Cumulative totals rather than period figures, which is what makes them worth having — they say
+    /// what a box has done in its whole life, and a trailer is worth keeping or not on exactly that.
+    /// Utilisation says whether it is working now; these say whether it ever has.
+    ///
+    /// Negative means never reported. Zero is a reading and a damning one: a trailer with no loads on it
+    /// has earned nothing since the day it was bought.
+    /// </summary>
+    public double DistanceOnJobMi { get; set; } = -1;
+    public double LoadsTransported { get; set; } = -1;
+    public double WeightTransportedLbs { get; set; } = -1;
+    public string LifetimeReportedGameTime { get; set; } = "";
+
+    /// <summary>
     /// Consecutive fleet reports in which no driver was assigned to this box.
     ///
     /// Utilisation only ever arrives on a report line, and a line exists per DRIVER — so a trailer
@@ -2069,6 +2085,39 @@ public class TrailerWatchNote
     public string Note { get; set; } = "";
 }
 
+/// <summary>
+/// One trailer's figures on a fleet report.
+///
+/// Its own line rather than a field on a driver's, because a trailer is not a driver's possession and the
+/// one most worth asking about is the one nobody is pulling. Gathering it per driver meant an idle box
+/// produced no line at all and was invisible to the very report that should have flagged it.
+///
+/// No stars. ATS does not rate a trailer the way it rates a tractor, and the figure was carrying weight
+/// it had not earned.
+/// </summary>
+public class TrailerReportLine
+{
+    public string Unit { get; set; } = "";
+    public string Ref { get; set; } = "";
+    public string Type { get; set; } = "";
+    public string Subtype { get; set; } = "";
+
+    /// <summary>Straight off the Trailer Manager. Negative means the player did not give it.</summary>
+    public double UtilisationPct { get; set; } = -1;
+    public double DistanceOnJobMi { get; set; } = -1;
+    public double LoadsTransported { get; set; } = -1;
+    public double WeightTransportedLbs { get; set; } = -1;
+
+    /// <summary>Keep | Worn | Idle — what the company makes of it.</summary>
+    public string Verdict { get; set; } = "Keep";
+    public string Headline { get; set; } = "";
+    public List<string> Evidence { get; set; } = new();
+
+    /// <summary>What to buy instead, where the answer is not "another one of these".</summary>
+    public string ReplaceWithType { get; set; } = "";
+    public string ReplaceWithSubtype { get; set; } = "";
+}
+
 public class RetirementRecommendation
 {
     public string Unit { get; set; } = "";
@@ -2114,6 +2163,18 @@ public class FleetReport
     public List<PersonnelChange> Personnel { get; set; } = new();
     /// <summary>Units the trade cycle says it is time to replace.</summary>
     public List<RetirementRecommendation> Retirements { get; set; } = new();
+
+    /// <summary>Every trailer on the books, whoever is or is not pulling it.</summary>
+    public List<TrailerReportLine> Trailers { get; set; } = new();
+
+    /// <summary>
+    /// The trailer rows as the player filled them in, on the way IN.
+    ///
+    /// Separate from <see cref="Trailers"/>, which is what the company made of them on the way out. Sent
+    /// with the report rather than gathered per driver, because the box most worth asking about is the
+    /// one nobody is pulling and a per-driver line could never see it.
+    /// </summary>
+    public List<TrailerReportLine> TrailerLines { get; set; } = new();
     public string FiledUtc { get; set; } = DateTime.UtcNow.ToString("o");
 }
 
@@ -2423,6 +2484,7 @@ public class FleetReportLine
     /// driver reports in at the yard instead — see <see cref="HiredDriver.TrailerWhereabouts"/>.
     /// </summary>
     public double TrailerUtilisationPct { get; set; } = -1;
+
 
     [Obsolete("ATS shows no damage percentage for an AI-driven tractor. Kept so older careers still load.")]
     public double DamagePctAfter { get; set; }

@@ -95,8 +95,19 @@ public static class FleetOpsService
             ? Math.Max(0, (pe - ps).TotalDays)
             : 0;
 
-        if (report.Lines == null || report.Lines.Count == 0)
-            throw new InvalidOperationException("A fleet report needs at least one driver line.");
+        // A report with no drivers on it is still a report, so long as it says something. Trailers are
+        // their own section now, and a company with a yard full of boxes and nobody hired has exactly the
+        // question this report exists to answer: does it own too many trailers?
+        var saysSomething = (report.Lines?.Count ?? 0) > 0
+                            || (report.TrailerLines?.Any(x => x.UtilisationPct >= 0
+                                                              || x.DistanceOnJobMi >= 0
+                                                              || x.LoadsTransported >= 0
+                                                              || x.WeightTransportedLbs >= 0) ?? false);
+        if (!saysSomething)
+            throw new InvalidOperationException(
+                "A fleet report needs something on it — a driver's figures, or a trailer's.");
+
+        report.Lines ??= new List<FleetReportLine>();
 
         var code = string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code;
         report.Number = $"{code}-FR-{s.FleetReports.Count + 1:0000}";
@@ -387,6 +398,27 @@ public static class FleetOpsService
         // trailer took the slot off a tractor the company had just decided to put the player in.
         AssessTrailers(s, report);
         // The company may also want another box somewhere. Occasional, and always an ask.
+        // Trailers, on their own terms. Every box on the books gets a row, the three lifetime figures
+        // the player typed are written through, and the company says what it makes of each one.
+        foreach (var line in report.TrailerLines ?? new List<TrailerReportLine>())
+        {
+            var box = s.Trailers.FirstOrDefault(x =>
+                x.Unit.Equals(line.Unit ?? "", StringComparison.OrdinalIgnoreCase));
+            if (box == null) continue;
+
+            // Blank is "not looked at", which is not zero — an unreported figure keeps what it had.
+            if (line.UtilisationPct >= 0) box.UtilisationPct = line.UtilisationPct;
+            if (line.DistanceOnJobMi >= 0) box.DistanceOnJobMi = line.DistanceOnJobMi;
+            if (line.LoadsTransported >= 0) box.LoadsTransported = line.LoadsTransported;
+            if (line.WeightTransportedLbs >= 0) box.WeightTransportedLbs = line.WeightTransportedLbs;
+            if (line.DistanceOnJobMi >= 0 || line.LoadsTransported >= 0 || line.WeightTransportedLbs >= 0)
+                box.LifetimeReportedGameTime = report.PeriodEndGame;
+        }
+
+        report.Trailers = TrailerHealth.Assess(s);
+        foreach (var v in report.Trailers.Where(x => x.Verdict != "Keep"))
+            report.Findings.Add(v.Headline);
+
         TrailerFleet.Consider(s, report);
 
         report.NetContribution = Math.Round(report.TotalRevenue - report.TotalWages - report.TotalRepairs, 2);
@@ -633,8 +665,29 @@ public static class FleetOpsService
             ? $" (allowing for a level {d.Level} driver still developing)"
             : d.Level > 0 ? $" at level {d.Level}" : "";
 
-        var dayShort = fleetPerDay > 0 && p.PerDay > 0 && p.PerDay < fleetPerDay * allowance;
-        var mileShort = fleetPerMile > 0 && p.PerMile > 0 && p.PerMile < fleetPerMile * allowance;
+        // No floor at zero on the DRIVER's figure.
+        //
+        // These read "p.PerDay > 0" and "p.PerMile > 0", meaning to say "reported" — but
+        // GameFiguresReported already says that, and what the guards actually did was exempt every figure
+        // at or below zero. So a driver costing the company money on every mile was the one case the test
+        // could not see. Reported from play: negative dollars per mile and per week, and no probation.
+        //
+        // A negative is a reading, and the strongest one there is.
+        var dayShort = fleetPerDay > 0 && p.PerDay < fleetPerDay * allowance;
+        var mileShort = fleetPerMile > 0 && p.PerMile < fleetPerMile * allowance;
+
+        // Losing money is its own verdict and gets its own words. Measuring it as a fraction of the fleet
+        // average reads as a near miss — "$-0.42/mi against a fleet average of $1.80" invites the eye to
+        // see a gap rather than a hole.
+        if (p.PerMile < 0 || p.PerDay < 0)
+        {
+            why = p.PerMile < 0 && p.PerDay < 0
+                ? $"${p.PerMile:0.00}/mi and ${p.PerDay:N0}/day — that unit is losing money every time it moves."
+                : p.PerMile < 0
+                    ? $"${p.PerMile:0.00}/mi. Every loaded mile costs the company money."
+                    : $"${p.PerDay:N0}/day. The unit costs more to run than it brings in.";
+            return true;
+        }
 
         if (dayShort && mileShort)
         {

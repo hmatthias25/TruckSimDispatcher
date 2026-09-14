@@ -158,7 +158,24 @@ public static class TrailerSpec
     {
         var divisions = string.Join(" ", s.Company.Divisions ?? new List<string>()).ToLowerInvariant();
         var name = (s.Company.Name ?? "").ToLowerInvariant();
-        var hasHazmat = (s.Application?.HasHazmat ?? false) || s.Driver.Qualifications.Contains("Hazmat");
+        var hasHazmat = (s.Application?.HasHazmat ?? false)
+                        || s.Driver.Qualifications.Contains("Hazmat")
+                        || s.Driver.Endorsements.Count > 0;
+
+        // Nothing placarded for a driver who is not cleared for it — whatever the carrier is called.
+        //
+        // The branches below read the company name and divisions, so a carrier with "chemical" in its
+        // name handed a chemical tanker to anybody, endorsement or not. Reported from play: a company
+        // owning a chem tank that cannot be used, because nobody there holds the class it needs. That is
+        // not equipment, it is money parked on a yard.
+        //
+        // What gates a tanker is what goes IN it — fuel is class 3, chemical class 8, gas class 2, and
+        // food-grade or dry-bulk need nothing at all. So the honest fallback is a tanker they can
+        // actually run, and which of the two depends on what the carrier hauls.
+        if (!hasHazmat)
+            return divisions.Contains("bulk") || divisions.Contains("cement") || divisions.Contains("grain")
+                ? TankerKinds.First(k => k.Key == "Dry Bulk")
+                : TankerKinds.First(k => k.Key == "Food Grade");
 
         if (name.Contains("chemical") || divisions.Contains("chemical"))
             return TankerKinds.First(k => k.Key == "Chemical");

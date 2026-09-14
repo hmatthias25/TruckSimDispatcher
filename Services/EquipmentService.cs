@@ -421,7 +421,21 @@ public static class EquipmentService
             y.City.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)
             && y.State.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase));
 
-        bool Free(Trailer t) => string.IsNullOrWhiteSpace(t.AssignedTruckUnit) && !HeldByHire(t);
+        // A box the driver has TOLD us is parked is free, whatever the books say.
+        //
+        // Reported from play: told to collect a reefer "on the road 0 miles away" while it sat at the
+        // terminal. The driver had reported it parked; a hired driver's record still named it, so
+        // HeldByHire won, and the load went down the "out with one of our own drivers" branch — which
+        // opens "is out on the road" — while Whereabouts costed it at nought days, because it is parked.
+        // A trailer that is simultaneously out on the road and no distance away.
+        //
+        // The player is looking at it. Their report outranks our bookkeeping, exactly as it does for the
+        // trailer hooked to their own truck.
+        bool ReportedParked(Trailer t) =>
+            t.Whereabouts.Equals("Parked", StringComparison.OrdinalIgnoreCase);
+
+        bool Free(Trailer t) =>
+            ReportedParked(t) || (string.IsNullOrWhiteSpace(t.AssignedTruckUnit) && !HeldByHire(t));
 
         var free = (hereYard != null ? matching.FirstOrDefault(t => Free(t) && t.HomeTerminalId == hereYard.Id) : null)
                    ?? (homeYard != null ? matching.FirstOrDefault(t => Free(t) && t.HomeTerminalId == homeYard.Id) : null)
@@ -439,6 +453,12 @@ public static class EquipmentService
                 ? $"This is {free.Ref} — the one I had you mark as your own last trip, so it should be sitting " +
                   "right where you left it. "
                 : "";
+
+            // And if the books had somebody on it, they do not have it. Left standing, two drivers are
+            // recorded on one box and every later assignment decision reads the wrong one.
+            foreach (var h in s.HiredDrivers.Where(h =>
+                         h.AssignedTrailerUnit.Equals(free.Unit, StringComparison.OrdinalIgnoreCase)))
+                h.AssignedTrailerUnit = "";
 
             return Issue(s, new EquipmentOrder
             {
