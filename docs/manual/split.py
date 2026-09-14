@@ -66,6 +66,8 @@ PLAYER_TITLES = {
     "Reporting after you load, and getting stuck at a dock",
     "Two kinds of receiver, and what each makes you wait for",
     "Saying you have arrived, and when they actually take it",
+    "How the company is doing, and what it does about it",
+    "Things that happen to your drivers",
     "Closing out, and never typing a number twice",
     "The empty miles between two loads",
     "Clocks at delivery, and the carry-forward",

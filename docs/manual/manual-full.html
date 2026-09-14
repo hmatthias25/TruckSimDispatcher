@@ -341,7 +341,8 @@
   <div class="rule">
     <h4>It will not invent numbers to make the books balance</h4>
     <p>No revenue from imaginary drivers, no damage on equipment your game has never heard of, and if
-      the accounts drift the app asks you to reconcile rather than quietly writing a new balance.</p>
+      the company's books and your game balance disagree, that is because ATS keeps one bank and the app
+      is not keeping a copy of it &mdash; not because something needs correcting.</p>
   </div>
 
   <div class="pfoot"><span>1 &middot; What this app is</span><span>3</span></div>
@@ -3114,6 +3115,16 @@
       reserves it. Skip that and one of the hired drivers has it before you are back.</p>
     <p style="margin-top:6pt">Asked about the <b>trailer</b>, never about who is pulling it: AI drivers in
       ATS change trailers whenever the game feels like it and never tell anybody.</p>
+    <p style="margin-top:6pt">It is <b>one form and one button</b>. Put every box in, then send it once.
+      An earlier build had a button on each row, and pressing one threw the rest of your answers away.</p>
+  </div>
+
+  <div class="note">
+    <h4>Say how long you are taking, because it changes the answer</h4>
+    <p>The same form asks how many days you are home for &mdash; <b>2 to 10</b>, two being enough to sit a
+      34. A trailer three days out costs you nothing if you are home for five: the game skips that time
+      anyway and the box is back before you are. What dispatch weighs is the days <em>past</em> your home
+      time, so a long break makes an outbound trailer cheap and a short one makes it dear.</p>
   </div>
 
   <div class="pfoot"><span>13 &middot; Home time</span><span>42</span></div>
@@ -3643,10 +3654,13 @@
   <h2>Money — one bank account, two sets of obligations</h2>
 
   <div class="rule">
-    <h4>Your ATS bank balance is the company's money</h4>
-    <p>The game already deducts fuel, repairs, garages, trucks and hired-driver wages from it. Keeping a
-      second, parallel pot of imaginary money would double-count everything, so the app reconciles to
-      the one balance you report.</p>
+    <h4>ATS keeps one bank, and that balance is the company's</h4>
+    <p>The game already deducts fuel, repairs, garages, trucks and hired-driver wages from it. What it
+      does not hold is <b>your pay</b> &mdash; in ATS you are the owner, so your wages exist only here.</p>
+    <p style="margin-top:6pt">The app does <b>not</b> reconcile against that balance and never asks you
+      to square it. It cannot see what moves the number &mdash; ATS reports a balance, never the
+      transactions behind it &mdash; so a gap was never an error to chase. The company's finances are a
+      profit and loss, which is what the <b>fleet report</b> is for.</p>
   </div>
 
   <svg class="dg" width="580" height="238" viewBox="0 0 580 238">
@@ -3656,25 +3670,12 @@
 
     <path d="M290 34 L290 48" class="ln" marker-end="url(#a)"/>
 
-    <rect x="0" y="48" width="180" height="46" class="bx-a" rx="4"/>
-    <text x="10" y="66" class="ttl">&minus; Maintenance earmark</text>
-    <text x="10" y="80" class="sm">8% of booked revenue, held</text>
-    <text x="10" y="90" class="sm">back for repairs and PM</text>
+    <rect x="200" y="48" width="180" height="46" class="bx-r" rx="4"/>
+    <text x="210" y="66" class="ttl">&minus; Wages owed to you</text>
+    <text x="210" y="80" class="sm">accrued but not yet settled.</text>
+    <text x="210" y="90" class="sm">The one real deduction</text>
 
-    <rect x="200" y="48" width="180" height="46" class="bx-a" rx="4"/>
-    <text x="210" y="66" class="ttl">&minus; Payroll earmark</text>
-    <text x="210" y="80" class="sm">30% of booked revenue,</text>
-    <text x="210" y="90" class="sm">held back for settlements</text>
-
-    <rect x="400" y="48" width="180" height="46" class="bx-r" rx="4"/>
-    <text x="410" y="66" class="ttl">&minus; Wages owed to you</text>
-    <text x="410" y="80" class="sm">accrued but not yet settled.</text>
-    <text x="410" y="90" class="sm">A real liability</text>
-
-    <path d="M90 94 L90 106 L290 106" class="ln"/>
-    <path d="M290 94 L290 106" class="ln"/>
-    <path d="M490 94 L490 106 L290 106" class="ln"/>
-    <path d="M290 106 L290 120" class="ln" marker-end="url(#a)"/>
+    <path d="M290 94 L290 120" class="ln" marker-end="url(#a)"/>
 
     <rect x="150" y="120" width="280" height="38" class="bx-g" rx="4"/>
     <text x="162" y="138" class="ttl">= SPENDABLE CASH</text>
@@ -3682,20 +3683,22 @@
 
     <rect x="0" y="176" width="580" height="58" class="bx-b" rx="4"/>
     <text x="12" y="194" class="ttl">Your wages live only in this app</text>
-    <text x="12" y="209" class="sm">ATS has no concept of paying its owner a per-mile rate, so driver pay never touches your game balance. It accrues here,</text>
-    <text x="12" y="221" class="sm">settles on the Payroll tab, and is tracked as money the company owes you. The earmarks are computed shares of the one</text>
-    <text x="12" y="232" class="sm">balance — not separate accounts holding separate money.</text>
+    <text x="12" y="209" class="sm">ATS has no concept of paying its owner a per-mile rate, so driver pay never touches your game balance. It accrues here and</text>
+    <text x="12" y="222" class="sm">settles on the Payroll tab. It is the one thing taken off the balance, because the app originated every settlement behind it.</text>
   </svg>
 
-  <h3>When the books drift</h3>
-  <p>They will. You will buy something in game and forget to record it, or a repair will happen off the
-    books. When the ledger and your reported balance disagree, use <b>Finances → True up to game</b>. It
-    posts an explicit, labelled adjustment for the difference.</p>
+  <h3>The books will not match the game, and that is fine</h3>
+  <p>They cannot. ATS moves that balance constantly for things the app never sees &mdash; a hired
+    driver's income landing, fuel, tolls, ferries, fines, a garage bought on a whim. The app is not
+    keeping a shadow copy of your bank, so there is nothing to square.</p>
 
-  <div class="warn">
-    <h4>It reconciles rather than inventing a balance</h4>
-    <p>The adjustment is a visible ledger line with a memo, not a silent rewrite. You can always see
-      what was corrected and when.</p>
+  <div class="rule">
+    <h4>What the books are actually for</h4>
+    <p>The <b>fleet report</b> is the company's profit and loss: revenue in, wages and repairs out, and a
+      net figure per period. That is what says whether the carrier is making money &mdash; and what the
+      company acts on when it decides to open a yard, thin one, or buy you a better tractor.</p>
+    <p style="margin-top:6pt">The balance you report is used for one thing: whether the company can put
+      its hands on enough to buy something. Read it off the game when that question comes up.</p>
   </div>
 
   <div class="pfoot"><span>16 &middot; Money</span><span>53</span></div>
@@ -3720,7 +3723,7 @@
     <tr><td>Fuel &middot; Tolls &middot; Fines &middot; Overhead</td><td>Close-out. Fuel is summed across every stop on the trip; overhead is the per-load fixed charge.</td></tr>
     <tr><td>Repairs / Maintenance</td><td>A work order is closed. Preventive work books separately from damage repair.</td></tr>
     <tr><td>Payroll &middot; Cancellation</td><td>A settlement is issued, or a booked load is cancelled and the penalty charged to the company.</td></tr>
-    <tr><td>Adjustment</td><td>You trued up to the game balance.</td></tr>
+    <tr><td>Adjustment</td><td>A correction posted by hand, with a memo saying what it was for.</td></tr>
   </table>
 
   <div class="note">
@@ -3749,23 +3752,20 @@
 
   <div class="rule">
     <h4>Blank is not zero</h4>
-    <p>Until you have actually told the app what the game holds, it says so and reconciles nothing. It
-      will not compare its own correct books against a number you never gave it and then report a
-      mismatch — which is exactly what an earlier build did, and it was maddening.</p>
+    <p>Until you have told the app what the game holds, it says so and leaves it alone. Blank and zero
+      are different states and the app keeps them apart &mdash; a genuine empty account is a reading,
+      and the app takes it as one.</p>
   </div>
 
-  <p>Once reported, any gap between the books and the game is shown with a plain-English guess at the
-    cause. Money in usually means a sale the app has not seen; money out usually means fuel, a garage or
-    a truck bought off-trip.</p>
+  <p>Nothing is compared against it. There is no variance, no in-sync verdict and no <i>True up</i>
+    button &mdash; an earlier build had all three, plus a weekly Monday chore to square the books, and
+    where ATS held less than the ledger it told you to <b>put the money back with a save editor</b>.
+    That was the app asking you to edit your save so its own arithmetic came out right.</p>
 
-  <p><b>True up</b> posts the difference as an explicit adjustment entry. It never quietly rewrites a
-    balance — the correction is a line in the ledger like everything else, with a memo saying what it
-    was for.</p>
-
-  <div class="note">
-    <h4>A reported zero is still a real reading</h4>
-    <p>If your game genuinely holds nothing, report it as zero and the app treats that as a fact and
-      reconciles against it. Blank and zero are different states, and the app keeps them apart.</p>
+  <div class="rule">
+    <h4>The game is the world</h4>
+    <p>When your game and the app's books disagree, the books are wrong and it does not matter. They are
+      not a copy of your bank; they are a record of what the fleet earned and what it cost.</p>
   </div>
 
   <div class="pfoot"><span>16 &middot; Money</span><span>55</span></div>
@@ -4453,6 +4453,13 @@
       the replacement already on the fleet and you are moved into it; report the replacement afterwards and
       it comes to you on arrival, because a driver with no tractor is the only one it can be for. Either
       order works and neither leaves you sitting in nothing.</p>
+  </div>
+
+  <div class="note">
+    <h4>The trailer is a separate answer</h4>
+    <p>A wreck can leave the app with no idea what is behind the cab. <b>Equipment &rarr; What is hooked
+      to you</b> settles it in one press &mdash; pick the box off the fleet, or describe one it has never
+      heard of. It does not argue, because you are looking at the trailer and it is not.</p>
   </div>
 
   <div class="note">
@@ -5330,9 +5337,9 @@
     <p>Only units flagged as being in an ATS garage are named, and only yards in cities you have driven to.
       The rest is company backdrop &mdash; it exists so the books make sense. Being told to sell a truck
       that was never bought is how an instruction stops being worth reading.</p>
-    <p style="margin-top:6pt">Selling and buying moves a lot of money the app cannot see, so the last step
-      is a reminder to run the <b>Monday true-up</b> once the dust settles. If you had already done all of
-      this before being asked, put the instruction away and it stays in your career file.</p>
+    <p style="margin-top:6pt">Selling and buying moves a lot of money the app cannot see, and none of it
+      is yours to square &mdash; the carrier's bank is not something this app audits. If you had already
+      done all of this before being asked, put the instruction away and it stays in your career file.</p>
   </div>
 
   <div class="pfoot"><span>20 &middot; Career</span><span>77</span></div>
@@ -5426,14 +5433,16 @@
     <p>Utilisation comes off the Trailer Manager, and it arrives <i>per driver</i>. So a trailer nobody
       is assigned to used to produce no reading at all and stayed invisible &mdash; the one box most
       obviously worth asking about was the only one the company could not see.</p>
-    <p>Periods with nobody on a trailer are counted now. One puts it on the watch list. <b>Three
-      consecutive</b> and the company trades it &mdash; a box sitting untouched is the <i>wrong type</i>
-      for the work this carrier gets, not one trailer too many, so it goes and something that is
-      actually earning comes in behind it.</p>
-    <p>What replaces it is chosen on two figures, because either alone misleads. <b>Utilisation</b> is
-      how much of the week a type moved; <b>revenue per period</b> is what the moving was worth. A
-      flatbed out five days a week on cheap freight is busier and poorer than a reefer out three, and a
-      company replacing on utilisation alone would keep buying the busy one. The report shows both.</p>
+    <p>Every trailer gets a row now, so an idle box cannot hide. The company reaches one of two
+      verdicts, and they take opposite answers:</p>
+    <p style="margin-top:6pt"><b>Worn</b> &mdash; it has done the work and is still doing it. Replace it
+      with the same thing. <b>Idle</b> &mdash; under 15% utilisation across two reports. That is not a
+      trailer working badly, it is money parked on a yard, and replacing it like for like repeats the
+      mistake. What goes in its place is whatever the fleet is <i>already</i> keeping busy, which is a
+      measurement rather than a guess.</p>
+    <p style="margin-top:6pt">A box <b>nobody is cleared to pull</b> is called out straight away rather
+      than waiting to look idle &mdash; a chemical tanker at a company with no hazmat class is not
+      under-performing, it is not equipment.</p>
   </div>
 
 
@@ -5799,8 +5808,7 @@
       because a figure that appears from nowhere is a figure nobody trusts, and because seeing the basis
       is what makes a mistyped rate obvious.</p>
     <p style="margin-top:6pt">A figure you enter yourself still wins. This is a fallback for what cannot
-      be read, not a wall: if you are reconciling against your ATS bank balance and know what a period
-      actually made, say so and it is used.</p>
+      be read, not a wall: if you know what a period actually made, say so and it is used.</p>
   </div>
 
   <div class="pfoot"><span>21 &middot; Hired drivers</span><span>85</span></div>
@@ -5836,16 +5844,15 @@
   </div>
 
   <div class="note">
-    <h4>Stars and utilisation, never mileage</h4>
-    <p>An owned trailer reports no revenue &mdash; the money is booked against the job, not the box. What it
-      does report is <b>utilisation</b>: the share of the past week it was in use, from the ATS Trailer
-      Manager. That and condition are what a review asks for.</p>
-    <p style="margin-top:6pt">Both feed the decision to keep it. Stars at the line are reason enough alone;
-      idleness is a quiet fortnight, so it pairs with age or with what the driver pulling it earns. It is
-      never decided on mileage the trailer does not report.</p>
-    <p style="margin-top:6pt">A due-back date used to be asked for here and is gone. Where a TRAILER is
-      gets asked when you report in at the yard &mdash; parked is free, inbound and close is a day or so,
-      outbound is days whatever the distance.</p>
+    <h4>Trailers are not on the driver rows at all</h4>
+    <p>Which box a hired driver is nominally on was never read by anything, so the report stopped asking.
+      Trailers have <b>their own section</b> &mdash; every box on the fleet, including the ones nobody is
+      pulling, which are the ones most worth a decision.</p>
+    <p style="margin-top:6pt">No stars either. ATS rates a tractor's condition; it does not do the same
+      for a trailer, and the field was carrying weight it had not earned. What the game does keep is
+      three lifetime totals, and those are what the section asks for.</p>
+    <p style="margin-top:6pt">Where a trailer IS gets asked on the last run before home time, which is
+      the only moment the answer still buys you anything.</p>
   </div>
 
   <div class="pfoot"><span>21 &middot; Hired drivers</span><span>86</span></div>
@@ -6134,34 +6141,21 @@
   <div class="pfoot"><span>21 &middot; Probation and requests</span><span>92</span></div>
 </div>
 
-<!-- ============================================================ 21i - the award truck and the true-up -->
+<!-- ============================================================ 21i - the award truck -->
 <div class="page">
   <div class="kicker">Section 21, continued</div>
-  <h2>Squaring the books, and the truck at the end of it</h2>
+  <h2>The truck at the end of it</h2>
 
-  <p class="lede">Two things that only happen when you have got somewhere: a weekly reckoning with the
-    game, and the truck a carrier gives its best driver.</p>
-
-  <h3>Monday: true up against ATS</h3>
-  <p>The app keeps the company books and ATS keeps the bank balance, and the two drift the moment anything
-    is bought in game the app never posted &mdash; a garage, a couple of tractors. So every <b>Monday</b>
-    the first thing you do brings up a prompt, the same way payday does. Open the game and type in what
-    the bank actually shows.</p>
-
-  <p>It does not have to be <em>that</em> Monday. A 34 over a weekend steps straight over one, and the
-    prompt still comes up and says which Monday it means. Stepped over is deferred, not skipped.</p>
-  <p>It is measured against <b>total company cash</b>: operating plus the maintenance and payroll
-    earmarks. ATS keeps one pot and the reserves are an internal split, so the game has to be able to
-    cover the lot.</p>
+  <p class="lede">The one reward here you can see out of the windscreen: the truck a carrier gives its
+    best driver.</p>
 
   <div class="rule">
-    <h4>The books only ever come up to the game</h4>
-    <p>If ATS holds <em>more</em> than the books, the game wins and the difference is posted. The game is
-      the world and the books follow it.</p>
-    <p style="margin-top:6pt">If ATS holds <em>less</em>, nothing is adjusted. That is not an accounting
-      problem, it is money missing from a company that owns what it owns &mdash; so you are told the exact
-      figure and asked to put it back with a save editor. The alternative is the company quietly writing
-      off equipment it is still running, which would make every number after it a lie.</p>
+    <h4>There is no weekly reckoning any more</h4>
+    <p>There used to be a <b>Monday true-up</b> on this page: square the company's books against your
+      game every week, and where ATS held less than the ledger, put the difference back with a save
+      editor. That was the app asking you to edit your save so its own arithmetic came out right.</p>
+    <p style="margin-top:6pt">The carrier's bank is not yours to square and never was. The books are a
+      profit and loss now &mdash; see section 16 &mdash; and the game is simply the world.</p>
   </div>
 
   <h3>Top of the ladder: pick your truck</h3>
@@ -6296,6 +6290,114 @@
     &mdash; that is a bad odometer, not a windfall.</p>
 
   <div class="pfoot"><span>21 &middot; Restarts and empty miles</span><span>95</span></div>
+</div>
+
+<!-- ============================================================ 21y - company health -->
+<div class="page">
+  <div class="kicker">Section 21, continued</div>
+  <h2>How the company is doing, and what it does about it</h2>
+
+  <p class="lede">Every fleet report ends with a verdict on the carrier itself. This is what the books
+    are for now that they have stopped trying to be a copy of your bank.</p>
+
+  <p>It is read off the company's own history &mdash; net contribution across the last six reports,
+    after wages and repairs. Two reports minimum: one fortnight is weather rather than climate, and the
+    app says so instead of guessing.</p>
+
+  <table>
+    <tr><th style="width:1.2in">Band</th><th>What it means, and what follows</th></tr>
+    <tr><td><b>Thriving</b></td><td>Making real money. The company expands &mdash; see below.</td></tr>
+    <tr><td><b>Steady</b></td><td>Holding its own. Nothing dramatic either way.</td></tr>
+    <tr><td><b>Tight</b></td><td>Running thin. Operations holds off on anything new.</td></tr>
+    <tr><td><b>Struggling</b></td><td>Losing money. Something has to give.</td></tr>
+  </table>
+
+  <div class="rule">
+    <h4>Doing well: it grows</h4>
+    <p>Either a yard it already has goes up a tier &mdash; Small holds one tractor, Medium three, Large
+      five, so an upgrade is what lets a yard take anybody on &mdash; or it opens a new one.</p>
+    <p style="margin-top:6pt"><b>Official cities only.</b> The base map and the SCS DLC. Coast to Coast
+      and More American Cities are mods and the app cannot know which you have installed; sending you to
+      buy a garage in a town that is not in your game would be worse than not expanding at all.</p>
+  </div>
+
+  <div class="rule">
+    <h4>Doing badly: it cuts, in the order a real carrier would</h4>
+    <p><b>Thin a yard first.</b> The weakest earners there are let go and the rest stay &mdash; three
+      drivers down to one, not the lot.</p>
+    <p style="margin-top:6pt"><b>Then sell idle equipment</b>, which the trailer section has already
+      named.</p>
+    <p style="margin-top:6pt"><b>Close a terminal last</b>, and never headquarters. The people go with
+      it and so does the equipment &mdash; the tractors and boxes move to the home yard rather than
+      evaporating. You sell the garage in ATS; that money is the company's.</p>
+  </div>
+
+  <div class="note">
+    <h4>Empty seats get called out whatever the figures say</h4>
+    <p>A tractor nobody is in earns nothing and still costs to keep. What the company's fortunes change
+      is not whether it needs somebody but <b>who it can attract</b>: level 1&ndash;2 when it is
+      struggling, 3&ndash;6 steady, 6&ndash;9 when it is thriving. The level is named because ATS shows
+      it in the hiring screen, which makes it an instruction you can follow.</p>
+  </div>
+
+  <div class="pfoot"><span>21 &middot; Hired drivers</span><span class="pn"></span></div>
+</div>
+
+<!-- ============================================================ 21y2 - conduct -->
+<div class="page">
+  <div class="kicker">Section 21, continued</div>
+  <h2>Things that happen to your drivers</h2>
+
+  <p class="lede">The report used to judge a driver on money and nothing else, so a fleet could run a
+    game-year without one preventable. That is a spreadsheet, not a fleet.</p>
+
+  <p>Now things happen on the road, and they turn up on the fleet report beside everything else: a dock
+    post clipped backing in, a jack-knife on a wet ramp, a citation, a rolled tractor.</p>
+
+  <div class="rule">
+    <h4>This is the company's world, not something the game told us</h4>
+    <p>ATS reports a level, a rating and some money. It does not report that Tom hit a bridge. So the
+      incident is the carrier's own &mdash; seeded on the driver and the report so it cannot be
+      re-rolled &mdash; and it is never dressed up as a reading off your game. Same standing as a
+      receiver's opening hours or the queue at a gate.</p>
+  </div>
+
+  <table>
+    <tr><th style="width:1.3in">Level</th><th class="num">Chance a period</th><th>&nbsp;</th></tr>
+    <tr><td>1&ndash;2</td><td class="num">16%</td><td>Green. Still learning where the trailer ends.</td></tr>
+    <tr><td>3&ndash;4</td><td class="num">12%</td><td>&nbsp;</td></tr>
+    <tr><td>5&ndash;6</td><td class="num">9%</td><td>&nbsp;</td></tr>
+    <tr><td>7&ndash;8</td><td class="num">7%</td><td>&nbsp;</td></tr>
+    <tr><td>9 and up</td><td class="num">5%</td><td>Which is the whole reason a developed driver is worth keeping.</td></tr>
+  </table>
+
+  <div class="rule">
+    <h4>Three in ten are not their fault</h4>
+    <p>Rear-ended at a light, a car over the centre line, a steer blowout on the interstate. The company
+      still has to replace the tractor and it still costs real money &mdash; but the driver did nothing
+      and is <b>not marked for it</b>. A carrier that disciplines people for being hit loses the ones
+      worth keeping.</p>
+  </div>
+
+  <p>Most of what is their fault is a scrape and a word on the file. A serious one puts them on
+    probation &mdash; the <em>same</em> probation the figures use, deliberately, because two ladders
+    would tell a driver they were fine and not fine at once. Worse ends the job. Rarely one writes a
+    tractor off, and then you have a real bill to pay in ATS.</p>
+
+  <div class="note">
+    <h4>Nobody is judged on their first fortnight</h4>
+    <p>Four reports of settling in before conduct is rolled at all. A company that sacks somebody for a
+      preventable before it has properly seen them work is not one anybody would drive for.</p>
+  </div>
+
+  <div class="note">
+    <h4>Pay follows the level</h4>
+    <p>A quarter of what they bring in at the bottom, two fifths at the top. A flat share for everybody
+      said a level 9 and a rookie cost the company the same &mdash; and so nobody was ever worth keeping
+      in particular. A share you set by hand is yours and is left alone.</p>
+  </div>
+
+  <div class="pfoot"><span>21 &middot; Hired drivers</span><span class="pn"></span></div>
 </div>
 
 <!-- ============================================================ 21z - the two empty legs -->
@@ -6468,10 +6570,16 @@
         <td>The destination's state is not in the geography table — usually a map-mod city. Home time simply does not score that load.</td></tr>
     <tr><td>A city never offers freight in game</td>
         <td>It is not truly discovered. Revealing cities with an editor does not count; you have to drive there. See Section 14.</td></tr>
+    <tr><td>It has you on the wrong trailer, or on none</td>
+        <td><b>Equipment &rarr; What is hooked to you</b>. Pick the box off the fleet or describe one it
+            has never heard of, and press <i>I am pulling this</i>. It is always available and it never
+            argues &mdash; you are looking at the trailer and the app cannot see your game. Use it after
+            a write-off, a reassignment you ignored, or a trailer you bought and forgot to add.</td></tr>
     <tr><td>Damage alerts for trucks you do not own</td>
         <td>Units are flagged as being in your ATS garage when they are not. Untick the flag, or use Fleet → trim.</td></tr>
     <tr><td>Ledger disagrees with your game balance</td>
-        <td><b>Finances → True up to game</b>. It posts a visible adjustment rather than rewriting history.</td></tr>
+        <td>It is meant to. The app keeps a profit and loss, not a copy of your bank &mdash; ATS moves that
+            number for a dozen things the app never sees. Nothing needs squaring. See Section 16.</td></tr>
     <tr><td>Repairs recorded as free</td>
         <td>A work order was closed with the cost left at zero. Reopen the record — the closing dialog now asks you to confirm a zero cost.</td></tr>
     <tr><td>The app opened a blank career</td>
