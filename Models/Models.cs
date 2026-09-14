@@ -2865,6 +2865,20 @@ public class HosRules
     public double StopDispatchAtCycleHours { get; set; } = 11;
 
     /// <summary>
+    /// Drivable hours at or below which dispatch stops and orders the ten.
+    ///
+    /// The same argument as the cycle, one clock down. Forty-five minutes is enough to reach a rest area
+    /// and is not enough to run freight, so a board read on it can only end one of two ways: a load the
+    /// driver cannot start, or one they start and immediately sleep on at a shipper's gate.
+    ///
+    /// <para>Drivable is the binding minimum of drive, shift and cycle — <b>not the window alone</b>.
+    /// Dispatch used to stop only when the drive clock AND the window were both spent, which missed the
+    /// ordinary case exactly: two hours of window left and thirty minutes of drive. The window is what
+    /// lets you work; the drive clock is what covers ground, and freight needs ground covered.</para>
+    /// </summary>
+    public double StopDispatchAtDriveHours { get; set; } = 0.75;
+
+    /// <summary>
     /// The longest empty run home worth making to combine a restart with home time.
     ///
     /// Deliberately modest. Combining two stops that were both going to happen is sensible; deadheading

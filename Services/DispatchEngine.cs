@@ -299,6 +299,16 @@ public static class DispatchEngine
             decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
             if (pick.Feasibility.RestsRequired > 0)
                 decision.DispatchNotes.Add($"Plan on {pick.Feasibility.RestsRequired} × {s.Settings.Hos.OffDutyReset:0.#}-hour reset and {pick.Feasibility.BreaksRequired} required break(s) en route.");
+            // A reset that lands in the first few hours is a different day from one that lands tomorrow
+            // night, and the driver should hear which before they hook. Taking a load on a short drive
+            // clock is fine when the pickup and an early sleep still make the appointment — it is only
+            // not fine when nobody said it was going to happen.
+            if (EarlyResetAfterHours(pick.Feasibility) is { } restAt)
+                decision.DispatchNotes.Add(
+                    $"Short on the drive clock, so this is a pick-up-and-sleep: you are into the " +
+                    $"{s.Settings.Hos.OffDutyReset:0.#} about {Hhmm.Of(restAt)} in, and the run happens " +
+                    $"after it. It still makes the appointment with {Hhmm.Of(pick.Feasibility.SlackHours)} " +
+                    "to spare, which is the only reason I am putting you on it.");
             if (pick.Feasibility.FuelStopsRequired > 0)
                 decision.DispatchNotes.Add($"{pick.Feasibility.FuelStopsRequired} fuel stop(s) planned — do not run below a quarter tank.");
             // Where they sit if they get there early. Said before they commit, because whether the
@@ -712,7 +722,13 @@ public static class DispatchEngine
         // Out of cycle is the serious one: only a restart fixes it.
         restartNeeded = s.Hos.CycleRemaining <= Math.Max(1.0, rules.DriveLimit * 0.25);
         // Out of drive or shift for the day is the ordinary one: a 10-hour reset fixes it.
-        var outOfDay = view.DrivableNowHours <= 0.5;
+        //
+        // Off the setting rather than a number written here, and off DrivableNowHours — the binding
+        // minimum of drive, shift and cycle — so the 11 counts for as much as the 14. Reported from
+        // play: "I can get to a rest area with 30 mins of clock, but I can't get very far down the road
+        // with a 30 min clock." Three hours of window does not change that, and the old 0.5 was too
+        // tight to say so.
+        var outOfDay = view.DrivableNowHours <= rules.StopDispatchAtDriveHours;
 
         // Everything infeasible but the driver has hours in hand? Then the freight is the problem,
         // not the clock, and this is an ordinary rejection.
@@ -745,9 +761,20 @@ public static class DispatchEngine
             return true;
         }
 
-        note = $"Drive is at {Hhmm.Of(s.Hos.DriveRemaining)} and your window at {Hhmm.Of(s.Hos.ShiftRemaining)}. Find a truck " +
-               $"stop with legal parking and take the {rules.OffDutyReset:0.#}-hour reset. That restores your drive and " +
-               $"shift clocks — but not the cycle, which stays at {Hhmm.Of(s.Hos.CycleRemaining)}.";
+        // Name the clock that actually ran out. A driver looking at three hours of window and being told
+        // they are out of hours needs to hear WHY, or the app reads as if it cannot do arithmetic — and
+        // the answer is almost always the 11 rather than the 14.
+        var bindingClock = s.Hos.DriveRemaining <= s.Hos.ShiftRemaining
+            ? $"Your drive clock is the one that has run out — {Hhmm.Of(s.Hos.DriveRemaining)} left against " +
+              $"{Hhmm.Of(s.Hos.ShiftRemaining)} of window. The window is what lets you work; the 11 is what " +
+              "covers ground, and freight needs ground covered."
+            : $"Your {rules.ShiftLimit:0.#}-hour window is the one that has run out — {Hhmm.Of(s.Hos.ShiftRemaining)} " +
+              $"left against {Hhmm.Of(s.Hos.DriveRemaining)} of drive. Driving hours you cannot legally use are " +
+              "not hours.";
+
+        note = $"{bindingClock} That is about enough to reach a rest area and not enough to run freight. Find a " +
+               $"truck stop with legal parking and take the {rules.OffDutyReset:0.#}-hour reset. That restores your " +
+               $"drive and shift clocks — but not the cycle, which stays at {Hhmm.Of(s.Hos.CycleRemaining)}.";
 
         return true;
     }
@@ -882,8 +909,20 @@ public static class DispatchEngine
 
         if (s.Hos.CycleRemaining <= 0)
             stops.Add($"70-hour cycle is exhausted. {s.Settings.Hos.CycleRestartHours:0.#}-hour restart required before any driving.");
-        else if (s.Hos.DriveRemaining <= 0.25 && s.Hos.ShiftRemaining <= 0.5)
-            stops.Add($"Drive and shift clocks are spent. {s.Settings.Hos.OffDutyReset:0.#}-hour reset first.");
+        else if (Math.Min(s.Hos.DriveRemaining, s.Hos.ShiftRemaining) <= 0.01)
+        {
+            // Nothing legal left to move the truck with. This used to read
+            // `DriveRemaining <= 0.25 && ShiftRemaining <= 0.5` — an AND, which could not fire on the
+            // ordinary shape of the problem: a window with hours on it and a drive clock with nothing.
+            // The window is what lets you work; the drive clock is what covers ground, and either one at
+            // zero means the truck stays where it is.
+            //
+            // Only the absolute case belongs here, because a blocker refuses the whole board. A drive
+            // clock that is merely SHORT is a judgement about each load, and OutOfHoursOnly makes it
+            // against what is actually on offer — a twenty-mile hop on thirty minutes is a real day.
+            var binding = s.Hos.DriveRemaining <= s.Hos.ShiftRemaining ? "drive clock" : "14-hour window";
+            stops.Add($"Your {binding} is spent. {s.Settings.Hos.OffDutyReset:0.#}-hour reset before anything moves.");
+        }
 
         var active = s.Trips.FirstOrDefault(t => t.Id == s.Status.ActiveTripId
                                                  && t.Status is "Authorized" or "InTransit");
@@ -1379,6 +1418,46 @@ public static class DispatchEngine
         e.Recommendation = e.HardFails.Count > 0 || e.HomeTimeFails.Count > 0
                            || e.Feasibility.Verdict == "Infeasible" ? "Reject" : "Backup";
         return e;
+    }
+
+    /// <summary>
+    /// Hours into the plan at which a reset lands, when the driver reaches it having covered no ground.
+    ///
+    /// Measured in <b>driving</b> done before the rest, not in elapsed time. Elapsed was the obvious
+    /// reading and the wrong one: two hours on a shipper's dock and a quarter-hour hooking put a
+    /// pick-up-and-sleep at four and a quarter hours in, past any sensible wall-clock line, while the
+    /// driver had turned a wheel for exactly two of them. Loading is not progress down the road, and
+    /// this is a question about the road.
+    ///
+    /// Three hours of driving is the line. Beyond that they have made real distance and a rest is just
+    /// how a long run works; short of it, the load is a pickup followed by a sleep, which is a fine day
+    /// and an entirely different one from the one the rate implies.
+    ///
+    /// Returns elapsed hours at the rest, because that is what the driver reads on a clock. Null when
+    /// the plan has no rest, or the first one comes after real driving, or nothing follows it.
+    /// </summary>
+    private static double? EarlyResetAfterHours(FeasibilityResult f)
+    {
+        const double DrivingBeforeRest = 3.0;
+        if (f.RestsRequired <= 0 || f.Timeline.Count == 0) return null;
+
+        var elapsed = 0.0;
+        var driven = 0.0;
+        for (var i = 0; i < f.Timeline.Count; i++)
+        {
+            var step = f.Timeline[i];
+            if (step.Kind == "Rest")
+            {
+                // A rest with nothing after it is the driver finishing their day at the receiver, not a
+                // sleep the load is built around.
+                var more = f.Timeline.Skip(i + 1).Any(x => x.Kind == "Drive" && x.Hours > 0);
+                return driven <= DrivingBeforeRest && more ? elapsed : null;
+            }
+            if (step.Kind == "Drive") driven += step.Hours;
+            if (driven > DrivingBeforeRest) return null;
+            elapsed += step.Hours;
+        }
+        return null;
     }
 
     private static List<string> QualificationFails(AppState s, BoardLoad load, Trailer? trailer)
