@@ -41,6 +41,7 @@ public static class Migrations
         ReopenTheTrailerQuestionNobodyWasAsked(s);
         ReopenTheHalfAnsweredTrailerQuestion(s);
         PayHiredDriversForTheLevelTheyAre(s);
+        GiveConductLinesADriverAndADate(s);
         EnsureDropHookIsOnOffer(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
@@ -151,6 +152,46 @@ public static class Migrations
                 "Anyone whose share you had set by hand keeps it. Nothing is backdated: the first fleet " +
                 "report from here is where it starts counting.",
         });
+    }
+
+    /// <summary>
+    /// Ties conduct already on record to the driver it happened to.
+    ///
+    /// A conduct line carried a name and nothing else, which was enough to print it on the report it
+    /// belonged to and useless for anything else — a driver's record could not be read back, because
+    /// "every line that says Marcus" is a search, not a key. Two people sharing a name shared a record,
+    /// and renaming somebody lost theirs.
+    ///
+    /// Backfills the id off the name where exactly one driver on the roster answers to it, and the report
+    /// number and date off the report the line is sitting on. Where a name is ambiguous the line keeps
+    /// the name alone and <see cref="DriverRank.ConductFor"/> falls back to matching on it — a worse
+    /// answer than an id, and a better one than guessing which of two people it was.
+    ///
+    /// Nothing is invented and nothing is re-judged. This is the same history, addressable.
+    /// </summary>
+    private static void GiveConductLinesADriverAndADate(AppState s)
+    {
+        if (s.SchemaVersion >= 18) return;
+        s.SchemaVersion = 18;
+
+        // Every name on the roster, including people who have left: a line about somebody terminated two
+        // reports ago is still their line, and dropping it would quietly rewrite what happened.
+        var byName = s.HiredDrivers
+            .Where(d => !string.IsNullOrWhiteSpace(d.Name))
+            .GroupBy(d => d.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() == 1)
+            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var r in s.FleetReports)
+            foreach (var c in r.Conduct)
+            {
+                if (string.IsNullOrWhiteSpace(c.ReportNumber)) c.ReportNumber = r.Number;
+                if (string.IsNullOrWhiteSpace(c.GameTime)) c.GameTime = r.PeriodEndGame;
+                if (!string.IsNullOrWhiteSpace(c.DriverId)) continue;
+                if (!string.IsNullOrWhiteSpace(c.DriverName)
+                    && byName.TryGetValue(c.DriverName.Trim(), out var id))
+                    c.DriverId = id;
+            }
     }
 
     /// <summary>

@@ -68,6 +68,7 @@ PLAYER_TITLES = {
     "Saying you have arrived, and when they actually take it",
     "How the company is doing, and what it does about it",
     "Things that happen to your drivers",
+    "What a driver's level is called, and where their file is",
     "Closing out, and never typing a number twice",
     "The empty miles between two loads",
     "Clocks at delivery, and the carry-forward",

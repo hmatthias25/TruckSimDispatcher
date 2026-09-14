@@ -3699,17 +3699,29 @@ function fleetOpsHtml() {
       </div>
 
       ${drivers.length ? `<div class="tablewrap" style="margin-top:14px"><table>
-        <thead><tr><th>Driver</th><th>Unit</th><th class="num">Level</th><th class="num">Rating</th>
+        ${/* Grade and probation are two different things and this table has to keep them apart. A level
+              1-2 driver IS a probationary company driver — that is their grade, and it says nothing at
+              all about their conduct. Being PUT on probation after a bad period or a preventable is a
+              separate mark, and it rides on the name, where the eye lands first. */ ''}
+        <thead><tr><th>Driver</th><th>Unit</th>
+          <th class="num" title="Level as ATS reports it">Level</th>
+          <th title="What that level is called here — the same ladder you climb">Grade</th>
+          <th class="num">Rating</th>
           <th class="num">$/day</th><th class="num">$/mi</th><th class="num">Truck &starf;</th>
+          <th class="num" title="Preventable incidents on their record. Being hit by somebody else does not count.">Prev</th>
           <th>Status</th><th class="num">Wage share</th>
           <th class="num">Lifetime revenue</th><th class="num">Reports</th><th></th></tr></thead>
         <tbody>${drivers.map((d) => {
           const last = (d.periods || [])[0];
           const tk = S.trucks.find((x) => x.unit === d.assignedTruckUnit);
+          const dz = dossier(d.id);
           return `<tr>
-          <td><b>${esc(d.name)}</b>${d.onProbation ? ' ' + badge('warn', 'probation') : ''}</td>
+          <td><b>${esc(d.name)}</b>${d.onProbation ? ' ' + badge('warn', 'on probation') : ''}</td>
           <td><span class="unit">${esc(uref(d.assignedTruckUnit) || '—')}</span></td>
           <td class="num">${d.level ? d.level : '<span class="sub">—</span>'}</td>
+          <td>${dz.rankShort
+              ? `<span title="${esc(dz.rank)}">${esc(dz.rankShort)}</span>`
+              : '<span class="sub" title="No level reported yet">not placed</span>'}</td>
           <td class="num">${d.rating ? num(d.rating, 1) : '<span class="sub">—</span>'}</td>
           <td class="num">${last?.perDay ? money0(last.perDay) : '<span class="sub">—</span>'}</td>
           <td class="num">${last?.perMile ? '$' + (+last.perMile).toFixed(2) : '<span class="sub">—</span>'}</td>
@@ -3717,11 +3729,15 @@ function fleetOpsHtml() {
               ? badge(tk.stars <= S.settings.maintenance.truckReplaceStars ? 'bad' : tk.stars <= 4 ? 'warn' : 'ok',
                       num(tk.stars, 1) + '\u2605')
               : '<span class="sub">—</span>'}</td>
+          <td class="num">${dz.preventables
+              ? badge(dz.preventables >= 2 ? 'bad' : 'warn', dz.preventables)
+              : '<span class="sub">—</span>'}</td>
           <td>${badge(d.status === 'Active' ? 'ok' : 'mute', d.status)}</td>
           <td class="num">${pct(d.wageShare * 100, 0)}</td>
           <td class="num">${money0(d.lifetimeRevenue)}</td>
           <td class="num">${d.reportsFiled}</td>
-          <td><button class="btn tiny ghost" data-act="edit-hire" data-id="${esc(d.id)}">Edit</button></td>
+          <td><button class="btn tiny ghost" data-act="driver-file" data-id="${esc(d.id)}">File</button>
+              <button class="btn tiny ghost" data-act="edit-hire" data-id="${esc(d.id)}">Edit</button></td>
         </tr>`; }).join('')}</tbody></table></div>
 
         <h3 class="sect">File a fleet report</h3>
@@ -3901,6 +3917,128 @@ function playerLineHtml() {
       ${tl ? `<label>Trailer ${esc(tl.ref || tl.unit)} damage %
         <input id="fr-me-trdmg" type="number" step="0.1" min="0" max="100" placeholder="${num(tl.damagePct, 1)}"></label>` : ''}
     </div>`;
+}
+
+/**
+ * What the server worked out about a driver, as opposed to what it stored about them.
+ *
+ * Sent as its own list rather than folded into the roster, so a screen can always tell the two apart —
+ * a grade is derived from a level, and a level is a reading off the game. Falls back to an empty shape
+ * so a row can render before the fleet payload has landed.
+ */
+function dossier(id) {
+  return (FLEETOPS?.dossiers || []).find((x) => x.id === id)
+    || { id, rank: '', rankShort: '', nextAt: null, summary: '', incidents: 0, preventables: 0, conduct: [] };
+}
+
+/**
+ * One driver's file.
+ *
+ * Everything about a hired driver used to live in three places that never met: a table row, a fleet-ops
+ * alert, and whichever report card happened to mention them. So "how has Marcus actually been doing" had
+ * no answer — a driver with three scrapes across six reports read exactly like one who had never touched
+ * anything, because the scrapes scrolled away with the reports they arrived on.
+ *
+ * Nothing here is new information. It is the same history, addressable.
+ */
+function driverFileModal(id) {
+  const d = (FLEETOPS?.drivers || []).find((x) => x.id === id);
+  if (!d) return toast('That driver is not on the roster.', 'bad');
+  const dz = dossier(id);
+  const periods = d.periods || [];
+  const tk = S.trucks.find((x) => x.unit === d.assignedTruckUnit);
+
+  const sev = (s) => s === 'Minor' ? 'warn'
+    : s === 'Serious' ? 'bad'
+    : s === 'Terminal' || s === 'WriteOff' ? 'bad'
+    : 'mute';
+  const sevLabel = (s) => s === 'NotAtFault' ? 'not at fault'
+    : s === 'NotAtFaultWriteOff' ? 'not at fault · write-off'
+    : s === 'WriteOff' ? 'write-off'
+    : (s || '').toLowerCase();
+
+  modal(`
+    <div class="panel-head"><h2>${esc(d.name)}</h2>
+      ${dz.rank ? badge('ok', esc(dz.rank)) : badge('mute', 'not placed')}
+      ${d.onProbation ? badge('warn', 'on probation') : ''}
+      ${d.status !== 'Active' ? badge('bad', esc(d.status)) : ''}
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button>
+    </div>
+
+    <p class="hint">${esc(dz.summary)}</p>
+
+    <div class="meters">
+      ${fkpi('Level', d.level || '—')}
+      ${fkpi('Rating', d.rating ? num(d.rating, 1) : '—')}
+      ${fkpi('Wage share', pct(d.wageShare * 100, 0))}
+      ${fkpi('Reports', d.reportsFiled || 0)}
+      ${fkpi('Preventables', dz.preventables, dz.preventables ? 'bad' : 'ok')}
+    </div>
+
+    <div class="meters" style="margin-top:8px">
+      ${fkpi('Lifetime revenue', money0(d.lifetimeRevenue))}
+      ${fkpi('Lifetime wages', money0(d.lifetimeWages))}
+      ${fkpi('Lifetime miles', num(d.lifetimeMiles || 0))}
+      ${fkpi('On unit', tk ? esc(tk.ref || tk.unit) : '—')}
+      ${fkpi('Hired', d.hiredGameDate ? gt(d.hiredGameDate) : '—')}
+    </div>
+
+    ${d.onProbation ? `<div class="callout warn">
+      <h4>On probation${d.probationCount > 1 ? ` — time ${d.probationCount}` : ''}</h4>
+      <p style="margin:0 0 4px">${esc(d.probationReason || 'No reason recorded.')}</p>
+      ${d.probationTarget ? `<p style="margin:0"><b>To come off it:</b> ${esc(d.probationTarget)}</p>` : ''}
+    </div>` : d.probationCount ? `<div class="callout info">
+      <h4>Been on probation ${d.probationCount === 1 ? 'once' : `${d.probationCount} times`}, and came off it</h4>
+      <p style="margin:0">Last cleared ${d.lastClearedProbationGameTime ? gt(d.lastClearedProbationGameTime) : 'at some point'}.
+        A driver who recovers is a different case to one who never slipped, and the company counts it that way.</p>
+    </div>` : ''}
+
+    ${d.status !== 'Active' && d.separationReason ? `<div class="callout stop">
+      <h4>${esc(d.status)}</h4>
+      <p style="margin:0">${esc(d.separationReason)}
+        ${d.separatedGameTime ? ` — ${gt(d.separatedGameTime)}` : ''}</p>
+    </div>` : ''}
+
+    <h3 class="sect">On the road</h3>
+    ${dz.conduct.length ? `<div class="tablewrap"><table>
+      <thead><tr><th>When</th><th>Report</th><th>What</th><th class="num">Damage</th></tr></thead>
+      <tbody>${dz.conduct.map((c) => `<tr>
+        <td>${c.gameTime ? gt(c.gameTime) : '—'}</td>
+        <td class="mono">${esc(c.reportNumber || '—')}</td>
+        <td>${badge(sev(c.severity), sevLabel(c.severity))} ${esc(c.outcome)}</td>
+        <td class="num">${c.damagePct ? pct(c.damagePct, 0) : '—'}</td>
+      </tr>`).join('')}</tbody></table></div>
+      ${dz.incidents > dz.preventables ? `<p class="hint">${dz.incidents - dz.preventables} of these
+        ${dz.incidents - dz.preventables === 1 ? 'was' : 'were'} not their doing and ${
+        dz.incidents - dz.preventables === 1 ? 'does' : 'do'} not count against them. The company still
+        paid for the tractor.</p>` : ''}`
+      : `<div class="empty">Nothing on the road. ${
+          (d.reportsFiled || 0) < 4
+            ? `Still settling in — conduct is not judged until four reports are behind them, and they have ${d.reportsFiled || 0}.`
+            : 'Clean.'}</div>`}
+
+    <h3 class="sect">Period by period</h3>
+    ${periods.length ? `<div class="tablewrap"><table>
+      <thead><tr><th>Report</th><th>Ended</th><th class="num">Level</th><th class="num">Rating</th>
+        <th class="num">$/mi</th><th class="num">$/day</th><th class="num">Revenue</th>
+        <th class="num">Wages</th><th class="num">Repairs</th></tr></thead>
+      <tbody>${periods.map((p) => `<tr>
+        <td class="mono">${esc(p.reportNumber || '—')}</td>
+        <td>${p.periodEndGame ? gt(p.periodEndGame) : '—'}</td>
+        <td class="num">${p.level || '<span class="sub">—</span>'}</td>
+        <td class="num">${p.rating ? num(p.rating, 1) : '<span class="sub">—</span>'}</td>
+        <td class="num">${p.perMile ? '$' + (+p.perMile).toFixed(2) : '<span class="sub">—</span>'}</td>
+        <td class="num">${p.perDay ? money0(p.perDay) : '<span class="sub">—</span>'}</td>
+        <td class="num">${money0(p.revenue)}</td>
+        <td class="num">${money0(p.wages)}</td>
+        <td class="num">${p.repairs ? money0(p.repairs) : '<span class="sub">—</span>'}</td>
+      </tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty">No periods filed yet.</div>'}
+
+    <div class="row-actions">
+      <button class="btn tiny ghost" data-act="edit-hire" data-id="${esc(d.id)}">Edit this driver</button>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>`);
 }
 
 function editHireModal(id) {
@@ -6351,6 +6489,7 @@ async function handleAction(act, d, ev) {
       FLEETOPS = await api('/fleetops');
     }, 'You are in that unit now.');
     case 'add-hire': return editHireModal('');
+    case 'driver-file': return driverFileModal(d.id);
     case 'edit-hire': return editHireModal(d.id);
     case 'save-hire': {
       const isNew = d.new === '1';

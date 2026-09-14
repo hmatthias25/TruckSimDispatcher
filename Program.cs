@@ -1217,6 +1217,10 @@ app.MapGet("/api/fleetops", () => Results.Ok(new
 {
     summary = FleetOpsService.Summary(store.State),
     drivers = store.State.HiredDrivers,
+    // What the roster does not itself say: what a level is called, and what each driver has actually
+    // done. Kept beside the drivers rather than merged into them so a screen can always tell a stored
+    // figure from a worked-out one.
+    dossiers = store.State.HiredDrivers.Select(d => DriverRank.Dossier(store.State, d)).ToList(),
     reports = store.State.FleetReports.Take(20).ToList(),
     // Decisions the last report left open: seats to fill, terminations to confirm, units to trade.
     openUnits = FleetOpsService.OpenUnitDecisions(store.State),

@@ -54,7 +54,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 17;
+    public const int Current = 18;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -2147,12 +2147,24 @@ public class CompanyHealthLine
 /// <summary>One thing a hired driver did, as opposed to one thing their figures said.</summary>
 public class DriverConductLine
 {
+    /// <summary>
+    /// Who it was, by id.
+    ///
+    /// The line used to carry only a name, which made a driver's record unreadable the moment two people
+    /// shared one or somebody was renamed — and a name is not what the roster is keyed on anywhere else.
+    /// Backfilled off the name for careers written before this existed.
+    /// </summary>
+    public string DriverId { get; set; } = "";
     public string DriverName { get; set; } = "";
-    /// <summary>Minor | Serious | Terminal | WriteOff</summary>
+    /// <summary>NotAtFault | NotAtFaultWriteOff | Minor | Serious | Terminal | WriteOff</summary>
     public string Severity { get; set; } = "Minor";
     public string Outcome { get; set; } = "";
     public string TruckUnit { get; set; } = "";
     public double DamagePct { get; set; }
+    /// <summary>The report this happened on, so a driver's record reads in order.</summary>
+    public string ReportNumber { get; set; } = "";
+    /// <summary>When, in game time — the period end of the report that turned it up.</summary>
+    public string GameTime { get; set; } = "";
 }
 
 public class RetirementRecommendation

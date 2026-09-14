@@ -432,11 +432,14 @@ public static class FleetOpsService
         foreach (var ev in DriverConduct.Resolve(s, report))
             report.Conduct.Add(new DriverConductLine
             {
+                DriverId = ev.DriverId,
                 DriverName = ev.DriverName,
                 Severity = ev.Severity,
                 Outcome = ev.Outcome,
                 TruckUnit = ev.TruckUnit,
                 DamagePct = ev.DamagePct,
+                ReportNumber = report.Number,
+                GameTime = report.PeriodEndGame,
             });
 
         TrailerFleet.Consider(s, report);
