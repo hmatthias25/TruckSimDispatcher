@@ -3770,9 +3770,12 @@ function fleetOpsHtml() {
             <th class="num" title="Average income per day, as ATS reports it">$/day</th>
             <th class="num" title="Tractor condition in stars, 5 down to 1">Truck &starf;</th>
             <th class="num" title="Tractor odometer as shown in game">Odometer</th>
-            <th title="Which trailer this driver is on. Pick from the ones in their garage — setting it here re-rigs them onto it.">Trailer</th>
-            <th class="num" title="Trailer condition in stars. Stars are all ATS shows for a trailer somebody else is pulling.">Trailer &starf;</th>
-            <th class="num" title="Utilisation from the ATS Trailer Manager: the percentage of the past week the trailer was in use. An idle box is a candidate to sell.">Util %</th>
+            ${/* No trailer columns here at all.
+                  Which box a hired driver is nominally on was bookkeeping the app kept for its own sake —
+                  nothing reads it. Where a trailer IS matters, and that is asked of the player on the last
+                  run before home time, where the answer still buys them something.
+                  The two condition columns went in v0.57 and their headers did not, so this table carried
+                  three titles with no boxes under them and every column sat one place out. */ ''}
             </tr></thead>
           <tbody>${drivers.filter((d) => d.status === 'Active').map((d) => {
             const tk = S.trucks.find((t) => t.unit === d.assignedTruckUnit);
@@ -3790,7 +3793,6 @@ function fleetOpsHtml() {
                   value="${tk?.stars || ''}" placeholder="—"></td>
             <td><input id="fr-odo-${esc(d.id)}" type="number" step="1" min="0" style="width:96px"
                   value="${tk ? Math.round(tk.atsOdometer) : ''}" placeholder="—"></td>
-            <td style="white-space:nowrap">${trailerPickHtml(d, tl)}</td>
           </tr>`; }).join('')}</tbody></table></div>
         ${playerLineHtml()}
         ${trailerSectionHtml()}
@@ -3835,50 +3837,6 @@ function fleetOpsHtml() {
   ${fleetPmHtml()}${ownTruckTradeHtml()}`;
 }
 
-/**
- * The trailer this driver is on, as a dropdown of what is in their garage.
- *
- * The report used to ask for a trailer's condition without ever saying which trailer it meant — it read
- * whatever was on the driver's record, which the player had no way to set from here. Choosing one here
- * re-rigs them onto it.
- *
- * EVERY trailer is offered, including ones somebody else is on and the one the player is pulling. This
- * used to hide both, which was the wrong instinct in the right place: nothing is being allocated here.
- * The player is writing down what ATS already did, and AI drivers swap boxes on their own — so the
- * trailer you most need to pick is precisely the one the app currently thinks is taken. Hiding it left
- * no way to correct the record at all.
- *
- * Each option says who has it, so a move is deliberate rather than a surprise. The home terminal still
- * sorts to the top, but only sorts — it never filters.
- */
-function trailerPickHtml(d, current) {
-  const holderOf = (unit) => {
-    if (unit === S.driver.assignedTrailerUnit) return 'you';
-    const o = (FLEETOPS?.drivers || []).find((x) => x.id !== d.id && x.status === 'Active'
-      && x.assignedTrailerUnit === unit);
-    return o ? o.name : '';
-  };
-  const all = S.trailers.filter((t) => !t.retired);
-  // Their own yard first. Ordering only — anything parked elsewhere is still on the list, marked.
-  const options = [
-    ...all.filter((t) => t.homeTerminalId === d.homeTerminalId),
-    ...all.filter((t) => t.homeTerminalId !== d.homeTerminalId),
-  ];
-  // Whatever they are on stays selectable even if it has been retired out from under them, or filing a
-  // report would silently move them off it.
-  if (current && !options.some((t) => t.unit === current.unit)) options.unshift(current);
-  return `<select id="fr-tl-${esc(d.id)}" style="min-width:196px"
-      title="Picking a trailer somebody else has moves it to this driver and leaves them on nothing.">
-    <option value="">— none — (bobtailing)</option>
-    ${options.map((t) => {
-      const held = holderOf(t.unit);
-      return `<option value="${esc(t.unit)}"${t.unit === d.assignedTrailerUnit ? ' selected' : ''}>
-      ${esc(t.ref || t.unit)} · ${esc(t.type)}${
-        t.homeTerminalId !== d.homeTerminalId ? ' (off-yard)' : ''}${
-        held && t.unit !== d.assignedTrailerUnit ? ` — ${esc(held)}` : ''}</option>`;
-    }).join('')}
-  </select>`;
-}
 
 /**
  * The player's own row: equipment only.
@@ -6486,8 +6444,9 @@ async function handleAction(act, d, ev) {
       const active = (FLEETOPS?.drivers || []).filter((x) => x.status === 'Active');
       const lines = active.map((x) => ({
         driverId: x.id, truckUnit: x.assignedTruckUnit,
-        // Which trailer they are on — a choice, not an inference.
-        trailerUnit: sv('fr-tl-' + x.id),
+        // No trailer. Nothing reads which box a hired driver is nominally on, and asking for it every
+        // fortnight was upkeep on a record the app kept for itself. Where a trailer actually is gets
+        // asked on the last run before home time, which is the only moment the answer is worth anything.
         // What the game shows for a driver we are not sitting next to.
         level: fv('fr-lvl-' + x.id), rating: fv('fr-rate-' + x.id),
         perMile: fv('fr-permi-' + x.id), perDay: fv('fr-perday-' + x.id),

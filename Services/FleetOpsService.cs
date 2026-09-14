@@ -1176,15 +1176,16 @@ public static class FleetOpsService
         var wantUnit = (line.TrailerUnit ?? "").Trim();
         if (string.Equals(wantUnit, driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)) return;
 
-        if (wantUnit.Length == 0)
-        {
-            var dropped = s.Trailers.FirstOrDefault(t => t.Unit == driver.AssignedTrailerUnit);
-            if (dropped != null) dropped.AssignedTruckUnit = "";
-            report.Findings.Add($"{driver.Name} came off trailer " +
-                                $"{dropped?.Ref ?? driver.AssignedTrailerUnit} and is bobtailing.");
-            driver.AssignedTrailerUnit = "";
-            return;
-        }
+        // Blank is "not reported", not "came off it".
+        //
+        // The report no longer asks which trailer a hired driver is on — nothing reads it. Where a box
+        // IS matters, and that is asked of the player on the last run before home time, where the answer
+        // is worth something. Who is nominally holding it is bookkeeping the app was maintaining for its
+        // own sake.
+        //
+        // This branch used to read the empty field as the driver having dropped their trailer, which
+        // with the field gone would strip every hired driver's box on every report filed.
+        if (wantUnit.Length == 0) return;
 
         var wanted = s.Trailers.FirstOrDefault(
             t => t.Unit.Equals(wantUnit, StringComparison.OrdinalIgnoreCase) && !t.Retired);
