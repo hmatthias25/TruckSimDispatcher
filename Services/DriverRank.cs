@@ -3,93 +3,215 @@ using TruckSimDispatcher.Models;
 namespace TruckSimDispatcher.Services;
 
 /// <summary>
-/// What a hired driver's level is called.
+/// What a hired driver has earned at this company, as opposed to what ATS says they are.
 ///
-/// <para>ATS gives a hired driver an open-ended level and no word for it, so the fleet table showed a bare
-/// integer while the player got a named ladder to climb. The number was never decorative — wages come off
-/// it (<see cref="DriverConduct.ShareForLevel"/>), so do the odds of them hitting something
-/// (<see cref="DriverConduct.IncidentPercentFor"/>), and <see cref="CompanyHealth.HiringBandFor"/> sends
-/// the player out to hire at one. It was simply never said out loud.</para>
+/// <para><b>Level is not seniority.</b> The first cut of this read the grade straight off the ATS level,
+/// which was wrong for the reason any fleet manager would give: an AI driver climbs levels fast, on
+/// nothing but miles turned. A fortnight of good running can move somebody two levels, and calling that
+/// a promotion to Senior Company Driver makes the ladder meaningless — everybody is senior by the end of
+/// the quarter and there is nothing left to earn.</para>
 ///
-/// <para><b>The same names the player climbs</b>, from <c>CareerService</c>'s ladder. A carrier does not run
-/// one vocabulary for the driver in the seat and another for everybody else on the yard, and two ladders
-/// with different words is how a level 6 reads as senior on one screen and as nothing on the next.</para>
+/// <para><b>Earned the way the player's is.</b> Time served, distance covered, the rating the game gives
+/// them, and a clean recent record. All four, not the best of them: the rung is the highest one whose
+/// every gate is met, so a driver with the miles but not the months waits, and so does one with the
+/// months and two preventables behind them.</para>
 ///
-/// <para><b>Banded on the boundaries that already exist.</b> The rungs break where
-/// <see cref="DriverConduct.IncidentPercentFor"/> breaks — 1-2, 3-4, 5-6, 7-8, 9 and up — so the rank a
-/// driver is called and the risk the company carries on them can never tell different stories. The one
-/// extra line is inside that top band: Specialist and Master share the same odds, because past level 9 the
-/// game stops making them measurably safer and only the seniority keeps climbing.</para>
+/// <para><b>Everybody starts on probation.</b> Ninety days from the day they were hired, the same period
+/// the player serves, and no rung above the bottom one opens until it is behind them. A carrier that
+/// promotes somebody in their first month is not one that was watching.</para>
+///
+/// <para>The mileage gates are the player's own, from <c>CareerService</c>'s ladder. One ladder, one set
+/// of numbers: a company that asked more of its hired drivers than of the driver reading this would be
+/// telling two stories about the same job.</para>
 /// </summary>
 public static class DriverRank
 {
     /// <summary>
-    /// The rank a level earns, or empty when the level has never been reported.
+    /// The probationary period every new hire serves, in game days.
     ///
-    /// Level 0 is not a rookie, it is a blank — a driver the player has added but not yet filed figures
-    /// for. Calling that "probationary" would be the app inventing a reading, which is the one thing it
-    /// does not do. It says nothing until the game has told it something.
+    /// Ninety, because that is what the player serves and there is no argument for a different number.
+    /// Nothing above the bottom rung opens while it is running, whatever the figures say.
     /// </summary>
-    public static string For(int level) => level switch
-    {
-        <= 0 => "",
-        1 or 2 => "Probationary Company Driver",
-        3 or 4 => "Company Driver",
-        5 or 6 => "Senior Company Driver",
-        7 or 8 => "Lead Driver",
-        9 or 10 => "Specialist Driver",
-        _ => "Master Driver",
-    };
+    public const int ProbationDays = 90;
 
-    /// <summary>The same rung with the "Company Driver" tail dropped, for a table column.</summary>
-    public static string Short(int level) => level switch
+    /// <summary>
+    /// How far back a preventable counts against a promotion.
+    ///
+    /// Twelve reports, about six months. The record keeps everything for ever — the driver's file lists
+    /// it all — but a bar that never lifts is not discipline, it is a life sentence, and the rest of this
+    /// app is built on clean work walking a mistake off.
+    /// </summary>
+    public const int PreventableWindowReports = 12;
+
+    /// <summary>One rung, and everything that has to be true to stand on it.</summary>
+    public sealed record Rung(
+        int Index,
+        string Name,
+        string Short,
+        /// <summary>Game days since they were hired.</summary>
+        int Days,
+        /// <summary>Lifetime miles, from the odometers reported on them.</summary>
+        double Miles,
+        /// <summary>The rating ATS gives them, 0-10.</summary>
+        double Rating,
+        /// <summary>Preventables inside <see cref="PreventableWindowReports"/> they may carry.</summary>
+        int Preventables,
+        /// <summary>Share of what they bring in that this rung is paid.</summary>
+        double Share);
+
+    /// <summary>
+    /// The ladder. Days are multiples of the probation they all serve; miles are the player's own gates.
+    ///
+    /// Master is a long way up on purpose. At a carrier worth working for the churn is low enough that
+    /// somebody gets there; at a middling one they are poached long before, which is the point being
+    /// made — you keep a Master Driver by being worth staying with, not by waiting.
+    /// </summary>
+    public static readonly Rung[] Ladder =
     {
-        <= 0 => "",
-        1 or 2 => "Probationary",
-        3 or 4 => "Company",
-        5 or 6 => "Senior",
-        7 or 8 => "Lead",
-        9 or 10 => "Specialist",
-        _ => "Master",
+        new(0, "Probationary Company Driver", "Probationary",      0,       0,  0.0, 99, 0.25),
+        new(1, "Company Driver",              "Company",          90,   6_000, 6.0,  3, 0.28),
+        new(2, "Senior Company Driver",       "Senior",          270,  30_000, 7.0,  3, 0.31),
+        new(3, "Lead Driver",                 "Lead",            540,  65_000, 8.0,  2, 0.34),
+        new(4, "Specialist Driver",           "Specialist",      900, 120_000, 8.5,  1, 0.37),
+        new(5, "Master Driver",               "Master",        1_350, 220_000, 9.0,  1, 0.40),
     };
 
     /// <summary>
-    /// The level at which the next rung starts, or null at the top.
+    /// Game days since they were hired, or 0 when the hire date is unknown.
     ///
-    /// So a driver's line can say what they are working toward rather than only what they are, which is
-    /// the difference between a label and a ladder.
+    /// Measured to the latest moment the app actually knows about — the driver's own clock, or the end
+    /// of the most recent fleet report, whichever is further on. A player who runs the office without
+    /// driving much still moves time forward by filing reports, and tenure that only counted the
+    /// player's own clock would have left their fleet permanently on probation.
     /// </summary>
-    public static int? NextAt(int level) => level switch
+    public static int TenureDays(AppState s, HiredDriver d)
     {
-        <= 0 => null,      // nothing reported: there is no "next" to point at
-        1 or 2 => 3,
-        3 or 4 => 5,
-        5 or 6 => 7,
-        7 or 8 => 9,
-        9 or 10 => 11,
-        _ => null,
-    };
+        var from = GameClock.DayOf(d.HiredGameDate);
+        if (from is null) return 0;
+
+        var now = GameClock.DayOf(s.Status.GameTime);
+        var lastReport = s.FleetReports.Count > 0 ? GameClock.DayOf(s.FleetReports[0].PeriodEndGame) : null;
+        var to = Math.Max(now ?? 0, lastReport ?? 0);
+        return Math.Max(0, to - from.Value);
+    }
+
+    /// <summary>Whether they are still inside the ninety days every hire serves.</summary>
+    public static bool ServingProbation(AppState s, HiredDriver d) =>
+        d.Status == "Active" && TenureDays(s, d) < ProbationDays;
+
+    /// <summary>Days left of it, or 0.</summary>
+    public static int ProbationDaysLeft(AppState s, HiredDriver d) =>
+        Math.Max(0, ProbationDays - TenureDays(s, d));
 
     /// <summary>
-    /// A one-line description of where a driver stands, for the detail view.
+    /// The rung their record earns them right now.
     ///
-    /// Deliberately mentions the pay, because the pay IS the rank as far as the company is concerned —
-    /// a rung that changed nothing would be a badge rather than a ladder.
+    /// Walked from the top down so the answer is the best rung they fully qualify for, and never a
+    /// half-met one. A driver on disciplinary probation is held where they are: you do not promote
+    /// somebody in the same fortnight you told them to sort themselves out.
     /// </summary>
-    public static string Summary(HiredDriver d)
+    public static Rung Earned(AppState s, HiredDriver d)
     {
-        if (d.Level <= 0)
-            return "No level reported yet. File a fleet report with the figures off the ATS company " +
-                   "screen and the company can place them.";
+        if (ServingProbation(s, d)) return Ladder[0];
 
-        var rank = For(d.Level);
+        var held = d.OnProbation ? Ladder[Math.Clamp(d.Grade, 0, Ladder.Length - 1)] : null;
+        if (held != null) return held;
+
+        var days = TenureDays(s, d);
+        var recent = RecentPreventables(s, d);
+        for (var i = Ladder.Length - 1; i >= 0; i--)
+        {
+            var r = Ladder[i];
+            if (days >= r.Days && d.LifetimeMiles >= r.Miles
+                && d.Rating >= r.Rating && recent <= r.Preventables)
+                return r;
+        }
+        return Ladder[0];
+    }
+
+    /// <summary>The rung above, or null at the top.</summary>
+    public static Rung? Next(Rung r) => r.Index + 1 < Ladder.Length ? Ladder[r.Index + 1] : null;
+
+    /// <summary>
+    /// What is actually standing between them and the next rung, in the order a person would say it.
+    ///
+    /// Only what they have not met. Listing gates they cleared months ago would bury the one that
+    /// matters, and the one that matters is the whole reason to look.
+    /// </summary>
+    public static List<string> Shortfall(AppState s, HiredDriver d)
+    {
+        var gaps = new List<string>();
+        if (ServingProbation(s, d))
+        {
+            gaps.Add($"{ProbationDaysLeft(s, d)} day(s) of their probation left.");
+            return gaps;
+        }
+        if (d.OnProbation)
+        {
+            gaps.Add("On probation. Nothing moves until that is behind them.");
+            return gaps;
+        }
+
+        var next = Next(Earned(s, d));
+        if (next == null) return gaps;
+
+        var days = TenureDays(s, d);
+        if (days < next.Days) gaps.Add($"{next.Days - days} more day(s) with us.");
+        if (d.LifetimeMiles < next.Miles) gaps.Add($"{next.Miles - d.LifetimeMiles:N0} more mile(s).");
+        if (d.Rating < next.Rating) gaps.Add($"Rating {d.Rating:0.0}, wants {next.Rating:0.0}.");
+        var recent = RecentPreventables(s, d);
+        if (recent > next.Preventables)
+            gaps.Add($"{recent} preventable(s) in the last {PreventableWindowReports} reports; " +
+                     $"{next.Name} takes {next.Preventables}. They age off.");
+        return gaps;
+    }
+
+    /// <summary>
+    /// What this driver is paid, by the rung they stand on.
+    ///
+    /// Off the grade rather than the ATS level, which was the same mistake in a different place: pay
+    /// that followed a level would inflate as fast as the level climbs, and the company would be giving
+    /// rises for a fortnight of good miles. A quarter of the load at the bottom, two fifths at the top.
+    /// </summary>
+    public static double ShareForGrade(int grade) =>
+        Ladder[Math.Clamp(grade, 0, Ladder.Length - 1)].Share;
+
+    /// <summary>The rung a stored grade index names.</summary>
+    public static Rung At(int grade) => Ladder[Math.Clamp(grade, 0, Ladder.Length - 1)];
+
+    /// <summary>
+    /// Bring a driver onto the grade their record earns, and onto the pay that goes with it.
+    ///
+    /// Returns the rung they moved to, or null if nothing changed. <b>A grade is never taken away by
+    /// time</b> — only by a gate they have stopped meeting, and the only one that can go backwards is
+    /// the preventable count. That is deliberate: a mistake should cost a rung and not a career, and it
+    /// comes back the moment the preventables age off.
+    /// </summary>
+    public static Rung? Settle(AppState s, HiredDriver d)
+    {
+        var earned = Earned(s, d);
+        var was = d.Grade;
+        d.Grade = earned.Index;
+        if (!d.WageShareSetByHand) d.WageShare = earned.Share;
+        return earned.Index == was ? null : earned;
+    }
+
+    /// <summary>
+    /// A one-line reading of where they stand, for their file.
+    /// </summary>
+    public static string Summary(AppState s, HiredDriver d)
+    {
+        var r = At(d.Grade);
         var share = $"{d.WageShare * 100:0}% of what they bring in";
-        var next = NextAt(d.Level);
-        var climb = next.HasValue
-            ? $" Level {next.Value} makes them {For(next.Value).ToLowerInvariant()}."
-            : " Top of the company scale.";
 
-        return $"Level {d.Level} — {rank}, on {share}.{climb}";
+        if (ServingProbation(s, d))
+            return $"On their ninety days — {ProbationDaysLeft(s, d)} to go. Paid {share} until they " +
+                   "are through it.";
+
+        var next = Next(r);
+        return next == null
+            ? $"{r.Name}, on {share}. Top of the company scale."
+            : $"{r.Name}, on {share}. {next.Name} pays {next.Share * 100:0}%.";
     }
 
     /// <summary>
@@ -118,9 +240,27 @@ public static class DriverRank
             .Reverse()
             .ToList();
 
-    /// <summary>How many of those were their fault.</summary>
+    /// <summary>How many of those were their fault, over the whole record.</summary>
     public static int PreventablesFor(AppState s, HiredDriver d) =>
         ConductFor(s, d).Count(x => IsPreventable(x.Line.Severity));
+
+    /// <summary>
+    /// How many were their fault inside the promotion window.
+    ///
+    /// Counted against the reports themselves rather than a date, because the window is expressed in
+    /// reports and the two would disagree the moment a career ran at a different reporting interval.
+    /// </summary>
+    public static int RecentPreventables(AppState s, HiredDriver d)
+    {
+        var recent = s.FleetReports
+            .Select(r => r.Number)
+            .Reverse()
+            .Take(PreventableWindowReports)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return ConductFor(s, d).Count(x =>
+            IsPreventable(x.Line.Severity) && recent.Contains(x.Report.Number));
+    }
 
     /// <summary>
     /// Everything about a driver that is worked out rather than stored.
@@ -132,15 +272,25 @@ public static class DriverRank
     public static object Dossier(AppState s, HiredDriver d)
     {
         var conduct = ConductFor(s, d);
+        var r = At(d.Grade);
+        var next = Next(r);
         return new
         {
             id = d.Id,
-            rank = For(d.Level),
-            rankShort = Short(d.Level),
-            nextAt = NextAt(d.Level),
-            summary = Summary(d),
+            grade = d.Grade,
+            rank = r.Name,
+            rankShort = r.Short,
+            offeredShare = r.Share,
+            nextRank = next?.Name,
+            nextShare = next?.Share,
+            summary = Summary(s, d),
+            shortfall = Shortfall(s, d),
+            tenureDays = TenureDays(s, d),
+            servingProbation = ServingProbation(s, d),
+            probationDaysLeft = ProbationDaysLeft(s, d),
             incidents = conduct.Count,
             preventables = conduct.Count(x => IsPreventable(x.Line.Severity)),
+            recentPreventables = RecentPreventables(s, d),
             conduct = conduct.Select(x => new
             {
                 reportNumber = string.IsNullOrWhiteSpace(x.Line.ReportNumber) ? x.Report.Number : x.Line.ReportNumber,

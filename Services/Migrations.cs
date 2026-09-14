@@ -42,6 +42,7 @@ public static class Migrations
         ReopenTheHalfAnsweredTrailerQuestion(s);
         PayHiredDriversForTheLevelTheyAre(s);
         GiveConductLinesADriverAndADate(s);
+        PlaceDriversOnTheGradeTheyHaveEarned(s);
         EnsureDropHookIsOnOffer(s);
         EnsureTerminals(s);
         EnsureEquipmentTerminalIds(s);
@@ -151,6 +152,59 @@ public static class Migrations
                 "they bring in — a flat thirty for everybody meant a level 9 and a rookie cost the same. " +
                 "Anyone whose share you had set by hand keeps it. Nothing is backdated: the first fleet " +
                 "report from here is where it starts counting.",
+        });
+    }
+
+    /// <summary>
+    /// Puts existing hired drivers on the rung their record has already earned.
+    ///
+    /// The grade used to be read straight off the ATS level, which was wrong for the reason any fleet
+    /// manager would give: an AI driver climbs levels fast, on nothing but miles turned, so a fortnight
+    /// of good running read as a promotion to Senior and everybody was senior by the end of the quarter.
+    /// It is earned now — time served, distance covered, the rating the game gives them, and a clean
+    /// recent record — and every hire serves ninety days before any of it counts.
+    ///
+    /// Existing drivers keep every day they have already worked. Somebody two game-years in is placed on
+    /// what that record is worth, not sent back to the start of a probation they served long ago. The
+    /// same evidence the ladder always uses, applied to history that already existed.
+    ///
+    /// <para>Pay follows the rung from here, so a share has to be readable as chosen or offered. A
+    /// figure that matches neither the old flat default nor what the level used to offer was typed by
+    /// somebody, and that is what marks it as theirs. Anything else the company sets, and keeps set.</para>
+    /// </summary>
+    private static void PlaceDriversOnTheGradeTheyHaveEarned(AppState s)
+    {
+        if (s.SchemaVersion >= 19) return;
+        s.SchemaVersion = 19;
+
+        var placed = 0;
+        foreach (var d in s.HiredDrivers)
+        {
+            // Was this share chosen, or handed out? Two figures could have come from the company: the
+            // old flat 0.30 everybody started on, and the level-derived share migration 17 applied.
+            // Anything else, somebody typed.
+            var offeredByLevel = Math.Round(Math.Clamp(0.25 + 0.0175 * Math.Max(0, d.Level - 1), 0.25, 0.40), 4);
+            d.WageShareSetByHand =
+                Math.Abs(d.WageShare - 0.30) > 0.0001 && Math.Abs(d.WageShare - offeredByLevel) > 0.0001;
+
+            var earned = DriverRank.Earned(s, d);
+            d.Grade = earned.Index;
+            if (!d.WageShareSetByHand) d.WageShare = earned.Share;
+            placed++;
+        }
+
+        if (placed == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "career",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"{placed} hired driver(s) placed on the grade their record earns. A grade is time served, " +
+                "miles run, the rating the game gives them and a clean recent record — not the ATS level, " +
+                "which climbs on miles alone and made everybody senior inside a quarter. Every new hire " +
+                "serves ninety days before any of it counts, and pay follows the rung. A share you set " +
+                "yourself is yours and is left alone.",
         });
     }
 

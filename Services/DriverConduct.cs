@@ -58,15 +58,14 @@ public static class DriverConduct
     public const int NotAtFaultPercent = 30;
 
     /// <summary>
-    /// What share of what they bring in a driver is paid, by the level ATS gives them.
+    /// What a level used to be paid. <b>Superseded by <see cref="DriverRank.ShareForGrade"/>.</b>
     ///
-    /// A developed driver is worth more and knows it — that is the whole reason a level is interesting
-    /// rather than decorative. A flat share for everybody said a level 9 and a rookie cost the company
-    /// the same, which is why nobody was ever worth keeping in particular.
+    /// Pay followed the ATS level for one build, and it was the right idea aimed at the wrong number: a
+    /// level climbs on miles turned, fast, so the company was handing out rises for a fortnight of good
+    /// running. It follows the grade now — time served here, and what they have made of it.
     ///
-    /// Percentage pay, as a great many real carriers run it: a quarter of the load at the bottom, two
-    /// fifths at the top. The player still sets a driver's share by hand if they want to — this only
-    /// fills in what the company would offer.
+    /// Kept because migration 17 applied it and migration 19 has to be able to recognise the figure it
+    /// left behind. Nothing live calls it.
     /// </summary>
     public static double ShareForLevel(int level) =>
         Math.Round(Math.Clamp(0.25 + 0.0175 * Math.Max(0, level - 1), 0.25, 0.40), 4);

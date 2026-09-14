@@ -54,7 +54,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 18;
+    public const int Current = 19;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -1970,8 +1970,27 @@ public class HiredDriver
     /// <summary>Set when they cleared probation, so a recovery is on the record as one.</summary>
     public string LastClearedProbationGameTime { get; set; } = "";
     public bool OnProbation => !string.IsNullOrWhiteSpace(ProbationSince);
+    /// <summary>
+    /// The rung they have earned here, as an index into <see cref="Services.DriverRank.Ladder"/>.
+    ///
+    /// Stored rather than worked out on demand, because a promotion is an event — the report has to be
+    /// able to say <i>Marcus made Senior this period</i>, and nothing can say that without knowing what
+    /// he was before. Everybody starts at 0, which is the ninety days every hire serves.
+    /// </summary>
+    public int Grade { get; set; }
+
     /// <summary>Share of the revenue they generate that goes to their wages.</summary>
     public double WageShare { get; set; } = 0.30;
+
+    /// <summary>
+    /// The player set this share themselves, so the company leaves it alone.
+    ///
+    /// Without a flag there is no way to tell a chosen figure from an offered one. The old test was
+    /// "is it still 0.30", the flat default everybody used to be on — which stopped meaning anything
+    /// the moment the share came off the level instead. A level 5 driver on 32% is either the ladder
+    /// or a decision, and a company that cannot tell them apart will eventually overwrite the decision.
+    /// </summary>
+    public bool WageShareSetByHand { get; set; }
     public double LifetimeMiles { get; set; }
     public decimal LifetimeRevenue { get; set; }
     public decimal LifetimeWages { get; set; }

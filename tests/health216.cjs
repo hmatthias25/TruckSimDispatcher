@@ -103,7 +103,12 @@ async function file(day, drivers, perMile, perDay, miles) {
   const veteran = drivers.find((d) => d.level >= 8);
   if (rookie && veteran) {
     console.log(`  ..    shares: L${rookie.level} ${rookie.wageShare}, L${veteran.level} ${veteran.wageShare}`);
-    ok('a veteran is on a bigger share than a rookie', veteran.wageShare > rookie.wageShare,
+    // Pay followed the ATS level for one build and now follows the grade earned here — see rank218,
+    // which owns that rule. What this suite cares about is that a new hire is a new hire: a level 12
+    // walking in the door is on the same probationary money as a level 1, because neither has done
+    // anything for THIS company yet.
+    ok('a veteran hired today is on the same money as a rookie hired today',
+      veteran.wageShare === rookie.wageShare,
       `${rookie.wageShare} vs ${veteran.wageShare}`);
     ok('and both are inside the band the company offers',
       rookie.wageShare >= 0.25 && veteran.wageShare <= 0.40,

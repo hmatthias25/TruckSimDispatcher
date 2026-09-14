@@ -63,9 +63,13 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   S = stock.snapshot;
   const units = stock.result.trucks;
 
+  // FIXED ids. Resignation is seeded on the driver id, and AddDriver mints a GUID when none is given —
+  // so without this A. Weak could walk out halfway through the probation arc below and the run would
+  // report a failure that was nothing but the dice. A seeded system should be reproducible on purpose.
+  let mkN = 0;
   const mk = async (name, unit, trailer) => (await api('/fleetops/drivers', 'POST',
-    { name, assignedTruckUnit: unit, assignedTrailerUnit: trailer, skill: 'Competent', status: 'Active',
-      wageShare: 0.3, homeTerminalId: hq.id })).snapshot;
+    { id: `qa-fs-${++mkN}`, name, assignedTruckUnit: unit, assignedTrailerUnit: trailer,
+      status: 'Active', wageShare: 0.3, homeTerminalId: hq.id })).snapshot;
   const trailers = S.trailers.filter((t) => t.unit !== S.driver.assignedTrailerUnit).map((t) => t.unit);
   S = await mk('A. Weak', units[0], trailers[0]);
   S = await mk('B. Strong', units[1], trailers[1]);

@@ -19,12 +19,17 @@ public static class FleetOpsService
         if (string.IsNullOrWhiteSpace(d.Id)) d.Id = Guid.NewGuid().ToString("N")[..8];
         if (string.IsNullOrWhiteSpace(d.HiredGameDate)) d.HiredGameDate = s.Status.GameTime;
 
-        // Pay the level. A share left at the model's own default means nobody chose it, so the company
-        // offers what that driver is worth — a quarter of the load at the bottom, two fifths at the top.
-        // The same rule the migration uses on existing drivers, so the two paths cannot drift apart: a
-        // figure somebody actually typed is theirs and is left alone.
+        // A new hire starts at the bottom of the ladder and serves their ninety days, whatever level
+        // ATS has them at. Level is how much driving they have done; the grade is what they have earned
+        // HERE, and nobody earns anything in their first quarter.
+        d.Grade = 0;
+
+        // Pay the rung. A share that is not the model's own default was typed by somebody, and a typed
+        // figure is theirs — the company fills in what it would offer and otherwise keeps out of it.
         if (Math.Abs(d.WageShare - 0.30) < 0.0001)
-            d.WageShare = DriverConduct.ShareForLevel(d.Level);
+            d.WageShare = DriverRank.ShareForGrade(d.Grade);
+        else
+            d.WageShareSetByHand = true;
 
         if (!string.IsNullOrWhiteSpace(d.AssignedTruckUnit))
             ClaimUnit(s, d.AssignedTruckUnit, d.Name, d.Id);
@@ -75,6 +80,23 @@ public static class FleetOpsService
         incoming.LifetimeWages = existing.LifetimeWages;
         incoming.ReportsFiled = existing.ReportsFiled;
         incoming.HiredGameDate = existing.HiredGameDate;
+
+        // So is the rung they stand on and the probation record behind it. An edit form is for
+        // correcting what you typed, not for handing somebody a promotion or wiping a warning — and a
+        // post that simply omitted a field would otherwise do both silently.
+        incoming.Grade = existing.Grade;
+        incoming.ProbationSince = existing.ProbationSince;
+        incoming.ProbationReason = existing.ProbationReason;
+        incoming.ProbationTarget = existing.ProbationTarget;
+        incoming.ProbationCount = existing.ProbationCount;
+        incoming.LastClearedProbationGameTime = existing.LastClearedProbationGameTime;
+        incoming.Periods = existing.Periods;
+
+        // A share typed over the one the rung offers is a decision, and the company stops setting it.
+        // Put it back on the offered figure and the company takes it over again — which is the only way
+        // to undo an override without a second control to explain.
+        var offered = DriverRank.ShareForGrade(incoming.Grade);
+        incoming.WageShareSetByHand = Math.Abs(incoming.WageShare - offered) > 0.0001;
 
         s.HiredDrivers[s.HiredDrivers.IndexOf(existing)] = incoming;
         return incoming;
@@ -468,7 +490,40 @@ public static class FleetOpsService
         };
 
         s.FleetReports.Insert(0, report);
+
+        // Grades last, and deliberately after the report is on the books: a promotion is judged on a
+        // window of reports that has to include this one, or a preventable from this period would not
+        // count against the rung it was supposed to cost.
+        //
+        // After the health pass too, so nobody is promoted in the same breath as being let go.
+        SettleGrades(s, report);
         return report;
+    }
+
+    /// <summary>
+    /// Move anybody onto the rung their record now earns, and say so.
+    ///
+    /// A promotion is the payoff for keeping somebody, so it is news on the report rather than a number
+    /// that quietly changed on a roster nobody was looking at. Coming off the ninety days is news for
+    /// the same reason: it is the moment a hire stops being a gamble.
+    /// </summary>
+    private static void SettleGrades(AppState s, FleetReport report)
+    {
+        foreach (var d in s.HiredDrivers.Where(x => x.Status == "Active"))
+        {
+            var before = d.Grade;
+            var moved = DriverRank.Settle(s, d);
+            if (moved == null) continue;
+
+            report.Findings.Add(moved.Index > before
+                ? $"{d.Name} is now {moved.Name} — {DriverRank.TenureDays(s, d)} day(s) with us, " +
+                  $"{d.LifetimeMiles:N0} mi, rating {d.Rating:0.0}. Their share goes to " +
+                  $"{moved.Share * 100:0}%."
+                : $"{d.Name} drops to {moved.Name}. " +
+                  $"{DriverRank.RecentPreventables(s, d)} preventable(s) in the last " +
+                  $"{DriverRank.PreventableWindowReports} reports is more than the rung takes. It comes " +
+                  "back when they age off.");
+        }
     }
 
     /// <summary>

@@ -3699,13 +3699,16 @@ function fleetOpsHtml() {
       </div>
 
       ${drivers.length ? `<div class="tablewrap" style="margin-top:14px"><table>
-        ${/* Grade and probation are two different things and this table has to keep them apart. A level
-              1-2 driver IS a probationary company driver — that is their grade, and it says nothing at
-              all about their conduct. Being PUT on probation after a bad period or a preventable is a
-              separate mark, and it rides on the name, where the eye lands first. */ ''}
+        ${/* Level and grade are different questions and the table asks both. Level is ATS's own figure
+              for how much driving somebody has done, and it climbs fast. Grade is what they have earned
+              HERE — time served, miles run, rating, and a clean recent record — and it is what they are
+              paid on. A level 9 in their first month is still a Probationary Company Driver.
+
+              Two probation badges, because they are two things: the ninety days every hire serves, and
+              being put on probation for a bad period. The second is the one that ends careers. */ ''}
         <thead><tr><th>Driver</th><th>Unit</th>
-          <th class="num" title="Level as ATS reports it">Level</th>
-          <th title="What that level is called here — the same ladder you climb">Grade</th>
+          <th class="num" title="Level as ATS reports it — how much driving they have done">Level</th>
+          <th title="What they have earned here: time served, miles, rating, clean record">Grade</th>
           <th class="num">Rating</th>
           <th class="num">$/day</th><th class="num">$/mi</th><th class="num">Truck &starf;</th>
           <th class="num" title="Preventable incidents on their record. Being hit by somebody else does not count.">Prev</th>
@@ -3716,12 +3719,12 @@ function fleetOpsHtml() {
           const tk = S.trucks.find((x) => x.unit === d.assignedTruckUnit);
           const dz = dossier(d.id);
           return `<tr>
-          <td><b>${esc(d.name)}</b>${d.onProbation ? ' ' + badge('warn', 'on probation') : ''}</td>
+          <td><b>${esc(d.name)}</b>${d.onProbation ? ' ' + badge('bad', 'on probation') : ''}${
+              dz.servingProbation && !d.onProbation
+                ? ' ' + badge('warn', `${dz.probationDaysLeft}d of 90`) : ''}</td>
           <td><span class="unit">${esc(uref(d.assignedTruckUnit) || '—')}</span></td>
           <td class="num">${d.level ? d.level : '<span class="sub">—</span>'}</td>
-          <td>${dz.rankShort
-              ? `<span title="${esc(dz.rank)}">${esc(dz.rankShort)}</span>`
-              : '<span class="sub" title="No level reported yet">not placed</span>'}</td>
+          <td><span title="${esc(dz.rank)}">${esc(dz.rankShort)}</span></td>
           <td class="num">${d.rating ? num(d.rating, 1) : '<span class="sub">—</span>'}</td>
           <td class="num">${last?.perDay ? money0(last.perDay) : '<span class="sub">—</span>'}</td>
           <td class="num">${last?.perMile ? '$' + (+last.perMile).toFixed(2) : '<span class="sub">—</span>'}</td>
@@ -3928,7 +3931,9 @@ function playerLineHtml() {
  */
 function dossier(id) {
   return (FLEETOPS?.dossiers || []).find((x) => x.id === id)
-    || { id, rank: '', rankShort: '', nextAt: null, summary: '', incidents: 0, preventables: 0, conduct: [] };
+    || { id, grade: 0, rank: '', rankShort: '', nextRank: null, nextShare: null, summary: '',
+         shortfall: [], tenureDays: 0, servingProbation: false, probationDaysLeft: 0,
+         incidents: 0, preventables: 0, recentPreventables: 0, conduct: [] };
 }
 
 /**
@@ -3959,8 +3964,8 @@ function driverFileModal(id) {
 
   modal(`
     <div class="panel-head"><h2>${esc(d.name)}</h2>
-      ${dz.rank ? badge('ok', esc(dz.rank)) : badge('mute', 'not placed')}
-      ${d.onProbation ? badge('warn', 'on probation') : ''}
+      ${badge('ok', esc(dz.rank))}
+      ${d.onProbation ? badge('bad', 'on probation') : ''}
       ${d.status !== 'Active' ? badge('bad', esc(d.status)) : ''}
       <div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Close</button>
@@ -3969,10 +3974,10 @@ function driverFileModal(id) {
     <p class="hint">${esc(dz.summary)}</p>
 
     <div class="meters">
+      ${fkpi('Days with us', num(dz.tenureDays))}
       ${fkpi('Level', d.level || '—')}
       ${fkpi('Rating', d.rating ? num(d.rating, 1) : '—')}
-      ${fkpi('Wage share', pct(d.wageShare * 100, 0))}
-      ${fkpi('Reports', d.reportsFiled || 0)}
+      ${fkpi('Wage share', pct(d.wageShare * 100, 0), d.wageShareSetByHand ? 'warn' : '')}
       ${fkpi('Preventables', dz.preventables, dz.preventables ? 'bad' : 'ok')}
     </div>
 
@@ -3980,11 +3985,28 @@ function driverFileModal(id) {
       ${fkpi('Lifetime revenue', money0(d.lifetimeRevenue))}
       ${fkpi('Lifetime wages', money0(d.lifetimeWages))}
       ${fkpi('Lifetime miles', num(d.lifetimeMiles || 0))}
-      ${fkpi('On unit', tk ? esc(tk.ref || tk.unit) : '—')}
+      ${fkpi('Reports', d.reportsFiled || 0)}
       ${fkpi('Hired', d.hiredGameDate ? gt(d.hiredGameDate) : '—')}
     </div>
 
-    ${d.onProbation ? `<div class="callout warn">
+    ${d.wageShareSetByHand ? `<p class="hint">Their share is one you set yourself, so the company leaves
+      it alone &mdash; it will not move when they are promoted. ${esc(dz.rank)} is offered
+      <b>${pct((dz.offeredShare || 0) * 100, 0)}</b>; set it back to that and the company takes it over
+      again.</p>` : ''}
+
+    ${dz.servingProbation ? `<div class="callout warn">
+      <h4>Serving their ninety days &mdash; ${dz.probationDaysLeft} to go</h4>
+      <p style="margin:0">Every hire does this, whatever level they came in at. Nothing above the bottom
+        rung opens until it is behind them.</p>
+    </div>` : dz.shortfall.length ? `<div class="callout info">
+      <h4>${dz.nextRank ? `What stands between them and ${esc(dz.nextRank)}` : 'Standing'}</h4>
+      <ul style="margin:0">${dz.shortfall.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    </div>` : dz.nextRank ? `<div class="callout go">
+      <h4>Everything ${esc(dz.nextRank)} asks for is met</h4>
+      <p style="margin:0">It lands on the next fleet report.</p>
+    </div>` : ''}
+
+    ${d.onProbation ? `<div class="callout stop">
       <h4>On probation${d.probationCount > 1 ? ` — time ${d.probationCount}` : ''}</h4>
       <p style="margin:0 0 4px">${esc(d.probationReason || 'No reason recorded.')}</p>
       ${d.probationTarget ? `<p style="margin:0"><b>To come off it:</b> ${esc(d.probationTarget)}</p>` : ''}
@@ -4001,6 +4023,9 @@ function driverFileModal(id) {
     </div>` : ''}
 
     <h3 class="sect">On the road</h3>
+    ${dz.recentPreventables ? `<p class="hint"><b>${dz.recentPreventables}</b> of these
+      ${dz.recentPreventables === 1 ? 'is' : 'are'} inside the last 12 reports and still counts against a
+      promotion. They age off.</p>` : ''}
     ${dz.conduct.length ? `<div class="tablewrap"><table>
       <thead><tr><th>When</th><th>Report</th><th>What</th><th class="num">Damage</th></tr></thead>
       <tbody>${dz.conduct.map((c) => `<tr>
@@ -4056,6 +4081,12 @@ function editHireModal(id) {
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
     <p class="hint">Add them here after you have hired them in ATS and put them on a truck, so the unit
       numbers match between the game and the app.</p>
+    ${isNew ? `<div class="callout info">
+      <p style="margin:0">Every hire starts as a <b>Probationary Company Driver</b> and serves ninety
+        days, whatever level they come in at. The level says how much driving they have done; the grade
+        is what they earn here. Leave the wage share alone and the company pays the rung &mdash; type a
+        figure and it is yours and stays put.</p></div>`
+      : `<div class="callout info"><p style="margin:0">${esc(dossier(d.id).summary)}</p></div>`}
     <div class="grid2">
       <label>Driver name<input id="hd-name" value="${esc(d.name)}"></label>
       <label>Tractor
@@ -4068,13 +4099,21 @@ function editHireModal(id) {
           ${S.trailers.map((t) => `<option value="${esc(t.unit)}" ${t.unit === d.assignedTrailerUnit ? 'selected' : ''}>
             ${esc(t.unit)} — ${esc(t.length)} ${esc(t.type)}</option>`).join('')}
         </select></label>
-      <label>Skill
-        <select id="hd-skill">${['Trainee', 'Competent', 'Experienced', 'Veteran'].map((x) =>
-          `<option ${d.skill === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+      ${/* Level and rating are on the ATS hiring screen in front of you, and the company tells you what
+            level to go and hire at — so there has to be somewhere to write down what you came back with.
+            Without these a veteran was added at level 0 and read as "not placed" for a fortnight.
+
+            The old Skill dropdown (Trainee/Competent/Experienced/Veteran) was here and nothing read it.
+            It was a second ladder for the thing level already measures, which is how two fields end up
+            disagreeing about one driver. The property stays on the model so stored careers load. */ ''}
+      <label>Level <span class="sub">— as ATS shows it</span>
+        <input id="hd-level" type="number" step="1" min="0" value="${d.level || ''}" placeholder="—"></label>
+      <label>Rating <span class="sub">— 0.0 to 10.0</span>
+        <input id="hd-rating" type="number" step="0.1" min="0" max="10" value="${d.rating || ''}" placeholder="—"></label>
       <label>Status
         <select id="hd-status">${['Active', 'OnLeave', 'Resigned', 'Terminated'].map((x) =>
           `<option ${d.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-      <label>Wage share of revenue (0–0.9)<input id="hd-wage" type="number" step="0.05" min="0" max="0.9" value="${d.wageShare}"></label>
+      <label>Wage share of revenue (0–0.9)<input id="hd-wage" type="number" step="0.01" min="0" max="0.9" value="${d.wageShare}"></label>
       <label>Home terminal
         <select id="hd-terminal"><option value="">(headquarters)</option>
           ${(S.company.terminals || []).map((t) => `<option value="${esc(t.id)}" ${t.id === d.homeTerminalId ? 'selected' : ''}>
@@ -6499,7 +6538,9 @@ async function handleAction(act, d, ev) {
         absorb(await api('/fleetops/drivers', 'POST', {
           ...base, id: d.id || '', name: sv('hd-name'),
           assignedTruckUnit: sv('hd-truck'), assignedTrailerUnit: sv('hd-trailer'),
-          skill: sv('hd-skill'), status: sv('hd-status'), wageShare: fv('hd-wage'),
+          level: Math.max(0, Math.round(fv('hd-level') || 0)),
+          rating: Math.min(10, Math.max(0, fv('hd-rating') || 0)),
+          status: sv('hd-status'), wageShare: fv('hd-wage'),
           homeTerminalId: sv('hd-terminal'), notes: sv('hd-notes'),
         }));
         FLEETOPS = await api('/fleetops');

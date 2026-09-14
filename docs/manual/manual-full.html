@@ -6363,14 +6363,17 @@
   </div>
 
   <table>
-    <tr><th style="width:0.8in">Level</th><th style="width:1.3in">Grade</th>
-        <th class="num" style="width:0.9in">Chance</th><th>&nbsp;</th></tr>
-    <tr><td>1&ndash;2</td><td>Probationary</td><td class="num">16%</td><td>Green. Still learning where the trailer ends.</td></tr>
-    <tr><td>3&ndash;4</td><td>Company</td><td class="num">12%</td><td>&nbsp;</td></tr>
-    <tr><td>5&ndash;6</td><td>Senior</td><td class="num">9%</td><td>&nbsp;</td></tr>
-    <tr><td>7&ndash;8</td><td>Lead</td><td class="num">7%</td><td>&nbsp;</td></tr>
-    <tr><td>9 and up</td><td>Specialist &middot; Master</td><td class="num">5%</td><td>Which is the whole reason a developed driver is worth keeping.</td></tr>
+    <tr><th style="width:1.3in">ATS level</th><th class="num" style="width:1in">Chance a period</th><th>&nbsp;</th></tr>
+    <tr><td>1&ndash;2</td><td class="num">16%</td><td>Green. Still learning where the trailer ends.</td></tr>
+    <tr><td>3&ndash;4</td><td class="num">12%</td><td>&nbsp;</td></tr>
+    <tr><td>5&ndash;6</td><td class="num">9%</td><td>&nbsp;</td></tr>
+    <tr><td>7&ndash;8</td><td class="num">7%</td><td>&nbsp;</td></tr>
+    <tr><td>9 and up</td><td class="num">5%</td><td>Which is the whole reason a developed driver is worth hiring.</td></tr>
   </table>
+
+  <p><b>This is the level, not the grade.</b> How likely somebody is to hit something is about how much
+    driving they have done, which is what ATS measures. What they have earned at this company is a
+    different question and is answered overleaf.</p>
 
   <div class="rule">
     <h4>Three in ten are not their fault</h4>
@@ -6392,10 +6395,12 @@
   </div>
 
   <div class="note">
-    <h4>Pay follows the level</h4>
+    <h4>Pay follows the grade</h4>
     <p>A quarter of what they bring in at the bottom, two fifths at the top. A flat share for everybody
       said a level 9 and a rookie cost the company the same &mdash; and so nobody was ever worth keeping
-      in particular. A share you set by hand is yours and is left alone.</p>
+      in particular. It followed the ATS <i>level</i> for one build, which was the right idea aimed at
+      the wrong number: a level climbs fast, so the company was handing out rises for a good fortnight.
+      A share you set by hand is yours and is left alone.</p>
   </div>
 
   <div class="pfoot"><span>21 &middot; Hired drivers</span><span class="pn"></span></div>
@@ -6404,52 +6409,106 @@
 <!-- ============================================================ 21y3 - grades and the driver file -->
 <div class="page">
   <div class="kicker">Section 21, continued</div>
-  <h2>What a driver's level is called, and where their file is</h2>
+  <h2>The grade a hired driver earns, and where their file is</h2>
 
-  <p class="lede">ATS gives a hired driver a level and no word for it. The number was already deciding
-    their pay and how likely they were to hit something; it just never got said out loud.</p>
-
-  <p>They climb <b>the same ladder you do</b>, banded on the level the game reports. One vocabulary for
-    the whole yard &mdash; a carrier that called the driver in the seat a senior and everybody else a 6
-    would be running two languages for one thing.</p>
-
-  <table>
-    <tr><th style="width:0.9in">Level</th><th style="width:2.1in">Grade</th><th>&nbsp;</th></tr>
-    <tr><td>1&ndash;2</td><td>Probationary Company Driver</td><td>A rookie. Cheapest, and bends the most metal.</td></tr>
-    <tr><td>3&ndash;4</td><td>Company Driver</td><td>&nbsp;</td></tr>
-    <tr><td>5&ndash;6</td><td>Senior Company Driver</td><td>&nbsp;</td></tr>
-    <tr><td>7&ndash;8</td><td>Lead Driver</td><td>&nbsp;</td></tr>
-    <tr><td>9&ndash;10</td><td>Specialist Driver</td><td>&nbsp;</td></tr>
-    <tr><td>11 and up</td><td>Master Driver</td><td>Top of the company scale, and paid it.</td></tr>
-  </table>
+  <p class="lede">A hired driver climbs <b>the same ladder you do</b>, and earns it the same way: time
+    served, distance covered, the rating the game gives them, and a clean recent record.</p>
 
   <div class="rule">
-    <h4>A grade is not the same thing as being put on probation</h4>
-    <p>They share a word and nothing else. <b>Probationary</b> is a grade &mdash; where a level 1 driver
-      starts, and it says nothing about their conduct. Being <b>put on probation</b> is a mark, earned
-      with a bad period or a preventable, and it rides beside the name rather than in the grade column.
-      A Master Driver can be on probation; a Probationary Company Driver usually is not.</p>
+    <h4>Level is not seniority, and grading on it would be a lie</h4>
+    <p>An AI driver climbs ATS levels fast, on miles turned and nothing else. A good fortnight can move
+      somebody two levels &mdash; and if that were a promotion, everybody would be senior by the end of
+      the quarter and there would be nothing left to earn.</p>
+    <p style="margin-top:6pt"><b>Level says how much driving they have done. Grade says what they have
+      made of it here.</b> The roster shows both, in their own columns, because they answer different
+      questions.</p>
+  </div>
+
+  <table>
+    <tr><th style="width:1.7in">Grade</th><th class="num" style="width:0.7in">Days</th>
+        <th class="num" style="width:0.85in">Miles</th><th class="num" style="width:0.7in">Rating</th>
+        <th class="num" style="width:0.75in">Prev.</th><th class="num">Share</th></tr>
+    <tr><td>Probationary Company Driver</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">25%</td></tr>
+    <tr><td>Company Driver</td><td class="num">90</td><td class="num">6,000</td><td class="num">6.0</td><td class="num">3</td><td class="num">28%</td></tr>
+    <tr><td>Senior Company Driver</td><td class="num">270</td><td class="num">30,000</td><td class="num">7.0</td><td class="num">3</td><td class="num">31%</td></tr>
+    <tr><td>Lead Driver</td><td class="num">540</td><td class="num">65,000</td><td class="num">8.0</td><td class="num">2</td><td class="num">34%</td></tr>
+    <tr><td>Specialist Driver</td><td class="num">900</td><td class="num">120,000</td><td class="num">8.5</td><td class="num">1</td><td class="num">37%</td></tr>
+    <tr><td>Master Driver</td><td class="num">1,350</td><td class="num">220,000</td><td class="num">9.0</td><td class="num">1</td><td class="num">40%</td></tr>
+  </table>
+
+  <p><b>All four, not the best of them.</b> A driver with the miles but not the months waits, and so does
+    one with the months and two preventables behind them. The mileage figures are your own ladder's, from
+    Section 20 &mdash; a company that asked more of its hired drivers than of you would be telling two
+    stories about one job.</p>
+
+  <div class="rule">
+    <h4>Every hire serves ninety days, whatever they walked in as</h4>
+    <p>The same period you served. A level 12 veteran hired this morning is a <b>Probationary Company
+      Driver</b> on probationary money, exactly like the level 1 hired beside them, and nothing above the
+      bottom rung opens until the ninety days are behind them. They have done a great deal of driving;
+      they have done none of it here.</p>
   </div>
 
   <div class="note">
-    <h4>No level reported, no grade</h4>
-    <p>A driver you have added but never filed figures for reads <b>not placed</b>. Calling an
-      unreported level a rookie would be the app inventing a reading off your game, which is the one
-      thing it does not do. File a report with what the ATS company screen shows and the company places
-      them.</p>
+    <h4>A grade is not the same thing as being put on probation</h4>
+    <p>They share a word and nothing else. The roster shows the ninety days as a countdown beside the
+      name; being <b>put on probation</b> for a bad period or a preventable is a red mark in the same
+      place. A Master Driver can be put on probation, and while they are, nothing moves.</p>
+  </div>
+
+  <div class="note">
+    <h4>Preventables cost a rung, and then age off</h4>
+    <p>Only the ones inside the last <b>twelve reports</b> count against a promotion. The file keeps
+      everything for ever, but a bar that never lifts is a life sentence rather than discipline &mdash;
+      and clean work walking a mistake off is how the rest of this app works.</p>
+  </div>
+
+  <div class="pfoot"><span>21 &middot; Hired drivers</span><span class="pn"></span></div>
+</div>
+
+<!-- ============================================================ 21y4 - hiring and the file -->
+<div class="page">
+  <div class="kicker">Section 21, continued</div>
+  <h2>Taking somebody on, and reading their file</h2>
+
+  <p class="lede">The company tells you what level to go and hire at. The form now has somewhere to write
+    down what you came back with.</p>
+
+  <p>ATS shows a candidate's <b>level</b> and <b>rating</b> on the hiring screen. Both go in when you add
+    them, so a veteran is on the books as a veteran from the first minute rather than reading as an
+    unknown until the next fortnightly report.</p>
+
+  <div class="note">
+    <h4>It does not buy them a grade, and it is not meant to</h4>
+    <p>Level is what the company screens on and what it pays a recruiter for; the ninety days are what
+      it promotes on. What the level actually changes is how likely they are to bend something &mdash;
+      a level 1 hire is green and the odds say so, whatever their grade.</p>
+  </div>
+
+  <div class="rule">
+    <h4>The Skill dropdown is gone</h4>
+    <p>Trainee / Competent / Experienced / Veteran was on this form and <b>nothing read it</b>. It was a
+      second ladder measuring what the level already measures, which is how two fields end up disagreeing
+      about one driver &mdash; the same fault as a due-back date the app could not know, or a trailer
+      position stored in two places.</p>
   </div>
 
   <h3>Their file</h3>
-  <p>Every driver row has a <b>File</b> button. It is one page of everything the company knows about
-    them: their grade and what the next rung would pay, every period they have filed, everything that
-    has happened to them on the road, and their probation record including the times they came off it.</p>
+  <p>Every driver row has a <b>File</b> button: their grade, exactly what stands between them and the
+    next rung, every period they have filed, everything that has happened to them on the road, and their
+    probation record including the times they came off it. Pay follows the rung automatically &mdash;
+    type a share yourself and it becomes yours, and the company stops touching it.</p>
+
+  <p>Beside it on the roster is <b>Prev</b>: preventables at a glance. A driver with three scrapes across
+    six reports used to read exactly like one who had never touched anything, because each scrape
+    scrolled away with the report that carried it. <b>Being rear-ended is not in this number</b> &mdash;
+    it is on their file, and it is not against them.</p>
 
   <div class="note">
-    <h4>Why a file, when the report already said it</h4>
-    <p>A report said it once, on the report it happened on, and then scrolled away. A driver with three
-      scrapes across six reports read exactly like one who had never touched anything. The
-      <b>Prev</b> column on the roster is that count at a glance &mdash; preventables only, because
-      being rear-ended is on the record and not against them.</p>
+    <h4>What the fleet report says now</h4>
+    <p>A promotion is news. <i>"Marcus Vale is now Senior Company Driver &mdash; 284 day(s) with us,
+      46,200 mi, rating 8.1. Their share goes to 31%."</i> It is the payoff for keeping somebody, and it
+      belongs on the report rather than quietly changing a number on a roster nobody was looking at.</p>
   </div>
 
   <div class="pfoot"><span>21 &middot; Hired drivers</span><span class="pn"></span></div>
