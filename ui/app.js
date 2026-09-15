@@ -168,10 +168,14 @@ function releasedIso() {
    week under the standing slot stays a drop-and-hook load after they are re-rigged onto a reefer. */
 const isDropHook = (t) => ((t && t.trailerType) || '').trim().toLowerCase() === 'drop & hook';
 
+/* What the close-out will actually treat as the arrival: the earliest thing the app can show, which is
+   the arrival stamp or a Begin unload. Both, because on drop and hook there is no unload to log and the
+   field would otherwise prefill with the current clock and then be silently corrected on submit. */
 function arrivedFromLog(t) {
   const hit = ((t && t.events) || []).filter((e) => e.kind === 'BeginUnload')
-    .map((e) => e.gameTime).filter(Boolean).sort();
-  return hit[0] || '';
+    .map((e) => e.gameTime).filter(Boolean);
+  if (t && t.arrivedGameTime) hit.push(t.arrivedGameTime);
+  return hit.sort()[0] || '';
 }
 
 /* ---- correcting a stamp already logged.
@@ -1862,7 +1866,10 @@ function viewActive() {
         <label>Fines $<input id="c-fines" type="number" step="0.01" value="0"></label>
         <label>Other expense $<input id="c-other" type="number" step="0.01" value="0"></label>
         <label>Tractor damage % after<input id="c-tdmg" type="number" step="0.1" min="0" max="100" value="${S.status.truckDamagePct}"></label>
-        <label>Trailer damage % after<input id="c-trdmg" type="number" step="0.1" min="0" max="100" value="${S.status.trailerDamagePct}"></label>
+        ${/* Whatever you hooked went back to the shipper, so the server zeroes this on drop and hook
+              regardless. Asking for it anyway is a field that does nothing, and the manual already says
+              trailer damage is "not tracked, and not asked for". */ ''}
+        ${isDropHook(t) ? '' : `<label>Trailer damage % after<input id="c-trdmg" type="number" step="0.1" min="0" max="100" value="${S.status.trailerDamagePct}"></label>`}
         <label>Cargo damage %<input id="c-cargo" type="number" step="0.1" min="0" max="100" value="0"></label>
         <label>Fuel % now<input id="c-fuelpct" type="number" step="1" min="0" max="100" value="${S.status.fuelPct}"></label>
       </div>
