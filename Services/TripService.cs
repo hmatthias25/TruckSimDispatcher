@@ -1119,8 +1119,25 @@ public static class TripService
 
         if (loaded == null && unloaded == null)
         {
-            // Nothing logged. The driver types time spent at the dock, so net the free window off it
-            // here — the stored figure is always billable hours, whichever way it arrived.
+            // Nothing logged — but the trip may still know when they arrived and when the receiver got
+            // round to them, and on drop and hook that is the ONLY way it can know: there is no unload
+            // to log, so before this a driver held two hours in a yard reported it by hand or not at all.
+            var held = TimeOnTheirProperty(trip, f.UnloadingHours, out var heldFrom, out var heldWhy);
+            if (held is { } onIt && onIt - free > 0.01)
+            {
+                f.DetentionHours = Math.Round(Math.Max(0, onIt - free), 2);
+                if (heldWhy != null) f.Explain.Add(heldWhy);
+                f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)} — on their clock from " +
+                              $"{GameClock.Pretty(heldFrom!.Value)}, after {Hhmm.Of(free)} free. " +
+                              "Nothing logged, so this is off the arrival and what they told you.");
+                if (typedDetention > 0 && Math.Abs(typedDetention - f.DetentionHours) > 0.25)
+                    f.Explain.Add($"You reported {Hhmm.Of(typedDetention)}; their own clock works out to " +
+                                  $"{Hhmm.Of(f.DetentionHours)}. I am paying the clock.");
+                return f;
+            }
+
+            // The driver types time spent at the dock, so net the free window off it here — the stored
+            // figure is always billable hours, whichever way it arrived.
             f.DetentionHours = Math.Round(Math.Max(0, typedDetention - free), 2);
             if (typedDetention > 0)
                 f.Explain.Add(f.DetentionHours > 0
@@ -1131,14 +1148,26 @@ public static class TripService
         }
 
         var atShipper = Math.Max(0, f.LoadingHours - free);
-        var atReceiver = Math.Max(0, f.UnloadingHours - free);
+
+        // The receiver's clock starts when they were due to have you, not when they got round to it.
+        // Time sat in their yard waiting for a door is the whole reason detention exists — the unload
+        // itself is just the job. Measuring from Begin unload paid for the work and nothing for the wait,
+        // while the app's own backed-up notice was telling the driver "the whole 2:15 is detention".
+        var onProperty = TimeOnTheirProperty(trip, f.UnloadingHours, out var from, out var why)
+                         ?? f.UnloadingHours;
+        var atReceiver = Math.Max(0, onProperty - free);
         f.DetentionHours = Math.Round(atShipper + atReceiver, 2);
+
+        if (why != null) f.Explain.Add(why);
 
         if (f.DetentionHours > 0)
         {
             var parts = new List<string>();
             if (atShipper > 0) parts.Add($"{Hhmm.Of(atShipper)} at the shipper");
-            if (atReceiver > 0) parts.Add($"{Hhmm.Of(atReceiver)} at the receiver");
+            if (atReceiver > 0)
+                parts.Add(from == null
+                    ? $"{Hhmm.Of(atReceiver)} at the receiver"
+                    : $"{Hhmm.Of(atReceiver)} at the receiver, on their clock from {GameClock.Pretty(from.Value)}");
             f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)} — {string.Join(" plus ", parts)}, " +
                           $"after {Hhmm.Of(free)} free at each stop.");
         }
@@ -1153,6 +1182,70 @@ public static class TripService
                           "I am paying the log.");
 
         return f;
+    }
+
+    /// <summary>
+    /// How long the truck was on the receiver's property, on the receiver's clock.
+    ///
+    /// <para>Detention runs from <b>the later of the appointment and the arrival</b>, which is the rule a
+    /// real carrier bills on and the only one that survives both edges: a driver who turns up two hours
+    /// early is not owed for their own keenness, and one who turns up an hour late does not get the hour
+    /// they missed. A job site's opening time is the same kind of floor as a booked slot &mdash; nobody
+    /// is holding a door at 04:00 because there is nobody there.</para>
+    ///
+    /// <para>It ends when the work ends: the <c>EndUnload</c> stamp, or failing that the unload duration
+    /// measured onto the start of the work.</para>
+    ///
+    /// <para>Falls back to the plain unload duration when neither an arrival nor an appointment is known,
+    /// which is exactly what this did before any of them existed. There is nothing else honest to do with
+    /// a trip that never said when it got there.</para>
+    /// </summary>
+    private static double? TimeOnTheirProperty(Trip trip, double unloadingHours,
+        out DateTime? from, out string? explain)
+    {
+        from = null;
+        explain = null;
+
+        var arrived = GameClock.TryParse(trip.ArrivedGameTime);
+        var due = GameClock.TryParse(trip.AppointmentGameTime)
+                  ?? GameClock.TryParse(trip.AppointmentOpensGameTime);
+        var began = trip.Events.Where(e => e.Kind == "BeginUnload")
+            .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Min();
+        var ended = trip.Events.Where(e => e.Kind == "EndUnload")
+            .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Max();
+        // When the receiver actually started on them, as the arrival call worked it out. This is what
+        // makes the wait measurable on a load with nothing logged at all — drop and hook, where there is
+        // no unload to log and the app itself is the thing that said "start at ten".
+        var startedWork = GameClock.TryParse(trip.WorkStartsGameTime);
+
+        // A Begin unload earlier than the arrival stamp is still proof they were there.
+        if (arrived == null || (began != null && began < arrived)) arrived ??= began;
+        if (arrived == null) return null;                       // nothing to measure from
+
+        var start = due != null && due.Value > arrived.Value ? due.Value : arrived.Value;
+
+        // Best available end, in order of how much it actually knows.
+        var finish = ended
+                     ?? (startedWork > start ? (DateTime?)startedWork!.Value.AddHours(unloadingHours) : null)
+                     ?? began?.AddHours(unloadingHours)
+                     ?? start.AddHours(unloadingHours);
+        if (finish <= start) return null;
+
+        from = start;
+        var hours = (finish - start).TotalHours;
+
+        // Only worth explaining when it differs from the unload itself — which is precisely the case the
+        // driver asked about, and precisely the one that used to vanish.
+        var waited = hours - unloadingHours;
+        if (waited > 0.01)
+            explain = due != null && due.Value > arrived.Value
+                ? $"On their property {Hhmm.Of(hours)} — their clock started at your " +
+                  $"{GameClock.Pretty(start)} slot and they had you until {GameClock.Pretty(finish)}. " +
+                  $"{Hhmm.Of(waited)} of that was waiting rather than working."
+                : $"On their property {Hhmm.Of(hours)} — arrived {GameClock.Pretty(start)}, away " +
+                  $"{GameClock.Pretty(finish)}. {Hhmm.Of(waited)} of that was waiting rather than working.";
+
+        return hours;
     }
 
     private static string Stamp(Trip trip, string kind)

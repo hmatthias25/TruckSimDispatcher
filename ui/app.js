@@ -2111,8 +2111,38 @@ function facilityHtml(t) {
   const load = span('BeginLoad', 'EndLoad');
   const unload = span('BeginUnload', 'EndUnload');
   const free = S.driver.pay.detentionFreeHours || 0;
-  const det = (load === null && unload === null) ? null
-    : Math.max(0, (load || 0) - free) + Math.max(0, (unload || 0) - free);
+
+  /* The receiver's clock runs from when they were DUE to have you, not from when they got round to it —
+     the same rule the server bills on. Worked out here as well because this preview is the number the
+     driver reads before pressing the button, and a preview that disagrees with the stub is worse than
+     no preview at all. */
+  const hrs = (a, b) => {
+    const x = Date.parse(isoUtc(a)), y = Date.parse(isoUtc(b));
+    return Number.isFinite(x) && Number.isFinite(y) ? (y - x) / 3600000 : null;
+  };
+  const arrivedAt = t.arrivedGameTime || at('BeginUnload');
+  const dueAt = t.appointmentGameTime || t.appointmentOpensGameTime;
+  const startAt = (dueAt && arrivedAt && Date.parse(isoUtc(dueAt)) > Date.parse(isoUtc(arrivedAt)))
+    ? dueAt : arrivedAt;
+
+  let onProperty = null;
+  if (startAt) {
+    const endedAt = at('EndUnload');
+    if (endedAt) {
+      onProperty = hrs(startAt, endedAt);
+    } else {
+      // No end stamp, so the wait is measurable and the work still has to be added onto it.
+      const tookYou = t.workStartsGameTime || at('BeginUnload');
+      const waited = tookYou ? hrs(startAt, tookYou) : null;
+      if (waited !== null && waited >= 0) onProperty = waited + (unload ?? t.unloadingHours ?? 0);
+    }
+    if (onProperty !== null && onProperty < 0) onProperty = null;
+  }
+
+  // Only interesting where it beats the unload itself — otherwise it IS the unload and nothing changed.
+  const held = onProperty !== null && onProperty > (unload ?? 0) ? onProperty : null;
+  const det = (load === null && unload === null && held === null) ? null
+    : Math.max(0, (load ?? 0) - free) + Math.max(0, (held ?? unload ?? 0) - free);
 
   const line = (label, hours, a, b) => hours === null
     ? `<tr><td>${label}</td><td colspan="2" class="sub">not logged — log <b>${a}</b> and <b>${b}</b>, or type it below</td></tr>`
@@ -2123,6 +2153,10 @@ function facilityHtml(t) {
     <div class="tablewrap"><table><tbody>
       ${line('Loading', load, 'BeginLoad', 'EndLoad')}
       ${line('Unloading', unload, 'BeginUnload', 'EndUnload')}
+      ${held === null ? '' : `<tr><td>On their property</td>
+        <td class="num"><b>${hhmm(held)}</b></td>
+        <td class="sub">their clock from ${gt(startAt)}${
+          dueAt && startAt === dueAt ? ' — your slot, not when you rolled in' : ''}</td></tr>`}
       ${det === null ? '' : `<tr><td><b>Detention</b></td>
         <td class="num"><b style="color:${det > 0 ? 'var(--amber2)' : 'var(--ink3)'}">${hhmm(det)}</b></td>
         <td class="sub">${det > 0 ? `beyond ${hhmm(free)} free at each stop — this is paid`
