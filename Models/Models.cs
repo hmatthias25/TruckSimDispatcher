@@ -1276,6 +1276,20 @@ public class Trip
     public string Cargo { get; set; } = "";
     public string Division { get; set; } = "";
     public string TrailerType { get; set; } = "";
+
+    /// <summary>
+    /// What was actually on the back, when that is not what <see cref="TrailerType"/> says.
+    ///
+    /// On drop and hook the assigned trailer is the standing <c>Drop &amp; Hook</c> slot, so
+    /// <see cref="TrailerType"/> reads "Drop &amp; Hook" for a load that is physically a flatbed or a
+    /// reefer. That field has to keep saying so — <c>DropHook.Is(trip.TrailerType)</c> is what zeroes
+    /// trailer damage and what keeps these loads out of dock-time learning — but the receiver at the
+    /// other end does not care whose trailer it is. A flatbed is a job site with operating hours and a
+    /// gate queue whoever owns it, and a reefer is a booked door.
+    ///
+    /// Empty on a load pulled with the company's own trailer, where the two are the same thing.
+    /// </summary>
+    public string FreightTrailerType { get; set; } = "";
     public string Shipper { get; set; } = "";
     public string OriginCity { get; set; } = "";
     public string OriginState { get; set; } = "";

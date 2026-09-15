@@ -51,6 +51,20 @@ public static class FacilityProfile
     ///
     /// Drop and hook is a dock. You are pulling a warehouse's own trailer to and from warehouses.
     /// </summary>
+    /// <summary>
+    /// The trailer the RECEIVER sees, which is not always the one the company assigned.
+    ///
+    /// On drop and hook the assigned trailer is a standing slot typed "Drop &amp; Hook", and reading that
+    /// as the facility type sent every load down the dock branch however it was scored — a flatbed was
+    /// judged a job site on the board, the truck committed on that basis, and then the receiver behaved
+    /// like a warehouse. The board was right; a gate queue is a fact about the place and the freight, not
+    /// about whose name is on the trailer.
+    /// </summary>
+    public static string? FreightTypeOf(Trip? trip) =>
+        trip == null ? null
+        : !string.IsNullOrWhiteSpace(trip.FreightTrailerType) ? trip.FreightTrailerType
+        : trip.TrailerType;
+
     public static Kind KindOf(string? trailerType)
     {
         var t = (trailerType ?? "").Trim();
@@ -258,7 +272,7 @@ public static class FacilityProfile
     public static object? SiteHoursFor(AppState s, Trip? trip)
     {
         if (trip == null || trip.Kind != "Freight") return null;
-        if (KindOf(trip.TrailerType) != Kind.Site) return null;
+        if (KindOf(FreightTypeOf(trip)) != Kind.Site) return null;
         if (string.IsNullOrWhiteSpace(trip.DestCity) && string.IsNullOrWhiteSpace(trip.Receiver)) return null;
 
         // Silent where the game gave a window. That window IS their day, the card already shows it, and a

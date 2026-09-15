@@ -1321,32 +1321,50 @@ public static class TripService
     /// <summary>
     /// When the driver actually got to the receiver.
     ///
-    /// A <c>BeginUnload</c> event is the arrival, logged at the dock rather than typed at close-out, and
-    /// it beats what was typed — the same principle the app already applies to facility time, where a
-    /// logged pair beats any duration entered by hand.
+    /// The earliest moment the app can actually show they were there: <b>I have arrived</b>, or a
+    /// <c>BeginUnload</c> event, whichever came first. Both beat what is typed at close-out — the same
+    /// principle already applied to facility time, where a logged pair beats a duration entered by hand.
     ///
-    /// The exception runs one way only: a reported time <b>earlier</b> than the log is kept, because
+    /// <para>Arrived used to be ignored here, which was harmless on a normal load and wrong on drop and
+    /// hook. There is no unloading on drop and hook, so there is never a <c>BeginUnload</c> to log, so
+    /// arrival was only ever the close-out clock — and a driver who rolled onto the property at 14:00,
+    /// waited two hours for a door and closed out at 16:30 was judged to have arrived at 16:30. The
+    /// stamp was sitting on the trip the whole time, deciding how the receiver treated them, and playing
+    /// no part in whether they were late.</para>
+    ///
+    /// The exception runs one way only: a reported time <b>earlier</b> than either stamp is kept, because
     /// sitting in a queue from noon and backing in at half past is a real thing and the arrival was noon.
-    /// A reported time later than the log is not credible — unloading cannot start before arriving — so
-    /// it is the close-out clock leaking in, and it is exactly the bug.
+    /// A reported time later is not credible — you cannot start unloading before you get there — so it is
+    /// the close-out clock leaking in, and it is exactly the bug.
     /// </summary>
     public static string ArrivalFromLog(Trip trip, string reported, out string? note)
     {
         note = null;
 
-        var logged = trip.Events.Where(e => e.Kind == "BeginUnload")
+        var fromLog = trip.Events.Where(e => e.Kind == "BeginUnload")
             .Select(e => GameClock.TryParse(e.GameTime))
-            .Where(d => d != null).Min();
-        if (logged == null) return reported;
+            .Where(d => d != null)
+            .Select(d => d!.Value)
+            .ToList();
+        if (GameClock.TryParse(trip.ArrivedGameTime) is { } arrived) fromLog.Add(arrived);
+        if (fromLog.Count == 0) return reported;
 
+        var logged = fromLog.Min();
         var said = GameClock.TryParse(reported);
-        if (said != null && said.Value <= logged.Value) return reported;
+        if (said != null && said.Value <= logged) return reported;
 
-        var moved = GameClock.Format(logged.Value);
+        var moved = GameClock.Format(logged);
         if (said != null)
-            note = $"Taking {GameClock.Pretty(moved)} as your arrival — that is when you logged Begin unload. " +
-                   $"You closed the load out at {GameClock.Pretty(said.Value)}, which is after the dock had you, " +
-                   "and time on a dock is the receiver's, not yours.";
+        {
+            // Name the one it actually took. "You logged Begin unload" on a drop-and-hook load the driver
+            // never unloaded would be the app describing something that did not happen.
+            var source = GameClock.TryParse(trip.ArrivedGameTime) is { } a && a <= logged
+                ? "that is when you told me you had arrived"
+                : "that is when you logged Begin unload";
+            note = $"Taking {GameClock.Pretty(moved)} as your arrival — {source}. " +
+                   $"You closed the load out at {GameClock.Pretty(said.Value)}, which is after they had you, " +
+                   "and time on their property is the receiver's, not yours.";
+        }
         return moved;
     }
 

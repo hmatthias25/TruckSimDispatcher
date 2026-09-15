@@ -164,6 +164,10 @@ function releasedIso() {
  * and sit on a dock for two hours and they are two hours apart, and counting that as lateness charges
  * the receiver's time to the driver.
  */
+/* Drop and hook, read off the trip rather than the driver's current arrangement: a load pulled last
+   week under the standing slot stays a drop-and-hook load after they are re-rigged onto a reefer. */
+const isDropHook = (t) => ((t && t.trailerType) || '').trim().toLowerCase() === 'drop & hook';
+
 function arrivedFromLog(t) {
   const hit = ((t && t.events) || []).filter((e) => e.kind === 'BeginUnload')
     .map((e) => e.gameTime).filter(Boolean).sort();
@@ -1743,7 +1747,9 @@ function viewActive() {
           t.workStartsGameTime && t.workStartsGameTime !== t.arrivedGameTime
             ? `start at ${gt(t.workStartsGameTime)}`
             : 'straight in')}
-             <div class="sub">${esc(t.receiverCallNote || 'Nothing to wait for — log Begin unload now.')}</div></dd>` : ''}
+             <div class="sub">${esc(t.receiverCallNote
+               || (isDropHook(t) ? 'Nothing to wait for — drop it and close the load out.'
+                                 : 'Nothing to wait for — log Begin unload now.'))}</div></dd>` : ''}
       <dt>Rationale</dt><dd style="font-family:inherit">${esc(t.authorizationRationale)}</dd>
     </dl>
     ${f ? `<h3 class="sect">Plan captured at authorization</h3>
@@ -1781,6 +1787,13 @@ function viewActive() {
         <input id="ev-detail" placeholder="only if there is something worth noting"></label>
       <p class="hint">The event type and time are the record. Leave this blank unless something happened
         worth reading back later — a delay, a scale, damage, why you stopped where you did.</p>
+      ${/* Drop and hook has no dock time by definition, and FacilityLearning refuses to learn from it —
+            so the load/unload pairs are not merely unnecessary, they are ignored. Worth saying, because
+            the obvious guess is to log the same time twice and wonder whether that broke something. */ ''}
+      ${isDropHook(t) ? `<p class="hint"><b>On drop and hook, skip the load and unload events.</b> You
+        back under what is there and pull the pin at the other end — there is no dock time to record and
+        the planner will not learn from one. <b>I have arrived</b> above is what stamps when you got
+        there, and that is what your on-time record is judged on.</p>` : ''}
       <fieldset><legend>If this is a fuel stop</legend>
         <div class="grid4">
           <label>Gallons<input id="ev-gal" type="number" step="0.1" placeholder="0"></label>

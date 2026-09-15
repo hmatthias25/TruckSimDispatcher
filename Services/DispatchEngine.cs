@@ -1808,6 +1808,14 @@ public static class DispatchEngine
             // The listing's own TrailerType keeps its real job as the GATE — can what I have haul this —
             // which is what QualificationFails and the fit check read. That is unchanged.
             TrailerType = string.IsNullOrWhiteSpace(trailer?.Type) ? load.TrailerType ?? "" : trailer!.Type,
+            // What is physically on the back, kept only where it differs from the assigned trailer —
+            // which in practice means drop and hook. The receiver at the other end is a warehouse or a
+            // job site because of the freight, not because of whose trailer it is under, and the board
+            // has always scored it that way. This is what lets the arrival agree with the decision.
+            FreightTrailerType =
+                DropHook.Is(trailer?.Type) && !string.IsNullOrWhiteSpace(load.TrailerType)
+                    ? load.TrailerType!
+                    : "",
             Shipper = load.Shipper,
             OriginCity = string.IsNullOrWhiteSpace(load.OriginCity) ? s.Status.LocationCity : load.OriginCity,
             OriginState = string.IsNullOrWhiteSpace(load.OriginState) ? s.Status.LocationState : load.OriginState,

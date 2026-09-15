@@ -65,7 +65,9 @@ public static class ReceiverCall
         // told to wait three hours, which ran the shift out and forced a ten on the property.
         var booked = GameClock.TryParse(trip.AppointmentGameTime);
         var opens = GameClock.TryParse(trip.AppointmentOpensGameTime);
-        var isSite = FacilityProfile.KindOf(trip.TrailerType) == FacilityProfile.Kind.Site;
+        // What is on the back, not whose trailer it is. On drop and hook those differ, and reading the
+        // assigned type here made the receiver contradict the board that committed the truck.
+        var isSite = FacilityProfile.KindOf(FacilityProfile.FreightTypeOf(trip)) == FacilityProfile.Kind.Site;
 
         // The seed. The hour they arrived is in it because arriving at three and arriving at seven are
         // different situations and should not share an answer; the trip is in it so the same arrival
