@@ -978,10 +978,11 @@ function viewDispatch() {
           <label>Detail<input id="st-detail" value="${esc(st.locationDetail)}" placeholder="e.g. Walmart DC dock 14"></label>
           <label>Fuel %<input id="st-fuel" type="number" min="0" max="100" step="1" value="${st.fuelPct}"></label>
           <label>ATS odometer<input id="st-odo" type="number" step="1" value="${Math.round(st.atsOdometer)}"></label>
-          <label>ATS bank balance $<input id="st-bank" type="number" step="1"
-            value="${S.views.position.hasReportedBalance ? Math.round(st.atsBankBalance) : ''}"
-            placeholder="what your game shows"
-            title="The company's cash. Leave blank if you have not checked it — blank is not zero."></label>
+          ${/* The ATS bank balance is not asked for here any more. It is the company's cash, not a
+                reading off the driver's day, and the books stopped trying to be a copy of it — so
+                putting it beside fuel and the odometer implied it was part of reporting in. It lives on
+                the Finances tab, where the one thing it still decides (what the company can put its
+                hands on, after wages owed) is actually shown. */ ''}
           <label>Tractor damage %<input id="st-tdmg" type="number" min="0" max="100" step="0.1" value="${st.truckDamagePct}"></label>
           <label>Trailer damage %<input id="st-trdmg" type="number" min="0" max="100" step="0.1" value="${st.trailerDamagePct}"></label>
         </div>
@@ -1077,9 +1078,10 @@ function viewDispatch() {
           <label>Destination city<input id="b-dcity" placeholder="e.g. Boise"></label>
           <label>Destination state<input id="b-dstate" class="up" maxlength="2" placeholder="ID"></label>
           <label>Loaded miles<input id="b-miles" type="number" step="1" min="0" placeholder="ATS distance"></label>
-          <label class="chk" title="Loads off a facility's own board come hooked to a loaded trailer — no loading time passes in game, because it is a drop-and-hook. Ticked for you on the local board; clear it if this one is a live load.">
-            <input id="b-preloaded" type="checkbox"${BOARD_STAGE === 'local' ? ' checked' : ''}>
-            Trailer already loaded (drop &amp; hook)${BOARD_STAGE === 'local' ? ' — usual for this board' : ''}</label>
+          ${/* The "trailer already loaded" tick is gone. It said a dry van or reefer off a facility's own
+                board came hooked to a loaded trailer and cost no loading time, and only a flatbed had to
+                be loaded. Wrong: in ATS you unload, and if you take a load from the same facility you go
+                and load it whatever is on the back. There was no question to ask. */ ''}
           ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead miles<input id="b-dh" type="number" step="1" min="0" value="0"></label>`}
           <label>Job revenue $<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
           <label>Delivery window, as ATS shows it
@@ -1615,7 +1617,6 @@ function loadCardHtml(e, d) {
         &nbsp;→&nbsp; ${esc(e.load.destCity)}, ${esc(e.load.destState)}</span>
       ${badge('mute', e.load.trailerType || 'van')}
       ${e.load.atLocation ? badge('info', 'at this dock') : ''}
-      ${e.load.preLoaded ? badge('info', 'pre-loaded') : ''}
       ${e.load.looksDuplicated ? badge('warn', 'possible duplicate') : ''}
       <div class="spacer"></div>
       ${badge(fb, e.feasibility.verdict)}
@@ -5967,9 +5968,10 @@ async function handleAction(act, d, ev) {
         locationCity: sv('st-city'), locationState: sv('st-state'), locationKind: sv('st-kind'),
         locationDetail: sv('st-detail'), gameTime: readDayTime('st-time'), fuelPct: fv('st-fuel'),
         truckDamagePct: fv('st-tdmg'), trailerDamagePct: fv('st-trdmg'), atsOdometer: fv('st-odo'),
-        // Blank means "not reported", not "zero". Sending 0 for an untouched box made the app
-        // believe the game held nothing and warn about a mismatch against its own correct figure.
-        dutyStatus: sv('st-duty'), atsBankBalance: fvn('st-bank'),
+        // No bank balance from here. Reporting in is about the truck and the driver; the company's cash
+        // is reported on Finances, through its own endpoint, so typing it there does not double as
+        // confirming a whole status report.
+        dutyStatus: sv('st-duty'),
       }));
       DISCOVERY = r.discovery || null;
       afterStatus(r);
@@ -5985,7 +5987,6 @@ async function handleAction(act, d, ev) {
         gameTime: S.status.gameTime, fuelPct: S.status.fuelPct,
         truckDamagePct: S.status.truckDamagePct, trailerDamagePct: S.status.trailerDamagePct,
         atsOdometer: S.status.atsOdometer, dutyStatus: S.status.dutyStatus,
-        atsBankBalance: S.status.atsBankBalance,
       }));
       DISCOVERY = r.discovery || null;
       afterStatus(r, 'Confirmed.');
@@ -6120,7 +6121,7 @@ async function handleAction(act, d, ev) {
         atLocation: BOARD_STAGE === 'local',
         originCity: sv('b-ocity'), originState: sv('b-ostate'),
         destCity: sv('b-dcity'), destState: sv('b-dstate'),
-        loadedMiles: fv('b-miles'), preLoaded: $('b-preloaded')?.checked === true, deadheadMiles: fv('b-dh'),
+        loadedMiles: fv('b-miles'), deadheadMiles: fv('b-dh'),
         gameRevenue: fv('b-rev'), deadlineHours: hv('b-deadline'),
         appointmentOpensHours: hv('b-opens'),
         // How long the offer itself lasts. Nothing to do with the delivery clock above it.

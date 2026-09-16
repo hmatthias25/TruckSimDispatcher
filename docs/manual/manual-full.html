@@ -528,8 +528,9 @@
     <li><b>Tick "this unit exists in my ATS garage"</b> on both. That flag is what makes the app track
       damage and odometer against them. Untick it and they are company backdrop the app will never
       invent condition for.</li>
-    <li><b>Report your status</b> on the Dispatch tab: game day and time, where you are, fuel, damage,
-      odometer and your in-game bank balance.</li>
+    <li><b>Report your status</b> on the Dispatch tab: game day and time, where you are, fuel, damage
+      and the odometer. Not the bank balance &mdash; that is the company's cash rather than anything
+      about your day, and it is reported on the Finances tab.</li>
     <li><b>Report your HOS clocks</b> exactly as your display shows them.</li>
   </ol>
 
@@ -690,7 +691,6 @@
     <tr><td>City / state / where exactly</td><td>Where the truck is standing. "Where exactly" matters — reporting <b>Terminal</b> at your home yard is what logs home time as taken.</td></tr>
     <tr><td>Fuel %</td><td>The gauge. Used for range planning and fuel-stop counts.</td></tr>
     <tr><td>ATS odometer</td><td>The truck's odometer, for mileage auditing against dispatched miles.</td></tr>
-    <tr><td>ATS bank balance</td><td>Your in-game money. This <i>is</i> the company's cash — see Section 16.</td></tr>
     <tr><td>Tractor / trailer damage %</td><td>From the truck browser. Only tracked for equipment you flagged as being in your garage.</td></tr>
   </table>
 
@@ -2376,9 +2376,20 @@
   <div class="kicker">Section 11, continued</div>
   <h2>Taking the next load off the receiver's own board</h2>
 
-  <p class="lede">ATS's <b>loads from this location</b> button does two things before you see anything: it
-    finishes the unload, and it hands you a trailer that is already loaded. Both matter, and the app used
-    to get both wrong.</p>
+  <p class="lede">ATS's <b>loads from this location</b> button finishes the unload before you see
+    anything, and the clock jumps with it. That is what this page is about.</p>
+
+  <div class="rule">
+    <h4>It does not hand you a loaded trailer</h4>
+    <p>This page used to say it did &mdash; that a van or a reefer off a facility's own list came already
+      hooked to a loaded box, and only a flatbed had to be loaded properly. That was wrong. <b>You
+      unload, and if you take a load from the same facility you go and load that too</b>, whatever is on
+      the back. There is nothing to tick and nothing to say about it, so the question is gone from the
+      board form.</p>
+    <p style="margin-top:6pt">Drop and hook is the real exception and it is a different thing entirely:
+      there the trailer belongs to the shipper and genuinely is loaded, which is why that arrangement has
+      its own hook time at both ends. See Section 13.</p>
+  </div>
 
   <h3>The cadence</h3>
   <table>
@@ -2389,9 +2400,8 @@
         you took when you backed in, before any of this.</td></tr>
     <tr><th>5</th><td>The app measures the dock time from your two stamps, takes it off that reading, and
         moves the clock to the end of the unload.</td></tr>
-    <tr><th>6</th><td>Dispatch judges the next load on what is left. On the <b>Jobs at this location</b>
-        board, <b>trailer already loaded</b> is ticked for you &mdash; unless you are on a flatbed, which is
-        never a hook. See overleaf.</td></tr>
+    <tr><th>6</th><td>Dispatch judges the next load on what is left &mdash; including the time it will
+        take to go and load it, because that is a live load like any other.</td></tr>
   </table>
 
   <div class="rule">
@@ -2423,39 +2433,37 @@
 <!-- ============================================================ 11f - why a hook is not a load -->
 <div class="page">
   <div class="kicker">Section 11, continued</div>
-  <h2>Why a pre-loaded pickup is not a live load</h2>
+  <h2>Every pickup is a live load</h2>
+
+  <p class="lede">Unload at a facility, take a load off that same facility's board, and you still have to
+    go and load it. Every trailer, every time.</p>
 
   <div class="rule">
-    <h4>Except on a flatbed, which is never a hook</h4>
-    <p>Dry vans and reefers come off a facility board hooked to a loaded trailer and no time passes. A
-      <b>flatbed does not</b>: the cargo has to be put on and secured, so you drive to a loading spot and
-      wait, and the clock moves. That driving is inside the same facility, so it costs <em>time and no
-      miles</em>.</p>
-    <p style="margin-top:6pt">So the tick buys nothing on a flatbed &mdash; the plan is identical either
-      way &mdash; while a van still saves the difference between the dock time and the hook. Which types
-      are live loaded is a <b>setting</b>, seeded with flatbed alone: the game decides this and flatbed is
-      the only one confirmed. Everything else is assumed a hook until somebody runs one, and correcting it
-      then is a word in a list.</p>
-  </div>
-
-  <p>A trailer standing loaded is <b>drop-and-hook</b>: back in, pin it, cable up, walk round it, go &mdash;
-    twenty-five minutes. A live load is a shipper putting freight on your trailer at a dock, and that runs
-    to hours. ATS charging nothing is not the game being wrong; the app charging two hours for it was.</p>
-  <p>There is nothing to do in game for the hook time: it is dispatch being slightly conservative
-    about when you will roll, not a wait to sit out. Set <b>hook hours</b> to zero in Settings if you
-    would rather the plan match the game exactly.</p>
-
-  <div class="note">
-    <h4>It does not teach the dock bad habits</h4>
-    <p>A hook says nothing about how long that shipper takes to load, because nobody loaded anything.
-      Pre-loaded pickups stay out of the learned dock times, or each one would drag the figure toward zero
-      until the app planned real dock work as though it were instant. The unload still counts.</p>
+    <h4>This page used to say the opposite</h4>
+    <p>It said a dry van or a reefer came off a facility board hooked to an already-loaded trailer and
+      cost no loading time, and that only a flatbed had to be driven to a loading spot and waited on.
+      Which types were live loaded was even a <b>setting</b>, seeded with flatbed alone, with a note
+      saying everything else was an assumption waiting on somebody actually running one.</p>
+    <p style="margin-top:6pt">Somebody ran one. The trailer type never came into it &mdash; they all load
+      the same way. The setting is gone, the tick is gone from the board form, and a pickup is planned at
+      the learned dock time whatever is on the back.</p>
   </div>
 
   <div class="note">
-    <h4>Nothing changes on the ordinary path</h4>
-    <p>Give the app a city board, get sent to a different facility, and it is a live load exactly as it
-      always was. The tick is the only thing that changes anything, and it is off unless you set it.</p>
+    <h4>Drop and hook is the real exception, and it is a different thing</h4>
+    <p>There the trailer is the <em>shipper's</em> and genuinely is loaded &mdash; back in, pin it, cable
+      up, walk round it, go. That arrangement has its own hook time at both ends, about twenty-five
+      minutes, and it comes from being on drop and hook rather than from anything you tick on a load.
+      See Section 13.</p>
+    <p style="margin-top:6pt">Set <b>hook hours</b> to zero in Settings if you would rather the plan match
+      the game exactly there; it is dispatch being slightly conservative about when you will roll, not a
+      wait to sit out.</p>
+  </div>
+
+  <div class="note">
+    <h4>Loading inside the facility costs time, not miles</h4>
+    <p>Driving from the dock you emptied at to the spot where they load you is inside the same property.
+      The clock moves and the odometer does not, and the plan plans it that way.</p>
   </div>
 
   <div class="pfoot"><span>11 &middot; Closing out</span><span>34</span></div>

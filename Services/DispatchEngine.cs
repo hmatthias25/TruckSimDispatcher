@@ -645,10 +645,16 @@ public static class DispatchEngine
         return need > s.Hos.ShiftRemaining;
     }
 
-    public static bool LiveLoaded(AppState s, string? trailerType) =>
-        !string.IsNullOrWhiteSpace(trailerType)
-        && (s.Settings.LiveLoadTrailerTypes ?? new List<string>())
-            .Any(x => x.Equals(trailerType, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// Everything off a facility's own board is live loaded. <b>Kept only so older call sites compile.</b>
+    ///
+    /// This used to read a settings list that named the trailer types needing a live load, defaulting to
+    /// flatbed alone — the belief being that a dry van or reefer came hooked to a loaded trailer. It does
+    /// not: in ATS you unload, and taking a load from the same facility means going and loading it,
+    /// whatever is on the back. The list was the wrong shape for a rule with no exceptions in it.
+    /// </summary>
+    [Obsolete("Every load is live loaded. Drop and hook is handled through the trailer, not through this.")]
+    public static bool LiveLoaded(AppState s, string? trailerType) => !string.IsNullOrWhiteSpace(trailerType);
 
     /// <summary>
     /// Whether there is any point showing a board at all, given the window left.
@@ -1048,13 +1054,18 @@ public static class DispatchEngine
             ? trailer?.Type
             : string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
 
-        // A pre-loaded trailer is a hook, not a load. Planning a two-hour live load against something ATS
-        // hands over already loaded costs the driver hours they were never going to spend, and can refuse
-        // a load that is comfortably legal.
-        // Pre-loaded is a claim about the trailer, not about the board. A flatbed taken off a facility's
-        // own list still has to be loaded and secured — so the tick does not buy a hook time for it.
-        var hookable = load.PreLoaded && !LiveLoaded(s, load.TrailerType);
-        var pickupHours = hookable ? Math.Max(0, s.Settings.HookHours) : dock.Loading;
+        // Every load off a facility's own board is LIVE LOADED, whatever is on the back.
+        //
+        // This used to believe that a dry van or a reefer taken off the local board came hooked to an
+        // already-loaded trailer, and only a flatbed had to be loaded — so those two were planned at a
+        // twenty-five minute hook instead of a dock estimate. Reported from play as wrong: in ATS you
+        // unload, and if you then take a load from the same facility you go and load it like anybody
+        // else. The trailer type never mattered.
+        //
+        // Drop and hook is the real exception and is not this one: there the trailer belongs to the
+        // shipper and is already loaded, and `dock` is already the hook time because FacilityLearning
+        // reads it off the Drop & Hook slot rather than the freight.
+        var pickupHours = dock.Loading;
 
         // What kind of place this is going to, which decides what waiting even looks like. A warehouse
         // books a slot and runs all night; a job site takes it whenever, but only while somebody is there.
@@ -1835,13 +1846,10 @@ public static class DispatchEngine
             TrailerUnit = trailer?.Unit ?? "",
             TruckDamageBefore = Math.Max(truck?.DamagePct ?? 0, s.Status.TruckDamagePct),
             TrailerDamageBefore = Math.Max(trailer?.DamagePct ?? 0, s.Status.TrailerDamagePct),
-            LoadingHours = load.PreLoaded && !LiveLoaded(s, load.TrailerType)
-                ? Math.Max(0, s.Settings.HookHours)
-                : s.Settings.DefaultLoadingHours,
-            // Only recorded as pre-loaded where it really was a hook. A flatbed off a facility board was
-            // live loaded whatever the driver ticked, and the trip has to say so or the dock learning
-            // excludes a load that taught it something real.
-            PreLoaded = load.PreLoaded && !LiveLoaded(s, load.TrailerType),
+            LoadingHours = s.Settings.DefaultLoadingHours,
+            // Never recorded as pre-loaded any more. Nothing off a facility board is a hook — see the
+            // note in Evaluate — so every one of these has a real loading time to learn from.
+            PreLoaded = false,
             UnloadingHours = s.Settings.DefaultUnloadingHours,
             ExtraStops = load.ExtraStops,
             IsHazmat = load.IsHazmat,

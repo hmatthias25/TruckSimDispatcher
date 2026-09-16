@@ -2734,16 +2734,18 @@ public class AppSettings
     public double HookHours { get; set; } = 0.4;
 
     /// <summary>
-    /// Trailer types that must be <b>live loaded</b> even when the load comes off a facility's own board.
+    /// <b>Retired.</b> Every load off a facility's own board is live loaded, whatever the trailer.
     ///
-    /// Dry vans and reefers come hooked to a loaded trailer and no time passes â€” that is the whole
-    /// drop-and-hook case. A flatbed does not: the cargo has to be put on and secured, so the driver
-    /// drives to a loading spot and waits, and the clock moves.
+    /// This listed the types that needed loading, defaulting to flatbed alone, on the belief that a dry
+    /// van or a reefer came hooked to an already-loaded trailer. Reported from play as wrong: in ATS you
+    /// unload, and if you then take a load from the same facility you go and load it like anybody else.
+    /// The trailer type never came into it, so there was never a list to keep - and the note that used to
+    /// sit here said as much, that everything but flatbed was an assumption waiting on somebody actually
+    /// running one.
     ///
-    /// A list rather than a rule because the game is the authority and only flatbeds are confirmed.
-    /// Everything else is assumed drop-and-hook until somebody actually runs one, at which point adding
-    /// a word here is the whole fix.
+    /// Kept so stored careers load. Nothing reads it.
     /// </summary>
+    [Obsolete("Every load is live loaded. Drop and hook is a trailer, not a loading rule.")]
     public List<string> LiveLoadTrailerTypes { get; set; } = new() { "Flatbed" };
 
     /// <summary>

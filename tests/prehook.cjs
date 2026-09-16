@@ -1,9 +1,14 @@
-/* Issue #56: pre-loaded pickups, and carrying the clocks across an unload nobody could read past.
+/* Issue #56/#226: carrying the clocks across an unload nobody could read past — and NOT calling the
+ * pickup a hook.
  *
- * ATS's "loads from this location" button finishes the unload — spending the shift and cycle — and only
- * then shows the board, and the loads it shows come already hooked to a loaded trailer. Two consequences,
- * and the app used to get both wrong: it charged a live-load for a drop-and-hook, and it planned the next
- * load on clocks from before the unload.
+ * ATS's "loads from this location" button finishes the unload, spending the shift and cycle, and only
+ * then shows the board. The app used to plan the next load on clocks from before that unload, and that
+ * half of #56 is real and is what most of this suite protects.
+ *
+ * The other half was wrong. It believed the loads that button shows come already hooked to a loaded
+ * trailer, so a dry van or reefer was planned at a hook time and only a flatbed was live loaded.
+ * Reported from play: you unload, and if you take a load from the same facility you go and load it,
+ * whatever is on the back. Section 1 now asserts that, having asserted the reverse for a long time.
  *
  * The normal path — city board, sent off to a different facility — has to be completely unaffected.
  */
@@ -53,32 +58,45 @@ async function addLoad(extra = {}) {
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(0), code: 'SFL' }));
   await place(1);
 
-  head('1. A pre-loaded pickup is planned as a hook, not a live load');
+  head('1. Every pickup off a facility board is a LIVE LOAD, whatever the trailer');
+  // This suite used to assert the opposite, and the opposite was wrong. The belief was that a load taken
+  // off a facility's own board came hooked to an already-loaded trailer, so a dry van or a reefer cost a
+  // twenty-five minute hook instead of a dock estimate, and only a flatbed had to be loaded properly.
+  //
+  // Reported from play: in ATS you unload, and if you then take a load from the same facility you go and
+  // load it like anybody else. The trailer type never came into it. So ticking pre-loaded has to change
+  // nothing at all, and the only thing that still gets a hook time is drop and hook — where the trailer
+  // is the shipper's and is genuinely already loaded. That is a different mechanism entirely.
   const hookHours = (await api('/bootstrap')).settings.hookHours;
   ok('the hook time is a setting', hookHours > 0 && hookHours < 1, `${hookHours} h`);
   await clocks(11, 14, 8, 70);
   const live = (await addLoad()).evaluations[0];
   await clocks(11, 14, 8, 70);
   const hook = (await addLoad({ preLoaded: true })).evaluations[0];
-  // The plan exposes totals rather than a task list, so the saving is what to measure: the learned dock
-  // loading time replaced by the hook time, and nothing else about the run changed.
   const dock = (await api('/bootstrap')).views.facilityTimes
     .find((f) => f.trailerType === S.trailers[0].type);
   const saved = live.feasibility.onDutyHours - hook.feasibility.onDutyHours;
-  ok('the live load books the learned dock time', dock.loadingHours > hookHours + 0.05,
+  ok('the dock estimate is a real load, not a hook', dock.loadingHours > hookHours + 0.05,
     `dock ${dock.loadingHours} h vs hook ${hookHours} h`);
-  ok('the hook saves exactly the difference', near(saved, dock.loadingHours - hookHours, 0.03),
-    `${saved.toFixed(2)} h saved, expected ${(dock.loadingHours - hookHours).toFixed(2)}`);
-  ok('so it is off the dock sooner',
-    hook.feasibility.elapsedHours < live.feasibility.elapsedHours,
+  ok('claiming pre-loaded buys nothing', near(saved, 0, 0.03),
+    `${saved.toFixed(2)} h saved, expected 0.00`);
+  ok('it is off the dock at the same time either way',
+    near(hook.feasibility.elapsedHours, live.feasibility.elapsedHours, 0.03),
     `${hook.feasibility.elapsedHours} vs ${live.feasibility.elapsedHours}`);
-  ok('and the driving is identical -- only the dock changed',
+  ok('and the driving is identical, as it always was',
     near(hook.feasibility.driveHours, live.feasibility.driveHours),
     `${hook.feasibility.driveHours} vs ${live.feasibility.driveHours}`);
+  // The board row still echoes back whatever was posted to it — it is the driver's own typing and the
+  // app does not silently rewrite that. What matters is that nothing ACTS on it, which the three
+  // assertions above have just shown, and that the trip does not carry the claim forward. batch62 62b
+  // owns that second half.
+  ok('the plan is the same object either way',
+    near(hook.feasibility.onDutyHours, live.feasibility.onDutyHours, 0.01)
+    && near(hook.feasibility.elapsedHours, live.feasibility.elapsedHours, 0.03),
+    `on-duty ${hook.feasibility.onDutyHours} vs ${live.feasibility.onDutyHours}`);
 
   head('2. The normal path is untouched');
-  // Nothing ticked, so nothing changes: a city load to another facility is a live load as it always was.
-  ok('a plain load is not pre-loaded', live.load.preLoaded !== true, `${live.load.preLoaded}`);
+  ok('a plain load is not pre-loaded either', live.load.preLoaded !== true, `${live.load.preLoaded}`);
   ok('and it still plans the learned dock time', dock.loadingHours > 0.5, `${dock.loadingHours} h`);
 
   head('3. A hook does not teach the dock how long it takes to load');

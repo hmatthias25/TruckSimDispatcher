@@ -1,7 +1,9 @@
 /* Issues #62, #65, #66 — three from play-testing.
  *
- * 62: flatbeds are not drop-and-hook. Taking a load off a facility board with one still means driving to
- *     a loading spot and waiting, so the tick must not buy a hook time for it.
+ * 62: nothing off a facility board is drop-and-hook. Taking a load off a facility list means driving to
+ *     a loading spot and waiting, whatever is on the back, so the tick must not buy a hook time for any
+ *     of them. Originally filed about flatbeds, with vans and reefers left as hooks; play-testing says
+ *     they load the same way and the tick now buys nothing at all.
  * 65: loaded miles come back blank on screenshot import, most often off a facility list.
  * 66: there are no loads AT a truck stop, a rest area or your own yard — only in the city.
  */
@@ -52,16 +54,20 @@ async function preloaded(trailerType, tick = true) {
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(1) }));
   await place('Shipper');
 
-  head('62. A pre-loaded flatbed is still live loaded');
-  // Compare like with like: the SAME trailer type, ticked pre-loaded against not. Comparing a van to a
-  // flatbed measures the wrong thing, because their unload times differ too and partly cancel it out.
+  head('62. EVERY trailer is live loaded off a facility board, not just a flatbed');
+  // #62 was half right and is now fully right. It established that a flatbed off a facility list still
+  // has to be driven to a loading spot and loaded — and left dry vans and reefers as hooks, on the
+  // assumption that those come over already loaded. They do not. You unload, and if you take a load from
+  // the same facility you go and load that too, whatever is on the back.
+  //
+  // Compare like with like: the SAME trailer type, ticked pre-loaded against not.
   const hook = S.settings.hookHours;
   ok('the hook time is a setting', hook > 0 && hook < 1, `${hook} h`);
 
   const vanLive = await preloaded('Dry Van', false);
   const vanHook = await preloaded('Dry Van', true);
   const vanSaved = vanLive.feasibility.onDutyHours - vanHook.feasibility.onDutyHours;
-  ok('a dry van saves real time by being pre-loaded', vanSaved > 0.5,
+  ok('a dry van saves NOTHING by being ticked either', Math.abs(vanSaved) < 0.01,
     `${hhmm(vanSaved)} saved (${hhmm(vanLive.feasibility.onDutyHours)} -> ${hhmm(vanHook.feasibility.onDutyHours)})`);
 
   const flatLive = await preloaded('Flatbed', false);
