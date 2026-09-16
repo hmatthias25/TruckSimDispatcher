@@ -81,7 +81,7 @@ public static class ReceiverCall
 
         return isSite && booked == null
             ? AtSite(s, trip, arrived, seed)
-            : AtDock(s, trip, arrived, booked, seed);
+            : AtDock(s, trip, arrived, booked, opens, seed);
     }
 
     /// <summary>
@@ -218,7 +218,8 @@ public static class ReceiverCall
     /// A dock. They know you are coming, so there is no queue — but a slot is a plan, not a promise, and
     /// a warehouse that is two hours behind is two hours behind whatever it agreed to.
     /// </summary>
-    private static Call? AtDock(AppState s, Trip trip, DateTime arrived, DateTime? booked, string seed)
+    private static Call? AtDock(AppState s, Trip trip, DateTime arrived, DateTime? booked, DateTime? opens,
+                                string seed)
     {
         var roll = Hash(seed) % 100;
 
@@ -241,8 +242,22 @@ public static class ReceiverCall
             };
         }
 
+        // Everything below is measured against the SLOT and must be said against the slot too. Every
+        // branch used to do the arithmetic on the appointment and then print the window opening beside
+        // it, which is a different time on any load where the two are not the same: reported from play,
+        // a 22:00 appointment turned up on at 13:00 and was answered with "your 18:03 slot". The driver
+        // read that as the app having lost the appointment, slept through it, and kept the 22:00 on their
+        // own judgement. Worse than the wording, the on-time branch handed back the opening as the time
+        // to set the clock to — nine hours of wait filed against a start that was four hours too early.
         var slot = booked.Value;
         var earlyBy = (slot - arrived).TotalHours;
+
+        // The earliest anybody could put you on a door. A booked slot does not get you through a shut
+        // gate: the window opening is the game's own word on the place and it outranks a favour, so
+        // "they have a door free" cannot mean a door five hours before they open one. Where the window
+        // is unknown, or you got here after it, that moment is simply now.
+        var doorsOpen = opens is { } o && o > arrived ? o : arrived;
+        var keptByEarly = (slot - doorsOpen).TotalHours;
 
         // Turning up after your own slot. They are not holding a door for somebody who is not there, so
         // you go in when they get to you.
@@ -259,7 +274,7 @@ public static class ReceiverCall
                 WaitHours = Math.Round(held, 2),
                 Headline = $"Past your slot — start at {GameClock.Pretty(GameClock.Format(at))}",
                 Instruction =
-                    $"You are past the {GameClock.Pretty(trip.AppointmentOpensGameTime)} you were booked for, " +
+                    $"You are past the {GameClock.Pretty(slot)} you were booked for, " +
                     $"so they have given the door to somebody else and you wait {Hhmm.Of(held)} for the next " +
                     $"one. Set the game clock to {GameClock.Pretty(GameClock.Format(at))} and log Begin unload " +
                     "then. It is not a service failure — the load is judged on when it is DUE — but it is " +
@@ -267,20 +282,31 @@ public static class ReceiverCall
             };
         }
 
-        // Early for a booked slot. Three ways that goes.
-        if (roll < 25)
+        // Early for a booked slot. Three ways that goes. The favour is only worth offering while there is
+        // still slot left to save once the doors are open — beat that and it is not an early door, it is
+        // the slot.
+        if (roll < 25 && keptByEarly > 0.01)
         {
+            var waitedForDoors = doorsOpen > arrived;
             return new Call
             {
                 Kind = "TakenEarly",
                 ArrivedGameTime = GameClock.Format(arrived),
-                WorkStartsGameTime = GameClock.Format(arrived),
-                WaitHours = 0,
-                Headline = "They have a door free — taking you early",
-                Instruction =
-                    $"You are {Hhmm.Of(earlyBy)} ahead of your {GameClock.Pretty(trip.AppointmentOpensGameTime)} " +
-                    "slot and they have a door free, so they are taking you now. Nothing to set — log Begin " +
-                    $"unload and get it off. That is {Hhmm.Of(earlyBy)} of window you keep.",
+                WorkStartsGameTime = GameClock.Format(doorsOpen),
+                WaitHours = Math.Round((doorsOpen - arrived).TotalHours, 2),
+                Headline = waitedForDoors
+                    ? $"A door free at opening — start at {GameClock.Pretty(doorsOpen)}"
+                    : "They have a door free — taking you early",
+                Instruction = waitedForDoors
+                    ? $"You are {Hhmm.Of(earlyBy)} ahead of your {GameClock.Pretty(slot)} slot and " +
+                      $"{Hhmm.Of((doorsOpen - arrived).TotalHours)} ahead of the window — they do not open " +
+                      $"until {GameClock.Pretty(doorsOpen)} and nothing gets you in before that. But they " +
+                      "have a door free when they do, so you are not sitting on the gate for the slot as " +
+                      $"well. Set the game clock to {GameClock.Pretty(doorsOpen)} and log Begin unload then. " +
+                      $"That is {Hhmm.Of(keptByEarly)} of window you keep against the slot."
+                    : $"You are {Hhmm.Of(earlyBy)} ahead of your {GameClock.Pretty(slot)} " +
+                      "slot and they have a door free, so they are taking you now. Nothing to set — log Begin " +
+                      $"unload and get it off. That is {Hhmm.Of(earlyBy)} of window you keep.",
             };
         }
 
@@ -290,13 +316,13 @@ public static class ReceiverCall
             {
                 Kind = "OnTime",
                 ArrivedGameTime = GameClock.Format(arrived),
-                WorkStartsGameTime = trip.AppointmentOpensGameTime,
+                WorkStartsGameTime = GameClock.Format(slot),
                 WaitHours = Math.Round(earlyBy, 2),
-                Headline = $"On the slot — start at {GameClock.Pretty(trip.AppointmentOpensGameTime)}",
+                Headline = $"On the slot — start at {GameClock.Pretty(slot)}",
                 Instruction =
                     $"You are {Hhmm.Of(earlyBy)} early and they are running to time, so it is your " +
-                    $"{GameClock.Pretty(trip.AppointmentOpensGameTime)} slot and not a minute before. Set the " +
-                    $"game clock to {GameClock.Pretty(trip.AppointmentOpensGameTime)} and log Begin unload " +
+                    $"{GameClock.Pretty(slot)} slot and not a minute before. Set the " +
+                    $"game clock to {GameClock.Pretty(slot)} and log Begin unload " +
                     $"then — that {Hhmm.Of(earlyBy)} is sat at their gate and it comes off your window, not " +
                     "out of slack.",
             };
@@ -313,7 +339,7 @@ public static class ReceiverCall
             Headline = $"They are running behind — start at {GameClock.Pretty(GameClock.Format(starts))}",
             Instruction =
                 $"You are {Hhmm.Of(earlyBy)} early, and they are {Hhmm.Of(behind)} behind on top of that — " +
-                $"your {GameClock.Pretty(trip.AppointmentOpensGameTime)} slot is not going to happen on time. " +
+                $"your {GameClock.Pretty(slot)} slot is not going to happen on time. " +
                 $"Set the game clock to {GameClock.Pretty(GameClock.Format(starts))} and log Begin unload " +
                 $"then. The whole {Hhmm.Of((starts - arrived).TotalHours)} is detention and it comes out of " +
                 "your window — say so in the delay notes if it costs you the day.",
