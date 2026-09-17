@@ -1,0 +1,22 @@
+# Line endings, settled once.
+#
+# This repo is written on Windows and almost every file was already LF, but the tools that edit it are
+# not agreed about that: a sed pass writes LF and some editors write CRLF, so a one-line change to a
+# CRLF file arrives as a diff of the entire file and buries the actual edit. That happened to
+# Models.cs and cityboard97.cjs in the fuel-price commit — two real lines inside eight thousand lines
+# of noise — which is a poor way to find out.
+#
+# LF in the repository, whatever the working tree does. Git normalises on the way in.
+* text=auto eol=lf
+
+# The vendored Chrome profile under the manual is not ours to reformat. Thousands of files of
+# minified extension code and binary blobs, checked in as they came, and normalising them would
+# rewrite the lot for no benefit.
+docs/manual/chromeprof/** -text
+
+# Genuinely binary, named so nothing is tempted to touch them.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.zip binary
+*.ico binary
