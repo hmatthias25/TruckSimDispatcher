@@ -1043,8 +1043,7 @@ app.MapDelete("/api/fleet/trailer/{unit}", (string unit) => Results.Ok(store.Mut
 
 app.MapPost("/api/fleet/stock", (StockRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
-    var result = Seed.StockYard(s, req.TerminalId, req.Count, req.AlreadyBought,
-        req.TransmissionPreference ?? "either", req.AddTrailers);
+    var result = Seed.StockYard(s, req.TerminalId, req.Count, req.AlreadyBought, req.AddTrailers);
     store.Log(s, "system", $"Yard stocked: {result.Message}");
     CareerService.Recalculate(s);
     return new { snapshot = Snapshot(s), result };
@@ -1875,15 +1874,6 @@ app.MapPost("/api/career/showcase", (ShowcaseRequest req) => Results.Ok(store.Mu
     s.Driver.ShowcaseTaken = true;
     s.Driver.ShowcaseOffered = false;
 
-    // Picking a gearbox they did not ask for at hire is them changing their mind, and the app takes them
-    // at their word rather than quietly issuing something they said they did not want.
-    var before = s.Application?.TransmissionPreference ?? "either";
-    if (s.Application != null && before != "either" && before != pick.TransType)
-    {
-        s.Application.TransmissionPreference = pick.TransType;
-        store.Log(s, "career", $"Transmission preference now {pick.TransType} — picked one on the award truck.");
-    }
-
     store.Log(s, "career", $"{s.Driver.RankTitle} award taken: {pick.Label}.", order?.Number ?? "");
     return new { order, picked = pick.Label, snapshot = Snapshot(s) };
 })));
@@ -2580,7 +2570,7 @@ record RerigMissingRequest(double HoursUntilBack, string? Note);
 record EndorsementRequest(string Kind, bool Has, string? GameTime);
 record DedicatedRequest(bool OnDedicated, string? Account);
 record FacilityTimeRequest(string TrailerType, double LoadingHours, double UnloadingHours, bool Manual);
-record StockRequest(string TerminalId, int Count, bool AlreadyBought, string? TransmissionPreference, bool AddTrailers);
+record StockRequest(string TerminalId, int Count, bool AlreadyBought, bool AddTrailers);
 record AdoptRequest(string Path);
 record HomeTimeArrangementRequest(string Preference);
 record TripLengthRequest(string? Preference);

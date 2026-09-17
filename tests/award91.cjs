@@ -80,9 +80,12 @@ async function report(d, balance) {
       (sc.choices || []).some((x) => x.year >= 2017), 
       `newest ${Math.max(...sc.choices.map((x) => x.year))}`);
   }
-  ok('a gearbox against your preference is flagged, not hidden',
-    (sc.choices || []).some((x) => x.matchesPreference === false),
-    `${(sc.choices || []).filter((x) => !x.matchesPreference).length} flagged of ${sc.choices.length}`);
+  // The list used to mark choices that went against a transmission preference taken at hire. There is
+  // no such preference any more — an award truck is a reward and the gearbox is the driver's to pick —
+  // so what matters is that both kinds are actually on offer rather than one being quietly filtered out.
+  ok('both gearboxes are on the list, not just one',
+    new Set((sc.choices || []).map((x) => x.transType)).size > 1,
+    [...new Set((sc.choices || []).map((x) => x.transType))].join(', '));
 
   head('6. #92 Taking one orders it, and says what happens to the old truck');
   const manual = (sc.choices || []).find((x) => !x.matchesPreference) || sc.choices[0];

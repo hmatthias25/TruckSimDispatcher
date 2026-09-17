@@ -74,10 +74,6 @@ public static class Seed
         d.Conditions.Add("Probationary drivers are restricted from oversize/heavy haul until Safety signs off.");
         if (app.WillNotHaul.Count > 0)
             d.Conditions.Add($"Noted that you will not haul: {string.Join(", ", app.WillNotHaul)}. I will not force that freight on you.");
-        if (app.TransmissionPreference == "manual")
-            d.Conditions.Add("Manual preference noted — I will put you in a unit with an 18-speed.");
-        else if (app.TransmissionPreference == "automatic")
-            d.Conditions.Add("Automated transmission noted — you will get an AMT unit.");
 
         return d;
     }
@@ -275,7 +271,6 @@ public static class Seed
 
     public static List<object> ShowcaseChoices(AppState s)
     {
-        var pref = (s.Application?.TransmissionPreference ?? "either").Trim().ToLowerInvariant();
         return AwardPool(s).Select((x, i) => (object)new
         {
             index = i,
@@ -288,7 +283,6 @@ public static class Seed
             transType = x.TransType,
             mpg = x.Mpg,
             label = $"{x.Year} {x.Make} {x.Model} — {x.Engine} {x.Hp} hp, {x.Trans}",
-            matchesPreference = pref is "either" || pref == x.TransType,
         }).ToList();
     }
 
@@ -306,18 +300,19 @@ public static class Seed
     /// Equipment a carrier of this standard would put a driver in.
     ///
     /// Picks at the carrier's tier and falls outward if that band is thin, so every carrier issues
-    /// something. The driver's transmission preference is always honoured — a better carrier means a
-    /// better truck, not a truck they did not ask for.
+    /// something.
+    ///
+    /// <para><b>Every truck at the tier, whatever the gearbox.</b> This used to filter the pool down to
+    /// manuals or to automatics on a preference taken at hire, which meant a driver who ticked "manual"
+    /// on their application could never afterwards be issued an AMT — a box on a form quietly deleting
+    /// most of the catalogue for the rest of the career. Which transmission you drive is a choice you
+    /// make in ATS when you buy the truck; it is not something the carrier should be narrowing for you.
+    /// </para>
     /// </summary>
-    private static List<TruckSpec> SpecsForStandard(int stars, string transmissionPreference)
+    private static List<TruckSpec> SpecsForStandard(int stars)
     {
         var tier = Math.Clamp(stars <= 0 ? 3 : stars, 1, 5);
-        var pool = transmissionPreference switch
-        {
-            "manual" => ManualSpecs.ToList(),
-            "automatic" => AmtSpecs.ToList(),
-            _ => AmtSpecs.Concat(ManualSpecs).ToList()
-        };
+        var pool = AmtSpecs.Concat(ManualSpecs).ToList();
         // Nearest tier first, then next-nearest — never empty.
         return pool.OrderBy(x => Math.Abs(x.Tier - tier)).ThenByDescending(x => x.Year).ToList();
     }
@@ -327,13 +322,12 @@ public static class Seed
     ///
     /// Told to the player whenever they have to make the purchase themselves — replacing a traded
     /// unit, or filling an empty seat — because "buy a truck" is not an instruction. It follows the
-    /// carrier's equipment standard and the driver's transmission preference, so what they come back
+    /// carrier's equipment standard, so what they come back
     /// with matches what the app expects to see on the book.
     /// </summary>
     public static string RecommendedTruck(AppState s)
     {
-        var pref = s.Application?.TransmissionPreference ?? "either";
-        var spec = SpecsForStandard(s.Company.EquipmentStars, pref).FirstOrDefault();
+        var spec = SpecsForStandard(s.Company.EquipmentStars).FirstOrDefault();
         if (spec == null) return "any sleeper tractor you can afford";
 
         // NEW, and it says so. "2021-or-newer" invited a used truck, and a carrier replacing a unit it
@@ -383,7 +377,7 @@ public static class Seed
         s.Trailers.Clear();
 
         // What you are put in follows the carrier's equipment standard, not a fixed choice.
-        var spec = SpecsForStandard(s.Company.EquipmentStars, app.TransmissionPreference).First();
+        var spec = SpecsForStandard(s.Company.EquipmentStars).First();
 
         var yard = s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters)
                    ?? s.Company.Terminals.FirstOrDefault();
@@ -474,7 +468,7 @@ public static class Seed
     /// them. Untick it and they sit on the book as company backdrop until you buy them.
     /// </summary>
     public static StockResult StockYard(AppState s, string terminalId, int count, bool alreadyBought,
-        string transmissionPreference, bool addTrailers)
+        bool addTrailers)
     {
         var yard = Migrations.TerminalOf(s, terminalId)
                    ?? throw new InvalidOperationException("That terminal is not one of ours.");
@@ -500,7 +494,7 @@ public static class Seed
 
         // Same equipment standard as the rest of the fleet — a yard you stock yourself should not
         // quietly hand you better trucks than the carrier issues.
-        var pool = SpecsForStandard(s.Company.EquipmentStars, transmissionPreference);
+        var pool = SpecsForStandard(s.Company.EquipmentStars);
 
         var rnd = new Random(StableSeed(yard.Id + s.Trucks.Count));
         var divisions = s.Company.Divisions.Count > 0 ? s.Company.Divisions : new List<string> { "Dry Van" };
@@ -710,19 +704,17 @@ public static class Seed
 
     /// <summary>
     /// Assign equipment. A probationary driver does not get the newest truck in the fleet —
-    /// they get a solid mid-life unit that matches their transmission preference.
+    /// they get a solid mid-life unit.
+    ///
+    /// <para>Gearbox does not come into it. It used to sort the candidates by a transmission preference
+    /// taken at hire, which is a question about how you like to drive and not about which tractor the
+    /// yard should hand you — and in ATS you choose that when you buy the truck anyway.</para>
     /// </summary>
     public static (Truck? truck, Trailer? trailer) AssignEquipment(AppState s, DriverApplication app)
     {
-        var wantManual = app.TransmissionPreference == "manual";
-        var wantAuto = app.TransmissionPreference == "automatic";
-
         var candidates = s.Trucks
             .Where(t => t.Status == "InService" && t.CabConfig == "Sleeper" && string.IsNullOrEmpty(t.AssignedDriver))
             .ToList();
-
-        if (wantManual) candidates = Prefer(candidates, t => t.TransmissionType == "manual");
-        else if (wantAuto) candidates = Prefer(candidates, t => t.TransmissionType == "automatic");
 
         // Probationary drivers get the higher-mileage unit, not the flagship.
         var truck = candidates

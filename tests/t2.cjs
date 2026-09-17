@@ -60,7 +60,11 @@ const head = (t) => console.log(`\n=== ${t} ===`);
     S.trailers.map((t) => t.unit).join(' '));
   check('all based at HQ', S.trucks.every((t) => t.homeTerminalId === hq.id));
   check('all marked in-garage as asked', S.trucks.every((t) => t.inGameGarage === true));
-  check('manual preference honoured', S.trucks.filter((t) => t.transmissionType === 'manual').length === 5,
+  // A stocked yard used to come out all-manual or all-automatic on a transmission preference. That is
+  // gone — the yard buys at the carrier's equipment standard and the gearbox is not a filter — so what
+  // is checked now is that every unit got a real one rather than that they all match.
+  check('every stocked unit has a gearbox recorded',
+    S.trucks.every((t) => ['manual', 'automatic'].includes(t.transmissionType)),
     S.trucks.map((t) => t.transmissionType[0]).join(''));
   check('damage all zero (never invented)', S.trucks.every((t) => t.damagePct === 0));
   check('nothing flagged as backdrop', S.views.backdrop.any === false, JSON.stringify(S.views.backdrop));

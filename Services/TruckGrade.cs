@@ -123,11 +123,9 @@ public static class TruckGrade
         score += Math.Clamp((t.Horsepower - 400) / 150.0, -1, 1) * 4.0;
         if (t.GovernedMph > 0) score += Math.Clamp((t.GovernedMph - 62) / 8.0, -1, 1) * 2.0;
 
-        // The gearbox the driver actually asked for, where they said.
-        var want = (s.Application?.TransmissionPreference ?? "").Trim().ToLowerInvariant();
-        if (want is "automatic" or "manual"
-            && t.TransmissionType.Equals(want, StringComparison.OrdinalIgnoreCase))
-            score += 3.0;
+        // No points for the gearbox. This used to add three for matching a transmission preference taken
+        // at hire, which made two otherwise identical tractors grade differently over a question ATS
+        // settles at the dealer.
 
         return Math.Round(score, 2);
     }

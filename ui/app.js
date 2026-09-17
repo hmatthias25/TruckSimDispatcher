@@ -403,7 +403,6 @@ function readApplication() {
     driverName: sv('ap-name'),
     preferredDivision: sv('ap-div1'),
     secondDivision: sv('ap-div2'),
-    transmissionPreference: sv('ap-trans'),
     experienceYears: fv('ap-exp'),
     freightExperience: list('ap-freight'),
     preferredTripLength: sv('ap-length'),
@@ -5334,8 +5333,7 @@ function viewCareer() {
       <tbody>${(S.views.showcase.choices || []).map((x) => `<tr>
         <td><b>${esc(x.year + ' ' + x.make + ' ' + x.model)}</b></td>
         <td>${esc(x.engine)} <span class="sub">${x.hp} hp</span></td>
-        <td>${esc(x.transmission)}${x.matchesPreference ? ''
-          : ` <span class="sub">— you asked for ${esc((S.application && S.application.transmissionPreference) || 'either')}</span>`}</td>
+        <td>${esc(x.transmission)}</td>
         <td class="num">${num(x.mpg, 1)}</td>
         <td><button class="btn tiny primary" data-act="take-showcase" data-index="${x.index}">Take it</button></td>
       </tr>`).join('')}</tbody></table></div>
@@ -5900,10 +5898,6 @@ function stockYardModal() {
       <label>Yard<select id="sk-yard">${rows.map((r) =>
         `<option value="${esc(r.id)}" ${r.id === first.id ? 'selected' : ''}>${esc(r.city)} — ${esc(r.level)}, ${r.room} free</option>`).join('')}</select></label>
       <label>How many tractors<input id="sk-count" type="number" min="1" max="5" step="1" value="${Math.max(1, first.room)}"></label>
-      <label>Transmission<select id="sk-trans">
-        <option value="either">Mixed fleet</option>
-        <option value="automatic">All automated</option>
-        <option value="manual">All manual</option></select></label>
       <label class="chk" style="margin-top:26px"><input type="checkbox" id="sk-trailers" checked> Add a matching trailer for each</label>
     </div>
     <fieldset><legend>Have you bought these in ATS?</legend>
@@ -6839,7 +6833,7 @@ async function handleAction(act, d, ev) {
     case 'do-stock': return run(async () => {
       const r = absorb(await api('/fleet/stock', 'POST', {
         terminalId: sv('sk-yard'), count: fv('sk-count'), alreadyBought: bv('sk-bought'),
-        transmissionPreference: sv('sk-trans'), addTrailers: bv('sk-trailers'),
+        addTrailers: bv('sk-trailers'),
       }));
       closeModal();
       toast(r.result.message, 'ok');

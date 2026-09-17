@@ -127,7 +127,19 @@ public class DriverApplication
     public string DriverName { get; set; } = "";
     public string PreferredDivision { get; set; } = "";
     public string SecondDivision { get; set; } = "";
-    /// <summary>"automatic" | "manual" | "either"</summary>
+    /// <summary>
+    /// <b>Retired.</b> Which gearbox you drive is settled in ATS when you buy the truck, and it is not
+    /// a hiring question.
+    ///
+    /// It was worse than clutter: it filtered the truck catalogue. Tick "manual" on the application and
+    /// the carrier could never afterwards issue an AMT, because the spec pool was narrowed to manuals
+    /// for the life of the career — a box on a form quietly deleting most of the trucks in the game. It
+    /// also graded two otherwise identical tractors differently and put a line in the offer letter
+    /// promising a gearbox.
+    ///
+    /// Kept so stored careers load with whatever they had in them. Nothing reads it.
+    /// </summary>
+    [Obsolete("Never read. Transmission is an ATS purchase choice, not a hiring criterion or a fleet filter.")]
     public string TransmissionPreference { get; set; } = "either";
     /// <summary>Years behind the wheel, driver-reported.</summary>
     public double ExperienceYears { get; set; }

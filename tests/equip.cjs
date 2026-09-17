@@ -47,14 +47,14 @@ async function hireAt(code, over) {
   ok('company stores the standard', S.company.equipmentStars === low.equipmentStars,
     `${S.company.equipmentStars}`);
   console.log(`     ${lowTruck.year} ${lowTruck.make} ${lowTruck.model}, ${Math.round(lowTruck.serviceMiles).toLocaleString()} mi, ${lowTruck.avgMpg} mpg`);
-  ok('automatic honoured', lowTruck.transmissionType === 'automatic', lowTruck.transmission);
+
 
   head(`Hire at ${five.name} — 5 star`);
   S = await hireAt(five.code);
   const hiTruck = S.trucks[0];
   ok('company stores the standard', S.company.equipmentStars === 5, `${S.company.equipmentStars}`);
   console.log(`     ${hiTruck.year} ${hiTruck.make} ${hiTruck.model}, ${Math.round(hiTruck.serviceMiles).toLocaleString()} mi, ${hiTruck.avgMpg} mpg`);
-  ok('automatic honoured', hiTruck.transmissionType === 'automatic', hiTruck.transmission);
+
 
   head('The better carrier gives the better truck');
   ok('newer model year', hiTruck.year > lowTruck.year, `${hiTruck.year} vs ${lowTruck.year}`);
@@ -63,21 +63,29 @@ async function hireAt(code, over) {
   ok('better fuel economy', hiTruck.avgMpg >= lowTruck.avgMpg, `${hiTruck.avgMpg} vs ${lowTruck.avgMpg}`);
   ok('it is a sleeper, not a day cab', hiTruck.cabConfig === 'Sleeper', hiTruck.cabConfig);
 
-  head('Manual preference still honoured at both ends');
+  head('The gearbox is not a filter, and the standard still is');
+  // Transmission preference used to narrow the spec pool to manuals or to automatics for the life of
+  // the career, so a box ticked on the application deleted most of the catalogue. It is gone: what a
+  // carrier issues is decided by its equipment standard alone. Passed here anyway to prove a stored
+  // value on an old career changes nothing.
   S = await hireAt(five.code, { transmissionPreference: 'manual' });
   const hiMan = S.trucks[0];
-  ok('5-star manual is a manual', hiMan.transmissionType === 'manual', `${hiMan.year} ${hiMan.make} ${hiMan.model} — ${hiMan.transmission}`);
   S = await hireAt(low.code, { transmissionPreference: 'manual' });
   const loMan = S.trucks[0];
-  ok('low-star manual is a manual', loMan.transmissionType === 'manual', `${loMan.year} ${loMan.make} ${loMan.model}`);
-  ok('and still worse than the 5-star manual', hiMan.year > loMan.year, `${hiMan.year} vs ${loMan.year}`);
+  console.log(`     5-star: ${hiMan.year} ${hiMan.make} ${hiMan.model} — ${hiMan.transmission}`);
+  console.log(`     low:    ${loMan.year} ${loMan.make} ${loMan.model} — ${loMan.transmission}`);
+  ok('a stored preference no longer decides the gearbox',
+    hiMan.transmissionType === hiTruck.transmissionType,
+    `${hiMan.transmissionType} either way`);
+  ok('the better carrier still gives the better truck', hiMan.year > loMan.year,
+    `${hiMan.year} vs ${loMan.year}`);
 
   head('Stocking a yard respects the same standard');
   S = await hireAt(five.code);
   const hq = S.company.terminals[0];
   S = un(await api(`/terminals/${hq.id}/level`, 'POST', { level: 'Large' }));
   const stock = await api('/fleet/stock', 'POST', {
-    terminalId: hq.id, count: 3, alreadyBought: true, transmissionPreference: 'automatic', addTrailers: false,
+    terminalId: hq.id, count: 3, alreadyBought: true, addTrailers: false,
   });
   S = stock.snapshot;
   const added = S.trucks.filter((t) => stock.result.trucks.includes(t.unit));

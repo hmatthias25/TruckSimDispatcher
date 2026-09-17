@@ -44,7 +44,7 @@ function head(t) { console.log(`\n=== ${t} ===`); }
   check('exactly 1 trailer', owned.length === 1, `${owned.length}: ${owned.map((t) => t.unit).join(',')}`);
   check('and the drop-and-hook arrangement beside it',
     S.trailers.some((t) => t.type === 'Drop & Hook'), 'DH-1');
-  check('truck matches manual preference', S.trucks[0].transmissionType === 'manual', S.trucks[0].transmission);
+  check('the assigned truck has a gearbox recorded either way', ['manual', 'automatic'].includes(S.trucks[0].transmissionType), S.trucks[0].transmission);
   check('assigned truck is in-game', S.trucks[0].inGameGarage === true);
   check('home city discovered', (S.discovered || []).some((d) => d.city === S.company.terminalCity),
     (S.discovered || []).map((d) => d.city).join(', '));
