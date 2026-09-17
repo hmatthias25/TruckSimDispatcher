@@ -64,13 +64,37 @@
             told when a load is your ride home.</span>
         </label>
 
-        <label class="span2">Prior freight experience (comma separated)
-          <input id="ap-freight" placeholder="e.g. dry van, refrigerated, flatbed">
-        </label>
+        <fieldset class="span2" id="ap-freight">
+          <legend>Prior freight experience</legend>
+          <label class="chk"><input type="checkbox" value="Dry Van"> Dry Van</label>
+          <label class="chk"><input type="checkbox" value="Reefer"> Reefer</label>
+          <label class="chk"><input type="checkbox" value="Flatbed"> Flatbed</label>
+          <label class="chk"><input type="checkbox" value="Tanker"> Tanker</label>
+          <label class="chk"><input type="checkbox" value="Heavy Haul"> Heavy Haul</label>
+          <label class="chk"><input type="checkbox" value="Auto"> Auto</label>
+          <label class="chk"><input type="checkbox" value="Livestock"> Livestock</label>
+          <label class="chk"><input type="checkbox" value="Log"> Log</label>
+          <p class="hint">Years you declare above are credited to each division you tick, up to a cap
+            &mdash; that is what every carrier's hiring bar is judged against. This used to be a text
+            box, and the division names have to match exactly to count, so anything typed a little
+            differently scored nothing and said nothing about it.</p>
+        </fieldset>
 
-        <label class="span2">Freight you will NOT haul (comma separated &mdash; the company will respect this)
-          <input id="ap-nohaul" placeholder="e.g. livestock, hazmat">
-        </label>
+        <fieldset class="span2" id="ap-nohaul">
+          <legend>Freight you will NOT haul</legend>
+          <label class="chk"><input type="checkbox" value="Dry Van"> Dry Van</label>
+          <label class="chk"><input type="checkbox" value="Reefer"> Reefer</label>
+          <label class="chk"><input type="checkbox" value="Flatbed"> Flatbed</label>
+          <label class="chk"><input type="checkbox" value="Tanker"> Tanker</label>
+          <label class="chk"><input type="checkbox" value="Heavy Haul"> Heavy Haul</label>
+          <label class="chk"><input type="checkbox" value="Auto"> Auto</label>
+          <label class="chk"><input type="checkbox" value="Livestock"> Livestock</label>
+          <label class="chk"><input type="checkbox" value="Log"> Log</label>
+          <p class="hint">The company will respect this: these loads are kept off your board, carriers
+            that run this freight as their main business will not be offered, and you will never be
+            asked to swap onto one of these trailers. Placarded freight is not on this list &mdash; that
+            is governed by the hazmat classes you hold, below.</p>
+        </fieldset>
 
         <fieldset class="span2">
           <legend>Endorsements on file</legend>

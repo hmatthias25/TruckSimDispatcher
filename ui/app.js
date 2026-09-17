@@ -83,6 +83,17 @@ const hvn = (id) => {
 };
 const list = (id) => sv(id).split(',').map((x) => x.trim()).filter(Boolean);
 
+/**
+ * The ticked values in a checkbox group, by the container's id.
+ *
+ * Replaces a comma-separated text box for the two application fields that are matched against
+ * division names. Those matches are exact, so "refrigerated" typed in lower case scored nothing and
+ * never said so — and the placeholder in the old box suggested exactly that. A list you tick cannot
+ * be spelled wrong.
+ */
+const ticked = (id) => Array.from(document.querySelectorAll(`#${id} input[type=checkbox]:checked`))
+  .map((x) => x.value);
+
 const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money0 = (n) => (n < 0 ? '-$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const num = (n, d = 0) => (+n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -404,12 +415,12 @@ function readApplication() {
     preferredDivision: sv('ap-div1'),
     secondDivision: sv('ap-div2'),
     experienceYears: fv('ap-exp'),
-    freightExperience: list('ap-freight'),
+    freightExperience: ticked('ap-freight'),
     preferredTripLength: sv('ap-length'),
     homeTimePreference: sv('ap-hometime'),
     homeCity: sv('ap-city'),
     homeState: sv('ap-state').toUpperCase(),
-    willNotHaul: list('ap-nohaul'),
+    willNotHaul: ticked('ap-nohaul'),
     acceptsProbation: bv('ap-probation'),
     hasHazmat: bv('ap-hazmat'),
     notes: sv('ap-notes'),
