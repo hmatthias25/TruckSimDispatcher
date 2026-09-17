@@ -628,8 +628,14 @@ public static class TripService
         {
             var allIn = trip.CompanyRevenue / (decimal)(trip.ActualMiles + trip.DeadheadMiles);
             audit.MoneyFindings.Add($"${allIn:0.00}/mi all-in on {trip.ActualMiles + trip.DeadheadMiles:N0} total miles.");
-            if (allIn < s.Settings.Scoring.FloorAllInRpm)
-                audit.MoneyFindings.Add($"That is under our ${s.Settings.Scoring.FloorAllInRpm:0.00} floor. My call to book it, not yours.");
+
+            // Through the cost model, like dispatch. This read Scoring.FloorAllInRpm raw — the manual
+            // override, which nobody has switched on — so the audit judged a delivered load against
+            // $1.35 while the board had committed it against $1.62. Same load, two floors, and the one
+            // the driver hears about afterwards was the wrong one.
+            var (floor, _, _) = CostModel.Thresholds(s, trip.ActualMiles);
+            if (allIn < floor)
+                audit.MoneyFindings.Add($"That is under our ${floor:0.00} floor. My call to book it, not yours.");
         }
         if (trip.FuelGallons > 0 && trip.ActualMiles + trip.DeadheadMiles > 0)
         {

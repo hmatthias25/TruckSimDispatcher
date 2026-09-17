@@ -1586,7 +1586,14 @@ public static class DispatchEngine
         if (s.Board.Count == 0 || !s.Board.All(b => b.AtLocation)) return null;
 
         var best = clear[0];
-        var floor = s.Settings.Scoring.FloorAllInRpm;
+
+        // The floor this load was actually judged by, off the evaluation that judged it — not the raw
+        // Scoring.FloorAllInRpm, which is the MANUAL override and is inert unless the player asked for
+        // fixed thresholds. Read directly it pinned this check to $1.35 while the cost model was saying
+        // $1.62, so dispatch could flag a rate as under its floor and the close-out audit, reading the
+        // lower number, say nothing about the same load. Taking it off `best` is stronger than
+        // recomputing it: the two cannot disagree, whatever the cost model does next.
+        var floor = best.FloorRpmUsed;
 
         // The app's own two definitions of freight not worth booking. TripService already audits the
         // floor after the load has run — "that is under our floor, my call to book it, not yours" —
@@ -1601,10 +1608,22 @@ public static class DispatchEngine
         //
         // The floor is derived from the app's own two numbers rather than invented: the rate below which
         // it will not book freight, at a nominal highway average.
+        //
+        // That nominal average is a highway speed, and committed hours are not all spent at one: a
+        // 620-mile run carries a ten-hour rest, so it covers 25 miles per committed hour rather than 45.
+        // The bar is therefore too high by construction on anything needing a night, and it was only
+        // ever clearing it by a few percent — $76 an hour against a $74 bar on freight paying $3.06/mi
+        // with $960 of margin on it. Deriving the floor properly (#230) lifted the bar 22% and tipped
+        // that over, so a board of genuinely good freight started being held for a city-board check.
+        //
+        // So it is bounded by the app's OTHER number: freight that clears the rate we actually want per
+        // mile is not a poor use of the truck, however many hours it takes to run. Under target, the
+        // per-hour question is a fair one and still gets asked.
+        var target = best.TargetRpmUsed;
         var perHourFloor = floor * (decimal)NominalMph;
         var elapsed = best.Feasibility.ElapsedHours;
         var perHour = elapsed > 1 ? best.EstimatedCompanyRevenue / (decimal)elapsed : perHourFloor;
-        var poorUse = perHour < perHourFloor;
+        var poorUse = perHour < perHourFloor && (target <= 0 || best.AllInRpm < target);
 
         if (!losesMoney && !underFloor && !poorUse) return null;
 
