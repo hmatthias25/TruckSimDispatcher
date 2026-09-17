@@ -31,18 +31,66 @@ public static class Fuel
     /// figures and the game is not the real world — and because a fuel-price mod would make every one of
     /// them wrong, while the driver's own receipts would still be right.
     ///
-    /// The shape is what carries: California and the Pacific Northwest dear, the Gulf and the plains
-    /// cheap. That much holds in the game.
+    /// The shape is what carries: California dear, the Pacific Northwest after it, and everywhere else
+    /// within a few points of each other. That much holds in the game.
+    ///
+    /// <para><b>Built from EIA regional figures, week of 14 September 2026</b> — California $8.039,
+    /// West Coast less California $6.566, Rocky Mountain $6.066, Midwest $6.250, Gulf Coast $6.027,
+    /// against a $6.32 average across these twenty-one states. The regional level is measured; the
+    /// spread <i>within</i> each region is carried forward from the previous table, because state fuel
+    /// taxes are what drive it and those do not move the way crude does. The whole table normalises to
+    /// 1.00 by construction.</para>
+    ///
+    /// <para>Note how much flatter this is than it used to be. The old table had the plains at 0.90
+    /// against California's 1.34; a doubling of crude lands on every state at once and compresses the
+    /// spread, because the part of the price that differs by state is mostly tax and tax is per gallon
+    /// rather than per cent. Buying well still pays — but it pays less than it did, and saying otherwise
+    /// would send a driver a long way out of their route for it.</para>
     /// </summary>
     private static readonly Dictionary<string, double> StateIndex = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["CA"] = 1.335, ["WA"] = 1.221, ["OR"] = 1.112, ["NV"] = 1.100,
-        ["AZ"] = 1.032, ["ID"] = 0.987, ["CO"] = 0.980, ["UT"] = 0.978,
-        ["MT"] = 0.977, ["WY"] = 0.973, ["MN"] = 0.970, ["NM"] = 0.968,
-        ["IA"] = 0.966, ["MO"] = 0.943, ["SD"] = 0.934, ["ND"] = 0.932,
-        ["AR"] = 0.932, ["NE"] = 0.923, ["KS"] = 0.921, ["TX"] = 0.918,
-        ["OK"] = 0.898,
+        ["CA"] = 1.272,
+        ["WA"] = 1.137, ["OR"] = 1.035, ["NV"] = 1.024, ["AZ"] = 0.961,
+        ["ID"] = 0.968, ["CO"] = 0.961, ["UT"] = 0.959, ["MT"] = 0.958, ["WY"] = 0.954,
+        ["NM"] = 0.983, ["AR"] = 0.947, ["TX"] = 0.932,
+        ["MN"] = 1.025, ["IA"] = 1.021, ["MO"] = 0.996, ["SD"] = 0.987,
+        ["ND"] = 0.985, ["NE"] = 0.975, ["KS"] = 0.973, ["OK"] = 0.949,
     };
+
+    /// <summary>
+    /// The national average these figures were taken against, and when.
+    ///
+    /// Recorded because diesel does not sit still: the week this was written it moved $0.32, and it was
+    /// $2.55 above the same week a year before. A shipped number is a starting point with a date on it,
+    /// not a fact, and the driver's own receipts overtake it in any state they actually fuel in.
+    /// </summary>
+    public const string PriceBasis = "EIA week of 14 Sep 2026, US average $6.29/gal";
+
+    /// <summary>
+    /// What a gallon is taken to cost before anywhere in particular is considered — the average across
+    /// the twenty-one states <see cref="StateIndex"/> covers, which sits a few cents over the national
+    /// figure because ATS runs the expensive half of the country.
+    ///
+    /// Every shipped price in the app traces back here. It was $4.05 while diesel was really $6.29, and
+    /// the gap was not academic: a driver filling at the pump their game charges was billed the real
+    /// price and credited a cost model built on two-thirds of it, so a profitable load read as a thin
+    /// one and the margin advice was wrong on every run.
+    /// </summary>
+    public const decimal DefaultPricePerGal = 6.32m;
+
+    /// <summary>
+    /// What a terminal's contract fuel costs, as a fraction of pump price, by yard size.
+    ///
+    /// A yard buys on contract and the discount scales with how much it pulls. These were flat dollar
+    /// figures on each level, which quietly went stale the moment the pump price did — expressed against
+    /// the reference instead, they follow it.
+    /// </summary>
+    public static decimal ContractPrice(string level) => Math.Round(DefaultPricePerGal * level switch
+    {
+        "Large" => 0.884m,
+        "Medium" => 0.919m,
+        _ => 0.951m,
+    }, 2);
 
     /// <summary>Receipts in one state before the driver's own figures replace the table for it.</summary>
     public const int StopsToLearnAState = 3;
@@ -68,7 +116,7 @@ public static class Fuel
 
     /// <summary>What a gallon is taken to cost before anywhere in particular is considered.</summary>
     public static decimal Reference(AppState s) =>
-        s.Settings.FuelPricePerGal > 0 ? s.Settings.FuelPricePerGal : 3.90m;
+        s.Settings.FuelPricePerGal > 0 ? s.Settings.FuelPricePerGal : DefaultPricePerGal;
 
     /// <summary>Every fuel stop the driver has ever logged.</summary>
     public static IEnumerable<FuelPurchase> AllStops(AppState s) =>

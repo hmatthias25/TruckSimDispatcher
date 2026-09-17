@@ -4197,7 +4197,7 @@ function editTerminalModal(id) {
   const t = isNew
     ? { id: '', name: '', city: '', state: '', level: 'Small', truckCapacity: 1, isHeadquarters: false,
         hasFuel: true, hasShop: false, hasParking: true, hasTrailerDrop: true, hasDriverFacilities: false,
-        fuelPricePerGal: 3.85, shopLabourDiscount: 0, monthlyCost: 1150, notes: '' }
+        fuelPricePerGal: 6.01, shopLabourDiscount: 0, monthlyCost: 1150, notes: '' }
     : (S.company.terminals || []).find((x) => x.id === id);
   if (!t) return;
   modal(`<div class="panel-head"><h2>${isNew ? 'Open a yard' : esc(t.city) + ', ' + esc(t.state)}</h2>

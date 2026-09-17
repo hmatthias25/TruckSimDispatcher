@@ -214,7 +214,13 @@ async function cityBoard(rows) {
 
   // Above break-even, so these are not the pre-existing "this load loses money" rejection — they are
   // genuinely takeable freight that is simply not worth the truck. That is the gap this fills.
-  const poor = await dockBoard([['Denver', 'CO', 620, 840], ['Amarillo', 'TX', 260, 360]]);
+  //
+  // Re-rated when the shipped fuel price went from $4.05 to $6.32 a gallon. These were 620/$840 and
+  // 260/$360, which cleared break-even at $4.05 fuel and fell straight through it at $6.32 — so the
+  // board was rejected outright for losing money and never reached the question this section asks.
+  // Both are long runs on purpose: per COMMITTED hour is the trigger being tested, and a short haul
+  // that clears break-even is hard to make thin by the hour because there are so few hours in it.
+  const poor = await dockBoard([['Denver', 'CO', 620, 1180], ['Amarillo', 'TX', 560, 1070]]);
   ok('nothing is authorized off a dock of loads this thin', !poor.authorizedLoadId,
     poor.authorizedLoadId || 'none authorized');
   ok('the city board is asked for instead', poor.wantCityBoard === true, `${poor.wantCityBoard}`);

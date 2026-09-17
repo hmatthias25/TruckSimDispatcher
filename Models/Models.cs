@@ -54,7 +54,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 19;
+    public const int Current = 20;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -2785,7 +2785,7 @@ public class AppSettings
     public double FuelStopHours { get; set; } = 0.35;
     /// <summary>Miles of range planned between fuel stops.</summary>
     public double FuelRangeMiles { get; set; } = 900;
-    public decimal FuelPricePerGal { get; set; } = 4.05m;
+    public decimal FuelPricePerGal { get; set; } = Services.Fuel.DefaultPricePerGal;
 
     // --- economics / realism bridges
     /// <summary>ATS payouts are inflated vs real linehaul. Company books revenue x this factor.

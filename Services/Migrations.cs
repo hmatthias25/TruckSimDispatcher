@@ -64,6 +64,7 @@ public static class Migrations
         ResolveTerminationsLeftToThePlayer(s);
         EnsureSettlementEmployer(s);
         EnsureW2sForYearsAlreadyRun(s);
+        LiftFuelPricesToWhatDieselCosts(s);
     }
 
     /// <summary>
@@ -1826,6 +1827,71 @@ public static class Migrations
         });
     }
 
+    /// <summary>
+    /// Lifts the shipped fuel price to what diesel actually costs.
+    ///
+    /// The app was built around $4.05 a gallon and the pump is charging $6.29. Anybody running a real
+    /// fuel-price mod — which is the whole point of reporting receipts — was paying the real figure at
+    /// the pump and being costed against two-thirds of it: every load's margin read low, the break-even
+    /// rate read low, and the driver was effectively punished for fuelling their own truck. Reported
+    /// from play, and it is a correction rather than a preference, so it is applied rather than offered.
+    ///
+    /// <para><b>What is not touched.</b> Logged receipts are left exactly as they are. They are what the
+    /// driver actually paid on a day that actually happened, they are the figures the per-state learning
+    /// is built on, and rewriting them would replace a measurement with a guess. Only the app's own
+    /// assumptions move.</para>
+    ///
+    /// <para><b>Where the line is drawn.</b> A stored price at or under the old $4.05 default is the
+    /// app's stale guess being carried forward, so it is lifted. Anything above it, somebody typed while
+    /// looking at their own game, and it is left alone — including on a career running an economy mod
+    /// that really does sell fuel cheap. The lift is logged either way, with how to put it back, because
+    /// a number changing underneath somebody's cost model is not something to do quietly.</para>
+    /// </summary>
+    private static void LiftFuelPricesToWhatDieselCosts(AppState s)
+    {
+        // Stamped, and it has to be. Almost everything else in this file fills in something missing and
+        // is harmless to run twice; this one WRITES OVER a number the player is allowed to set. Left
+        // ungated it would run on every load and pin the setting above $4.05 forever, so a career on an
+        // economy mod that really does sell cheap diesel could never be told so. Once, then never again.
+        if (s.SchemaVersion >= 20) return;
+        s.SchemaVersion = 20;
+
+        const decimal staleDefault = 4.05m;
+        var was = s.Settings.FuelPricePerGal;
+        var moved = false;
+
+        if (was > 0 && was <= staleDefault)
+        {
+            s.Settings.FuelPricePerGal = Fuel.DefaultPricePerGal;
+            moved = true;
+        }
+
+        // The yards bought on contract off the same stale pump price. Only the ones still sitting on a
+        // shipped figure — a yard somebody has priced themselves is theirs.
+        var oldContract = new[] { 3.58m, 3.72m, 3.85m };
+        var yards = s.Company.Terminals
+            .Where(t => t.HasFuel && oldContract.Contains(t.FuelPricePerGal))
+            .ToList();
+        foreach (var t in yards) t.FuelPricePerGal = Fuel.ContractPrice(t.Level);
+
+        if (!moved && yards.Count == 0) return;
+
+        var parts = new List<string>();
+        if (moved) parts.Add($"${was:0.00} to ${s.Settings.FuelPricePerGal:0.00} a gallon");
+        if (yards.Count > 0) parts.Add($"contract fuel at {yards.Count} yard(s) with it");
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "ledger",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"Fuel repriced — {string.Join(", and ", parts)} ({Fuel.PriceBasis}). The app had been " +
+                "costing loads at a price nobody has paid in a long time, so if you fuel at what your " +
+                "game charges, every margin it quoted you was low. Your own receipts are untouched and " +
+                "still outrank this in any state you have fuelled in. Settings if your game is cheaper.",
+        });
+    }
+
     public static void ApplyLevel(Terminal t, string level)
     {
         t.Level = level;
@@ -1835,20 +1901,20 @@ public static class Migrations
                 t.TruckCapacity = 5;
                 t.HasFuel = true; t.HasShop = true; t.HasParking = true;
                 t.HasTrailerDrop = true; t.HasDriverFacilities = true;
-                t.FuelPricePerGal = 3.58m; t.ShopLabourDiscount = 0.35; t.MonthlyCost = 4_200m;
+                t.FuelPricePerGal = Fuel.ContractPrice("Large"); t.ShopLabourDiscount = 0.35; t.MonthlyCost = 4_200m;
                 break;
             case "Medium":
                 t.TruckCapacity = 3;
                 t.HasFuel = true; t.HasShop = true; t.HasParking = true;
                 t.HasTrailerDrop = true; t.HasDriverFacilities = false;
-                t.FuelPricePerGal = 3.72m; t.ShopLabourDiscount = 0.20; t.MonthlyCost = 2_400m;
+                t.FuelPricePerGal = Fuel.ContractPrice("Medium"); t.ShopLabourDiscount = 0.20; t.MonthlyCost = 2_400m;
                 break;
             default:
                 t.Level = "Small";
                 t.TruckCapacity = 1;
                 t.HasFuel = true; t.HasShop = false; t.HasParking = true;
                 t.HasTrailerDrop = true; t.HasDriverFacilities = false;
-                t.FuelPricePerGal = 3.85m; t.ShopLabourDiscount = 0; t.MonthlyCost = 1_150m;
+                t.FuelPricePerGal = Fuel.ContractPrice("Small"); t.ShopLabourDiscount = 0; t.MonthlyCost = 1_150m;
                 break;
         }
     }
