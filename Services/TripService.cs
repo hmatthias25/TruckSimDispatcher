@@ -435,7 +435,11 @@ public static class TripService
 
         var was = trip.DueGameTime;
         trip.DeadlineHoursAtDispatch = deadlineHours;
-        trip.DueGameTime = GameClock.Format(from.AddHours(deadlineHours));
+        // Hours-to-deliver is a countdown, so it runs from the dispatch clock — which is the ORIGIN's,
+        // not wherever the truck has got to by the time somebody corrects the window. The result is a
+        // moment at the receiver, so it is stated on the receiver's clock like every other due time.
+        trip.DueGameTime = GameClock.Format(
+            GameZones.Restate(s, from.AddHours(deadlineHours), trip.OriginState, trip.DestState));
         trip.WindowWarning = "";
 
         if (trip.FeasibilityAtDispatch is { } f) f.DueGameTime = trip.DueGameTime;

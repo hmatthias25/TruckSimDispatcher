@@ -18,8 +18,25 @@ namespace TruckSimDispatcher.Services;
 /// </summary>
 public static class DeliveryWindow
 {
-    /// <summary>A window read off a listing: when the receiver opens, and when the load is due.</summary>
-    public record Parsed(DateTime? OpensAt, DateTime DueAt, double HoursUntilDue, bool HadRange);
+    /// <summary>
+    /// A window read off a listing: when the receiver opens, and when the load is due.
+    ///
+    /// <para><b>Both times are on the receiver's clock.</b> That is what the board shows, and with the
+    /// game's time zones switched on it is not the clock in the truck. <see cref="Now"/> is the moment
+    /// of reading restated on that same clock, which is the only anchor these two may be measured
+    /// against — subtract <c>Status.GameTime</c> from <see cref="DueAt"/> and you are out by the offset,
+    /// which is how a run into a later zone came to look two hours easier than it was.</para>
+    /// </summary>
+    /// <param name="Now">The moment of reading, on the receiver's clock.</param>
+    public record Parsed(DateTime? OpensAt, DateTime DueAt, double HoursUntilDue, bool HadRange, DateTime Now)
+    {
+        /// <summary>
+        /// True hours from now until the receiver opens; 0 where the listing gave no opening. Derived
+        /// here rather than left to callers, because doing it by hand is what mixed the two clocks.
+        /// </summary>
+        public double HoursUntilOpens =>
+            OpensAt is { } o ? Math.Max(0, Math.Round((o - Now).TotalHours, 2)) : 0;
+    }
 
     /// <summary>
     /// Reads a delivery window as ATS presents it and works out the hours from now.
@@ -29,13 +46,20 @@ public static class DeliveryWindow
     /// null when nothing usable can be made of it — an unreadable window is handled properly
     /// everywhere; a guessed one is not.
     /// </summary>
-    public static Parsed? Read(AppState s, string? windowText)
+    public static Parsed? Read(AppState s, string? windowText, string? destState = null)
     {
         var raw = (windowText ?? "").Trim();
         if (raw.Length == 0) return null;
 
-        var now = GameClock.TryParse(s.Status.GameTime);
-        if (now == null) return null;
+        var here = GameClock.TryParse(s.Status.GameTime);
+        if (here == null) return null;
+
+        // Onto the receiver's clock before a single comparison is made, because every time in the text
+        // is already on it. Resolving in the wrong zone gets more wrong than the subtraction: the rule
+        // below that a window already past is tomorrow's is decided by which side of "now" a bare
+        // clock time falls on, and across a two-hour boundary that flips — a load due this evening
+        // reads as due tomorrow evening, and a day of slack appears out of nowhere.
+        var now = GameZones.AtReceiver(s, here.Value, destState);
 
         // Weekday names first, because every one of them contains the letters "day" and the day-number
         // scan below used to match inside them. "Friday 9:26PM" put "day" at index 3, read the digits
@@ -96,15 +120,15 @@ public static class DeliveryWindow
         // no weekday in it would resolve to the next Monday. Nulls have to be nulls here.
         int? nth(int i) => weekdays.Count > i ? weekdays[i] : null;
 
-        var opens = openSpec is { } o ? Resolve(o, now.Value, nth(0)) : (DateTime?)null;
-        var due = Resolve(dueSpec, opens ?? now.Value, weekdays.Count >= 2 ? nth(1) : (hadRange ? null : nth(0)));
+        var opens = openSpec is { } o ? Resolve(o, now, nth(0)) : (DateTime?)null;
+        var due = Resolve(dueSpec, opens ?? now, weekdays.Count >= 2 ? nth(1) : (hadRange ? null : nth(0)));
         // A range that wrapped midnight: the end must not land before the start.
         if (opens is { } op && due < op) due = due.AddDays(1);
 
-        var hours = (due - now.Value).TotalHours;
+        var hours = (due - now).TotalHours;
         if (hours <= 0) return null;
 
-        return new Parsed(opens, due, Math.Round(hours, 2), hadRange);
+        return new Parsed(opens, due, Math.Round(hours, 2), hadRange, now);
     }
 
     /// <summary>
@@ -183,8 +207,14 @@ public static class DeliveryWindow
     /// The countdown is unambiguous and the clock range is not, so the range moves. Whole days only —
     /// the times of day are what the listing actually said and they are kept exactly.
     /// </summary>
-    public static Parsed RollToDeadline(Parsed win, DateTime now, double typedHours)
+    /// <remarks>
+    /// The anchor comes off the window itself rather than being passed in. It used to take a <c>now</c>
+    /// from the caller, which was the truck's clock while the window is the receiver's — harmless while
+    /// there was only one clock, and a two-hour error the moment there were two.
+    /// </remarks>
+    public static Parsed RollToDeadline(Parsed win, double typedHours)
     {
+        var now = win.Now;
         if (typedHours <= 0) return win;
 
         // Within a few hours the two agree well enough; a small gap is rounding, not a wrong day.
@@ -196,7 +226,7 @@ public static class DeliveryWindow
 
         var due = win.DueAt.AddDays(days);
         var opens = win.OpensAt?.AddDays(days);
-        return new Parsed(opens, due, Math.Round((due - now).TotalHours, 2), win.HadRange);
+        return new Parsed(opens, due, Math.Round((due - now).TotalHours, 2), win.HadRange, now);
     }
 
     /// <summary>Hours until the load is due, or null when the text cannot be read.</summary>

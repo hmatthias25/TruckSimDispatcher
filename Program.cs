@@ -479,17 +479,15 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
     // A window typed straight off the listing beats two figures the driver had to work out. Parsed here,
     // against the app's own game clock, which is the only place that knows what "tomorrow" means.
     if (!string.IsNullOrWhiteSpace(l.WindowText)
-        && DeliveryWindow.Read(s, l.WindowText) is { } win
-        && GameClock.TryParse(s.Status.GameTime) is { } nowAt)
+        && DeliveryWindow.Read(s, l.WindowText, l.DestState) is { } win)
     {
         // A clock range has no day in it, so it resolves to the soonest future occurrence — tonight.
         // Where the driver also typed the listing's time-to-deliver, that countdown says which day was
         // meant, and the window moves to match rather than replacing a correct deadline with a wrong one.
-        win = DeliveryWindow.RollToDeadline(win, nowAt, l.DeadlineHours);
+        win = DeliveryWindow.RollToDeadline(win, l.DeadlineHours);
 
         l.DeadlineHours = Math.Round(win.HoursUntilDue, 2);
-        if (win.OpensAt != null)
-            l.AppointmentOpensHours = Math.Max(0, Math.Round((win.OpensAt.Value - nowAt).TotalHours, 2));
+        if (win.OpensAt != null) l.AppointmentOpensHours = win.HoursUntilOpens;
     }
 
     // The same job entered twice is a real hazard rather than a theoretical one: the dock board is not
@@ -1281,16 +1279,21 @@ app.MapPost("/api/fleetops/trailer-request/decline", (TrailerDeclineRequest req)
 // rather than only through a screenshot import.
 app.MapPost("/api/window/read", (WindowReadRequest req) =>
 {
-    var parsed = DeliveryWindow.Read(store.State, req.Text);
+    // The destination is optional and only matters with the game's time zones on, where it is what
+    // says which clock the window text is written in.
+    var parsed = DeliveryWindow.Read(store.State, req.Text, req.DestState);
     return Results.Ok(parsed == null
-        ? new { readable = false, hadRange = false, opensAt = (string?)null, dueAt = (string?)null, hoursUntilDue = 0.0 }
+        ? new { readable = false, hadRange = false, opensAt = (string?)null, dueAt = (string?)null,
+                hoursUntilDue = 0.0, hoursUntilOpens = 0.0, zoneShiftHours = 0.0 }
         : new
         {
             readable = true,
             hadRange = parsed.HadRange,
             opensAt = parsed.OpensAt is { } o ? GameClock.Format(o) : null,
             dueAt = (string?)GameClock.Format(parsed.DueAt),
-            hoursUntilDue = parsed.HoursUntilDue
+            hoursUntilDue = parsed.HoursUntilDue,
+            hoursUntilOpens = parsed.HoursUntilOpens,
+            zoneShiftHours = GameZones.ShiftHours(store.State, GameZones.HereState(store.State), req.DestState),
         });
 });
 
@@ -2568,7 +2571,7 @@ record TrailerBoughtRequest(string RequestId, string Unit, decimal PaidPrice, st
 record TrailerDeclineRequest(string RequestId, string? GameTime);
 record RestartArrivedRequest(string? GameTime, string? City, string? State);
 record RestartCompleteRequest(string? GameTime);
-record WindowReadRequest(string? Text);
+record WindowReadRequest(string? Text, string? DestState);
 record WindowFixRequest(double DeadlineHours, string? Note);
 record AskHomeRequest(string? Reason);
 record AskTrailerRequest(string TrailerType);

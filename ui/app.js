@@ -5550,6 +5550,23 @@ function viewSettings() {
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h2>Time zones</h2>
+        <span class="sub">Match whatever your game is set to.</span></div>
+      <label class="chk"><input type="checkbox" id="se-tz" ${s.timeZonesOn ? 'checked' : ''}>
+        ATS time zones are switched on</label>
+      <p class="hint">In ATS this lives under Gameplay as <b>Disabled</b>, <b>Only time</b> or
+        <b>Full info</b>. Tick this for either of the last two — they differ only in whether the game
+        names the zone on screen, and both move the clock when you cross a state line.</p>
+      <p class="hint">It matters because the clock you report is local to <b>the truck</b>, while a
+        delivery window on the job board is local to <b>the receiver</b>. With this off on a game that
+        has them on, a run east into a later zone looks like it has two more hours than it has — which
+        is the direction that makes you late. Left unticked, every time in the app works exactly as it
+        did before, which is right for a default ATS install.</p>
+      <p class="hint">Turning it on applies to loads planned from here. Freight already on the truck
+        keeps the times it was dispatched with rather than having its appointment moved underneath it.</p>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>HOS rule set</h2>
         <span class="sub">Your mod wins — type its numbers here.</span></div>
       <div class="grid2">
@@ -7196,6 +7213,7 @@ function collectSettings() {
     atsVersion: s.atsVersion, mapMods: s.mapMods, mods: s.mods,
     usesHosMod: s.usesHosMod, hosModName: s.hosModName, usesEconomyMod: s.usesEconomyMod,
     carrierRoster: sv('se-roster') || s.carrierRoster,
+    timeZonesOn: bv('se-tz'),
     hos: {
       ...s.hos,
       driveLimit: hv('hr-drive'), shiftLimit: hv('hr-shift'),

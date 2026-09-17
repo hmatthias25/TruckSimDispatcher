@@ -33,6 +33,13 @@ public class PlanRequest
     public int ExtraStops { get; set; }
     /// <summary>Hours until the load is late, as shown on the ATS job.</summary>
     public double DeadlineHours { get; set; }
+
+    /// <summary>
+    /// Where the load is going, so the times the driver will read standing at the receiver can be
+    /// handed back on the receiver's clock. Only does anything with the game's time zones switched on;
+    /// empty plans exactly as it always did. See <see cref="GameZones"/>.
+    /// </summary>
+    public string DestState { get; set; } = "";
     /// <summary>
     /// Hours until the receiver will actually take the load. ATS shows the window as a range and the
     /// first time is when the doors open — arriving before it means sitting there.
@@ -687,7 +694,15 @@ public static class HosEngine
         result.DriveHours = Math.Round(timeline.Where(t => t.Kind == "Drive").Sum(t => t.Hours), 2);
         result.OnDutyHours = Math.Round(timeline.Where(t => t.Kind is "Drive" or "OnDuty").Sum(t => t.Hours), 2);
         result.ElapsedHours = Math.Round((clock - start.Value).TotalHours, 2);
-        result.ProjectedArrivalGameTime = GameClock.Format(clock);
+
+        // Everything above ran on the clock in the truck, because that is the clock the driver typed in
+        // and every duration is measured in it. Everything the driver will read standing at the dock has
+        // to come back on the RECEIVER's clock instead, or the app and the game disagree by the offset at
+        // the exact moment it is being acted on. Hours never move; only the faces of clocks do.
+        DateTime There(DateTime at) => GameZones.AtReceiver(state, at, req.DestState);
+        string Shown(DateTime at) => GameClock.Format(There(at));
+
+        result.ProjectedArrivalGameTime = Shown(clock);
         result.CycleRemainingAfter = Math.Round(cycle, 2);
         // The window left once they are empty and standing at the receiver. This is what decides
         // whether a dock holding them a little longer strands them on the property overnight.
@@ -695,13 +710,23 @@ public static class HosEngine
         result.DriveRemainingOnArrival = Math.Round(drive, 2);
 
         if (req.AppointmentOpensHours > 0)
-            result.AppointmentOpensGameTime = GameClock.Format(start.Value.AddHours(req.AppointmentOpensHours));
+            result.AppointmentOpensGameTime = Shown(start.Value.AddHours(req.AppointmentOpensHours));
 
         var due = start.Value.AddHours(req.DeadlineHours);
-        result.DueGameTime = GameClock.Format(due);
+        result.DueGameTime = Shown(due);
         var parking = Math.Max(0, s.ParkingBufferHours);
         result.RequiredBufferHours = Math.Max(0, s.SafetyBufferHours);
         result.SlackHours = Math.Round((due - clock).TotalHours - parking, 2);
+
+        // Said out loud, because the step list below and the arrival time above are now on two different
+        // clocks and the driver would otherwise have to work out why they do not add up. The steps cannot
+        // be moved onto the receiver's clock instead: the boundary is somewhere out on the road and we do
+        // not route, so we do not know which leg crosses it. Naming the jump is honest; placing it would
+        // be a guess about the one thing the driver is going to act on.
+        if (GameZones.NoteFor(state, GameZones.HereState(state), req.DestState) is { Length: > 0 } crossing)
+            result.Warnings.Add(
+                $"{crossing} The step times below run on the clock you are reading now; the arrival, the " +
+                "window and any slot are the receiver's.");
 
         // No opening time on file, and a plan that lands most of a day early. ATS windows are hours wide,
         // not days, so arriving this far ahead almost certainly means arriving before the receiver will
@@ -724,7 +749,7 @@ public static class HosEngine
             // app booking a slot at the closing edge — and invited exactly the question of why the
             // appointment sits where it does. It is the deadline; say deadline.
             result.Blockers.Add(
-                $"Projected arrival {GameClock.Pretty(clock)} is past the {GameClock.Pretty(due)} window " +
+                $"Projected arrival {GameClock.Pretty(There(clock))} is past the {GameClock.Pretty(There(due))} window " +
                 $"closing by {Hhmm.Of(Math.Abs(result.SlackHours))} after parking allowance. " +
                 "Not deliverable legally.");
         }

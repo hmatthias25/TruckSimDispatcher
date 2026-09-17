@@ -546,15 +546,16 @@ public static class AiService
         // silently discarded every opening the reader had correctly transcribed — and the opening is the
         // half that decides whether arriving early is slack or a locked gate.
         if (!string.IsNullOrWhiteSpace(l.DeliverByText)
-            && DeliveryWindow.Read(state, l.DeliverByText) is { } win)
+            && DeliveryWindow.Read(state, l.DeliverByText, l.DestState) is { } win)
         {
             if (l.DeadlineHours <= 0)
             {
                 l.DeadlineHours = Math.Round(win.HoursUntilDue, 2);
                 l.Unreadable.RemoveAll(u => u.Equals("deadlineHours", StringComparison.OrdinalIgnoreCase));
             }
-            if (win.OpensAt != null && GameClock.TryParse(state.Status.GameTime) is { } nowAt)
-                l.AppointmentOpensHours = Math.Max(0, Math.Round((win.OpensAt.Value - nowAt).TotalHours, 2));
+            // Off the window rather than subtracted here: both of its times are the receiver's clock,
+            // and the status clock is the truck's.
+            if (win.OpensAt != null) l.AppointmentOpensHours = win.HoursUntilOpens;
         }
 
         // Loaded miles come back blank often enough to matter, and most often off a facility's own list —

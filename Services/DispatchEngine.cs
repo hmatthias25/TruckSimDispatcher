@@ -1102,6 +1102,9 @@ public static class DispatchEngine
             NavEstimateHours = load.NavEstimateHours,
             ExtraStops = load.ExtraStops,
             DeadlineHours = load.DeadlineHours,
+            // Which clock the arrival, the window and the slot should be quoted on. Only consulted with
+            // the game's time zones switched on.
+            DestState = load.DestState,
             // The window opening stays a fact off the load, whatever the receiver has agreed to.
             AppointmentOpensHours = load.AppointmentOpensHours,
 
@@ -1191,7 +1194,9 @@ public static class DispatchEngine
         if (booked && load.AppointmentOpensHours > 0
             && GameClock.TryParse(s.Status.GameTime) is { } evalNow)
         {
-            var shown = evalNow.AddHours(AppointmentHoursFor(s, load));
+            // On the receiver's clock, like the arrival and the window it is about to be compared with.
+            // A slot is a door being held at the far end, so it is quoted in the time kept there.
+            var shown = GameZones.AtReceiver(s, evalNow.AddHours(AppointmentHoursFor(s, load)), load.DestState);
             // Same rule as authorisation: never quote a slot the plan does not reach.
             if (GameClock.TryParse(e.Feasibility.ProjectedArrivalGameTime) is { } plannedAt && plannedAt > shown)
                 shown = DeliveryWindow.NextHalfHour(plannedAt);
@@ -1856,7 +1861,8 @@ public static class DispatchEngine
             HazmatClass = load.HazmatClass,
             AppointmentOpensGameTime = load.AppointmentOpensHours > 0
                 && GameClock.TryParse(s.Status.GameTime) is { } opensFrom
-                ? GameClock.Format(opensFrom.AddHours(load.AppointmentOpensHours))
+                ? GameClock.Format(GameZones.AtReceiver(
+                    s, opensFrom.AddHours(load.AppointmentOpensHours), load.DestState))
                 : "",
             // Rolled with the receiver's own odds rather than the old fleet-wide 12%, but NOT read off
             // the evaluation: the card's flag is the narrower question of whether a BOOKED slot will be
@@ -1950,8 +1956,11 @@ public static class DispatchEngine
         {
             // Straight off the same helper the plan waits on, so the stated slot and the planned slot
             // cannot drift apart — and so the shift-clock clamp applies to both.
+            // Receiver's clock throughout this block: opensAt, dueAt and the projected arrival are all
+            // already on it, and a slot quoted on the truck's clock would be compared against three
+            // times that are not.
             var slot = GameClock.TryParse(s.Status.GameTime) is { } slotFrom
-                ? slotFrom.AddHours(AppointmentHoursFor(s, load))
+                ? GameZones.AtReceiver(s, slotFrom.AddHours(AppointmentHoursFor(s, load)), load.DestState)
                 : opensAt;
 
             // A dock does not book you in before you can physically get there, and neither should we.
@@ -1970,9 +1979,13 @@ public static class DispatchEngine
         // the dispatcher gives at authorisation rather than turning up in the close-out.
         if (trip.ReceiverTakesEarly)
         {
+            // The slot is the receiver's clock and the status is the truck's, so one of them has to move
+            // before they can be subtracted. Hours saved is a duration, and a duration has to be measured
+            // on one clock or it picks up the offset as free time that was never there.
             var saved = GameClock.TryParse(trip.AppointmentGameTime) is { } slot
                         && GameClock.TryParse(s.Status.GameTime) is { } from
-                ? Math.Max(0, (slot - from).TotalHours - eval.Feasibility.ElapsedHours)
+                ? Math.Max(0, (GameZones.BackHere(s, slot, load.DestState) - from).TotalHours
+                              - eval.Feasibility.ElapsedHours)
                 : 0;
             trip.AuthorizationRationale +=
                 $" {DispatchEngine.Place(load.DestCity, load.DestState)} is quiet this week — they will take it " +

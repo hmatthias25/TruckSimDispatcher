@@ -2716,6 +2716,19 @@ public class AppSettings
     public double AppointmentGraceHours { get; set; } = 2;
 
     /// <summary>
+    /// Whether the player runs ATS with its time zones switched on.
+    ///
+    /// The game's own option is Disabled / Only time / Full info, and the app cannot read it. The last
+    /// two both move the clock at a state line and differ only in whether the zone is named on screen,
+    /// so one flag covers them. Off is the default because Disabled is the game's.
+    ///
+    /// It has to be a setting rather than something inferred: with zones on, the clock the driver types
+    /// in is local to the truck while a delivery window is local to the receiver, and getting that wrong
+    /// eastbound authorises loads that cannot be made. See <see cref="Services.GameZones"/>.
+    /// </summary>
+    public bool TimeZonesOn { get; set; }
+
+    /// <summary>
     /// How often a receiver takes a load ahead of its appointment, as a percentage of loads.
     ///
     /// A quiet week and a free dock, and they will have you early. Deliberately uncommon â€” roughly one
