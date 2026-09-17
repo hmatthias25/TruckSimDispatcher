@@ -231,4 +231,36 @@ public static class Endorsements
     /// <summary>Set when the driver has hazmat on their old application but no classes chosen yet.</summary>
     public static bool NeedsClassesChosen(AppState s) =>
         (s.Application?.HasHazmat ?? false) && !HasAny(s);
+
+    /// <summary>
+    /// Puts the classes an applicant says they already hold onto the driver file at hire.
+    ///
+    /// <para>Anything the game does not have is dropped rather than guessed at — an application is
+    /// typed by hand and "Class 5" is not a thing ATS unlocks. Silently keeping it would leave a
+    /// credential on the file that no load can ever match, which reads as the app losing it.</para>
+    ///
+    /// <para>Returns what was actually recorded, so the offer letter can name it rather than saying
+    /// "hazmat" and leaving the driver to find out which half of their ticket came across.</para>
+    /// </summary>
+    public static List<string> AdoptFromApplication(AppState s, IEnumerable<string>? classes)
+    {
+        var keep = (classes ?? Enumerable.Empty<string>())
+            .Select(Normalise)
+            .Where(k => Find(k) != null)
+            .Distinct()
+            .OrderBy(k => k)
+            .ToList();
+
+        // An older application says "hazmat, yes" and names no classes. That claim has to survive this
+        // call: SyncLegacyFlags derives the flag FROM the classes, so letting it run over an empty list
+        // would quietly answer the question on the driver's behalf — the flag would go false, the app
+        // would stop asking which classes they meant, and a real endorsement would vanish on hire.
+        var claimedWithoutClasses = keep.Count == 0 && (s.Application?.HasHazmat ?? false);
+
+        s.Driver.Endorsements.RemoveAll(e => Find(e) != null);
+        s.Driver.Endorsements.AddRange(keep);
+        SyncLegacyFlags(s);
+        if (claimedWithoutClasses && s.Application != null) s.Application.HasHazmat = true;
+        return keep;
+    }
 }

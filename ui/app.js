@@ -422,7 +422,7 @@ function readApplication() {
     homeState: sv('ap-state').toUpperCase(),
     willNotHaul: ticked('ap-nohaul'),
     acceptsProbation: bv('ap-probation'),
-    hasHazmat: bv('ap-hazmat'),
+    hazmatClasses: ticked('ap-hazclasses'),
     notes: sv('ap-notes'),
   };
 }

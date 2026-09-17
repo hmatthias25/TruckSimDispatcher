@@ -63,10 +63,18 @@ public static class Seed
         if (app.FreightExperience.Count > 0)
             d.Reasons.Add($"Prior freight experience in {string.Join(", ", app.FreightExperience)} is useful to us.");
 
-        var endorsements = new List<string>();
-        if (app.HasHazmat) endorsements.Add("hazmat");
-        if (endorsements.Count > 0)
-            d.Reasons.Add($"Your {string.Join(", ", endorsements)} endorsement(s) open freight most of our drivers cannot touch. That is worth money to us and to you.");
+        // Named by class rather than as "hazmat", because which classes you hold is the whole question —
+        // class 3 is fuel and class 8 is acid, and a carrier hauling one does not care about the other.
+        var held = (app.HazmatClasses ?? new List<string>())
+            .Select(Endorsements.Normalise)
+            .Where(k => Endorsements.Find(k) != null)
+            .Distinct().OrderBy(k => k).ToList();
+        if (held.Count > 0)
+            d.Reasons.Add($"You already hold {Endorsements.Describe(held)}. That opens freight most of " +
+                          "our drivers cannot touch, and it is worth money to us and to you.");
+        else if (app.HasHazmat)
+            d.Reasons.Add("Your hazmat endorsement opens freight most of our drivers cannot touch. Tell me " +
+                          "which classes you are cleared for and I will start routing it to you.");
 
         if (!app.AcceptsProbation)
             d.Conditions.Add("You asked to skip probation. On your experience I will shorten it, not waive it.");
@@ -651,7 +659,20 @@ public static class Seed
             DeadheadCpm = scale.Deadhead,
             Notes = "Probationary scale. Reviewed when probation clears."
         };
-        if (app.HasHazmat) pay.HazmatCpm = 0.05m;
+        // What they say they already hold, filtered to classes the game actually has. Worked out here
+        // because the pay plan and the qualifications list both hang off it, and put on the driver file
+        // once that file exists — see the AdoptFromApplication call below.
+        var declaredClasses = (app.HazmatClasses ?? new List<string>())
+            .Select(Endorsements.Normalise)
+            .Where(k => Endorsements.Find(k) != null)
+            .Distinct()
+            .OrderBy(k => k)
+            .ToList();
+        // An older application carried a bare yes/no with no classes behind it. Honour it as a flag so
+        // the career is not quietly demoted, and the app will ask which classes it meant.
+        var anyHazmat = declaredClasses.Count > 0 || app.HasHazmat;
+
+        if (anyHazmat) pay.HazmatCpm = 0.05m;
 
         // The same planner a changeover uses. This built its own plan with its own numbers, so the
         // first probation of a career and every one after it disagreed about what probation is — and
@@ -661,7 +682,7 @@ public static class Seed
         if (green) probation.Notes += " Developing driver — expect closer coaching early.";
 
         var quals = new List<string> { "Class A CDL" };
-        if (app.HasHazmat) quals.Add("Hazmat");
+        if (anyHazmat) quals.Add("Hazmat");
 
         foreach (var f in app.FreightExperience) quals.Add($"Experience: {f}");
 
@@ -700,6 +721,11 @@ public static class Seed
             LastHomeGameTime = s.Status.GameTime,
             Notes = decision.Decision
         };
+
+        // The classes go onto the file now that there is a file to put them on. This is what makes the
+        // application's answer real: freight gating, tanker gating and the hazmat premium all read the
+        // driver's classes, not the application.
+        Endorsements.AdoptFromApplication(s, declaredClasses);
     }
 
     /// <summary>

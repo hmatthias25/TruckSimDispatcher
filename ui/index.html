@@ -96,13 +96,22 @@
             is governed by the hazmat classes you hold, below.</p>
         </fieldset>
 
-        <fieldset class="span2">
-          <legend>Endorsements on file</legend>
-          <label class="chk"><input type="checkbox" id="ap-hazmat"> Hazmat (H)</label>
-          <p class="hint">Hazmat is the only endorsement the game models. A tanker is a trailer and what
-            gates it is what is inside it — a fuel tanker is class 3, a gas tanker class 2, a food-grade
-            tanker nothing at all. Doubles and triples are a trailer configuration, not a licence.
-            Which hazmat classes you are cleared for is tracked separately, as you unlock them.</p>
+        <fieldset class="span2" id="ap-hazclasses">
+          <legend>HazMat classes you already hold</legend>
+          <label class="chk"><input type="checkbox" value="1"> Class 1 &mdash; Explosives</label>
+          <label class="chk"><input type="checkbox" value="2"> Class 2 &mdash; Gases</label>
+          <label class="chk"><input type="checkbox" value="3"> Class 3 &mdash; Flammable liquids</label>
+          <label class="chk"><input type="checkbox" value="4"> Class 4 &mdash; Flammable solids</label>
+          <label class="chk"><input type="checkbox" value="6"> Class 6 &mdash; Toxic substances</label>
+          <label class="chk"><input type="checkbox" value="8"> Class 8 &mdash; Corrosives</label>
+          <p class="hint"><b>Starting a fresh ATS profile? Leave these alone.</b> ATS gives you no ADR to
+            begin with &mdash; you unlock the classes as you level, and you tell the app on the Career tab
+            as you do. Tick them here only if you are bringing a profile that already has them.</p>
+          <p class="hint">Classes, not a CDL endorsement, because that is what ATS actually gates freight
+            on. A tanker is a trailer and what gates it is what is inside &mdash; a fuel tanker is class 3,
+            a gas tanker class 2, a food-grade tanker nothing at all. Doubles and triples are a trailer
+            configuration, not a licence. Class 3 is most fuel haulage and class 8 most chemicals, so those
+            two open the most freight.</p>
         </fieldset>
 
         <fieldset class="span2">

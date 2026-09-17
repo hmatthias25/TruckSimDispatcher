@@ -156,6 +156,28 @@ public class DriverApplication
     public string HomeState { get; set; } = "";
     public List<string> WillNotHaul { get; set; } = new();
     public bool AcceptsProbation { get; set; } = true;
+
+    /// <summary>
+    /// The HazMat classes the driver already holds in their ATS profile, as class keys ("1", "3", "8").
+    ///
+    /// <para>Asked here because a first hire is not always a fresh profile: somebody two hundred hours
+    /// into a career who starts using the app has ADR unlocked already and needs to say so, while a new
+    /// profile simply ticks nothing — which is the right answer, because ATS starts you with none.</para>
+    ///
+    /// <para>This replaced a single "Hazmat (H)" tick box. That box asked a vaguer version of a question
+    /// the app can already ask exactly: ATS gates freight on the six classes in
+    /// <see cref="Services.Endorsements.All"/>, not on a CDL endorsement, so a yes/no answer had to be
+    /// followed by a prompt to go and pick the classes it actually meant. One control, one fact.</para>
+    /// </summary>
+    public List<string> HazmatClasses { get; set; } = new();
+
+    /// <summary>
+    /// <b>Derived, not asked.</b> True when the driver holds any hazmat class at all.
+    ///
+    /// Kept because older careers stored it and a few checks still read it as a fallback, and kept in
+    /// step by <see cref="Services.Endorsements"/> whenever the classes change. Do not set it directly:
+    /// set <see cref="HazmatClasses"/> and let it follow.
+    /// </summary>
     public bool HasHazmat { get; set; }
     // HasTanker and HasDoublesTriples used to live here. Neither is a real endorsement: a tanker is a
     // trailer and what gates it is what is inside, and doubles/triples are a trailer configuration.
