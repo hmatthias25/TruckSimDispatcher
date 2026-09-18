@@ -24,12 +24,19 @@ namespace TruckSimDispatcher.Services;
 public static class DriverConduct
 {
     /// <summary>
-    /// Reports a driver has to have filed before conduct is judged at all.
+    /// Reports a driver rides out free before conduct is judged at all.
     ///
-    /// Four fortnights, so roughly two months on the job. A company that sacks somebody for a preventable
-    /// before it has properly seen them work is not one anybody would drive for.
+    /// <para>Two fortnights, so roughly a month on the job. A company that sacks somebody for a
+    /// preventable before it has properly seen them work is not one anybody would drive for — but a
+    /// month is a grace period and two was starting to be a holiday.</para>
+    ///
+    /// <para><b>Counted inclusively</b>, and it was not. <c>ReportsFiled</c> is incremented while the
+    /// driver's own line is processed, which happens before conduct is rolled, so the driver's first
+    /// report already reads 1 by the time this is tested. At four with a strict <c>&lt;</c> that
+    /// protected three reports while the comment beside it claimed four. The name says how many are
+    /// free; the test now agrees with it.</para>
     /// </summary>
-    public const int SettlingInReports = 4;
+    public const int SettlingInReports = 2;
 
     /// <summary>
     /// Chance per driver per report that anything at all happens, by the level ATS gives them.
@@ -124,14 +131,14 @@ public static class DriverConduct
 
         foreach (var d in s.HiredDrivers.Where(x => x.Status == "Active").ToList())
         {
-            // Nobody is judged on their first fortnight. A driver who has filed one period has barely
-            // been out of the yard, and a company that sacks somebody for a preventable before it has
-            // seen them work is not one anybody would drive for.
+            // Nobody is judged on their first month. A driver who has filed one period has barely been
+            // out of the yard, and a company that sacks somebody for a preventable before it has seen
+            // them work is not one anybody would drive for.
             //
             // It also keeps the roster still while a career is being set up — conduct firing on a
             // brand-new hire was reaching into scenarios that had nothing to do with it and quietly
             // changing who was on the books.
-            if (d.ReportsFiled < SettlingInReports) continue;
+            if (d.ReportsFiled <= SettlingInReports) continue;
 
             var seed = $"{s.Driver.EmployeeId}|conduct|{report.Number}|{d.Id}";
             if (Hash(seed) % 100 >= IncidentPercentFor(d.Level)) continue;
