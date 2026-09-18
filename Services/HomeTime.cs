@@ -246,11 +246,11 @@ public static class HomeTime
     {
         var st = new HomeStatus
         {
-            // A probationary driver comes in every fortnight whatever they signed up for — including
-            // "no arrangement", which is not on offer to somebody still being assessed.
+            // Probation does not touch this. It used to override it with a fortnight, which belonged to
+            // the version where a run of reviews cleared it.
             IntervalDays = Probation.EffectiveIntervalDays(s),
-            Arrangement = Probation.IsOn(s)
-                ? $"Probation — in every {Probation.ReviewIntervalDays} days for review"
+            Arrangement = Probation.IsOn(s) && ProbationPlanner.ReviewDue(s)
+                ? $"{LabelFor(s.Application?.HomeTimePreference)} — probation served, the review is taken next time you are in"
                 : LabelFor(s.Application?.HomeTimePreference),
             HomeTimesTaken = s.Driver.HomeTimesTaken,
             LastHomeGameTime = s.Driver.LastHomeGameTime

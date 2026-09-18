@@ -2364,7 +2364,10 @@ object Snapshot(AppState? given = null)
                 durationDays = s.Driver.Probation.DurationDays,
                 workDone = ProbationPlanner.WorkDone(s).Shortfall,
                 standing = Probation.Standing(s),
-                intervalDays = Probation.ReviewIntervalDays,
+                // What is actually in force, not the constant. Your own arrangement stands while the
+                // period is being served; the fortnight only applies once it is up and the company needs
+                // you in for the review that closes it.
+                intervalDays = Probation.EffectiveIntervalDays(s),
                 passesNeeded = Probation.PassesFor(s),
                 passesInARow = Probation.ConsecutivePasses(s),
                 reviews = s.ProbationReviews.Take(6).ToList(),

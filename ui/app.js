@@ -3287,10 +3287,16 @@ function domicilePrefsHtml() {
     <p class="hint">What you agreed to when you signed on. Dispatch routes for it: as the date gets
       close, loads finishing near your home yard start outranking better-paying freight going the other
       way, and you are told when a load is your ride home.</p>
-    ${S.views.probation?.on ? `<div class="callout warn">
-      <p style="margin:0">While you are on probation this is overridden — you report to the yard every
-        <b>${S.views.probation.intervalDays} days</b> for review whatever is set here. Your own arrangement
-        takes over once probation is cleared.</p></div>` : ''}
+    ${S.views.probation?.on ? (S.views.probation.reviewDue ? `<div class="callout warn">
+      <p style="margin:0">Your probation period is served &mdash; the review that closes it is taken at
+        the yard, so it happens the next time you are home. Nothing else is outstanding, and nothing is
+        lost by waiting.${S.views.homeTime?.tracked ? '' : ' You have no arrangement on file, so dispatch'
+        + ' will not route you: ask for home time when you want the review.'}</p></div>`
+      : `<div class="callout info">
+      <p style="margin:0">Probation does not override this. Stay out as long as your arrangement says
+        &mdash; it is a period you serve, not a leash, and running longer will not shorten it. Once the
+        ${S.views.probation.durationDays ? `<b>${S.views.probation.durationDays} days</b>` : 'period'} are
+        up, the next home time is where the review that clears you is taken.</p></div>`) : ''}
     <div class="grid3">
       <label>Arrangement
         <select id="ht-pref">${(S.views.homeTimeOptions || []).map((o) =>

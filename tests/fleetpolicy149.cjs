@@ -158,8 +158,14 @@ async function fileReport(ids) {
     `${before.refusalsPerWeek} -> ${after.refusalsPerWeek}`);
   const gained = (after.lastChange?.gained || []).join(' ');
   ok('and the driver is told what changed', gained.length > 0, gained.slice(0, 110) || '(silent)');
+  // The briefing spells one out — "One a week" — so a bare digit check does not find it. It used to
+  // pass anyway, on the "1" inside "every 14 days" from a review line that has since gone. Matching a
+  // number that happens to be a substring of an unrelated sentence is not a check of anything.
+  const quoted = after.refusalsPerWeek === 1
+    ? /\bone a week\b/i.test(gained)
+    : gained.includes(String(after.refusalsPerWeek));
   ok('including the refusal allowance, in the number the rule actually uses',
-    gained.includes(String(after.refusalsPerWeek)), `quotes ${after.refusalsPerWeek}`);
+    quoted, `quotes ${after.refusalsPerWeek}: ${(gained.match(/[^.]*a week[^.]*/i) || ['(not quoted)'])[0].slice(0, 70)}`);
   ok('and that the review clock changed', /review/i.test(gained), 'reviews mentioned');
 
   head('8. #152 A box nobody is on becomes visible');

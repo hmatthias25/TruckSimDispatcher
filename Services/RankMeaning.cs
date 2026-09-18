@@ -60,7 +60,7 @@ public static class RankMeaning
 
         // ---- the review clock
         if (wasProbation)
-            b.Gained.Add($"Reviews change. Probation was every {Probation.ReviewIntervalDays} days at the yard; " +
+            b.Gained.Add("Reviews change. On probation one was filed every time you came to the yard; " +
                          $"from here it is a periodic review roughly every {PeriodicReview.IntervalDays} days.");
 
         // ---- money

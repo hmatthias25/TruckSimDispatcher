@@ -85,11 +85,16 @@ const V = () => S.views;
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: at(1) }));
   ok('starts probationary', S.driver.rank === 'probationary', S.driver.rank);
   ok('probation is surfaced', V().probation?.on === true, V().probation?.standing);
-  ok('probation overrides the chosen arrangement',
+  // #240: probation used to override this with a mandatory fortnight — "no arrangement" most of all,
+  // on the grounds that it was not on offer to somebody still being assessed. It is on offer. Probation
+  // is a period served and running longer cannot shorten it, so there was nothing to protect.
+  ok('probation leaves the chosen arrangement alone',
     V().homeTime?.intervalDays === V().probation.intervalDays,
     `interval ${V().homeTime?.intervalDays}, probation ${V().probation?.intervalDays}`);
-  ok('and says so in the arrangement label', /Probation/.test(V().homeTime?.arrangement || ''),
-    V().homeTime?.arrangement);
+  ok('no arrangement still means no arrangement', !(V().homeTime?.intervalDays > 0),
+    `intervalDays=${V().homeTime?.intervalDays}`);
+  ok('and the label says so rather than claiming an override',
+    /no arrangement/i.test(V().homeTime?.arrangement || ''), V().homeTime?.arrangement);
 
   head('2. A probationary driver cannot ask for a trailer');
   ok('the option is closed to them', V().requests?.canRequestTrailer === false);

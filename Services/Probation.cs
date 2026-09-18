@@ -9,16 +9,31 @@ namespace TruckSimDispatcher.Services;
 /// flipped. The driver never came in, nobody looked at their work, and there was no moment where the
 /// company decided whether to keep them. That is not what probation is.
 ///
-/// So a probationary driver comes to the yard <b>every fortnight</b> — whatever arrangement they picked
-/// at hire is suspended until this is behind them — and each time they report in, somebody goes through
-/// the period with them and writes a verdict. Three good ones in a row clears it.
+/// So probation is <b>a period served</b>, and it ends with somebody going through the work with you and
+/// writing a verdict. A review is filed whenever a probationary driver reports to the yard — they are
+/// worth having, and nobody should be surprised at the end by something that was never mentioned in the
+/// middle — but the one that decides it is taken at the first home time after the period is up.
+///
+/// They come home on their own arrangement while they are serving it. That was not always so: everybody
+/// came in every fortnight whatever they had agreed, which belonged to the version where three
+/// consecutive passing reviews cleared probation and the cadence was the mechanism. Nothing counts a run
+/// of passes now, so it had become six trips to the yard to file reviews that decided nothing. Staying
+/// out longer cannot shorten the period, so there was nothing being protected against either.
 ///
 /// The old thresholds are still the floor. A run of quiet fortnights with four loads in them is not a
 /// case for taking someone off probation, and the evaluation says so rather than passing them anyway.
 /// </summary>
 public static class Probation
 {
-    /// <summary>How often a probationary driver reports to the yard. Not negotiable while on it.</summary>
+    /// <summary>
+    /// The nominal review cadence: how often a probationary driver would come in on a standard
+    /// arrangement, and the yardstick a probation window is sized against.
+    ///
+    /// <b>Not an interval imposed on anybody.</b> It used to be — a probationary driver came in every
+    /// fortnight whatever they had agreed — and <see cref="EffectiveIntervalDays"/> says why that went.
+    /// What it still does is set the floor under writing a review at all, and size the window in
+    /// <see cref="ProbationPlanner.ReviewsAvailable"/>.
+    /// </summary>
     public const int ReviewIntervalDays = 14;
 
     /// <summary>
@@ -49,11 +64,26 @@ public static class Probation
     public static bool IsOn(AppState s) => s.Driver.Rank == "probationary";
 
     /// <summary>
-    /// The home-time interval actually in force. While probationary the driver's own arrangement is
-    /// suspended — including "no arrangement", which is not an option for somebody still being assessed.
+    /// The home-time interval actually in force.
+    ///
+    /// <para><b>Your own arrangement stands while you are serving the period.</b> It used to be
+    /// suspended outright — everybody in every fortnight, whatever they had agreed and including "no
+    /// arrangement" — which made sense when probation was cleared by three consecutive passing reviews
+    /// and the cadence was the mechanism. It is a fixed period now. <see cref="PassesFor"/> returns zero,
+    /// nothing counts a run of passes, and dragging somebody to the yard six times to file reviews that
+    /// decide nothing is a rule outliving its reason. A probationary driver can stay out as long as they
+    /// like; what they cannot do is get off probation early.</para>
+    ///
+    /// <para><b>Including at the end, and including "no arrangement".</b> The verdict is taken at a home
+    /// time, so a driver who never goes home never gets one — and the temptation is to have the company
+    /// pull them in once the period is up. It does not. An arrangement is the driver's to set, this app
+    /// does not route anybody anywhere they did not agree to go, and probation is a period you serve
+    /// rather than a leash. What the app does instead is say so, early and plainly: the Career tab counts
+    /// the days down, names the date, and warns a fortnight out that a driver running with no arrangement
+    /// needs to ask for one or the review will simply wait. Nothing is lost by waiting — the period is
+    /// served whenever they come in, and the day they come in is the day it closes.</para>
     /// </summary>
-    public static int EffectiveIntervalDays(AppState s) =>
-        IsOn(s) ? ReviewIntervalDays : s.Driver.HomeTimeIntervalDays;
+    public static int EffectiveIntervalDays(AppState s) => s.Driver.HomeTimeIntervalDays;
 
     /// <summary>Passes standing right now. Reset by any fail, which is the point of them being in a row.</summary>
     public static int ConsecutivePasses(AppState s)
@@ -180,9 +210,14 @@ public static class Probation
         FuelReview.Apply(FuelReview.Assess(s, since.Value, now.Value), forThem, against);
         review.TruckDamagePct = wear.DamageNow;
 
-        if (daysCovered > ReviewIntervalDays + OverrunGraceDays)
-            against.Add($"Took {daysCovered:0} days to report in against a {ReviewIntervalDays}-day requirement. " +
-                        "Come in when you are due — I cannot review work I have not seen.");
+        // Against their own arrangement, not against a fortnight. A driver on a three-week or monthly
+        // agreement was being told off at every review for taking three weeks or a month — a rebuke for
+        // keeping to the thing they signed, from a rule that stopped existing when probation became a
+        // period served. Somebody with no arrangement is not late for anything and hears nothing.
+        var agreed = s.Driver.HomeTimeIntervalDays;
+        if (agreed > 0 && daysCovered > agreed + OverrunGraceDays)
+            against.Add($"Took {daysCovered:0} days to report in against the {agreed}-day arrangement on your " +
+                        "file. Come in when you are due — I cannot review work I have not seen.");
 
         review.Strengths = forThem;
         review.Concerns = against;

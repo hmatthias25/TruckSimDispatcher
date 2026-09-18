@@ -22,12 +22,17 @@ const day = (n, hhmm = '06:00') => `2000-01-${String(n).padStart(2, '0')}T${hhmm
   let h = S.views.homeTime;
   check('arrangement stored as 14 days', S.driver.homeTimeIntervalDays === 14, `${S.driver.homeTimeIntervalDays}`);
   check('tracked', h.tracked === true);
-  // A probationary driver is on mandatory fortnightly reviews, which overrides whatever they picked.
-  check('probation overrides the chosen arrangement while it lasts',
-    /Probation/i.test(h.arrangement), h.arrangement);
+  // #240: probation used to override this with a mandatory fortnight. It does not any more — the
+  // cadence belonged to the version where three passing reviews in a row cleared probation, and
+  // probation has been a period served for a long time. The arrangement they picked is the arrangement
+  // they get, on probation or off it.
+  check('probation leaves the chosen arrangement alone',
+    /every other week/i.test(h.arrangement), h.arrangement);
+  check('and the interval is theirs, not an imposed fortnight',
+    h.intervalDays === S.driver.homeTimeIntervalDays, `${h.intervalDays} vs ${S.driver.homeTimeIntervalDays}`);
   S = (await api('/career/promote', 'POST', { rank: 'company', note: 'test setup', force: true })).snapshot;
   h = S.views.homeTime;
-  check('label resolved once off probation', /every other week/i.test(h.arrangement), h.arrangement);
+  check('and is unchanged by the promotion', /every other week/i.test(h.arrangement), h.arrangement);
   check('home yard identified', !!h.terminalLabel, h.terminalLabel);
   check('not due yet', h.dueSoon === false && h.overdue === false, h.headline);
   check('options exposed for the dropdown', (S.views.homeTimeOptions || []).length === 6);
