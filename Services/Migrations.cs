@@ -2013,33 +2013,69 @@ public static class Migrations
     /// </summary>
     private static void CloseOrdersForTrailersAlreadyGone(AppState s)
     {
-        var stale = s.EquipmentOrders
-            .Where(o => o.Status == "Open" && o.Kind == "TrailerSwap")
-            .Where(o => !string.IsNullOrWhiteSpace(o.FromTrailerUnit))
-            .Where(o => s.Trailers.FirstOrDefault(t =>
-                t.Unit.Equals(o.FromTrailerUnit, StringComparison.OrdinalIgnoreCase)) is not { Retired: false })
-            .ToList();
-        if (stale.Count == 0) return;
+        // A box is "gone" if it is off the books entirely or retired. Both happen: the Equipment tab
+        // deletes, the fleet report retires, and a player clearing up does whichever is nearest.
+        bool Gone(string unit) =>
+            !string.IsNullOrWhiteSpace(unit)
+            && s.Trailers.FirstOrDefault(t => t.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
+               is not { Retired: false };
 
-        foreach (var o in stale)
+        var cleared = new List<string>();
+
+        // 1. Equipment orders — the fortnightly "replace this box" ask. These hold the single open-order
+        //    slot, so one left dangling shuts the queue for tractors as well as trailers.
+        foreach (var o in s.EquipmentOrders.Where(o => o.Status == "Open" && o.Kind == "TrailerSwap"))
         {
+            if (!Gone(o.FromTrailerUnit) && !Gone(o.ToTrailerUnit)) continue;
             o.Status = "Completed";
             o.CompletedGameTime = s.Status.GameTime;
-            o.Notes = string.IsNullOrWhiteSpace(o.Notes)
-                ? "Closed automatically — the trailer had already left the fleet."
-                : o.Notes + " Closed automatically — the trailer had already left the fleet.";
+            o.Notes = (o.Notes + " Closed automatically — the trailer had already left the fleet.").Trim();
+            cleared.Add($"{o.Number} on {(Gone(o.FromTrailerUnit) ? o.FromTrailerUnit : o.ToTrailerUnit)}");
         }
+
+        // 2. Re-rigs on the road — a different record entirely, and the one that actually puts a prompt
+        //    in front of the driver mid-tour. Told to drop or collect a box that no longer exists, the
+        //    only honest answer is to call it off.
+        foreach (var o in s.TrailerSwaps.Where(o => o.Status is "Open" or "Waiting"))
+        {
+            if (!Gone(o.DropUnit) && !Gone(o.TakeUnit)) continue;
+            o.Status = "Cancelled";
+            o.ResolvedGameTime = s.Status.GameTime;
+            cleared.Add($"{o.Number} on {(Gone(o.TakeUnit) ? o.TakeUnit : o.DropUnit)}");
+        }
+
+        // 3. The promise made at a drop, a tour ahead of the box being hooked. Left pointing at nothing,
+        //    the changeover planner keeps naming a trailer that is not there.
+        if (Gone(s.Driver.ChangeoverUnit))
+        {
+            cleared.Add($"the promise of {s.Driver.ChangeoverUnit}");
+            TrailerChangeover.Forget(s);
+        }
+
+        // 4. Anybody still hooked to it on the books. Dispatch plans freight onto an assigned trailer, so
+        //    a driver pointed at a box that is gone is a load waiting to fail.
+        if (Gone(s.Driver.AssignedTrailerUnit))
+        {
+            cleared.Add($"you were still shown on {s.Driver.AssignedTrailerUnit}");
+            s.Driver.AssignedTrailerUnit = "";
+        }
+        foreach (var d in s.HiredDrivers.Where(d => Gone(d.AssignedTrailerUnit)))
+        {
+            cleared.Add($"{d.Name} was still shown on {d.AssignedTrailerUnit}");
+            d.AssignedTrailerUnit = "";
+        }
+
+        if (cleared.Count == 0) return;
 
         s.Events.Insert(0, new LogEvent
         {
             Channel = "maintenance",
             GameTime = s.Status.GameTime,
             Message =
-                $"{stale.Count} trailer swap order(s) closed — " +
-                string.Join(", ", stale.Select(o => $"{o.Number} on {o.FromTrailerUnit}")) +
-                ". Those boxes are off the fleet already, so there was nothing left to swap and the " +
-                "order was only holding the equipment queue shut. The company will ask again on the " +
-                "next report if it still wants one.",
+                $"Cleared {cleared.Count} reference(s) to trailers that are no longer on the fleet — " +
+                string.Join("; ", cleared) + ". A box taken off the books by hand left orders and " +
+                "promises pointing at nothing, which is where the \"not in the fleet\" errors were coming " +
+                "from. Anything the company still wants it will ask for again on the next report.",
         });
     }
 

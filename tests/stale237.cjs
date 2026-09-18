@@ -91,8 +91,37 @@ const orders = async () => (await api('/export')).equipmentOrders || [];
     !(await orders()).some((o) => o.number === 'SFL-EQ-901' && o.status === 'Open'),
     (await orders()).find((o) => o.number === 'SFL-EQ-901')?.status);
   const events = await api('/events?take=60');
-  const said = events.find((e) => /swap order\(s\) closed/i.test(e.message || ''));
+  const said = events.find((e) => /no longer on the fleet/i.test(e.message || ''));
   ok('and the player is told', !!said, said?.message?.slice(0, 120) || '(silent)');
+  ok('naming the order that went', /SFL-EQ-901/.test(said?.message || ''), 'named');
+
+  head('2b. Every other kind of reference to a departed box is cleared too');
+  // The equipment order is only one of the places a unit number is kept. A re-rig on the road is a
+  // different record and is the one that actually puts a prompt in front of the driver mid-tour; the
+  // changeover promise is made a tour ahead of the hook; and dispatch plans freight onto whatever
+  // trailer somebody is shown to be on. Any of them left pointing at a box that is gone is where a
+  // "not in the fleet" error comes from.
+  st = await api('/export');
+  st.equipmentOrders = [];
+  st.trailerSwaps = [{
+    id: 'rr-1', number: 'SFL-RR-001', status: 'Open', terminalId: yardId, terminalLabel: 'Houston, TX',
+    takeUnit: 'T517', takeDescription: 'a reefer', dropUnit: '', miles: 40,
+    instruction: 'Swap onto T517.', bookkeeping: '',
+  }];
+  st.driver.changeoverUnit = 'T517';
+  st.driver.assignedTrailerUnit = 'T517';
+  S = un(await api('/import', 'POST', st));
+  const after = await api('/export');
+  ok('the re-rig on the road was called off',
+    !(after.trailerSwaps || []).some((o) => o.status === 'Open' || o.status === 'Waiting'),
+    (after.trailerSwaps || [])[0]?.status);
+  ok('the changeover promise was dropped', !after.driver.changeoverUnit,
+    after.driver.changeoverUnit || '(cleared)');
+  ok('and nobody is shown hooked to a box that is gone', !after.driver.assignedTrailerUnit,
+    after.driver.assignedTrailerUnit || '(cleared)');
+  const swept = (await api('/events?take=60')).find((e) => /no longer on the fleet/i.test(e.message || ''));
+  ok('all of it is said in one line rather than silently', !!swept,
+    swept?.message?.slice(0, 130) || '(silent)');
 
   head('3. An order against a box still on the fleet is left alone');
   S = un(await api('/fleet/trailer', 'POST', {
