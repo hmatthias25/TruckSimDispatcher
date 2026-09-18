@@ -1263,8 +1263,13 @@ app.MapGet("/api/fleetops", () => Results.Ok(new
     openUnits = FleetOpsService.OpenUnitDecisions(store.State),
     pendingTerminations = store.State.FleetReports
         .SelectMany(r => r.Personnel).Where(p => p.Pending).ToList(),
-    retirements = store.State.FleetReports.FirstOrDefault()?.Retirements ?? new List<RetirementRecommendation>(),
-    watching = store.State.FleetReports.FirstOrDefault()?.Watching ?? new List<TrailerWatchNote>(),
+    // A recommendation is a button, and a button has to be actionable. The stored report is history and
+    // stays as it was filed — but a unit the player has since got rid of by hand cannot be traded, and
+    // offering to do it produced the reported "T517 is not in the fleet" every time the Fleet tab was
+    // opened. Filtered on the way out rather than swept out of the report: what the company recommended
+    // at the time is a true record of what it recommended at the time.
+    retirements = FleetOpsService.ActionableRetirements(store.State),
+    watching = FleetOpsService.ActionableWatching(store.State),
     recommendedTruck = Seed.RecommendedTruck(store.State)
 }));
 

@@ -503,27 +503,21 @@ public static class FleetOpsService
         ResolvePersonnel(s, report);
         AssessRetirements(s, report);
         IssueTradeInstructions(s, report);
+
+        // Trailers, on their own terms. Every box on the books gets a row, the three lifetime figures
+        // the player typed are written through, and the company says what it makes of each one.
+        //
+        // <b>Before the assessment, not after.</b> This ran after it, so the verdict on a box was reached
+        // on last period's reading while this period's sat unread in the request — the player typed 82%
+        // against a tanker and was told in the same breath that nothing had been on it. A figure read off
+        // the game is the best evidence this report has; judging a box without it was judging it blind.
+        var ranThisPeriod = ApplyTrailerReadings(s, report);
+
         // After the tractors, deliberately. Both compete for the one open equipment order, and a truck
         // the driver is being moved into outranks a box swap — this ran first for a while and a spare
         // trailer took the slot off a tractor the company had just decided to put the player in.
-        AssessTrailers(s, report);
+        AssessTrailers(s, report, ranThisPeriod);
         // The company may also want another box somewhere. Occasional, and always an ask.
-        // Trailers, on their own terms. Every box on the books gets a row, the three lifetime figures
-        // the player typed are written through, and the company says what it makes of each one.
-        foreach (var line in report.TrailerLines ?? new List<TrailerReportLine>())
-        {
-            var box = s.Trailers.FirstOrDefault(x =>
-                x.Unit.Equals(line.Unit ?? "", StringComparison.OrdinalIgnoreCase));
-            if (box == null) continue;
-
-            // Blank is "not looked at", which is not zero — an unreported figure keeps what it had.
-            if (line.UtilisationPct >= 0) box.UtilisationPct = line.UtilisationPct;
-            if (line.DistanceOnJobMi >= 0) box.DistanceOnJobMi = line.DistanceOnJobMi;
-            if (line.LoadsTransported >= 0) box.LoadsTransported = line.LoadsTransported;
-            if (line.WeightTransportedLbs >= 0) box.WeightTransportedLbs = line.WeightTransportedLbs;
-            if (line.DistanceOnJobMi >= 0 || line.LoadsTransported >= 0 || line.WeightTransportedLbs >= 0)
-                box.LifetimeReportedGameTime = report.PeriodEndGame;
-        }
 
         report.Trailers = TrailerHealth.Assess(s);
         foreach (var v in report.Trailers.Where(x => x.Verdict != "Keep"))
@@ -1538,39 +1532,135 @@ public static class FleetOpsService
     }
 
     /// <summary>
+    /// Writes this period's trailer readings onto the boxes, and returns the units the figures show ran.
+    ///
+    /// <para>The lifetime totals only ever go up, so differencing them against what was already on file
+    /// is the one unambiguous statement in the whole section: this box moved since you last looked. It
+    /// has to be read here, before the new values overwrite the old ones, which is the other reason this
+    /// cannot run after the assessment.</para>
+    /// </summary>
+    private static HashSet<string> ApplyTrailerReadings(AppState s, FleetReport report)
+    {
+        var ran = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var line in report.TrailerLines ?? new List<TrailerReportLine>())
+        {
+            var box = s.Trailers.FirstOrDefault(x =>
+                x.Unit.Equals(line.Unit ?? "", StringComparison.OrdinalIgnoreCase));
+            if (box == null) continue;
+
+            // Any of the three lifetime figures moving means the box worked, whatever the roster says
+            // about who was nominally holding it.
+            if (line.DistanceOnJobMi > box.DistanceOnJobMi && box.DistanceOnJobMi >= 0) ran.Add(box.Unit);
+            if (line.LoadsTransported > box.LoadsTransported && box.LoadsTransported >= 0) ran.Add(box.Unit);
+            if (line.WeightTransportedLbs > box.WeightTransportedLbs && box.WeightTransportedLbs >= 0) ran.Add(box.Unit);
+            if (line.UtilisationPct > 0) ran.Add(box.Unit);
+
+            // Blank is "not looked at", which is not zero — an unreported figure keeps what it had.
+            if (line.UtilisationPct >= 0) box.UtilisationPct = line.UtilisationPct;
+            if (line.DistanceOnJobMi >= 0) box.DistanceOnJobMi = line.DistanceOnJobMi;
+            if (line.LoadsTransported >= 0) box.LoadsTransported = line.LoadsTransported;
+            if (line.WeightTransportedLbs >= 0) box.WeightTransportedLbs = line.WeightTransportedLbs;
+            if (line.DistanceOnJobMi >= 0 || line.LoadsTransported >= 0 || line.WeightTransportedLbs >= 0)
+                box.LifetimeReportedGameTime = report.PeriodEndGame;
+        }
+
+        return ran;
+    }
+
+    /// <summary>
     /// Records which boxes had nobody on them this period.
     ///
-    /// Utilisation arrives on a report line and a line exists per DRIVER, so a trailer no driver is
-    /// assigned to produced no line at all, kept its -1, and failed the <c>UtilisationPct >= 0</c> test
-    /// forever. The single box most obviously worth asking about was the only one invisible.
+    /// <para><b>Only where the report actually says so.</b> This used to read
+    /// <c>HiredDriver.AssignedTrailerUnit</c> and count any box no driver was holding as a period idle —
+    /// which was fair enough when the report asked which trailer each driver was on. It stopped asking:
+    /// see <see cref="AssignReportedTrailer"/>, which records that who is nominally holding a box "is
+    /// bookkeeping the app was maintaining for its own sake". A retirement recommendation was then built
+    /// on that abandoned bookkeeping, so a trailer being worked every day of the fortnight counted three
+    /// idle periods and the company offered to trade it. Reported from play, of a tanker in daily use.</para>
     ///
-    /// "Nobody was on it" is a fact already on file rather than a reading the app would have to invent,
-    /// which is the line every other figure here is drawn on — so it is counted here.
+    /// <para>What the app genuinely knows is on the report's own trailer rows: a utilisation reading off
+    /// the game's Trailer Manager, and three lifetime totals that only go up. <b>A box with no reading at
+    /// all is not idle, it is unread</b>, and its count is left exactly where it was. Absence of a figure
+    /// has never been evidence of anything in this app, and it does not get to condemn a trailer.</para>
     ///
-    /// It is counted in <see cref="Trailer.IdlePeriods"/> and NOT written into
-    /// <see cref="Trailer.UtilisationPct"/>, which the model defines as a reading off the game's Trailer
-    /// Manager with negative meaning never reported. Deriving a 0% into it looked equivalent and was not:
-    /// the fake reading outlived the box going back to work, and then counted as a real 0% in the
-    /// type averages that decide what to buy next.
+    /// <para>Counted in <see cref="Trailer.IdlePeriods"/> and NOT written into
+    /// <see cref="Trailer.UtilisationPct"/>, which the model defines as a reading off the game with
+    /// negative meaning never reported. Deriving a 0% into it looked equivalent and was not: the fake
+    /// reading outlived the box going back to work, and then counted as a real 0% in the type averages
+    /// that decide what to buy next.</para>
     /// </summary>
-    private static void RecordIdleTrailers(AppState s)
+    private static List<Trailer> RecordIdleTrailers(AppState s, FleetReport report, HashSet<string> ranThisPeriod)
     {
+        var neverRead = new List<Trailer>();
+        // A reading can arrive two ways: the trailer's own row, or a driver's line naming the box they
+        // are on. Both are the player reading the same Trailer Manager figure off the same screen.
+        var reported = (report.TrailerLines ?? new List<TrailerReportLine>())
+            .Where(l => l.UtilisationPct >= 0 || l.DistanceOnJobMi >= 0
+                        || l.LoadsTransported >= 0 || l.WeightTransportedLbs >= 0)
+            .Select(l => l.Unit ?? "")
+            .Concat((report.Lines ?? new List<FleetReportLine>())
+                .Where(l => l.TrailerUtilisationPct >= 0)
+                .Select(l => l.TrailerUnit ?? ""))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         foreach (var tr in s.Trailers.Where(x => !x.Retired && !DropHook.Is(x.Type)))
         {
-            // The player's own box, and anything mid-trip, are being used by definition.
-            var working = tr.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)
+            // The player's own box, anything mid-trip, and anything a driver is on are being used by
+            // definition. Assignment is still good news where it is there — it is only absence of it
+            // that is no longer bad news.
+            var working = ranThisPeriod.Contains(tr.Unit)
+                          || tr.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)
                           || s.Trips.Any(x => x.Status is "Authorized" or "InTransit"
                                               && x.TrailerUnit.Equals(tr.Unit, StringComparison.OrdinalIgnoreCase))
                           || s.HiredDrivers.Any(d => d.Status == "Active"
                                                      && d.AssignedTrailerUnit.Equals(tr.Unit, StringComparison.OrdinalIgnoreCase));
             if (working) { tr.IdlePeriods = 0; continue; }
+
+            // Nothing was said about this box this period. That is a gap in what we were told, not a
+            // verdict on the trailer — hold the count where it is rather than counting silence as a
+            // period idle.
+            if (!reported.Contains(tr.Unit))
+            {
+                // Collected only where the app has never had a figure for this box at all. A trailer
+                // with a reading already on file is not unknown, it is simply not re-read this period,
+                // and the assessment below judges it on what it has.
+                if (tr.UtilisationPct < 0) neverRead.Add(tr);
+                continue;
+            }
+
             tr.IdlePeriods++;
         }
+
+        return neverRead;
     }
 
-    private static void AssessTrailers(AppState s, FleetReport report)
+    /// <summary>
+    /// One line for every box the app has never had a figure for, said once and said last.
+    ///
+    /// A note each would put a row on the report for every spare trailer on the property, every
+    /// fortnight, ahead of the findings that are actually about something — and a screen of boilerplate
+    /// is how the one line worth reading gets missed.
+    /// </summary>
+    private static void AskForMissingReadings(FleetReport report, List<Trailer> neverRead)
     {
-        RecordIdleTrailers(s);
+        if (neverRead.Count == 0) return;
+
+        var units = string.Join(", ", neverRead.Take(8).Select(t => t.Ref));
+        if (neverRead.Count > 8) units += $" and {neverRead.Count - 8} more";
+
+        report.Watching.Add(new TrailerWatchNote
+        {
+            Unit = neverRead[0].Unit, Type = neverRead[0].Type,
+            Note = $"No utilisation has ever been read for {units}, and nobody is shown on {(neverRead.Count == 1 ? "it" : "them")}. " +
+                   "That is a blank on the form rather than an idle box, so nothing is being read into it — " +
+                   "put the figures in from the ATS Trailer Manager and the company can say something useful.",
+        });
+    }
+
+    private static void AssessTrailers(AppState s, FleetReport report, HashSet<string> ranThisPeriod)
+    {
+        var neverRead = RecordIdleTrailers(s, report, ranThisPeriod);
         var m = s.Settings.Maintenance;
         var now = GameClock.TryParse(report.PeriodEndGame) ?? GameClock.TryParse(s.Status.GameTime);
 
@@ -1628,8 +1718,8 @@ public static class FleetOpsService
                     {
                         Unit = tr.Unit, Type = tr.Type,
                         Note = $"Nothing has pulled trailer {tr.Ref} ({TrailerSpec.Describe(tr.Type, tr.Subtype)}) for " +
-                               $"{tr.IdlePeriods} period(s) — no driver has been on it. Watching it; if that reaches " +
-                               "three we will look at moving it on.",
+                               $"{tr.IdlePeriods} period(s) — the figures you gave show nothing moved on it. " +
+                               "Watching it; if that reaches three we will look at moving it on.",
                     });
                     continue;
                 }
@@ -1661,8 +1751,9 @@ public static class FleetOpsService
                 : "age and production";
 
             if (nobodyOnIt)
-                evidence.Add($"No driver has been on it for {tr.IdlePeriods} consecutive period(s). It is not " +
-                             "a box we are short of work for — it is a box nobody is running at all.");
+                evidence.Add($"Its own figures have not moved for {tr.IdlePeriods} consecutive period(s) — no " +
+                             "utilisation, no distance, no loads. It is not a box we are short of work for; " +
+                             "it is a box nobody is running at all.");
 
             if (starsGone)
                 evidence.Add($"Down to {tr.Stars:0.#} stars — at or under our {m.TrailerReplaceStars:0.#}-star line.");
@@ -1712,7 +1803,7 @@ public static class FleetOpsService
                     ? $"Trailer {tr.Ref} ({tr.Type}) is down to {tr.Stars:0.#} stars. We are replacing it with a " +
                       $"{newType.ToLowerInvariant()}."
                     : nobodyOnIt
-                        ? $"Nobody has been on trailer {tr.Ref} ({tr.Type}) for {tr.IdlePeriods} periods. " +
+                        ? $"Trailer {tr.Ref} ({tr.Type}) has not moved in {tr.IdlePeriods} reported periods. " +
                           $"We are trading it for a {newType.ToLowerInvariant()}."
                         : $"Trailer {tr.Ref} ({tr.Type}) is old and not earning its keep. We are replacing it with a " +
                           $"{newType.ToLowerInvariant()}.",
@@ -1725,6 +1816,9 @@ public static class FleetOpsService
 
             report.Findings.Add($"Trailer {tr.Ref}: being replaced with a {newType.ToLowerInvariant()} on {reason}.");
         }
+
+        // Last, deliberately — it is a request for information, not a verdict on anything.
+        AskForMissingReadings(report, neverRead);
     }
 
     /// <summary>
@@ -1857,7 +1951,7 @@ public static class FleetOpsService
                   $"{tr.Type.ToLowerInvariant()}s. That is where the freight is.";
 
         if (tr.IdlePeriods > 0)
-            why = $"Nothing has been on the {tr.Type.ToLowerInvariant()} for {tr.IdlePeriods} period(s). " + why;
+            why = $"The {tr.Type.ToLowerInvariant()}'s figures have not moved in {tr.IdlePeriods} period(s). " + why;
 
         if (best.Paid > 0)
             why += minePaid > 0
@@ -1953,6 +2047,15 @@ public static class FleetOpsService
 
     public static string RetireUnit(AppState s, string unit, string replacementUnit, decimal soldFor = 0m)
     {
+        // Already gone, which is the outcome this was asking for. Retiring a unit that has left the fleet
+        // is not an error to refuse, it is a job somebody has already done by hand — and telling them
+        // "not in the fleet" as though they had made a mistake is exactly backwards when the report they
+        // are standing in front of is the thing that told them to sell it.
+        if (!s.Trucks.Any(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
+            && !s.Trailers.Any(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase)))
+            return $"{unit} is already off the fleet — nothing left to retire. The recommendation was " +
+                   "raised while it was still on the books; it goes at the next report.";
+
         // A trailer is not a truck and never was. This looked in s.Trucks only, while the fleet report
         // has been raising trailer retirements with UnitKind "Trailer" and offering the same button for
         // them — so the button could not work, ever, and said "not in the fleet" about a box the report
@@ -2044,6 +2147,38 @@ public static class FleetOpsService
             .ThenByDescending(x => x.Year)
             .ThenBy(x => x.ServiceMiles)
             .FirstOrDefault();
+
+    /// <summary>
+    /// Whether a unit named on a stored report is still something the player can act on.
+    ///
+    /// A trade recommendation is rendered as a button, and the unit behind it can leave the fleet between
+    /// the report being filed and the Fleet tab being opened — sold in ATS and struck off by hand, which
+    /// is exactly what the report told the player to do. The recommendation then sat there offering to
+    /// trade a trailer that was already gone, and pressing it threw "not in the fleet".
+    /// </summary>
+    private static bool StillOnTheFleet(AppState s, string unit, string kind) =>
+        !string.IsNullOrWhiteSpace(unit)
+        && (kind.Equals("Trailer", StringComparison.OrdinalIgnoreCase)
+            ? s.Trailers.Any(t => !t.Retired && t.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
+            : s.Trucks.Any(t => !t.Retired && t.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>
+    /// The last report's trade recommendations, less anything that has since left the fleet.
+    ///
+    /// Filtered on the way out rather than swept out of the stored report. What the company recommended
+    /// on the day is a true record of what it recommended on the day, and rewriting a filed report to
+    /// tidy up the screen is the kind of quiet history-editing the rest of this app argues against.
+    /// </summary>
+    public static List<RetirementRecommendation> ActionableRetirements(AppState s) =>
+        (s.FleetReports.FirstOrDefault()?.Retirements ?? new List<RetirementRecommendation>())
+            .Where(r => StillOnTheFleet(s, r.Unit, r.UnitKind))
+            .ToList();
+
+    /// <summary>The last report's watch notes, less any box that has since left the fleet.</summary>
+    public static List<TrailerWatchNote> ActionableWatching(AppState s) =>
+        (s.FleetReports.FirstOrDefault()?.Watching ?? new List<TrailerWatchNote>())
+            .Where(w => StillOnTheFleet(s, w.Unit, "Trailer"))
+            .ToList();
 
     /// <summary>
     /// A truck with nobody in it, and what the company can honestly do about it. Presented as a

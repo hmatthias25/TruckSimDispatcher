@@ -184,25 +184,40 @@ async function fileReport(ids) {
     skill: 'Competent', level: 5, homeTerminalId: S.company.terminals[0].id, hiredGameDate: at(2),
   })).driver;
 
+  // A second spare, which nobody ever says anything about at all. #239: an empty assignment field used
+  // to be read as proof a box had not moved, and the report had already stopped asking who was on what
+  // — so a trailer in daily use counted three idle periods and was offered for trade. Silence is a gap
+  // in what we were told. The reefer below is idle because the player REPORTS it idle.
+  await api('/fleet/trailer', 'POST', {
+    unit: 'QUIET9', type: 'Reefer', division: 'Reefer', year: 2019, make: 'Utility',
+    length: "53'", inGameGarage: true, status: 'InService',
+    homeTerminalId: S.company.terminals[0].id,
+  });
+
   let raised = false;
   for (let i = 0; i < 3; i++) {
-    // The dry van is worked hard and reports it; the reefer has nobody on it at all.
+    // The dry van is worked hard and reports it; the reefer is read off the Trailer Manager at nothing.
     period += 15;
     const rep = (await api('/fleetops/report', 'POST', {
       periodStartGame: at(period - 15 + 5), periodEndGame: at(period + 5),
       lines: [{ driverId: idler.id, truckUnit: 'IDL1', trailerUnit: 'WORK1',
                 truckStars: 4, trailerStars: 5, perDay: 900, perMile: 2.1,
                 miles: 5000, revenue: 11000, trailerUtilisationPct: 88 }],
+      trailerLines: [{ unit: 'IDLE9', utilisationPct: 0, distanceOnJobMi: 0,
+                       loadsTransported: 0, weightTransportedLbs: 0 }],
     })).report;
     if ((rep.watching || []).some((w) => w.unit === spare.unit)
         || (rep.retirements || []).some((r) => r.unit === spare.unit)) raised = true;
   }
   const box = (await boot()).trailers.find((x) => x.unit === spare.unit);
   ok('the idle periods are counted', (box?.idlePeriods ?? 0) >= 3, `${box?.idlePeriods} period(s)`);
-  // NOT written into utilisationPct: the model defines that as a reading off the game, and deriving a
-  // zero into it made a fake reading that outlived the box going back to work.
-  ok('and no utilisation reading is invented for it', (box?.utilisationPct ?? -1) < 0,
-    `utilisationPct=${box?.utilisationPct}`);
+  // NOT derived: the model defines utilisationPct as a reading off the game, and inventing a zero into
+  // it made a fake reading that outlived the box going back to work.
+  const quiet = (await boot()).trailers.find((x) => x.unit === 'QUIET9');
+  ok('a box nobody reported on has no reading invented for it', (quiet?.utilisationPct ?? -1) < 0,
+    `utilisationPct=${quiet?.utilisationPct}`);
+  ok('and is not condemned on that silence', (quiet?.idlePeriods ?? 0) === 0,
+    `${quiet?.idlePeriods} period(s)`);
   ok('and it got raised rather than sitting there invisibly', raised, `raised=${raised}`);
 
   head('9. #152 An idle box is TRADED, not just sold off');
