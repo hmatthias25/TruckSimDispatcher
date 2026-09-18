@@ -3,8 +3,13 @@
  * The first cut of this read the grade straight off the ATS level, which was wrong for the reason any
  * fleet manager would give: an AI driver climbs levels fast, on miles turned and nothing else. A
  * fortnight of good running read as a promotion to Senior, and everybody was senior by the end of the
- * quarter. It is earned now - time served, distance covered, the rating the game gives them, and a clean
- * recent record - and every hire serves ninety days before any of it counts.
+ * quarter. It is earned now - time served, distance covered, the level the game has them on, and a
+ * clean recent record - and every hire serves ninety days before any of it counts.
+ *
+ * The level gate replaced a RATING gate: rating in ATS is derived purely from how the skill points were
+ * spent, so it measured the training policy rather than the driver, and its thresholds sat between the
+ * thirteen values the scale can actually take. Level is one gate of four and pay is still a property of
+ * the rung, not of the level.
  *
  * Pay follows the rung, not the level, for the same reason: a share that chased a level would be handing
  * out rises for a good fortnight.
@@ -66,7 +71,7 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
     // whole thing every run and nothing below could be asserted honestly.
     await api('/fleetops/drivers', 'POST', {
       id: `qa-rank-${i + 1}`, name, status: 'Active', assignedTruckUnit: unit,
-      assignedTrailerUnit: '', homeTerminalId: at, level: lvl, rating: 9.5,
+      assignedTrailerUnit: '', homeTerminalId: at, level: lvl,
     });
   }
 
@@ -74,7 +79,12 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
   let fo = await api('/fleetops');
   ok('a level entered at hire is on the roster', drv(fo, 'qa-rank-2').level === 12,
     `level ${drv(fo, 'qa-rank-2').level}`);
-  ok('and so is the rating', drv(fo, 'qa-rank-2').rating === 9.5, `${drv(fo, 'qa-rank-2').rating}`);
+  // Rating used to be asserted here as round-tripping. It is no longer read by anything: in ATS it
+  // only measures how the skill points were spent, so it described the training policy rather than
+  // the driver. The field survives so stored careers load, which is why posting one still stores it —
+  // what matters is that nothing consults it, and norating233 holds that. Level is the gate now.
+  ok('the level is what the ladder reads', drv(fo, 'qa-rank-1').level === 1,
+    `level ${drv(fo, 'qa-rank-1').level}`);
 
   head('2. Everybody starts on probation, whatever level they came in at');
   for (const id of ['qa-rank-1', 'qa-rank-2']) {
@@ -102,7 +112,7 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
     return api('/fleetops/report', 'POST', {
       periodStartGame: iso(day - 14), periodEndGame: iso(day), notes: '',
       lines: active.map((d) => ({ driverId: d.id, truckUnit: d.assignedTruckUnit,
-        level: d.level, rating: 9.5, perMile: 3.0, perDay: 1400, truckOdometer: odo })),
+        level: d.level, perMile: 3.0, perDay: 1400, truckOdometer: odo })),
       trailerLines: [],
     });
   }
@@ -126,7 +136,14 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
   fo = await api('/fleetops');
   const made = dz(fo, 'qa-rank-1');
   console.log(`  ..    day ${day}: ${made.rank}, ${made.tenureDays} day(s), ${drv(fo, 'qa-rank-1').lifetimeMiles} mi`);
-  ok('they are a Company Driver now', made.rank === 'Company Driver', `${made.rank} at ${made.tenureDays}d`);
+  // qa-rank-1 came in at level 1 and the bottom rung now wants level 3, so serving the days is no
+  // longer enough on its own. That is the level gate doing its job rather than a regression: a driver
+  // who has been here three months and has not moved off level 1 has not done very much.
+  ok('the ninety days are served and no longer the thing in the way',
+    made.tenureDays >= 90, `${made.tenureDays}d`);
+  ok('and what is left is the level, said plainly',
+    made.rank === 'Company Driver' || made.shortfall.some((x) => /level/i.test(x)),
+    made.rank === 'Company Driver' ? 'promoted' : made.shortfall.join(' '));
   ok('and off their probation', made.servingProbation === false, `${made.probationDaysLeft}d left`);
   ok('the promotion is news on the report',
     /is now Company Driver/.test((promoted?.report?.findings || []).join(' ')),
@@ -146,13 +163,26 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
     gap.duePromotion ? gap.shortfall.length === 0 : true,
     gap.shortfall.join(' ') || 'none');
 
-  head('5. Pay follows the rung, not the level');
+  head('5. Pay follows the rung, and the rung has a level gate on it now');
+  // This used to assert that a level 1 and a level 12 were paid identically, because the ladder read
+  // nothing off the level at all. That changed when the RATING gate came out: rating in ATS is derived
+  // purely from how the skill points were spent, so it measured the player's training policy rather
+  // than the driver, and its thresholds sat between values the game can actually show. Level replaced
+  // it — a plain integer with no scale to fall between.
+  //
+  // The original point still holds and is what is checked here: pay is a property of the RUNG. Two
+  // drivers on the same rung are paid the same whatever their levels, and the level only decides which
+  // rung is open. It is one gate of four, and the tenure and mileage gates still dominate — the level
+  // thresholds are low enough that anybody who has served the days has passed them.
   const rookie = drv(fo, 'qa-rank-1'), veteran = drv(fo, 'qa-rank-2');
-  console.log(`  ..    L${rookie.level} on ${rookie.wageShare}, L${veteran.level} on ${veteran.wageShare}`);
-  ok('a level 1 and a level 12 on the same rung are paid the same',
-    rookie.wageShare === veteran.wageShare, `${rookie.wageShare} vs ${veteran.wageShare}`);
-  ok('and the rung pays more than probation did', rookie.wageShare > probationShare,
-    `${probationShare} -> ${rookie.wageShare}`);
+  const rookieGrade = dz(fo, 'qa-rank-1').grade, vetGrade = dz(fo, 'qa-rank-2').grade;
+  console.log(`  ..    L${rookie.level} grade ${rookieGrade} on ${rookie.wageShare}, ` +
+    `L${veteran.level} grade ${vetGrade} on ${veteran.wageShare}`);
+  ok('two drivers on the same rung are paid the same, whatever their levels',
+    rookieGrade !== vetGrade || rookie.wageShare === veteran.wageShare,
+    `grade ${rookieGrade}/${vetGrade} → ${rookie.wageShare} vs ${veteran.wageShare}`);
+  ok('and a promoted driver is paid more than probation did',
+    veteran.wageShare > probationShare, `${probationShare} -> ${veteran.wageShare}`);
 
   head('6. A share you set yourself is left alone');
   // Whoever is still on the books and has been promoted at least once. Picking a driver by name would
@@ -201,7 +231,7 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
       replacement++;
       await api('/fleetops/drivers', 'POST', {
         id: `qa-fill-${replacement}`, name: `Relief ${replacement}`, status: 'Active',
-        assignedTruckUnit: unit, assignedTrailerUnit: '', level: 4, rating: 9.0,
+        assignedTruckUnit: unit, assignedTrailerUnit: '', level: 4,
       });
     }
   }

@@ -90,7 +90,10 @@ const personnelOf = (rep, kind) => (rep.personnel || []).filter((p) => p.kind ==
   roster = (await api('/fleetops')).drivers;
   const w1 = roster.find((d) => d.id === weak.id);
   ok('level stored on the driver', w1.level === 2, `${w1.level}`);
-  ok('rating stored, tenths kept', Math.abs(w1.rating - 4.5) < 0.001, `${w1.rating}`);
+  // Rating is no longer recorded. In ATS it is derived purely from how the skill points were spent, so
+  // it described the player's training policy rather than the driver — and its scale only has thirteen
+  // values, none of which the old promotion gates sat on. Level is what gets kept.
+  ok('rating is not stored any more', !(w1.rating > 0), `${w1.rating ?? 'absent'}`);
   const wp = w1.periods[0];
   ok('$/mile kept on the period', Math.abs(wp.perMile - 1.55) < 0.001, `${wp.perMile}`);
   ok('$/day kept on the period', Math.abs(wp.perDay - 600) < 0.001, `${wp.perDay}`);

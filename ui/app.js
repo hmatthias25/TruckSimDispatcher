@@ -3767,7 +3767,7 @@ function fleetOpsHtml() {
       <p>Hire AI drivers in ATS, put them on company units, then file a report here with what each one
         actually earned and how beaten-up their truck is. Revenue lands in the company's books and funds
         the payroll and maintenance reserves. Nothing here is invented — the app only records what you
-        read off the game, which for a driver you are not sitting next to means their level, rating,
+        read off the game, which for a driver you are not sitting next to means their level,
         $/mile and $/day, and for their equipment a star rating rather than a damage percentage.</p>
       ${f.unassignedUnits?.length
         ? `<p><b>Units with nobody on them:</b> ${esc(f.unassignedUnits.join(', '))}. Buy a driver for them
@@ -3786,15 +3786,14 @@ function fleetOpsHtml() {
       ${drivers.length ? `<div class="tablewrap" style="margin-top:14px"><table>
         ${/* Level and grade are different questions and the table asks both. Level is ATS's own figure
               for how much driving somebody has done, and it climbs fast. Grade is what they have earned
-              HERE — time served, miles run, rating, and a clean recent record — and it is what they are
+              HERE — time served, miles run, level reached, and a clean recent record — and it is what they
               paid on. A level 9 in their first month is still a Probationary Company Driver.
 
               Two probation badges, because they are two things: the ninety days every hire serves, and
               being put on probation for a bad period. The second is the one that ends careers. */ ''}
         <thead><tr><th>Driver</th><th>Unit</th>
           <th class="num" title="Level as ATS reports it — how much driving they have done">Level</th>
-          <th title="What they have earned here: time served, miles, rating, clean record">Grade</th>
-          <th class="num">Rating</th>
+          <th title="What they have earned here: time served, miles, level, clean record">Grade</th>
           <th class="num">$/day</th><th class="num">$/mi</th><th class="num">Truck &starf;</th>
           <th class="num" title="Preventable incidents on their record. Being hit by somebody else does not count.">Prev</th>
           <th>Status</th><th class="num">Wage share</th>
@@ -3814,7 +3813,6 @@ function fleetOpsHtml() {
                 a driver who is actually due looks identical to one who is stuck. */ ''}
           <td><span title="${esc(dz.rank)}">${esc(dz.rankShort)}</span>${
               dz.duePromotion ? ' ' + badge('ok', `due ${esc(dz.dueRank || '')}`) : ''}</td>
-          <td class="num">${d.rating ? num(d.rating, 1) : '<span class="sub">—</span>'}</td>
           <td class="num">${last?.perDay ? money0(last.perDay) : '<span class="sub">—</span>'}</td>
           <td class="num">${last?.perMile ? '$' + (+last.perMile).toFixed(2) : '<span class="sub">—</span>'}</td>
           <td class="num">${tk?.stars
@@ -3835,7 +3833,7 @@ function fleetOpsHtml() {
         <h3 class="sect">File a fleet report</h3>
         <details class="explainer"><summary>What to copy off the game, and what is not asked for</summary>
         <p class="hint">Every ${f.due?.intervalDays ?? 15} game days, open the ATS company screen and copy
-          down what it shows you: each driver's <b>level</b>, <b>rating</b>, <b>$/mile</b> and <b>$/day</b>,
+          down what it shows you: each driver's <b>level</b>, <b>$/mile</b> and <b>$/day</b>,
           and for their equipment the <b>star rating</b> — plus the truck's odometer. Those are the numbers
           the game gives for people and units you are not sitting in, so those are the numbers operations
           judges on. Leave wages blank to use the driver's agreed share.</p>
@@ -3865,7 +3863,6 @@ function fleetOpsHtml() {
           <thead><tr>
             <th>Driver</th><th>Unit</th>
             <th class="num" title="Driver level from the ATS company screen">Level</th>
-            <th class="num" title="Driver rating, 0.0 to 10.0">Rating</th>
             <th class="num" title="Average income per mile, as ATS reports it">$/mi</th>
             <th class="num" title="Average income per day, as ATS reports it">$/day</th>
             <th class="num" title="Tractor condition in stars, 5 down to 1">Truck &starf;</th>
@@ -3885,8 +3882,6 @@ function fleetOpsHtml() {
             <td class="mono">${esc(d.assignedTruckUnit)}</td>
             <td><input id="fr-lvl-${esc(d.id)}" type="number" step="1" min="0" style="width:64px"
                   value="${d.level || ''}" placeholder="—"></td>
-            <td><input id="fr-rate-${esc(d.id)}" type="number" step="0.1" min="0" max="10" style="width:70px"
-                  value="${d.rating || ''}" placeholder="0.0"></td>
             <td><input id="fr-permi-${esc(d.id)}" type="number" step="0.01" min="0" style="width:78px" placeholder="—"></td>
             <td><input id="fr-perday-${esc(d.id)}" type="number" step="1" min="0" style="width:82px" placeholder="—"></td>
             <td><input id="fr-tstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
@@ -3948,7 +3943,7 @@ function fleetOpsHtml() {
  * "Truck ★" between the two would be inviting a five to be typed into a percentage.
  *
  * Nothing here is performance. The player is not an AI driver being appraised, so there is no level,
- * rating, dollars a mile, revenue or wage on it.
+ * dollars a mile, revenue or wage on it.
  */
 /**
  * Every trailer on the books, with the three lifetime figures ATS keeps on one.
@@ -4065,7 +4060,6 @@ function driverFileModal(id) {
     <div class="meters">
       ${fkpi('Days with us', num(dz.tenureDays))}
       ${fkpi('Level', d.level || '—')}
-      ${fkpi('Rating', d.rating ? num(d.rating, 1) : '—')}
       ${fkpi('Wage share', pct(d.wageShare * 100, 0), d.wageShareSetByHand ? 'warn' : '')}
       ${fkpi('Preventables', dz.preventables, dz.preventables ? 'bad' : 'ok')}
     </div>
@@ -4138,14 +4132,13 @@ function driverFileModal(id) {
 
     <h3 class="sect">Period by period</h3>
     ${periods.length ? `<div class="tablewrap"><table>
-      <thead><tr><th>Report</th><th>Ended</th><th class="num">Level</th><th class="num">Rating</th>
+      <thead><tr><th>Report</th><th>Ended</th><th class="num">Level</th>
         <th class="num">$/mi</th><th class="num">$/day</th><th class="num">Revenue</th>
         <th class="num">Wages</th><th class="num">Repairs</th></tr></thead>
       <tbody>${periods.map((p) => `<tr>
         <td class="mono">${esc(p.reportNumber || '—')}</td>
         <td>${p.periodEndGame ? gt(p.periodEndGame) : '—'}</td>
         <td class="num">${p.level || '<span class="sub">—</span>'}</td>
-        <td class="num">${p.rating ? num(p.rating, 1) : '<span class="sub">—</span>'}</td>
         <td class="num">${p.perMile ? '$' + (+p.perMile).toFixed(2) : '<span class="sub">—</span>'}</td>
         <td class="num">${p.perDay ? money0(p.perDay) : '<span class="sub">—</span>'}</td>
         <td class="num">${money0(p.revenue)}</td>
@@ -4192,7 +4185,7 @@ function editHireModal(id) {
           ${S.trailers.map((t) => `<option value="${esc(t.unit)}" ${t.unit === d.assignedTrailerUnit ? 'selected' : ''}>
             ${esc(t.unit)} — ${esc(t.length)} ${esc(t.type)}</option>`).join('')}
         </select></label>
-      ${/* Level and rating are on the ATS hiring screen in front of you, and the company tells you what
+      ${/* Level is on the ATS hiring screen in front of you, and the company tells you what
             level to go and hire at — so there has to be somewhere to write down what you came back with.
             Without these a veteran was added at level 0 and read as "not placed" for a fortnight.
 
@@ -4201,8 +4194,6 @@ function editHireModal(id) {
             disagreeing about one driver. The property stays on the model so stored careers load. */ ''}
       <label>Level <span class="sub">— as ATS shows it</span>
         <input id="hd-level" type="number" step="1" min="0" value="${d.level || ''}" placeholder="—"></label>
-      <label>Rating <span class="sub">— 0.0 to 10.0</span>
-        <input id="hd-rating" type="number" step="0.1" min="0" max="10" value="${d.rating || ''}" placeholder="—"></label>
       <label>Status
         <select id="hd-status">${['Active', 'OnLeave', 'Resigned', 'Terminated'].map((x) =>
           `<option ${d.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
@@ -6686,7 +6677,6 @@ async function handleAction(act, d, ev) {
           ...base, id: d.id || '', name: sv('hd-name'),
           assignedTruckUnit: sv('hd-truck'), assignedTrailerUnit: sv('hd-trailer'),
           level: Math.max(0, Math.round(fv('hd-level') || 0)),
-          rating: Math.min(10, Math.max(0, fv('hd-rating') || 0)),
           status: sv('hd-status'), wageShare: fv('hd-wage'),
           homeTerminalId: sv('hd-terminal'), notes: sv('hd-notes'),
         }));
@@ -6773,7 +6763,7 @@ async function handleAction(act, d, ev) {
         // fortnight was upkeep on a record the app kept for itself. Where a trailer actually is gets
         // asked on the last run before home time, which is the only moment the answer is worth anything.
         // What the game shows for a driver we are not sitting next to.
-        level: fv('fr-lvl-' + x.id), rating: fv('fr-rate-' + x.id),
+        level: fv('fr-lvl-' + x.id),
         perMile: fv('fr-permi-' + x.id), perDay: fv('fr-perday-' + x.id),
         // And for the equipment: stars, plus an odometer on the tractor only. No miles — the odometer
         // reading IS the mileage, and the app does the subtraction.

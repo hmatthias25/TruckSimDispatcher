@@ -54,7 +54,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 20;
+    public const int Current = 21;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -1994,7 +1994,16 @@ public class HiredDriver
     /// </summary>
     public int Level { get; set; }
 
-    /// <summary>Rating as ATS shows it: 0.0 to 10.0, in tenths.</summary>
+    /// <summary>
+    /// <b>Retired.</b> ATS rating measures how the skill points were spent and nothing else — SCS's own
+    /// reference says it has "nothing to do with any other aspect or talent of a Driver, like his/her
+    /// good, efficient or penalty-free driving". So it described the player's training policy, not the
+    /// driver, and gating a promotion on it let the player grant one. It is also not the 0-10 scale it
+    /// looks like: only thirteen values are reachable, and the old ladder gates sat between them.
+    ///
+    /// <see cref="Services.DriverRank"/> uses Level instead. Kept so stored careers load; nothing reads it.
+    /// </summary>
+    [Obsolete("Never read. Rating is a function of skill-point allocation, not of the driver. Use Level.")]
     public double Rating { get; set; }
 
     /// <summary>
@@ -2093,7 +2102,7 @@ public class DriverPeriodResult
 
     /// <summary>Driver level at the end of the period.</summary>
     public int Level { get; set; }
-    /// <summary>Rating at the end of the period, 0.0-10.0.</summary>
+    [Obsolete("Never read. See HiredDriver.Rating.")]
     public double Rating { get; set; }
     /// <summary>Average income per mile, as ATS reports it for this driver.</summary>
     public decimal PerMile { get; set; }
@@ -2649,7 +2658,7 @@ public class FleetReportLine
     // ---- the driver, as ATS shows them
     /// <summary>Driver level. Open-ended.</summary>
     public int Level { get; set; }
-    /// <summary>Driver rating, 0.0-10.0 in tenths.</summary>
+    [Obsolete("Never read. See HiredDriver.Rating.")]
     public double Rating { get; set; }
     /// <summary>Average income per mile, off the game.</summary>
     public decimal PerMile { get; set; }

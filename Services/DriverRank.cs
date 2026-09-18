@@ -5,14 +5,28 @@ namespace TruckSimDispatcher.Services;
 /// <summary>
 /// What a hired driver has earned at this company, as opposed to what ATS says they are.
 ///
-/// <para><b>Level is not seniority.</b> The first cut of this read the grade straight off the ATS level,
-/// which was wrong for the reason any fleet manager would give: an AI driver climbs levels fast, on
-/// nothing but miles turned. A fortnight of good running can move somebody two levels, and calling that
-/// a promotion to Senior Company Driver makes the ladder meaningless — everybody is senior by the end of
-/// the quarter and there is nothing left to earn.</para>
+/// <para><b>Level is not seniority, but it is a gate.</b> The first cut of this read the grade straight
+/// off the ATS level, which was wrong for the reason any fleet manager would give: an AI driver climbs
+/// levels fast, on nothing but miles turned. A fortnight of good running can move somebody two levels,
+/// and calling that a promotion to Senior Company Driver makes the ladder meaningless — everybody is
+/// senior by the end of the quarter and there is nothing left to earn.</para>
 ///
-/// <para><b>Earned the way the player's is.</b> Time served, distance covered, the rating the game gives
-/// them, and a clean recent record. All four, not the best of them: the rung is the highest one whose
+/// <para>So level is one gate of four and never the whole answer, and the thresholds are deliberately
+/// low against the tenure ones: anybody who has served the days has almost certainly passed them. What
+/// it catches is the other case — somebody who has been on the books three months and has not moved
+/// off level 1 has not actually done very much, and the days alone should not promote them. Pay remains
+/// a property of the rung: two drivers on the same rung are paid the same whatever their levels.</para>
+///
+/// <para>It took this job over from the driver's <b>rating</b>, which had no business holding it. Rating
+/// in ATS is derived purely from how the skill points have been spent — SCS's own reference says it has
+/// "nothing to do with any other aspect or talent of a Driver, like his/her good, efficient or
+/// penalty-free driving" — so it described the player's training policy rather than the driver, and
+/// gating a pay rise on it let the player grant one. It is not a continuous scale either: thirteen
+/// values exist, and the old gates of 6.0, 7.0, 8.0, 8.5 and 9.0 were none of them, so each silently
+/// became the next reachable one and Specialist and Master ended up sharing a bar.</para>
+///
+/// <para><b>Earned the way the player's is.</b> Time served, distance covered, the level the game has
+/// them on, and a clean recent record. All four, not the best of them: the rung is the highest one whose
 /// every gate is met, so a driver with the miles but not the months waits, and so does one with the
 /// months and two preventables behind them.</para>
 ///
@@ -52,8 +66,23 @@ public static class DriverRank
         int Days,
         /// <summary>Lifetime miles, from the odometers reported on them.</summary>
         double Miles,
-        /// <summary>The rating ATS gives them, 0-10.</summary>
-        double Rating,
+        /// <summary>
+        /// The level ATS has them on — a plain integer off the driver manager.
+        ///
+        /// <para>This gate used to be the driver's <b>rating</b>, and that was wrong twice over. Rating
+        /// in ATS is derived purely from how the skill points have been spent — SCS's own reference says
+        /// it has "nothing to do with any other aspect or talent of a Driver, like his/her good,
+        /// efficient or penalty-free driving" — so it measures the player's training policy rather than
+        /// anything the driver did. Gating a pay rise on it meant the player could grant themselves
+        /// one.</para>
+        ///
+        /// <para>And it is not a continuous 0-10 scale. Rating only ever takes thirteen values: 0.0,
+        /// 0.8, 1.7, 2.5, 3.3, 4.2, 5.0, 5.8, 6.7, 7.5, 8.3, 9.2, 10.0. The old gates of 6.0, 7.0, 8.0,
+        /// 8.5 and 9.0 were none of them reachable, so each silently became the next real value up — and
+        /// 8.5 and 9.0 both became 9.2, which made Specialist and Master the same gate. Drivers sat
+        /// stuck against a bar that was not the one written down.</para>
+        /// </summary>
+        int Level,
         /// <summary>Preventables inside <see cref="PreventableWindowReports"/> they may carry.</summary>
         int Preventables,
         /// <summary>Share of what they bring in that this rung is paid.</summary>
@@ -68,12 +97,12 @@ public static class DriverRank
     /// </summary>
     public static readonly Rung[] Ladder =
     {
-        new(0, "Probationary Company Driver", "Probationary",      0,       0,  0.0, 99, 0.25),
-        new(1, "Company Driver",              "Company",          90,   6_000, 6.0,  3, 0.28),
-        new(2, "Senior Company Driver",       "Senior",          270,  30_000, 7.0,  3, 0.31),
-        new(3, "Lead Driver",                 "Lead",            540,  65_000, 8.0,  2, 0.34),
-        new(4, "Specialist Driver",           "Specialist",      900, 120_000, 8.5,  1, 0.37),
-        new(5, "Master Driver",               "Master",        1_350, 220_000, 9.0,  1, 0.40),
+        new(0, "Probationary Company Driver", "Probationary",      0,       0,  0, 99, 0.25),
+        new(1, "Company Driver",              "Company",          90,   6_000,  3,  3, 0.28),
+        new(2, "Senior Company Driver",       "Senior",          270,  30_000,  8,  3, 0.31),
+        new(3, "Lead Driver",                 "Lead",            540,  65_000, 14,  2, 0.34),
+        new(4, "Specialist Driver",           "Specialist",      900, 120_000, 22,  1, 0.37),
+        new(5, "Master Driver",               "Master",        1_350, 220_000, 30,  1, 0.40),
     };
 
     /// <summary>
@@ -123,7 +152,7 @@ public static class DriverRank
         {
             var r = Ladder[i];
             if (days >= r.Days && d.LifetimeMiles >= r.Miles
-                && d.Rating >= r.Rating && recent <= r.Preventables)
+                && d.Level >= r.Level && recent <= r.Preventables)
                 return r;
         }
         return Ladder[0];
@@ -164,7 +193,7 @@ public static class DriverRank
         var days = TenureDays(s, d);
         if (days < next.Days) gaps.Add($"{next.Days - days} more day(s) with us.");
         if (d.LifetimeMiles < next.Miles) gaps.Add($"{next.Miles - d.LifetimeMiles:N0} more mile(s).");
-        if (d.Rating < next.Rating) gaps.Add($"Rating {d.Rating:0.0}, wants {next.Rating:0.0}.");
+        if (d.Level < next.Level) gaps.Add($"Level {d.Level}, wants {next.Level}.");
         var recent = RecentPreventables(s, d);
         if (recent > next.Preventables)
             gaps.Add($"{recent} preventable(s) in the last {PreventableWindowReports} reports; " +
@@ -219,7 +248,7 @@ public static class DriverRank
         var earned = Earned(s, d);
         if (earned.Index > d.Grade)
             return $"{r.Name} on {share}, and due {earned.Name} at the next fleet report — " +
-                   $"{TenureDays(s, d)} day(s) with us, {d.LifetimeMiles:N0} mi, rating {d.Rating:0.0}. " +
+                   $"{TenureDays(s, d)} day(s) with us, {d.LifetimeMiles:N0} mi, level {d.Level}. " +
                    $"It takes a report to settle it.";
 
         var next = Next(r);

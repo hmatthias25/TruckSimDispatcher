@@ -304,7 +304,7 @@ public static class CompanyHealth
             // would use and the one the driver can see the sense of.
             var going = at.Crew
                 .OrderBy(d => d.Level)
-                .ThenBy(d => d.Rating)
+                .ThenBy(d => d.Level)
                 .Take(at.Crew.Count - 1)
                 .Take(Math.Max(1, at.Crew.Count / 2))
                 .ToList();

@@ -304,7 +304,6 @@ public static class FleetOpsService
             // Level and rating are the driver's standing now, so they sit on the driver as well as in
             // the period: a trend needs the history, a decision needs the latest.
             if (line.Level > 0) driver.Level = line.Level;
-            if (line.Rating > 0) driver.Rating = line.Rating;
             // Utilisation, straight off the Trailer Manager. Recorded on the trailer rather than the
             // driver, because it is a fact about the box.
             if (line.TrailerUtilisationPct >= 0
@@ -332,7 +331,6 @@ public static class FleetOpsService
                 Repairs = line.Repairs,
                 RatePerMile = line.Miles > 0 ? Math.Round(booked / (decimal)line.Miles, 3) : 0,
                 Level = line.Level,
-                Rating = line.Rating,
                 PerMile = line.PerMile,
                 PerDay = line.PerDay,
                 // Only a period where the game figures were actually given can be evidence.
@@ -543,7 +541,7 @@ public static class FleetOpsService
 
             report.Findings.Add(moved.Index > before
                 ? $"{d.Name} is now {moved.Name} — {DriverRank.TenureDays(s, d)} day(s) with us, " +
-                  $"{d.LifetimeMiles:N0} mi, rating {d.Rating:0.0}. Their share goes to " +
+                  $"{d.LifetimeMiles:N0} mi, level {d.Level}. Their share goes to " +
                   $"{moved.Share * 100:0}%."
                 : $"{d.Name} drops to {moved.Name}. " +
                   $"{DriverRank.RecentPreventables(s, d)} preventable(s) in the last " +

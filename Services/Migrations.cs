@@ -65,6 +65,7 @@ public static class Migrations
         EnsureSettlementEmployer(s);
         EnsureW2sForYearsAlreadyRun(s);
         LiftFuelPricesToWhatDieselCosts(s);
+        RegradeWithoutRating(s);
     }
 
     /// <summary>
@@ -1889,6 +1890,49 @@ public static class Migrations
                 "costing loads at a price nobody has paid in a long time, so if you fuel at what your " +
                 "game charges, every margin it quoted you was low. Your own receipts are untouched and " +
                 "still outrank this in any state you have fuelled in. Settings if your game is cheaper.",
+        });
+    }
+
+    /// <summary>
+    /// Re-grades the hired fleet now that rating is out of the ladder.
+    ///
+    /// <para>The gate used to be the driver's ATS rating, on thresholds of 6.0 / 7.0 / 8.0 / 8.5 / 9.0.
+    /// Rating only takes thirteen values and none of those five is one of them, so every gate silently
+    /// became the next reachable value up — 8.5 and 9.0 both became 9.2, which made Specialist and
+    /// Master the same bar. Drivers were held against a number that was not the one written down, and
+    /// on a measure that describes the player's training policy rather than anything the driver did.</para>
+    ///
+    /// <para>So everybody is re-settled against the level gates that replaced it. Reported from play:
+    /// "in my game I have some drivers who would be off of probation if it were not for this rating
+    /// gate." Settle only ever moves somebody to the rung their record earns, and leaves a hand-set
+    /// wage share alone, so this can only correct — it cannot demote anybody onto a bar they already
+    /// cleared.</para>
+    /// </summary>
+    private static void RegradeWithoutRating(AppState s)
+    {
+        if (s.SchemaVersion >= 21) return;
+        s.SchemaVersion = 21;
+
+        var moved = new List<string>();
+        foreach (var d in s.HiredDrivers.Where(d => d.Status == "Active"))
+        {
+            var was = d.Grade;
+            var now = DriverRank.Settle(s, d);
+            if (now != null && now.Index != was)
+                moved.Add($"{d.Name} to {now.Name.ToLowerInvariant()}");
+        }
+
+        if (moved.Count == 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "fleet",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"Fleet re-graded — {string.Join(", ", moved)}. Driver rating is out of the promotion " +
+                "ladder: in ATS it only measures how the skill points were spent, so it said more about " +
+                "how you had trained somebody than about them, and its gates were set at figures the " +
+                "game never actually shows. Level is the gate now.",
         });
     }
 
