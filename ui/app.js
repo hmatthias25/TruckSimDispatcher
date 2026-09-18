@@ -4607,6 +4607,10 @@ function positionHtml() {
       <p><b>ATS keeps one bank, and that balance is the company's.</b> The game takes fuel, repairs,
         garages, trucks and hired-driver wages straight out of it. What it does not hold is your pay —
         in ATS you are the owner, so your wages live only here.</p>
+      <p>Which is why the app still asks for the number rather than working it out. It books what it is
+        told about — your loads, fuel, repairs, equipment, yards and their upkeep — but it never sees a
+        toll, a ferry, a fine, or anything you buy in game without mentioning it. Those only show up in
+        the balance, so the balance is the cash and the books are the story of it.</p>
       <p style="margin:0">${esc(p.note)}</p>
     </div>
 
@@ -4643,9 +4647,13 @@ function positionHtml() {
                 ${money(p.spendable)}</td></tr>
           </tbody></table></div>
         ${p.warning ? `<div class="callout stop" style="margin-top:10px"><p>${esc(p.warning)}</p></div>` : ''}
-        <p class="hint">What the fleet earns and what it costs is the <b>fleet report</b> — revenue,
-          wages, repairs, net contribution. That is the company's profit and loss. This is just the bank,
-          read off your game when you want to know whether it can afford something.</p>
+        <p class="hint">What the fleet earns and what it costs is the <b>fleet report</b> — contribution,
+          repairs, what was spent on equipment and property, and the net of all of it. That is the
+          company's profit and loss. This is just the bank, read off your game when you want to know
+          whether it can afford something.</p>
+        <p class="hint">No wages on that report any more: ATS pays hired drivers out of the job before it
+          shows you their $/mile, so what they bring in is already net of them. Your own pay is a
+          settlement, which is a different thing and is on the right.</p>
       </div>
 
       <div>

@@ -106,7 +106,36 @@ const ledger = async (cat) => (await api('/export')).ledger.filter((e) => e.cate
     Math.abs(r1.netContribution - (r1.totalContribution - r1.totalRepairs - (r1.totalCapital || 0))) < 0.02,
     `${r1.netContribution} vs ${r1.totalContribution} - ${r1.totalRepairs} - ${r1.totalCapital || 0}`);
 
-  head('5. An old career carries its figures across and the invented wages are written off');
+  head('5. The realism factor does not touch contribution');
+  // The factor exists because ATS overpays for linehaul against real rates, so the player's own loads
+  // are booked at a discount. A hired driver's figure is a MARGIN — what survived after the game took
+  // their wage, fuel and tolls — and discounting a margin by a linehaul-inflation factor does not
+  // discount the linehaul, it just shrinks the margin, which was never inflated.
+  const cur = (await api('/bootstrap')).settings;
+  await api('/settings', 'POST', { ...cur, revenueFactor: 0.5 });
+  await api('/fleet/truck', 'POST', {
+    unit: 'C-901', make: 'Volvo', model: 'VNL', year: 2021, atsOdometer: 200000,
+    serviceMiles: 200000, lastServiceMiles: 200000, serviceIntervalMiles: 25000,
+    damagePct: 3, inGameGarage: true, homeTerminalId: yardId,
+  });
+  const second = (await api('/fleetops/drivers', 'POST', {
+    name: 'L. Osei', status: 'Active', assignedTruckUnit: 'C-901', skill: 'Experienced',
+    homeTerminalId: yardId, hiredGameDate: iso(3), level: 8,
+  })).driver;
+  const rf = (await api('/fleetops/report', 'POST', {
+    periodStartGame: iso(21), periodEndGame: iso(36),
+    lines: [{ driverId: second.id, level: 8, perMile: 2.00, perDay: 600,
+              truckStars: 4, truckOdometer: 203000 }],
+  })).report;
+  const rfLine = rf.lines.find((l) => l.driverId === second.id);
+  console.log(`  ..    factor 0.5 · 3,000 mi at $2.00 net -> $${rfLine.contribution}`);
+  ok('contribution is what the game reported, undiscounted',
+    Math.abs(Number(rfLine.contribution) - 2.00 * 3000) < 1, `$${rfLine.contribution}`);
+  ok('and the memo does not claim a factor was applied',
+    !/booked at ×/.test((await ledger('FleetContribution'))[0]?.memo || ''), 'no factor noted');
+  await api('/settings', 'POST', { ...cur, revenueFactor: 1.0 });
+
+  head('6. An old career carries its figures across and the invented wages are written off');
   let st = await api('/export');
   st.schemaVersion = 21;
   const d = st.hiredDrivers.find((x) => x.id === hired.id);

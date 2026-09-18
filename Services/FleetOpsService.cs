@@ -111,9 +111,9 @@ public static class FleetOpsService
     }
 
     /// <summary>
-    /// Posts a period of hired-driver production. Revenue is booked through the same realism factor
-    /// the player's freight uses, wages and repairs are expensed, and each unit's damage and service
-    /// mileage move to what the player reported off the game.
+    /// Posts a period of hired-driver production. Contribution is booked as the game reported it —
+    /// no realism factor, because it is a margin and not linehaul — repairs are expensed, and each
+    /// unit's damage and service mileage move to what the player reported off the game.
     /// </summary>
     public static FleetReport FileReport(AppState s, FleetReport report)
     {
@@ -141,7 +141,6 @@ public static class FleetOpsService
         report.Number = $"{code}-FR-{s.FleetReports.Count + 1:0000}";
         if (string.IsNullOrWhiteSpace(report.PeriodEndGame)) report.PeriodEndGame = s.Status.GameTime;
 
-        var factor = (decimal)Math.Clamp(s.Settings.RevenueFactor, 0.05, 3.0);
         report.TotalContribution = 0; report.TotalMiles = 0; report.TotalRepairs = 0;
 
         foreach (var line in report.Lines)
@@ -217,12 +216,19 @@ public static class FleetOpsService
             //
             // The rung's share is still worked out and still means something; it is just not money any
             // more. See WorthTheRung below.
-            var booked = Math.Round(line.Contribution * factor, 2);
+            // The realism factor does NOT apply here, and that is the whole point of it.
+            //
+            // It exists because ATS overpays for linehaul against real rates, so the player's own loads
+            // are booked at GameRevenue times the factor. A hired driver's figure is not linehaul — it is
+            // what was left after the game took their wage, their fuel and their tolls. Discounting a
+            // margin by a linehaul-inflation factor does not discount the linehaul; it just shrinks the
+            // margin, which was never inflated. At x0.8 the contribution fell a fifth while the costs
+            // behind it, already deducted by ATS, did not move at all.
+            var booked = line.Contribution;
             if (booked > 0)
                 LedgerService.Post(s, LedgerService.Operating, booked, "FleetContribution",
                     $"Fleet contribution — {driver.Name} on unit {line.TruckUnit}, net of what ATS already " +
                     "took for wages, fuel and tolls" +
-                    (Math.Abs(factor - 1m) > 0.001m ? $" (ATS ${line.Contribution:N2}; booked at ×{factor:0.##})" : ""),
                     report.Number);
 
             // Repairs and reserve accrual both go through the single cash account — the earmark is a
