@@ -204,14 +204,29 @@ public static class CompanyHealth
         {
             var grow = cramped[0].Yard;
             var was = grow.Level;
-            Migrations.ApplyLevel(grow, was == "Small" ? "Medium" : "Large");
+            var to = was == "Small" ? "Medium" : "Large";
             var where = DispatchEngine.Place(grow.City, grow.State);
 
-            v.Actions.Add($"The company is taking {where} from a {was.ToLowerInvariant()} yard to a " +
-                          $"{grow.Level.ToLowerInvariant()} one — room for {grow.TruckCapacity} tractors " +
-                          $"now, and {(grow.HasShop ? "a shop on site" : "more parking")}. Upgrade the " +
-                          "garage in ATS when you are next through.");
-            report.Findings.Add($"{where} upgraded to a {grow.Level.ToLowerInvariant()} yard.");
+            // Asked for, not done. This used to call ApplyLevel straight away and tell the player to buy
+            // the garage upgrade when they were next through — so the company got the bigger yard for
+            // nothing, and none of its own figures ever saw a cost. It is the player who spends the money
+            // in ATS and only they know what it came to, so the tier moves when they say it has.
+            if (Yards.Raise(s, report, new YardRequest
+                {
+                    Kind = "Upgrade",
+                    City = grow.City,
+                    State = grow.State,
+                    TerminalId = grow.Id,
+                    FromLevel = was,
+                    Level = to,
+                    Reason = $"{where} is full — every slot it has is taken.",
+                }) != null)
+            {
+                v.Actions.Add($"The company wants {where} taken from a {was.ToLowerInvariant()} yard to a " +
+                              $"{to.ToLowerInvariant()} one. Buy the garage upgrade in ATS and tell me what " +
+                              "it cost, and I will move it on the books.");
+                report.Findings.Add($"Upgrade wanted at {where} — {was.ToLowerInvariant()} to {to.ToLowerInvariant()}.");
+            }
             return;
         }
 
@@ -239,19 +254,24 @@ public static class CompanyHealth
         var pick = candidates[(int)(Hash($"{report.Number}|yard") % (uint)candidates.Count)];
         var label = DispatchEngine.Place(pick.City, pick.State);
 
-        s.Company.Terminals.Add(new Terminal
-        {
-            Id = $"yard-{pick.City.ToLowerInvariant().Replace(' ', '-')}-{pick.State.ToLowerInvariant()}",
-            City = pick.City,
-            State = pick.State,
-            Level = "Small",
-            IsHeadquarters = false,
-        });
+        // Asked for, not opened. The terminal used to be added here and the player told to buy the garage
+        // when they were next through, so a yard landed on the company's property having cost it nothing
+        // — and since no figure the company judges itself by could see a yard, it would do it again next
+        // period, and again. Reported from play: "the app said it got a small garage in Bellingham, and I
+        // don't see any reference to the company spending money on it."
+        if (Yards.Raise(s, report, new YardRequest
+            {
+                Kind = "Open",
+                City = pick.City,
+                State = pick.State,
+                Level = "Small",
+                Reason = $"The figures carry another yard, and {label} is where the freight is.",
+            }) == null) return;
 
-        v.Actions.Add($"The company is opening a yard at {label}. Buy the garage in ATS when you are next " +
-                      "through — it is on the books here either way, and freight will start routing that " +
-                      "way once something is based there.");
-        report.Findings.Add($"Yard opened at {label} — the figures paid for it.");
+        v.Actions.Add($"The company wants a yard at {label}. Buy the garage in ATS when you are next " +
+                      "through and tell me what it cost — it goes on the books when you do, and freight " +
+                      "will start routing that way once something is based there.");
+        report.Findings.Add($"Yard wanted at {label} — the figures carry it.");
     }
 
     /// <summary>

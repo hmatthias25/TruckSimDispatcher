@@ -87,6 +87,7 @@ public class AppState
     public List<EquipmentOrder> EquipmentOrders { get; set; } = new();
     /// <summary>Trailers the company has asked for. The player buys them in ATS and reports the price.</summary>
     public List<TrailerRequest> TrailerRequests { get; set; } = new();
+    public List<YardRequest> YardRequests { get; set; } = new();
     public List<TrailerSwapOrder> TrailerSwaps { get; set; } = new();
     /// <summary>34-hour restarts ordered, in progress and completed.</summary>
     public List<RestartOrder> RestartOrders { get; set; } = new();
@@ -243,7 +244,27 @@ public class Terminal
     public decimal FuelPricePerGal { get; set; }
     /// <summary>Share off a repair bill when the work is done in our own shop (0.25 = 25% cheaper).</summary>
     public double ShopLabourDiscount { get; set; }
+    /// <summary>
+    /// Upkeep, per settlement period, prorated.
+    ///
+    /// ATS charges nothing to keep a garage, so this is the app's own figure — but it is the thing that
+    /// makes a yard cost something to own rather than only to buy, and without it the company could open
+    /// one every period and never feel it. It was set on every tier and charged nowhere, while being
+    /// printed on the Terminals tab as though it were already coming out.
+    /// </summary>
     public decimal MonthlyCost { get; set; }
+
+    /// <summary>
+    /// What the garage cost in ATS, as reported by the player. Zero for a yard that predates the app
+    /// asking, or one nobody has priced.
+    ///
+    /// Never estimated. The app cannot see an ATS price and will not invent one — see
+    /// <see cref="YardRequest.PaidPrice"/>, which is where a new yard gets this.
+    /// </summary>
+    public decimal PurchasePrice { get; set; }
+
+    /// <summary>When the upkeep was last charged, as a game day, so a period is never billed twice.</summary>
+    public int LastUpkeepDay { get; set; } = -1;
     public string Notes { get; set; } = "";
 }
 
@@ -2258,6 +2279,14 @@ public class FleetReport
     public double TotalMiles { get; set; }
     public decimal TotalWages { get; set; }
     public decimal TotalRepairs { get; set; }
+    /// <summary>
+    /// Yards and equipment bought over the period, less anything sold, and what the yards cost to keep.
+    ///
+    /// Counted against <see cref="NetContribution"/> on purpose. CompanyHealth runs the expand-or-
+    /// retrench decision off that figure, and it used to be revenue less wages less repairs — so
+    /// expanding never showed up in the number that decided whether to expand again.
+    /// </summary>
+    public decimal TotalCapital { get; set; }
     public decimal NetContribution { get; set; }
     public string Notes { get; set; } = "";
     public List<string> Findings { get; set; } = new();
@@ -2437,6 +2466,41 @@ public class TrailerSwapOrder
     public string MissingNote { get; set; } = "";
     /// <summary>Sit it out, or take the 34 â€” worked out from the wait against the cycle.</summary>
     public string WaitAdvice { get; set; } = "";
+}
+
+/// <summary>
+/// The company wanting a yard — opened, or taken up a tier.
+///
+/// <para>Modelled as an ask rather than a fact, the same way a trailer is, and for the same reason: the
+/// app cannot buy anything in ATS and cannot know what a garage costs there. The company used to simply
+/// add the terminal to its own books and tell the player to buy the garage when they were next through,
+/// which meant a yard appeared on the company's property having cost it nothing — and nothing in the
+/// figures ever noticed. A yard is not the company's until the game says it is.</para>
+/// </summary>
+public class YardRequest
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Number { get; set; } = "";
+    /// <summary>Open | Upgrade — a new yard, or an existing one taken up a tier.</summary>
+    public string Kind { get; set; } = "Open";
+    public string City { get; set; } = "";
+    public string State { get; set; } = "";
+    /// <summary>Small | Medium | Large — the tier being bought.</summary>
+    public string Level { get; set; } = "Small";
+    /// <summary>The yard being upgraded, on an Upgrade. Empty on an Open.</summary>
+    public string TerminalId { get; set; } = "";
+    /// <summary>The tier it is coming from, so the confirmation can say what changed.</summary>
+    public string FromLevel { get; set; } = "";
+    public string Reason { get; set; } = "";
+    public string Instruction { get; set; } = "";
+    public string RaisedGameTime { get; set; } = "";
+    /// <summary>Open | Bought | Declined</summary>
+    public string Status { get; set; } = "Open";
+    /// <summary>What the player actually paid, once they confirm. Never estimated.</summary>
+    public decimal PaidPrice { get; set; }
+    public string BoughtGameTime { get; set; } = "";
+    /// <summary>Set when the company cannot afford it, so the ask is worded as a want and not an order.</summary>
+    public bool Unaffordable { get; set; }
 }
 
 public class TrailerRequest

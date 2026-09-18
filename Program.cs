@@ -812,6 +812,14 @@ app.MapPost("/api/rerig/cancel", (RerigRequest req) => Results.Ok(store.Mutate<o
 // RunDuePaydays advances LastPaydayDay and skips what is already settled, so calling it often is safe.
 List<Settlement> SettleDue(AppState s)
 {
+    // Rent on the yards, on the same calendar beat as the wages. Deliberately here rather than on the
+    // settlement itself or the fleet report: a settlement only runs when there is driver pay to settle,
+    // and a fleet report needs hired drivers to have figures — so a solo owner-operator with three
+    // garages paid nothing to keep any of them. Property costs money whether or not anybody worked.
+    // ChargeUpkeep stamps each yard and bills only whole unbilled weeks, so calling it often is safe.
+    var rent = Yards.ChargeUpkeep(s, s.Status.GameTime);
+    if (rent > 0) store.Log(s, "ledger", $"Yard upkeep — ${rent:N2} across the company's garages.");
+
     var due = PayEngine.RunDuePaydays(s);
     foreach (var st in due)
         store.Log(s, "pay", $"{st.Number} paid — ${st.Gross:N2} gross, ${st.Stub?.Net ?? st.Gross:N2} net.", st.Number);
@@ -944,6 +952,12 @@ app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
                             ?? s.Company.Terminals.FirstOrDefault())?.Id ?? "";
 
     var existing = s.Trucks.FirstOrDefault(x => x.Unit == t.Unit);
+
+    // See the trailer endpoint: what the tractor cost goes on the books when it joins the fleet.
+    if (existing == null && t.PurchasePrice > 0)
+        LedgerService.Post(s, LedgerService.Operating, -t.PurchasePrice, "Equipment",
+            $"Unit {t.Unit} ({t.Year} {t.Make} {t.Model}) bought");
+
     // Where this unit's service clocks count from. GDC's guide takes the dealer baseline as complete at
     // purchase, so a truck bought at 600,000 mi does not owe every review ever published — but that rule
     // is about a unit with NO service history. Where the form carries a last-service reading, that is
@@ -1029,6 +1043,14 @@ app.MapPost("/api/fleet/trailer", (Trailer t) => Results.Ok(store.Mutate(s =>
 
     Equip.GuardGameId(s, t.GameId, t.Unit);
     var existing = s.Trailers.FirstOrDefault(x => x.Unit == t.Unit);
+
+    // Booked once, on the way in. A trailer bought through a company request has always posted what it
+    // cost; one added by hand posted nothing, so the same box was free or not depending on which screen
+    // it arrived through.
+    if (existing == null && t.PurchasePrice > 0)
+        LedgerService.Post(s, LedgerService.Operating, -t.PurchasePrice, "Equipment",
+            $"Trailer {t.Unit} ({t.Type}) bought");
+
     if (existing == null) s.Trailers.Add(t);
     else s.Trailers[s.Trailers.IndexOf(existing)] = t;
     CareerService.Recalculate(s);
@@ -1270,8 +1292,29 @@ app.MapPost("/api/fleetops/terminate", (TerminateRequest req) => Results.Ok(stor
 
 app.MapPost("/api/fleetops/retire", (RetireRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
-    var message = FleetOpsService.RetireUnit(s, req.Unit, req.ReplacementUnit ?? "");
+    var message = FleetOpsService.RetireUnit(s, req.Unit, req.ReplacementUnit ?? "", req.SoldFor ?? 0m);
     store.Log(s, "maintenance", message);
+    return new { snapshot = Snapshot(s), message };
+})));
+
+// The company asking for a yard. Same bargain as a trailer: it cannot buy a garage and cannot know
+// what ATS charged, so the yard goes on the books when the player says they bought it and what it cost.
+app.MapPost("/api/fleetops/yard-request/confirm", (YardBoughtRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var yard = Yards.Confirm(s, req.RequestId, req.PaidPrice, req.GameTime ?? "");
+    var where = DispatchEngine.Place(yard.City, yard.State);
+    var message = req.PaidPrice > 0
+        ? $"{where} on the books as a {yard.Level.ToLowerInvariant()} yard — ${req.PaidPrice:N0}."
+        : $"{where} on the books as a {yard.Level.ToLowerInvariant()} yard.";
+    store.Log(s, "ledger", message);
+    return new { snapshot = Snapshot(s), message };
+})));
+
+app.MapPost("/api/fleetops/yard-request/decline", (DeclineRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var declined = Yards.Decline(s, req.RequestId, "");
+    var message = $"{declined.Number} declined — no yard at {DispatchEngine.Place(declined.City, declined.State)}.";
+    store.Log(s, "ledger", message);
     return new { snapshot = Snapshot(s), message };
 })));
 
@@ -1507,11 +1550,19 @@ app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mut
 
 // ---------------------------------------------------------------- terminals
 
-app.MapPost("/api/terminals", (Terminal t) => Results.Ok(store.Mutate<object>(s =>
+app.MapPost("/api/terminals", (Terminal t, bool? book) => Results.Ok(store.Mutate<object>(s =>
 {
     var existing = s.Company.Terminals.FirstOrDefault(x => x.Id == t.Id);
     t.State = (t.State ?? "").Trim().ToUpperInvariant();
     string? warning = null;
+
+    // A yard already standing that nobody ever priced — the ones the company used to help itself to
+    // before it started asking. Booked only when the player ticks the box, because a figure typed into
+    // an edit form is not by itself an instruction to move money, and saving the yard twice must not
+    // charge for it twice.
+    if (book == true && t.PurchasePrice > 0)
+        LedgerService.Post(s, LedgerService.Operating, -t.PurchasePrice, "Property",
+            $"{DispatchEngine.Place(t.City, t.State)} garage — cost recorded after the fact");
     if (existing == null)
     {
         if (string.IsNullOrWhiteSpace(t.City)) throw new InvalidOperationException("A terminal needs a city.");
@@ -2574,8 +2625,10 @@ record TrimRequest(bool IncludeYards);
 record BalanceRequest(decimal? Balance, string? GameTime);
 record ForgiveRequest(string? Reason, bool Force);
 record TerminateRequest(string DriverId, string? Reason);
-record RetireRequest(string Unit, string? ReplacementUnit);
+record RetireRequest(string Unit, string? ReplacementUnit, decimal? SoldFor);
 record TrailerBoughtRequest(string RequestId, string Unit, decimal PaidPrice, string? GameTime, string? GameId);
+record YardBoughtRequest(string RequestId, decimal PaidPrice, string? GameTime);
+record DeclineRequest(string RequestId);
 record TrailerDeclineRequest(string RequestId, string? GameTime);
 record RestartArrivedRequest(string? GameTime, string? City, string? State);
 record RestartCompleteRequest(string? GameTime);

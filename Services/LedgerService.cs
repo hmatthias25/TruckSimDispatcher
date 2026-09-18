@@ -281,8 +281,18 @@ public static class LedgerService
         sum.FineSpend = Math.Round(-s.Ledger.Where(e => e.Category == "Fines").Sum(e => e.Amount), 2);
         sum.CancellationSpend = Math.Round(-s.Ledger.Where(e => e.Category == "Cancellation").Sum(e => e.Amount), 2);
 
+        // Capital counts. It used to sit outside opCost entirely, so the one purchase that did reach the
+        // ledger — a trailer bought through a company request — never touched operating income or the
+        // operating ratio, and yards touched nothing at all because they were never posted. That is
+        // defensible accounting and indefensible here: the company decides whether to expand off these
+        // figures, so leaving out what expanding costs let it expand forever. Proceeds from selling
+        // something come back the same way, because a trade is not a loss.
+        sum.EquipmentSpend = Math.Round(-s.Ledger.Where(e => e.Category is "Equipment" or "Property").Sum(e => e.Amount), 2);
+        sum.YardUpkeepSpend = Math.Round(-s.Ledger.Where(e => e.Category == "YardUpkeep").Sum(e => e.Amount), 2);
+
         var opCost = sum.Fuel + sum.MaintenanceSpend + sum.PayrollSpend + sum.TollSpend
-                     + sum.OverheadSpend + sum.FineSpend + sum.CancellationSpend;
+                     + sum.OverheadSpend + sum.FineSpend + sum.CancellationSpend
+                     + sum.EquipmentSpend + sum.YardUpkeepSpend;
         sum.OperatingIncome = Math.Round(sum.Revenue - opCost, 2);
 
         var loadedMiles = s.Trips.Where(t => t.Status == "Delivered").Sum(t => t.ActualMiles > 0 ? t.ActualMiles : t.DispatchedMiles);
@@ -480,6 +490,10 @@ public class LedgerSummary
     public decimal OverheadSpend { get; set; }
     public decimal FineSpend { get; set; }
     public decimal CancellationSpend { get; set; }
+    /// <summary>Trucks, trailers and yards bought in the window, less anything sold. See Summary.</summary>
+    public decimal EquipmentSpend { get; set; }
+    /// <summary>What the yards cost to keep over the window.</summary>
+    public decimal YardUpkeepSpend { get; set; }
     public decimal OperatingIncome { get; set; }
     public double LoadedMiles { get; set; }
     public double TotalMiles { get; set; }

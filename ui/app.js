@@ -3537,8 +3537,9 @@ function fleetDecisionsHtml() {
   const probation = S.views.fleetOps?.onProbation || [];
   const risks = S.views.fleetOps?.flightRisks || [];
   const ask = S.views.fleetOps?.trailerRequest || null;
+  const yardAsk = S.views.fleetOps?.yardRequest || null;
   const watching = FLEETOPS?.watching || [];
-  const count = retire.length + open.length + probation.length + (ask ? 1 : 0);
+  const count = retire.length + open.length + probation.length + (ask ? 1 : 0) + (yardAsk ? 1 : 0);
   if (!count && !risks.length && !watching.length) return '';
 
   return `<div class="panel">
@@ -3560,6 +3561,24 @@ function fleetDecisionsHtml() {
         better, operations decides whether to let them go and you will read it on the report. If it
         improves, they come off it.</p>
     </div>`).join('')}
+
+    ${yardAsk ? `<div class="callout ${yardAsk.unaffordable ? 'warn' : 'info'}">
+      <h4>${esc(yardAsk.number)} — ${yardAsk.kind === 'Upgrade'
+        ? `${esc(yardAsk.fromLevel)} to ${esc(yardAsk.level)} yard at ${esc(yardAsk.city)}, ${esc(yardAsk.state)}`
+        : `a ${esc(yardAsk.level).toLowerCase()} yard at ${esc(yardAsk.city)}, ${esc(yardAsk.state)}`}</h4>
+      <p>${esc(yardAsk.reason)}</p>
+      <p><b>${esc(yardAsk.instruction)}</b></p>
+      <div class="grid2" style="margin-top:8px">
+        <label>What the garage cost $<input id="yq-price" type="number" step="1" min="0" placeholder="from ATS"></label>
+        ${dayTimeInput('yq-time', S.status.gameTime, 'Bought (game)')}
+      </div>
+      <p class="hint">Nothing goes on the company's books until you have actually bought it in ATS. Leave
+        the price at nothing if you would rather not track what property cost — the yard is still
+        recorded, it just has no figure against it.</p>
+      <div class="row-actions">
+        <button class="btn go" data-act="yard-bought" data-id="${esc(yardAsk.id)}">I bought it</button>
+        <button class="btn ghost" data-act="yard-declined" data-id="${esc(yardAsk.id)}">Not interested</button>
+      </div></div>` : ''}
 
     ${ask ? `<div class="callout ${ask.unaffordable ? 'warn' : 'info'}">
       <h4>${esc(ask.number)} — ${ask.kind === 'Add' ? 'another trailer' : 'trailer replacement'} for ${esc(ask.terminalLabel)}</h4>
@@ -4222,8 +4241,16 @@ function editTerminalModal(id) {
       <label>Tractor capacity<input id="tm-cap" type="number" step="1" min="1" value="${t.truckCapacity}"></label>
       <label>Contract fuel $/gal<input id="tm-fuel" type="number" step="0.01" value="${t.fuelPricePerGal}"></label>
       <label>Shop labour discount (0–1)<input id="tm-shopdisc" type="number" step="0.05" min="0" max="1" value="${t.shopLabourDiscount}"></label>
-      <label>Monthly cost $<input id="tm-cost" type="number" step="50" value="${t.monthlyCost}"></label>
+      <label>Upkeep per period $<input id="tm-cost" type="number" step="50" value="${t.monthlyCost}"></label>
+      <label>What the garage cost $<input id="tm-price" type="number" step="1" min="0" value="${t.purchasePrice || 0}"></label>
     </div>
+    <p class="hint">Upkeep is charged every settlement, prorated on the days. ATS charges nothing to hold
+      a garage, so this is the company's own figure — it is what makes six yards a different proposition
+      from one. Set it to nothing if you would rather yards were free.</p>
+    ${isNew || !(t.purchasePrice > 0) ? `<p class="hint"><b>Already own this one?</b> Put what the garage
+      cost you in ATS above and tick the box below, and it goes on the books as a one-off. Yards opened
+      before the app started asking have no price against them.</p>
+      <label class="chk"><input type="checkbox" id="tm-book"> Book this cost to the ledger when I save</label>` : ''}
     <fieldset><legend>Services</legend>
       <label class="chk"><input type="checkbox" id="tm-hasfuel" ${t.hasFuel ? 'checked' : ''}> Fuel island</label>
       <label class="chk"><input type="checkbox" id="tm-hasshop" ${t.hasShop ? 'checked' : ''}> Repair shop</label>
@@ -5840,6 +5867,8 @@ function editTruckModal(unit) {
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
     ${isNew ? `<label>Fleet number — assigned, change it if you number your own
       <input id="et-unit" value="${esc(nextTruckUnit())}"></label>` : ""}
+    ${isNew ? `<label>What it cost in ATS $ — optional
+      <input id="et-price" type="number" step="1" min="0" placeholder="leave blank if you would rather not track it"></label>` : ''}
     <label>ID shown in ATS — optional
       <input id="et-gameid" value="${esc(t.gameId || '')}" placeholder="what the game calls this truck"></label>
     <p class="hint">Enter what ATS shows for this unit and the app will use it everywhere instead of
@@ -5942,6 +5971,8 @@ function editTrailerModal(unit) {
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
     ${isNew ? `<label>Fleet number — assigned, change it if you number your own
       <input id="er-unit" value="${esc(nextTrailerUnit())}"></label>` : ''}
+    ${isNew ? `<label>What it cost in ATS $ — optional
+      <input id="er-price" type="number" step="1" min="0" placeholder="leave blank if you would rather not track it"></label>` : ''}
     <label>ID shown in ATS — optional
       <input id="er-gameid" value="${esc(t.gameId || '')}" placeholder="what the game calls this trailer"></label>
     <p class="hint">Enter what ATS shows for this trailer and the app uses it everywhere. Blank keeps the
@@ -6627,8 +6658,14 @@ async function handleAction(act, d, ev) {
           ? `Trade unit ${d.unit}.\n\nLeave blank and the company puts you in the best spare on the property.\nOr type the unit number of a replacement you have bought and added on the Equipment tab.`
           : `Trade unit ${d.unit}.\n\nLeave blank to retire it with nobody moving.\nOr type the unit number of its replacement.`, '');
       if (rep === null) return;
+      // What ATS gave back for it. Blank is normal and means nothing came back — scrapped, kept, or
+      // simply not worth recording — so it defaults to zero rather than nagging.
+      const sold = prompt(`What did ${d.unit} sell for in ATS?\n\nLeave blank if nothing came back for it.`, '');
+      if (sold === null) return;
       return run(async () => {
-        const r = absorb(await api('/fleetops/retire', 'POST', { unit: d.unit, replacementUnit: rep.trim() }));
+        const r = absorb(await api('/fleetops/retire', 'POST', {
+          unit: d.unit, replacementUnit: rep.trim(), soldFor: parseFloat(sold) || 0,
+        }));
         FLEETOPS = await api('/fleetops');
         toast(r.message, 'ok');
       });
@@ -6695,6 +6732,21 @@ async function handleAction(act, d, ev) {
       return run(async () => absorb(await api(`/trips/${d.id}/window`, 'POST', {
         deadlineHours: hrs, note: sv('wf-note'),
       })), 'Window corrected.');
+    }
+    case 'yard-bought': {
+      return run(async () => {
+        const r = absorb(await api('/fleetops/yard-request/confirm', 'POST', {
+          requestId: d.id, paidPrice: fv('yq-price'), gameTime: readDayTime('yq-time'),
+        }));
+        FLEETOPS = await api('/fleetops');
+        toast(r.message, 'ok');
+      });
+    }
+    case 'yard-declined': {
+      return run(async () => {
+        absorb(await api('/fleetops/yard-request/decline', 'POST', { requestId: d.id }));
+        FLEETOPS = await api('/fleetops');
+      }, 'Noted — no yard there.');
     }
     case 'trailer-bought': {
       const unit = sv('tq-unit').trim();
@@ -6823,10 +6875,11 @@ async function handleAction(act, d, ev) {
       if (!sv('tm-city')) return toast('A yard needs a city.', 'bad');
       const levelChanged = !isNew && base.level !== sv('tm-level');
       return run(async () => {
-        const saved = absorb(await api('/terminals', 'POST', {
+        const saved = absorb(await api('/terminals' + (bv('tm-book') ? '?book=true' : ''), 'POST', {
           ...base, id: d.id || '', city: sv('tm-city'), state: sv('tm-state'), level: sv('tm-level'),
           truckCapacity: fv('tm-cap'), fuelPricePerGal: fv('tm-fuel'),
           shopLabourDiscount: fv('tm-shopdisc'), monthlyCost: fv('tm-cost'),
+          purchasePrice: fv('tm-price'),
           hasFuel: bv('tm-hasfuel'), hasShop: bv('tm-hasshop'), hasParking: bv('tm-park'),
           hasTrailerDrop: bv('tm-drop'), hasDriverFacilities: bv('tm-fac'), notes: sv('tm-notes'),
         }));
@@ -6891,6 +6944,7 @@ async function handleAction(act, d, ev) {
           cabConfig: sv('et-cab'), governedMph: fv('et-gov'), fuelCapacityGal: fv('et-fuel'),
           avgMpg: fv('et-mpg'), damagePct: fv('et-dmg'), status: sv('et-status'),
           inGameGarage: bv('et-garage'), homeTerminalId: sv('et-yard'),
+          purchasePrice: isNew ? fv('et-price') : base.purchasePrice,
           gameId: sv('et-gameid'),
           serviceMiles: fv('et-svc'), atsOdometer: fv('et-odo'),
           lastServiceMiles: fv('et-lastpm'), serviceIntervalMiles: fv('et-pm'), notes: sv('et-notes'),
@@ -6916,6 +6970,7 @@ async function handleAction(act, d, ev) {
           inGameGarage: bv('er-garage'),
           gameId: sv('er-gameid'),
           homeTerminalId: sv('er-yard'),
+          purchasePrice: isNew ? fv('er-price') : base.purchasePrice,
           serviceMiles: fv('er-svc'), currentLocation: sv('er-loc'), notes: sv('er-notes'),
         }));
         closeModal();

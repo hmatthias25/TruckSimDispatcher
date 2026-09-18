@@ -466,7 +466,33 @@ public static class FleetOpsService
 
         TrailerFleet.Consider(s, report);
 
-        report.NetContribution = Math.Round(report.TotalRevenue - report.TotalWages - report.TotalRepairs, 2);
+        // The yards get billed here, on the company's own beat, and before the capital figure below
+        // takes them in. Not on the driver's settlement: that only runs when there is pay to settle, so
+        // a carrier with six garages and a quiet fortnight paid no rent on any of them.
+        Yards.ChargeUpkeep(s, report.PeriodEndGame);
+
+        // What the company spent on itself over the window — garages, tractors, boxes, and the rent on
+        // the yards — less anything it sold. Read off the ledger rather than tracked separately, so
+        // anything that posts is counted and nothing has to remember to tell the report about it.
+        //
+        // In the figure on purpose. CompanyHealth decides whether to expand or retrench off
+        // NetContribution, and that used to be revenue less wages less repairs — so the cost of
+        // expanding never reached the number that decided whether to expand again, and the answer was
+        // always yes. Reported from play as the company quietly acquiring a garage and looking no
+        // poorer for it.
+        var from = GameClock.TryParse(report.PeriodStartGame);
+        var to = GameClock.TryParse(report.PeriodEndGame);
+        report.TotalCapital = Math.Round(-s.Ledger
+            .Where(e => e.Category is "Equipment" or "Property" or "YardUpkeep")
+            .Where(e => GameClock.TryParse(e.GameTime) is not { } at
+                        || ((from == null || at >= from.Value) && (to == null || at <= to.Value)))
+            .Sum(e => e.Amount), 2);
+
+        report.NetContribution = Math.Round(
+            report.TotalRevenue - report.TotalWages - report.TotalRepairs - report.TotalCapital, 2);
+
+        if (report.TotalCapital > 0)
+            report.Findings.Add($"${report.TotalCapital:N0} went on equipment and property this period.");
         if (report.NetContribution < 0)
             report.Findings.Add("The hired fleet lost money this period. Check wages against what they actually brought in.");
         if (report.TotalMiles > 0 && report.TotalRevenue > 0)
@@ -1770,7 +1796,7 @@ public static class FleetOpsService
     /// one that is not on the book is refused rather than half-done — being told the trade went through
     /// and then finding no trailer is worse than being told to add it first.</para>
     /// </summary>
-    private static string RetireTrailer(AppState s, string unit, string replacementUnit)
+    private static string RetireTrailer(AppState s, string unit, string replacementUnit, decimal soldFor)
     {
         var tr = s.Trailers.FirstOrDefault(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
                  ?? throw new InvalidOperationException($"Trailer {unit} is not in the fleet.");
@@ -1789,6 +1815,16 @@ public static class FleetOpsService
         if (rep != null && string.IsNullOrWhiteSpace(rep.HomeTerminalId)) rep.HomeTerminalId = tr.HomeTerminalId;
 
         var messages = new List<string> { $"Trailer {tr.Ref} ({tr.Type}) retired at {tr.ServiceMiles:N0} mi." };
+
+        // What the game gave back for it. Selling equipment used to move no money at all, which made a
+        // trade look like a pure loss of an asset — and since nothing about equipment reached the
+        // company's figures either way, a fleet could be churned for free.
+        if (soldFor > 0)
+        {
+            LedgerService.Post(s, LedgerService.Operating, soldFor, "Equipment",
+                $"Trailer {tr.Ref} ({tr.Type}) sold");
+            messages.Add($"${soldFor:N0} back on the sale.");
+        }
 
         // Whoever was on it moves across, driver or hired hand. Left hooked to a retired box, the next
         // dispatch would plan freight onto a trailer that is off the fleet.
@@ -1832,7 +1868,7 @@ public static class FleetOpsService
         return string.Join(" ", messages);
     }
 
-    public static string RetireUnit(AppState s, string unit, string replacementUnit)
+    public static string RetireUnit(AppState s, string unit, string replacementUnit, decimal soldFor = 0m)
     {
         // A trailer is not a truck and never was. This looked in s.Trucks only, while the fleet report
         // has been raising trailer retirements with UnitKind "Trailer" and offering the same button for
@@ -1841,7 +1877,7 @@ public static class FleetOpsService
         // drivers, BestSpare, moving somebody into the replacement. None of it means anything for a box.
         if (s.Trailers.Any(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
             && !s.Trucks.Any(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase)))
-            return RetireTrailer(s, unit, replacementUnit);
+            return RetireTrailer(s, unit, replacementUnit, soldFor);
 
         var t = s.Trucks.FirstOrDefault(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException($"Unit {unit} is not in the fleet.");
@@ -1896,6 +1932,14 @@ public static class FleetOpsService
         t.Status = "Reserve";
         t.AssignedDriver = "";
         t.RetiredGameTime = s.Status.GameTime;
+
+        // The trade-in, where the player reports one. See the trailer path for why this matters.
+        if (soldFor > 0)
+        {
+            LedgerService.Post(s, LedgerService.Operating, soldFor, "Equipment", $"Unit {t.Ref} sold");
+            messages.Add($"${soldFor:N0} back on the sale.");
+        }
+
         messages.Insert(0, $"Unit {t.Ref} retired at {t.ServiceMiles:N0} mi" +
                            (t.LifetimeRepairCost > 0 ? $" and ${t.LifetimeRepairCost:N0} of repairs" : "") + ".");
         if (!string.IsNullOrWhiteSpace(driverName) && string.IsNullOrWhiteSpace(replacementUnit))
@@ -2048,7 +2092,8 @@ public static class FleetOpsService
             // stay. Not a prediction of the roll — just the observation.
             FlightRisks = active.Select(d => FlightRisk(s, d)).Where(x => x != null).Select(x => x!).ToList(),
             EmployerStars = s.Company.EmployerStars,
-            TrailerRequest = TrailerFleet.Open(s)
+            TrailerRequest = TrailerFleet.Open(s),
+            YardRequest = Yards.Open(s)
         };
     }
 }
@@ -2096,4 +2141,6 @@ public class FleetOpsSummary
     public double EmployerStars { get; set; }
     /// <summary>An outstanding request to buy a trailer, if there is one.</summary>
     public TrailerRequest? TrailerRequest { get; set; }
+    /// <summary>The yard the company wants, if any. Property it does not own until the player buys it.</summary>
+    public YardRequest? YardRequest { get; set; }
 }
