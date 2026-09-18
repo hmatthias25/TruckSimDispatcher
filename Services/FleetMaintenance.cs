@@ -231,8 +231,8 @@ public static class FleetMaintenance
 
             if (!found)
             {
-                LedgerService.Post(s, LedgerService.Operating, -cost, "Maintenance",
-                    $"PM — unit {t.Ref}", report.Number);
+                LedgerService.Post(s, LedgerService.Operating, -cost, "FleetMaintenance",
+                    $"PM — unit {t.Ref}", report.Number, gameTime: report.PeriodEndGame);
                 report.Findings.Add(checkpoints.Count > 0
                     ? $"Unit {t.Ref} went through the shop, ${cost:N0} — " +
                       string.Join(", ", checkpoints.Select(c => c.Name.ToLowerInvariant())) + "."
@@ -246,8 +246,8 @@ public static class FleetMaintenance
             {
                 // They stop when they find it, so the bill is the strip-down rather than the service.
                 var billed = Math.Round(cost / 2, 0);
-                LedgerService.Post(s, LedgerService.Operating, -billed, "Maintenance",
-                    $"PM — unit {t.Ref} (condemned)", report.Number);
+                LedgerService.Post(s, LedgerService.Operating, -billed, "FleetMaintenance",
+                    $"PM — unit {t.Ref} (condemned)", report.Number, gameTime: report.PeriodEndGame);
 
                 var driver = s.HiredDrivers.FirstOrDefault(
                     d => d.Status == "Active"

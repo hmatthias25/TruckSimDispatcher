@@ -296,7 +296,7 @@ public static class FleetOpsService
             // Repairs and reserve accrual both go through the single cash account — the earmark is a
             // claim on the one bank balance, not a separate pot to move money into.
             if (line.Repairs > 0)
-                LedgerService.Post(s, LedgerService.Operating, -line.Repairs, "Repairs",
+                LedgerService.Post(s, LedgerService.Operating, -line.Repairs, "FleetMaintenance",
                     $"Unit {line.TruckUnit} — {driver.Name}", report.Number,
                     gameTime: report.PeriodEndGame);
 
@@ -481,14 +481,25 @@ public static class FleetOpsService
             yardBill += spent;
         }
 
-        // Said as an instruction rather than left in the findings, because it is something to DO. The
-        // app cannot touch the game's bank, so a service it booked on a hired driver's tractor sits as a
-        // variance against the reported ATS balance until the player puts it in. Reported from play:
-        // "I never got that info so had no idea what to charge the game."
+        // No instruction to go and move money in the game.
+        //
+        // This used to say "take $X out in ATS for the yard work above — the two will not agree until
+        // you do", from when the app reconciled its books against the reported balance. That whole
+        // stance is gone: the difference between the books and the bank is the shape of the problem and
+        // not an error to chase, and #236 now reports the gap rather than asking anybody to close it.
+        // Asking a driver to reach into the carrier's bank to make the app's arithmetic come out was
+        // exactly the inversion the rest of this app argues against.
+        //
+        // The cost itself stays. ATS does not service a hired driver's tractor — the game abstracts it
+        // away — so this is the company's own figure for something a real carrier really pays, in the
+        // same way yard upkeep is. That is why it is booked under a category the bank comparison knows
+        // to leave out: counting a cost the game never charged would show a gap every period that was
+        // nothing but our own fiction.
         if (yardBill > 0)
-            report.Instructions.Add(
-                $"**Take ${yardBill:N0} out in ATS** for the yard work above. The app has already booked it " +
-                "against operating; the game has not, and the two will not agree until you do.");
+            report.Findings.Add(
+                $"${yardBill:N0} of yard work on the fleet this period. That is the company's own cost — " +
+                "ATS does not bill you for a hired driver's servicing, so there is nothing to take out " +
+                "of the game for it.");
         ResolvePersonnel(s, report);
         AssessRetirements(s, report);
         IssueTradeInstructions(s, report);

@@ -835,6 +835,22 @@ public static class EquipmentService
             // the game does not have. ATS decides what a swap costs and charges it at the moment they
             // accept it, so by the time somebody is closing this order the days are already spent.
 
+            // The box this order was raised against has left the fleet — retired, or taken off the books
+            // by hand. There is nothing to swap off any more, so the order is finished whatever else is
+            // or is not standing on the yard. Reported from play: a tanker retired by hand left an order
+            // that could not be closed, because closing it went looking for a replacement to hook and
+            // threw when it found none. The next fleet report decides afresh whether a box is wanted.
+            var subject = s.Trailers.FirstOrDefault(t =>
+                t.Unit.Equals(o.FromTrailerUnit, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(o.FromTrailerUnit) && (subject == null || subject.Retired))
+            {
+                o.Status = "Completed";
+                o.CompletedGameTime = s.Status.GameTime;
+                return $"{o.Number} closed — {o.FromTrailerUnit} is off the fleet already, so there is " +
+                       "nothing left to swap. If the company still wants a box it will ask again on the " +
+                       "next report.";
+            }
+
             if (o.MustPurchase && string.IsNullOrWhiteSpace(o.ToTrailerUnit))
             {
                 // The player bought one and added it on the Fleet tab; find it and hook that.

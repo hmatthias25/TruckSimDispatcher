@@ -121,13 +121,22 @@ const found = (rep, re) => (rep.findings || []).filter((f) => re.test(f)).join('
   ok('and the company paid for it', !!posted && posted.amount < 0,
     posted ? `${posted.memo} ${posted.amount}` : '(nothing posted)');
 
-  // The app cannot reach the game's bank, so a service it booked sits as a variance against the
-  // reported ATS balance until the player puts it in. Reported from play: "I never got that info so had
-  // no idea what to charge the game." It is an instruction now, not a line in the findings.
-  const charge = (rep.instructions || []).find((x) => /Take \$[\d,]+ out in ATS/i.test(x));
-  ok('and the player is told what to take out of the game', !!charge,
-    charge?.slice(0, 130) || `${(rep.instructions || []).length} instruction(s), none of them this`);
-  ok('naming the amount, not just the fact', /\$[1-9][\d,]*/.test(charge || ''), charge?.slice(0, 60) || '');
+  // This used to instruct the player to take the money out of ATS by hand, so the game's bank would
+  // agree with the app's books. That is gone. The reconciliation it existed to serve was removed, and
+  // asking a driver to reach into the carrier's bank to make the app's arithmetic come out was the
+  // inversion the rest of the app argues against. Reported from play: "are we still doing that? I
+  // thought we weren't messing with ATS money now."
+  //
+  // ATS abstracts a hired driver's servicing away entirely, so this is a cost a real carrier pays and
+  // the game never charges — the company's own, like yard upkeep, and nothing for the player to go and
+  // replicate.
+  const said = [...(rep.instructions || []), ...(rep.findings || [])].join(' | ');
+  ok('nobody is told to move money in the game',
+    !/take \$[\d,]+ out in ats/i.test(said),
+    (said.match(/[^|]*out in ATS[^|]*/i) || ['none'])[0].slice(0, 90));
+  ok('and the cost is named as the company\'s own',
+    /does not bill you|nothing to take out of the game/i.test(said),
+    (said.match(/[^|]*nothing to take out[^|]*/i) || ['(not said)'])[0].slice(0, 110));
 
   head('4. #125 Nobody stops driving for a service');
   // The one thing the app must not claim: ATS keeps them rolling whatever the app says.

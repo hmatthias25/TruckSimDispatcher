@@ -140,7 +140,9 @@ public static class LedgerService
     /// <para>The app's books are wider than the game's bank on purpose. The player's own wages exist
     /// only here — in ATS they are the owner and pay themselves nothing, which is why
     /// <see cref="PostPayroll"/> stamps the memo "not reflected in ATS". Yard upkeep is the app's own
-    /// figure and the game charges no rent on a garage. Per-load overhead and cancellation penalties
+    /// figure and the game charges no rent on a garage. Fleet maintenance is the same: ATS abstracts a
+    /// hired driver's servicing away entirely, so a PM the app books on their tractor is a cost a real
+    /// carrier pays and the game never does. Per-load overhead and cancellation penalties
     /// are carrier bookkeeping the game has no concept of. Transfers and the opening entry never leave
     /// the books at all.</para>
     ///
@@ -150,7 +152,8 @@ public static class LedgerService
     /// </summary>
     public static readonly string[] AppOnlyCategories =
     {
-        "Payroll", "YardUpkeep", "Overhead", "Cancellation", "Transfer", "Opening", "Adjustment",
+        "Payroll", "YardUpkeep", "FleetMaintenance", "Overhead", "Cancellation",
+        "Transfer", "Opening", "Adjustment",
     };
 
     /// <summary>
@@ -331,7 +334,7 @@ public static class LedgerService
         // mistake this came out of.
         sum.FleetContribution = Math.Round(s.Ledger.Where(e => e.Category == "FleetContribution").Sum(e => e.Amount), 2);
         sum.Fuel = Math.Round(-s.Ledger.Where(e => e.Category == "Fuel").Sum(e => e.Amount), 2);
-        sum.MaintenanceSpend = Math.Round(-s.Ledger.Where(e => e.Category is "Repairs" or "Maintenance").Sum(e => e.Amount), 2);
+        sum.MaintenanceSpend = Math.Round(-s.Ledger.Where(e => e.Category is "Repairs" or "Maintenance" or "FleetMaintenance").Sum(e => e.Amount), 2);
         sum.PayrollSpend = Math.Round(-s.Ledger.Where(e => e.Category == "Payroll").Sum(e => e.Amount), 2);
         sum.TollSpend = Math.Round(-s.Ledger.Where(e => e.Category == "Tolls").Sum(e => e.Amount), 2);
         sum.OverheadSpend = Math.Round(-s.Ledger.Where(e => e.Category is "Overhead" or "Insurance").Sum(e => e.Amount), 2);

@@ -67,6 +67,9 @@ public static class Migrations
         LiftFuelPricesToWhatDieselCosts(s);
         RegradeWithoutRating(s);
         CallFleetTakingsWhatTheyAre(s);
+        // Not stamped: a box can leave the fleet at any time, and closing an order already closed is a
+        // no-op. This is a standing tidy-up rather than a one-off correction.
+        CloseOrdersForTrailersAlreadyGone(s);
     }
 
     /// <summary>
@@ -1993,6 +1996,50 @@ public static class Migrations
                 "the job before it shows you their $/mile, so that figure was already net and the app was " +
                 "deducting a second wage from it. What they bring in is contribution now, and the rung's " +
                 "share says what somebody is worth rather than moving money.",
+        });
+    }
+
+    /// <summary>
+    /// Closes trailer-swap orders whose box has already left the fleet.
+    ///
+    /// <para>Reported from play: a tanker retired by hand, and the app still asking for the swap. The
+    /// order could not be cleared either — closing one goes looking for a replacement to hook and threw
+    /// when it found none — so it sat there blocking the single open-order slot, which is the slot the
+    /// next tractor or box the company wants has to come through.</para>
+    ///
+    /// <para>Only where the subject is genuinely gone: off the books entirely, or retired. An order
+    /// against a trailer still standing is a live instruction and is left alone. If the company still
+    /// wants a box it raises the ask again on the next report, priced and reasoned afresh.</para>
+    /// </summary>
+    private static void CloseOrdersForTrailersAlreadyGone(AppState s)
+    {
+        var stale = s.EquipmentOrders
+            .Where(o => o.Status == "Open" && o.Kind == "TrailerSwap")
+            .Where(o => !string.IsNullOrWhiteSpace(o.FromTrailerUnit))
+            .Where(o => s.Trailers.FirstOrDefault(t =>
+                t.Unit.Equals(o.FromTrailerUnit, StringComparison.OrdinalIgnoreCase)) is not { Retired: false })
+            .ToList();
+        if (stale.Count == 0) return;
+
+        foreach (var o in stale)
+        {
+            o.Status = "Completed";
+            o.CompletedGameTime = s.Status.GameTime;
+            o.Notes = string.IsNullOrWhiteSpace(o.Notes)
+                ? "Closed automatically — the trailer had already left the fleet."
+                : o.Notes + " Closed automatically — the trailer had already left the fleet.";
+        }
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "maintenance",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"{stale.Count} trailer swap order(s) closed — " +
+                string.Join(", ", stale.Select(o => $"{o.Number} on {o.FromTrailerUnit}")) +
+                ". Those boxes are off the fleet already, so there was nothing left to swap and the " +
+                "order was only holding the equipment queue shut. The company will ask again on the " +
+                "next report if it still wants one.",
         });
     }
 
