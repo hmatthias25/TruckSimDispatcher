@@ -99,11 +99,32 @@ public static class DriverRank
     {
         new(0, "Probationary Company Driver", "Probationary",      0,       0,  0, 99, 0.25),
         new(1, "Company Driver",              "Company",          90,   6_000,  3,  3, 0.28),
-        new(2, "Senior Company Driver",       "Senior",          270,  30_000,  8,  3, 0.31),
-        new(3, "Lead Driver",                 "Lead",            540,  65_000, 14,  2, 0.34),
-        new(4, "Specialist Driver",           "Specialist",      900, 120_000, 22,  1, 0.37),
-        new(5, "Master Driver",               "Master",        1_350, 220_000, 30,  1, 0.40),
+        new(2, "Senior Company Driver",       "Senior",          540, 110_000,  8,  3, 0.31),
+        new(3, "Lead Driver",                 "Lead",            900, 180_000, 14,  2, 0.34),
+        new(4, "Specialist Driver",           "Specialist",    1_260, 250_000, 22,  1, 0.37),
+        new(5, "Master Driver",               "Master",        1_710, 340_000, 30,  1, 0.40),
     };
+
+    /// <summary>
+    /// Why the days sit where they do.
+    ///
+    /// <para><b>Company Driver is the job.</b> Most drivers are one, most of the time, and the ladder
+    /// should read that way — so it is by far the longest rung: four hundred and fifty game days, thirty
+    /// fleet reports, against the ninety of probation before it. It used to be the SHORTEST rung above
+    /// probation at a hundred and eighty days, with Specialist lasting two and a half times longer,
+    /// which had the shape of the thing backwards.</para>
+    ///
+    /// <para><b>Master is meant to be rare.</b> Nearly five game years from hire, and a carrier worth
+    /// working for has to keep somebody that long to see it — which is the point the rung exists to
+    /// make. At a middling one they are poached years before.</para>
+    ///
+    /// <para>Read in fleet reports at the default fortnightly interval: six of probation, thirty as a
+    /// Company Driver, twenty-four Senior, twenty-four Lead, thirty Specialist, and Master from the
+    /// hundred and fourteenth.</para>
+    /// </summary>
+    public const string PacingNote =
+        "Company Driver is the longest rung on purpose — it is what most drivers are. Master is about " +
+        "five game years from hire.";
 
     /// <summary>
     /// Game days since they were hired, or 0 when the hire date is unknown.
@@ -153,9 +174,33 @@ public static class DriverRank
             var r = Ladder[i];
             if (days >= r.Days && d.LifetimeMiles >= r.Miles
                 && d.Level >= r.Level && recent <= r.Preventables)
-                return r;
+                return Hold(d, r, recent);
         }
-        return Ladder[0];
+        return Hold(d, Ladder[0], recent);
+    }
+
+    /// <summary>
+    /// Keeps a driver on a grade they already hold unless the thing that has slipped is their driving.
+    ///
+    /// <para><see cref="Settle"/> has always promised that a grade is never taken away by time and that
+    /// the only gate which can run backwards is the preventable count. The walk above did not honour
+    /// that. It re-derived the rung from scratch every report, so anything that moved a gate under a
+    /// driver's feet demoted them — a Senior Company Driver could be told they were a Company Driver
+    /// again because the mileage standard had gone up, having done nothing but keep driving.</para>
+    ///
+    /// <para>Days and miles only ever increase, so in practice this catches two things: the standards
+    /// being raised, and a hand-edited record. Both should cost a driver nothing. A preventable still
+    /// costs them the rung, and still gives it back when it ages off.</para>
+    /// </summary>
+    private static Rung Hold(HiredDriver d, Rung earned, int recent)
+    {
+        var grade = Math.Clamp(d.Grade, 0, Ladder.Length - 1);
+        if (earned.Index >= grade) return earned;
+
+        // Earned it under the old standard. It stands — unless their recent record no longer clears the
+        // conduct bar for the grade they are standing on, which is the one drop the ladder does make.
+        var held = Ladder[grade];
+        return recent > held.Preventables ? earned : held;
     }
 
     /// <summary>

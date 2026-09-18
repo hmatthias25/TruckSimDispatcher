@@ -645,6 +645,26 @@ public class CareerStats
     public int Cancellations { get; set; }
     public int DriverFaultIncidents { get; set; }
     public int DaysEmployed { get; set; }
+
+    /// <summary>Loads run for previous employers, carried on the driver's file.</summary>
+    public int PriorLoads { get; set; }
+    /// <summary>Miles run for previous employers, carried on the driver's file.</summary>
+    public double PriorMiles { get; set; }
+
+    /// <summary>
+    /// The whole record: what they have done here plus what they did before.
+    ///
+    /// <para>Everything above counts only the current seat, because most of it is about how this
+    /// employer is being served — on-time percentage, damage, the incidents still on the file. Loads and
+    /// miles are different. A driver with two hundred thousand miles behind them has two hundred
+    /// thousand miles behind them, and changing jobs does not unlearn them.</para>
+    ///
+    /// <para>These are what the promotion ladder reads. Probation deliberately does not: that is a trial
+    /// with <i>this</i> carrier and it is meant to be served here.</para>
+    /// </summary>
+    public int CareerLoads { get; set; }
+    /// <inheritdoc cref="CareerLoads"/>
+    public double CareerMiles { get; set; }
 }
 
 public class CareerReview
@@ -762,24 +782,40 @@ public static class CareerService
     /// <summary>How many rungs this ladder has.</summary>
     public static int LadderLength => Ladder.Length;
 
+    /// <summary>
+    /// The rungs, and what each one costs.
+    ///
+    /// <para><b>The miles are the gate that bites.</b> Loads and miles both have to be met, but a load
+    /// on this map averages five or six hundred miles, so the mileage figure is the one that decides how
+    /// long a rung lasts. They used to be set low enough that loads ran out first, which made every
+    /// promotion a load count and put Master Driver inside a few hundred deliveries.</para>
+    ///
+    /// <para>Company Driver is deliberately the long one. It is where most drivers are and where most
+    /// drivers stay, and a ladder you climb out of in a month is not a career. Six thousand miles gets
+    /// you off probation and onto the seat; a hundred and ten thousand is what it takes to be called
+    /// senior, which is a couple of hundred loads of actually doing the job.</para>
+    ///
+    /// <para>These are the same figures the hired-driver ladder uses. One standard, whichever side of
+    /// the desk you are on — see <see cref="DriverRank"/>.</para>
+    /// </summary>
     private static readonly Rank[] Ladder =
     {
         new("probationary", "Probationary Company Driver", 0, 0, 0, 100, 99, 0.54m, 0.44m,
             Array.Empty<string>(), "Starting position."),
         new("company", "Company Driver", 10, 6_000, 95, 5, 1, 0.60m, 0.48m,
             new[] { "Hazmat" }, "Probation cleared. Full freight access within your divisions and a rate bump."),
-        new("senior", "Senior Company Driver", 35, 30_000, 96, 4, 1, 0.66m, 0.52m,
+        new("senior", "Senior Company Driver", 35, 110_000, 96, 4, 1, 0.66m, 0.52m,
             new[] { "Oversize" }, "Trusted with tighter windows, high-value freight and oversize with a permit."),
-        new("lead", "Lead Driver / Driver Trainer", 70, 65_000, 97, 3, 0, 0.72m, 0.56m,
+        new("lead", "Lead Driver / Driver Trainer", 70, 180_000, 97, 3, 0, 0.72m, 0.56m,
             new[] { "Heavy Haul" }, "Newest tractor in the fleet, heavy haul access, and trainer pay."),
         // The keys stay as they are so a stored career keeps the rung it is standing on. What changed is
         // what they mean: a lease-purchase and an owner-operator are not this app. There is no lease
         // payment, no fuel or maintenance out of the driver's pocket, and a driver picking their own
         // freight under their own authority is a different game entirely. Both were also paid as though
         // that simulation existed — $1.28 and $1.65 a loaded mile is owner gross handed over as wages.
-        new("lease", "Specialist Driver", 120, 120_000, 97, 3, 0, 0.78m, 0.60m,
+        new("lease", "Specialist Driver", 120, 250_000, 97, 3, 0, 0.78m, 0.60m,
             new[] { "High Value" }, "The awkward freight: oversize, high-value, the loads with a permit attached. Best equipment in the fleet and the rate to match."),
-        new("owner", "Master Driver", 200, 220_000, 98, 3, 0, 0.87m, 0.66m,
+        new("owner", "Master Driver", 200, 340_000, 98, 3, 0, 0.87m, 0.66m,
             Array.Empty<string>(), "Top of the company scale. The work nobody else is trusted with, first refusal on the freight, and the miles to prove it.")
     };
 
@@ -815,6 +851,15 @@ public static class CareerService
             : 0;
         st.AvgRevenuePerLoadedMile = st.LoadedMiles > 0
             ? Math.Round((double)st.CompanyRevenue / st.LoadedMiles, 3) : 0;
+
+        // Taking a job somewhere else clears the trip list — those loads belong to the last employer's
+        // books, not this one's. The totals were kept on the driver's file for exactly this reason, and
+        // the hiring screens have always read them. The ladder did not, so every job change put the
+        // promotion clock back to nought and a veteran started again on ten loads and six thousand miles.
+        st.PriorLoads = s.Driver.PriorLoads;
+        st.PriorMiles = s.Driver.PriorMiles;
+        st.CareerLoads = st.LoadsDelivered + st.PriorLoads;
+        st.CareerMiles = Math.Round(st.TotalMiles + st.PriorMiles, 0);
 
         var hired = GameClock.TryParse(s.Driver.HiredGameDate);
         var now = GameClock.TryParse(s.Status.GameTime);
@@ -913,8 +958,9 @@ public static class CareerService
             var next = Ladder[idx + 1];
             review.NextRank = next.Key;
             review.NextRankTitle = next.Title;
-            review.NextRankProgress.Add(Req("Loads delivered", stats.LoadsDelivered, next.Loads));
-            review.NextRankProgress.Add(Req("Company miles", stats.TotalMiles, next.Miles, "N0"));
+            // The whole record, not just this seat. See CareerStats.CareerLoads.
+            review.NextRankProgress.Add(Req("Loads delivered", stats.CareerLoads, next.Loads));
+            review.NextRankProgress.Add(Req("Career miles", stats.CareerMiles, next.Miles, "N0"));
             review.NextRankProgress.Add(ReqPct("On-time service", stats.OnTimePct, next.OnTime));
             review.NextRankProgress.Add(ReqMax("Avg damage per trip", stats.AvgDamagePerTrip, next.MaxDamage, "0.##", "%"));
             review.NextRankProgress.Add(ReqMax("Driver-fault incidents", stats.DriverFaultIncidents, next.MaxFaults));

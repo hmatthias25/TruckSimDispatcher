@@ -56,7 +56,7 @@ const zone = async (name) => {
 function veteran(over) {
   return {
     id: 'drv-vet', name: 'A. Whitlock', status: 'Active', wageShare: 0.30,
-    hiredGameDate: iso(1), lifetimeMiles: 250000, level: 30, rating: 0,
+    hiredGameDate: iso(1), lifetimeMiles: 400000, level: 30, rating: 0,
     grade: 0, onProbation: false, periods: [], ...over,
   };
 }
@@ -75,7 +75,7 @@ function veteran(over) {
   // ladder says they have earned standing here, which is the thing under test.
   for (const [level, expect] of [[30, 'Master'], [14, 'Lead'], [3, 'Company']]) {
     let st = await api('/export');
-    st.status.gameTime = iso(1500);
+    st.status.gameTime = iso(2000);
     st.hiredDrivers = [veteran({ level })];
     S = un(await api('/import', 'POST', st));
     const z = await zone('A. Whitlock');
@@ -87,7 +87,7 @@ function veteran(over) {
   // Rating 0.0 on a driver whose tenure, miles and level all clear the top rung. Under the old ladder
   // this was stuck for want of a 9.0 the game could never actually show.
   let st = await api('/export');
-  st.status.gameTime = iso(1500);
+  st.status.gameTime = iso(2000);
   st.hiredDrivers = [veteran({ level: 30, rating: 0 })];
   S = un(await api('/import', 'POST', st));
   let z = await zone('A. Whitlock');
@@ -96,7 +96,7 @@ function veteran(over) {
 
   // And a perfect rating cannot carry an unqualified one.
   st = await api('/export');
-  st.status.gameTime = iso(1500);
+  st.status.gameTime = iso(2000);
   st.hiredDrivers = [veteran({ level: 1, rating: 10 })];
   S = un(await api('/import', 'POST', st));
   z = await zone('A. Whitlock');
@@ -114,7 +114,7 @@ function veteran(over) {
   // sitting at a low grade because the old ladder wanted a rating the game does not show.
   st = await api('/export');
   st.schemaVersion = 20;
-  st.status.gameTime = iso(1500);
+  st.status.gameTime = iso(2000);
   st.hiredDrivers = [veteran({ grade: 0, level: 30, rating: 5.8 })];
   S = un(await api('/import', 'POST', st));
   const after = await drv('A. Whitlock');
