@@ -1,11 +1,13 @@
 /* Issue #127 — the fleet report asked for three figures ATS never shows.
  *
- * Revenue and repairs are on no screen the player can read for a driver they are not sitting next to.
- * The manual says so two pages earlier: ATS gives level, rating, $/mile, $/day, stars and an odometer,
- * and that is the lot. So the report asked for numbers that could only be guessed, everybody sensibly
- * left them blank, and the fleet summary read zero revenue, zero wages, zero repairs for ever.
+ * Takings and repairs are on no screen the player can read for a driver they are not sitting next to.
+ * ATS gives level, $/mile, $/day, stars and an odometer, and that is the lot. So the report asked for
+ * numbers that could only be guessed, everybody sensibly left them blank, and the fleet summary read
+ * zero for ever. Both come from what IS readable now.
  *
- * All three come from what IS readable now.
+ * The $/mile and $/day ATS shows are PROFIT — the game pays the driver, the fuel and the tolls out of
+ * the job first — so what they produce is CONTRIBUTION, not revenue, and there is no wage left to take
+ * off it. The app used to call it revenue and then deduct a share as wages, paying the driver twice.
  */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5860}/api`;
 async function api(p, m = 'GET', b) {
@@ -65,7 +67,7 @@ async function fileReport(lines, days = 15) {
     accountKey: 'operating', amount: 300000, category: 'Other', memo: 'fixture — funded',
   });
 
-  head('1. #127 Revenue comes off the $/mile and the odometer, with nothing typed');
+  head('1. #127 Contribution comes off the $/mile and the odometer, with nothing typed');
   await truck('T800', 200000, 200000);
   const d1 = await hire('R. Vance', 'T800');
   const r1 = await fileReport([{
@@ -74,23 +76,23 @@ async function fileReport(lines, days = 15) {
   }]);
   const l1 = r1.lines.find((l) => l.driverId === d1.id);
   ok('miles came from the odometer difference', near(l1.miles, 4200), `${l1.miles} mi`);
-  ok('revenue is no longer zero', l1.revenue > 0, `$${l1.revenue}`);
-  ok('and it is $/mi x miles', near(Number(l1.revenue), 1.90 * 4200, 2),
-    `$${l1.revenue} vs $${(1.90 * 4200).toFixed(2)}`);
+  ok('contribution is no longer zero', l1.contribution > 0, `$${l1.contribution}`);
+  ok('and it is $/mi x miles', near(Number(l1.contribution), 1.90 * 4200, 2),
+    `$${l1.contribution} vs $${(1.90 * 4200).toFixed(2)}`);
   ok('the line says how it was worked out', /\/mi/.test(l1.revenueBasis || ''), l1.revenueBasis);
 
-  head('2. #127 Wages follow from the agreed share');
-  ok('wages are not zero either', l1.wages > 0, `$${l1.wages}`);
-  // Not a flat thirty any more — a driver is paid the share their LEVEL earns, between a quarter and
-  // two fifths. So this reads the share off the driver rather than assuming everybody costs the same.
+  head('2. No wage is invented on top of it');
+  // ATS pays hired drivers out of the job before it reports their $/mile, so the figure above is
+  // already net of their wage. The app used to take the rung's share off it again and post that as
+  // payroll — the driver was paid twice, once in the game and once in the books.
+  ok('no wage is deducted from what they brought in', !(l1.wages > 0), `$${l1.wages ?? 0}`);
+  // The share still exists and still means something; it is just not money any more.
   const share1 = ((await api('/fleetops')).drivers.find((x) => x.id === l1.driverId) || {}).wageShare;
-  ok('and they are the driver\'s share of the revenue',
-    near(Number(l1.wages), Number(l1.revenue) * Number(share1), 2),
-    `$${l1.wages} on $${l1.revenue}`);
+  ok('the rung still carries a share, as what a driver is worth', share1 > 0, `${share1}`);
 
   head('3. #127 The summary has real numbers in it');
-  ok('report revenue totals up', r1.totalRevenue > 0, `$${r1.totalRevenue}`);
-  ok('report wages total up', r1.totalWages > 0, `$${r1.totalWages}`);
+  ok('report contribution totals up', r1.totalContribution > 0, `$${r1.totalContribution}`);
+  ok('and no wages are totalled, because none were invented', !(r1.totalWages > 0), `$${r1.totalWages ?? 0}`);
   ok('and a net contribution falls out of it', r1.netContribution !== 0, `$${r1.netContribution}`);
 
   head('4. #127 With no odometer it falls back to $/day across the period');
@@ -101,9 +103,9 @@ async function fileReport(lines, days = 15) {
     truckStars: 4, trailerStars: 4, truckOdometer: 0,
   }], 15);
   const l2 = r2.lines.find((l) => l.driverId === d2.id);
-  ok('revenue still comes out', l2.revenue > 0, `$${l2.revenue}`);
-  ok('and it is $/day x the days in the period', near(Number(l2.revenue), 480 * 15, 2),
-    `$${l2.revenue} vs $${480 * 15}`);
+  ok('contribution still comes out', l2.contribution > 0, `$${l2.contribution}`);
+  ok('and it is $/day x the days in the period', near(Number(l2.contribution), 480 * 15, 2),
+    `$${l2.contribution} vs $${480 * 15}`);
   ok('and it says which basis it used', /\/day/.test(l2.revenueBasis || ''), l2.revenueBasis);
 
   head('5. #127 Repairs are what the yard actually spent, not a number you hunt for');
@@ -147,10 +149,10 @@ async function fileReport(lines, days = 15) {
   const d4 = await hire('P. Rior', 'T803');
   const r4 = await fileReport([{
     driverId: d4.id, level: 5, rating: 8, perMile: 1.5, perDay: 400,
-    truckStars: 4, trailerStars: 4, truckOdometer: 102000, revenue: 12345,
+    truckStars: 4, trailerStars: 4, truckOdometer: 102000, contribution: 12345,
   }]);
   const l4 = r4.lines.find((l) => l.driverId === d4.id);
-  ok('the entered revenue is kept', near(Number(l4.revenue), 12345, 1), `$${l4.revenue}`);
+  ok('an entered contribution is kept', near(Number(l4.contribution), 12345, 1), `$${l4.contribution}`);
   ok('and no basis is claimed for a number we were given', !l4.revenueBasis,
     l4.revenueBasis || '(none)');
 

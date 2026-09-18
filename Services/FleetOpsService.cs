@@ -76,8 +76,7 @@ public static class FleetOpsService
 
         // Lifetime totals are earned history — never overwritten from a form post.
         incoming.LifetimeMiles = existing.LifetimeMiles;
-        incoming.LifetimeRevenue = existing.LifetimeRevenue;
-        incoming.LifetimeWages = existing.LifetimeWages;
+        incoming.LifetimeContribution = existing.LifetimeContribution;
         incoming.ReportsFiled = existing.ReportsFiled;
         incoming.HiredGameDate = existing.HiredGameDate;
 
@@ -143,7 +142,7 @@ public static class FleetOpsService
         if (string.IsNullOrWhiteSpace(report.PeriodEndGame)) report.PeriodEndGame = s.Status.GameTime;
 
         var factor = (decimal)Math.Clamp(s.Settings.RevenueFactor, 0.05, 3.0);
-        report.TotalRevenue = 0; report.TotalMiles = 0; report.TotalWages = 0; report.TotalRepairs = 0;
+        report.TotalContribution = 0; report.TotalMiles = 0; report.TotalRepairs = 0;
 
         foreach (var line in report.Lines)
         {
@@ -191,33 +190,40 @@ public static class FleetOpsService
             // to do arithmetic on figures they would have had to invent. Per-mile against the odometer
             // difference is the better of the two — both readings are real, and miles are exact where
             // days are rounded — with per-day as the fallback when no odometer was given.
-            if (line.Revenue <= 0)
+            if (line.Contribution <= 0)
             {
+                // $/mile and $/day off the ATS driver manager are PROFIT: the game has already taken the
+                // driver's wage, the fuel and the tolls out before it prints them. So this is what the
+                // driver put in the company's pocket, and there is nothing further to deduct from it.
                 if (line.PerMile > 0 && line.Miles > 0)
                 {
-                    line.Revenue = Math.Round(line.PerMile * (decimal)line.Miles, 2);
-                    line.RevenueBasis = $"${line.PerMile:N2}/mi × {line.Miles:N0} mi";
+                    line.Contribution = Math.Round(line.PerMile * (decimal)line.Miles, 2);
+                    line.RevenueBasis = $"${line.PerMile:N2}/mi net × {line.Miles:N0} mi";
                 }
                 else if (line.PerDay > 0 && periodDays > 0)
                 {
-                    line.Revenue = Math.Round(line.PerDay * (decimal)periodDays, 2);
-                    line.RevenueBasis = $"${line.PerDay:N2}/day × {periodDays:0.#} days";
+                    line.Contribution = Math.Round(line.PerDay * (decimal)periodDays, 2);
+                    line.RevenueBasis = $"${line.PerDay:N2}/day net × {periodDays:0.#} days";
                 }
             }
 
-            if (line.Wages <= 0 && line.Revenue > 0)
-                line.Wages = Math.Round(line.Revenue * (decimal)Math.Clamp(driver.WageShare, 0, 0.9), 2);
-
-            var booked = Math.Round(line.Revenue * factor, 2);
+            // No wage is posted for a hired driver, and none is worked out.
+            //
+            // This used to take the rung's share off the figure above and post it as Payroll. That was a
+            // deduction ATS had already made — it pays the driver out of the job before it reports the
+            // profit — so the company paid them twice: once in the game, and again in its own books. The
+            // same mistake put the company's NET in its revenue line, which is why the operating ratio
+            // and revenue-per-mile never looked right on a fleet.
+            //
+            // The rung's share is still worked out and still means something; it is just not money any
+            // more. See WorthTheRung below.
+            var booked = Math.Round(line.Contribution * factor, 2);
             if (booked > 0)
-                LedgerService.Post(s, LedgerService.Operating, booked, "FreightRevenue",
-                    $"Fleet production — {driver.Name} on unit {line.TruckUnit}" +
-                    (Math.Abs(factor - 1m) > 0.001m ? $" (ATS ${line.Revenue:N2}; booked at ×{factor:0.##})" : ""),
+                LedgerService.Post(s, LedgerService.Operating, booked, "FleetContribution",
+                    $"Fleet contribution — {driver.Name} on unit {line.TruckUnit}, net of what ATS already " +
+                    "took for wages, fuel and tolls" +
+                    (Math.Abs(factor - 1m) > 0.001m ? $" (ATS ${line.Contribution:N2}; booked at ×{factor:0.##})" : ""),
                     report.Number);
-
-            if (line.Wages > 0)
-                LedgerService.Post(s, LedgerService.Operating, -line.Wages, "Payroll",
-                    $"Wages — {driver.Name}", report.Number);
 
             // Repairs and reserve accrual both go through the single cash account — the earmark is a
             // claim on the one bank balance, not a separate pot to move money into.
@@ -297,8 +303,7 @@ public static class FleetOpsService
             }
 
             driver.LifetimeMiles = Math.Round(driver.LifetimeMiles + line.Miles, 0);
-            driver.LifetimeRevenue = Math.Round(driver.LifetimeRevenue + booked, 2);
-            driver.LifetimeWages = Math.Round(driver.LifetimeWages + line.Wages, 2);
+            driver.LifetimeContribution = Math.Round(driver.LifetimeContribution + booked, 2);
             driver.ReportsFiled++;
 
             // Level and rating are the driver's standing now, so they sit on the driver as well as in
@@ -325,9 +330,8 @@ public static class FleetOpsService
             {
                 ReportNumber = report.Number,
                 PeriodEndGame = report.PeriodEndGame,
-                Revenue = booked,
+                Contribution = booked,
                 Miles = line.Miles,
-                Wages = line.Wages,
                 Repairs = line.Repairs,
                 RatePerMile = line.Miles > 0 ? Math.Round(booked / (decimal)line.Miles, 3) : 0,
                 Level = line.Level,
@@ -342,9 +346,8 @@ public static class FleetOpsService
             if (truck != null && line.Repairs > 0)
                 truck.LifetimeRepairCost = Math.Round(truck.LifetimeRepairCost + line.Repairs, 2);
 
-            report.TotalRevenue += booked;
+            report.TotalContribution += booked;
             report.TotalMiles += line.Miles;
-            report.TotalWages += line.Wages;
             report.TotalRepairs += line.Repairs;
         }
 
@@ -487,14 +490,14 @@ public static class FleetOpsService
             .Sum(e => e.Amount), 2);
 
         report.NetContribution = Math.Round(
-            report.TotalRevenue - report.TotalWages - report.TotalRepairs - report.TotalCapital, 2);
+            report.TotalContribution - report.TotalRepairs - report.TotalCapital, 2);
 
         if (report.TotalCapital > 0)
             report.Findings.Add($"${report.TotalCapital:N0} went on equipment and property this period.");
         if (report.NetContribution < 0)
             report.Findings.Add("The hired fleet lost money this period. Check wages against what they actually brought in.");
-        if (report.TotalMiles > 0 && report.TotalRevenue > 0)
-            report.Findings.Add($"Fleet averaged ${report.TotalRevenue / (decimal)report.TotalMiles:0.00}/mi over {report.TotalMiles:N0} mi.");
+        if (report.TotalMiles > 0 && report.TotalContribution > 0)
+            report.Findings.Add($"Fleet netted ${report.TotalContribution / (decimal)report.TotalMiles:0.00}/mi over {report.TotalMiles:N0} mi, after what ATS took.");
 
         // How the company is doing, and what it does about it. Last, so the verdict includes everything
         // this report decided — a tractor written off this period is part of the picture, not a surprise
@@ -708,7 +711,7 @@ public static class FleetOpsService
                 TruckUnit = d.AssignedTruckUnit, TrailerUnit = d.AssignedTrailerUnit
             };
             change.Evidence.Add(ResignationReason(s, d, report));
-            change.Evidence.Add($"{d.ReportsFiled} period(s) with us, {d.LifetimeMiles:N0} mi, ${d.LifetimeRevenue:N0} brought in." +
+            change.Evidence.Add($"{d.ReportsFiled} period(s) with us, {d.LifetimeMiles:N0} mi, ${d.LifetimeContribution:N0} brought in." +
                                 (d.Level > 0 ? $" Level {d.Level}." : ""));
             report.Personnel.Add(change);
             report.Findings.Add($"{d.Name} has handed their notice in. {change.Evidence[0]}");
@@ -2068,8 +2071,7 @@ public static class FleetOpsService
             Due = DueCheck(s),
             DriverCount = s.HiredDrivers.Count,
             ActiveCount = active.Count,
-            LifetimeRevenue = s.HiredDrivers.Sum(d => d.LifetimeRevenue),
-            LifetimeWages = s.HiredDrivers.Sum(d => d.LifetimeWages),
+            LifetimeContribution = s.HiredDrivers.Sum(d => d.LifetimeContribution),
             LifetimeMiles = s.HiredDrivers.Sum(d => d.LifetimeMiles),
             ReportCount = s.FleetReports.Count,
             LastPeriodEnd = s.FleetReports.FirstOrDefault()?.PeriodEndGame ?? "",
@@ -2125,8 +2127,8 @@ public class FleetOpsSummary
     public FleetReportDue Due { get; set; } = new();
     public int DriverCount { get; set; }
     public int ActiveCount { get; set; }
-    public decimal LifetimeRevenue { get; set; }
-    public decimal LifetimeWages { get; set; }
+    /// <summary>What the hired fleet has contributed, net of what ATS already took.</summary>
+    public decimal LifetimeContribution { get; set; }
     public double LifetimeMiles { get; set; }
     public int ReportCount { get; set; }
     public string LastPeriodEnd { get; set; } = "";

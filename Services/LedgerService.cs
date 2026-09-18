@@ -273,6 +273,13 @@ public static class LedgerService
             sum.ByCategory[g.Key] = Math.Round(g.Sum(e => e.Amount), 2);
 
         sum.Revenue = Math.Round(s.Ledger.Where(e => e.Category == "FreightRevenue").Sum(e => e.Amount), 2);
+
+        // The hired fleet's money arrives already net and is kept apart from linehaul revenue on purpose.
+        // ATS pays those drivers, fuels their trucks and pays their tolls out of the job before it shows
+        // the player a figure, so there is no gross to book and no costs to itemise against it — only a
+        // contribution. Adding it to Revenue would put a net number in a gross line, which is exactly the
+        // mistake this came out of.
+        sum.FleetContribution = Math.Round(s.Ledger.Where(e => e.Category == "FleetContribution").Sum(e => e.Amount), 2);
         sum.Fuel = Math.Round(-s.Ledger.Where(e => e.Category == "Fuel").Sum(e => e.Amount), 2);
         sum.MaintenanceSpend = Math.Round(-s.Ledger.Where(e => e.Category is "Repairs" or "Maintenance").Sum(e => e.Amount), 2);
         sum.PayrollSpend = Math.Round(-s.Ledger.Where(e => e.Category == "Payroll").Sum(e => e.Amount), 2);
@@ -293,12 +300,14 @@ public static class LedgerService
         var opCost = sum.Fuel + sum.MaintenanceSpend + sum.PayrollSpend + sum.TollSpend
                      + sum.OverheadSpend + sum.FineSpend + sum.CancellationSpend
                      + sum.EquipmentSpend + sum.YardUpkeepSpend;
-        sum.OperatingIncome = Math.Round(sum.Revenue - opCost, 2);
+        sum.OperatingIncome = Math.Round(sum.Revenue + sum.FleetContribution - opCost, 2);
 
         var loadedMiles = s.Trips.Where(t => t.Status == "Delivered").Sum(t => t.ActualMiles > 0 ? t.ActualMiles : t.DispatchedMiles);
         var allMiles = loadedMiles + s.Trips.Where(t => t.Status == "Delivered").Sum(t => t.DeadheadMiles);
         sum.LoadedMiles = loadedMiles;
         sum.TotalMiles = allMiles;
+        // The player's own linehaul only. Mixing the fleet's net into a per-mile revenue figure would
+        // make the number mean two different things at once.
         sum.RevenuePerLoadedMile = loadedMiles > 0 ? Math.Round(sum.Revenue / (decimal)loadedMiles, 3) : 0;
         sum.CostPerMile = allMiles > 0 ? Math.Round(opCost / (decimal)allMiles, 3) : 0;
         sum.OperatingRatio = sum.Revenue > 0 ? Math.Round((double)(opCost / sum.Revenue), 3) : 0;
@@ -494,6 +503,8 @@ public class LedgerSummary
     public decimal EquipmentSpend { get; set; }
     /// <summary>What the yards cost to keep over the window.</summary>
     public decimal YardUpkeepSpend { get; set; }
+    /// <summary>What the hired fleet brought in, net of everything ATS already took.</summary>
+    public decimal FleetContribution { get; set; }
     public decimal OperatingIncome { get; set; }
     public double LoadedMiles { get; set; }
     public double TotalMiles { get; set; }

@@ -54,7 +54,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 21;
+    public const int Current = 22;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -2070,7 +2070,11 @@ public class HiredDriver
     /// </summary>
     public bool WageShareSetByHand { get; set; }
     public double LifetimeMiles { get; set; }
+    /// <summary>Everything this driver has put in the company's pocket, net. See FleetReportLine.</summary>
+    public decimal LifetimeContribution { get; set; }
+    [Obsolete("Renamed to LifetimeContribution — the figure was never gross revenue.")]
     public decimal LifetimeRevenue { get; set; }
+    [Obsolete("Never read. ATS pays hired drivers; the app was deducting a second wage on top.")]
     public decimal LifetimeWages { get; set; }
     public int ReportsFiled { get; set; }
     /// <summary>
@@ -2089,8 +2093,16 @@ public class DriverPeriodResult
 {
     public string ReportNumber { get; set; } = "";
     public string PeriodEndGame { get; set; } = "";
+    /// <summary>Net contribution for the period — ATS profit, not gross. See FleetReportLine.</summary>
+    public decimal Contribution { get; set; }
+    [Obsolete("Renamed to Contribution — the figure is ATS profit, never gross revenue.")]
     public decimal Revenue { get; set; }
     public double Miles { get; set; }
+    /// <summary>
+    /// <b>Retired.</b> A wage the app worked out as a share of the contribution — which ATS had
+    /// already paid before it showed the contribution. Deducting it again paid the driver twice.
+    /// </summary>
+    [Obsolete("Never read. ATS pays hired drivers; the figure it reports is already net of that.")]
     public decimal Wages { get; set; }
     public decimal Repairs { get; set; }
     [Obsolete("ATS shows no damage percentage for an AI-driven unit. Kept so older careers still load.")]
@@ -2284,8 +2296,12 @@ public class FleetReport
     public string PeriodStartGame { get; set; } = "";
     public string PeriodEndGame { get; set; } = "";
     public List<FleetReportLine> Lines { get; set; } = new();
+    /// <summary>What the hired fleet contributed over the period, net. See FleetReportLine.</summary>
+    public decimal TotalContribution { get; set; }
+    [Obsolete("Renamed to TotalContribution — the figure was never gross revenue.")]
     public decimal TotalRevenue { get; set; }
     public double TotalMiles { get; set; }
+    [Obsolete("Never read. ATS pays hired drivers before it reports their profit.")]
     public decimal TotalWages { get; set; }
     public decimal TotalRepairs { get; set; }
     /// <summary>
@@ -2626,6 +2642,23 @@ public class FleetReportLine
     /// it meant. Setting it here re-rigs the driver onto it.
     /// </summary>
     public string TrailerUnit { get; set; } = "";
+
+    /// <summary>
+    /// What this driver put in the company's pocket over the period — <b>net</b>, not gross.
+    ///
+    /// <para>Derived from <see cref="PerMile"/> or <see cref="PerDay"/> times the period, and those are
+    /// what ATS's driver manager shows: <b>profit</b>. The game has already taken the driver's wage, the
+    /// fuel and the tolls out before it prints that figure, so what is left is contribution and nothing
+    /// else. It used to be called Revenue and treated as gross, which put the company's net in its
+    /// revenue line and then deducted a wage share from it — a deduction ATS had already made.</para>
+    /// </summary>
+    public decimal Contribution { get; set; }
+
+    /// <summary>
+    /// <b>Retired.</b> Held what is now <see cref="Contribution"/>, under a name that said the opposite
+    /// of what the number was. Kept so stored reports load; migrated across on read.
+    /// </summary>
+    [Obsolete("Renamed to Contribution — the figure is ATS profit, never gross revenue.")]
     public decimal Revenue { get; set; }
 
     /// <summary>

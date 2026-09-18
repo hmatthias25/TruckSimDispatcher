@@ -1543,7 +1543,7 @@ app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mut
 {
     var filed = FleetOpsService.FileReport(s, report);
     store.Log(s, "ledger",
-        $"{filed.Number} filed — {filed.Lines.Count} driver(s), revenue ${filed.TotalRevenue:N2}, net ${filed.NetContribution:N2}.",
+        $"{filed.Number} filed — {filed.Lines.Count} driver(s), contribution ${filed.TotalContribution:N2}, net ${filed.NetContribution:N2}.",
         filed.Number);
     return new { report = filed, snapshot = Snapshot(s) };
 })));

@@ -209,11 +209,14 @@ const trailerOf = async (name) =>
   const myTrailer = after.trailers.find((t) => t.unit === after.driver.assignedTrailerUnit);
   ok('the trailer damage went on too', Math.abs(myTrailer.damagePct - 9) < 0.05, `${myTrailer.damagePct}%`);
   ok('the player line is not treated as production',
-    Math.abs(r.totalRevenue - r.lines.filter((l) => !l.isPlayerLine)
-      .reduce((a, l) => a + l.revenue, 0)) < 0.01 || r.totalRevenue > 0,
-    `total revenue ${r.totalRevenue}`);
+    Math.abs(r.totalContribution - r.lines.filter((l) => !l.isPlayerLine)
+      .reduce((a, l) => a + l.contribution, 0)) < 0.01 || r.totalContribution > 0,
+    `total contribution ${r.totalContribution}`);
+  // Nobody carries a wage on a fleet report any more. ATS pays hired drivers out of the job before it
+  // reports their $/mile, so the figure the app works from is already net of it — deducting a share
+  // again paid them twice. The player's own pay is a settlement, which is a different thing entirely.
   const pLine = r.lines.find((l) => l.isPlayerLine);
-  ok('and carries no wage', pLine.wages === 0, `${pLine.wages}`);
+  ok('and carries no wage', !(pLine.wages > 0), `${pLine.wages ?? 0}`);
   ok('no level or rating on it', !pLine.level && !pLine.rating, `${pLine.level}/${pLine.rating}`);
   ok('the driver roster did not grow', (await api('/fleetops')).drivers.length === 2,
     `${(await api('/fleetops')).drivers.length}`);

@@ -3777,8 +3777,8 @@ function fleetOpsHtml() {
     ${FLEETOPS ? `
       <div class="meters">
         ${fkpi('Drivers', f.driverCount || 0)}
-        ${fkpi('Fleet revenue', money0(f.lifetimeRevenue || 0))}
-        ${fkpi('Fleet wages', money0(f.lifetimeWages || 0))}
+        ${fkpi('Fleet contribution', money0(f.lifetimeContribution || 0))}
+        ${fkpi('Yards', (S.company.terminals || []).length)}
         ${fkpi('Fleet miles', num(f.lifetimeMiles || 0))}
         ${fkpi('Last report', f.lastPeriodEnd ? gt(f.lastPeriodEnd) : '—')}
       </div>
@@ -3797,7 +3797,7 @@ function fleetOpsHtml() {
           <th class="num">$/day</th><th class="num">$/mi</th><th class="num">Truck &starf;</th>
           <th class="num" title="Preventable incidents on their record. Being hit by somebody else does not count.">Prev</th>
           <th>Status</th><th class="num">Wage share</th>
-          <th class="num">Lifetime revenue</th><th class="num">Reports</th><th></th></tr></thead>
+          <th class="num" title="Net of everything ATS already took for wages, fuel and tolls">Contribution</th><th class="num">Reports</th><th></th></tr></thead>
         <tbody>${drivers.map((d) => {
           const last = (d.periods || [])[0];
           const tk = S.trucks.find((x) => x.unit === d.assignedTruckUnit);
@@ -3824,7 +3824,7 @@ function fleetOpsHtml() {
               : '<span class="sub">—</span>'}</td>
           <td>${badge(d.status === 'Active' ? 'ok' : 'mute', d.status)}</td>
           <td class="num">${pct(d.wageShare * 100, 0)}</td>
-          <td class="num">${money0(d.lifetimeRevenue)}</td>
+          <td class="num">${money0(d.lifetimeContribution)}</td>
           <td class="num">${d.reportsFiled}</td>
           <td><button class="btn tiny ghost" data-act="driver-file" data-id="${esc(d.id)}">File</button>
               <button class="btn tiny ghost" data-act="edit-hire" data-id="${esc(d.id)}">Edit</button></td>
@@ -4065,8 +4065,8 @@ function driverFileModal(id) {
     </div>
 
     <div class="meters" style="margin-top:8px">
-      ${fkpi('Lifetime revenue', money0(d.lifetimeRevenue))}
-      ${fkpi('Lifetime wages', money0(d.lifetimeWages))}
+      ${fkpi('Lifetime contribution', money0(d.lifetimeContribution))}
+      ${fkpi('Rung pays', pct(dz.offeredShare * 100, 0))}
       ${fkpi('Lifetime miles', num(d.lifetimeMiles || 0))}
       ${fkpi('Reports', d.reportsFiled || 0)}
       ${fkpi('Hired', d.hiredGameDate ? gt(d.hiredGameDate) : '—')}
@@ -4133,16 +4133,17 @@ function driverFileModal(id) {
     <h3 class="sect">Period by period</h3>
     ${periods.length ? `<div class="tablewrap"><table>
       <thead><tr><th>Report</th><th>Ended</th><th class="num">Level</th>
-        <th class="num">$/mi</th><th class="num">$/day</th><th class="num">Revenue</th>
-        <th class="num">Wages</th><th class="num">Repairs</th></tr></thead>
+        <th class="num" title="Net per mile, as ATS reports it">$/mi</th>
+        <th class="num" title="Net per day, as ATS reports it">$/day</th>
+        <th class="num" title="What they put in the company pocket — ATS has already taken wages, fuel and tolls">Contribution</th>
+        <th class="num">Repairs</th></tr></thead>
       <tbody>${periods.map((p) => `<tr>
         <td class="mono">${esc(p.reportNumber || '—')}</td>
         <td>${p.periodEndGame ? gt(p.periodEndGame) : '—'}</td>
         <td class="num">${p.level || '<span class="sub">—</span>'}</td>
         <td class="num">${p.perMile ? '$' + (+p.perMile).toFixed(2) : '<span class="sub">—</span>'}</td>
         <td class="num">${p.perDay ? money0(p.perDay) : '<span class="sub">—</span>'}</td>
-        <td class="num">${money0(p.revenue)}</td>
-        <td class="num">${money0(p.wages)}</td>
+        <td class="num">${money0(p.contribution)}</td>
         <td class="num">${p.repairs ? money0(p.repairs) : '<span class="sub">—</span>'}</td>
       </tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">No periods filed yet.</div>'}

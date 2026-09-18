@@ -158,6 +158,53 @@ public static class DriverRank
         return Ladder[0];
     }
 
+    /// <summary>
+    /// Whether what a driver actually brings in matches the rung they are standing on.
+    ///
+    /// <para>The share attached to a rung stopped being money when it turned out ATS pays hired drivers
+    /// itself — the $/mile the game reports is profit, already net of their wage, so the app deducting a
+    /// share of it again was paying them twice. What the share still does is say what somebody at this
+    /// grade is <b>worth</b>, and that is only worth saying if it can be held against what they produce.</para>
+    ///
+    /// <para>Measured against the fleet's own average rather than a fixed figure, because a dollar a mile
+    /// means nothing without knowing what the rest of the fleet turns in on the same map with the same
+    /// economy mod. Null where there is nothing to compare against — one driver is not a fleet, and a
+    /// driver with no reported period is missing data rather than a bad one.</para>
+    /// </summary>
+    public static string? WorthTheRung(AppState s, HiredDriver d)
+    {
+        var latest = d.Periods.FirstOrDefault();
+        if (latest == null || !latest.GameFiguresReported || latest.PerMile <= 0) return null;
+
+        var fleet = s.HiredDrivers
+            .Where(x => x.Status == "Active" && x.Id != d.Id)
+            .SelectMany(x => x.Periods.Where(p => p.GameFiguresReported && p.PerMile > 0))
+            .Select(p => p.PerMile)
+            .ToList();
+        if (fleet.Count < 2) return null;
+
+        var avg = fleet.Average();
+        if (avg <= 0) return null;
+
+        var rung = At(d.Grade);
+        var ratio = (double)(latest.PerMile / avg);
+
+        // The bands are wide on purpose. This is a remark a fleet manager would make, not a performance
+        // review — and the figure behind it is a career average off the game, which is not precise
+        // enough to hang a tighter judgement on.
+        if (d.Grade >= 3 && ratio < 0.75)
+            return $"{d.Name} is a {rung.Name.ToLowerInvariant()} on {rung.Share * 100:0}% and turning in " +
+                   $"${latest.PerMile:N2}/mi against the fleet's ${avg:N2}. The grade is earned on time and " +
+                   "distance, not on takings — but a senior hand producing under the average is worth a look.";
+
+        if (d.Grade <= 1 && ratio > 1.3)
+            return $"{d.Name} is only a {rung.Name.ToLowerInvariant()} and turning in ${latest.PerMile:N2}/mi " +
+                   $"against the fleet's ${avg:N2}. They are outproducing their rung — worth remembering when " +
+                   "a better carrier comes asking.";
+
+        return null;
+    }
+
     /// <summary>The rung above, or null at the top.</summary>
     public static Rung? Next(Rung r) => r.Index + 1 < Ladder.Length ? Ladder[r.Index + 1] : null;
 
@@ -332,6 +379,7 @@ public static class DriverRank
             nextRank = next?.Name,
             nextShare = next?.Share,
             summary = Summary(s, d),
+            worthTheRung = WorthTheRung(s, d),
             shortfall = Shortfall(s, d),
             tenureDays = TenureDays(s, d),
             servingProbation = ServingProbation(s, d),

@@ -66,6 +66,7 @@ public static class Migrations
         EnsureW2sForYearsAlreadyRun(s);
         LiftFuelPricesToWhatDieselCosts(s);
         RegradeWithoutRating(s);
+        CallFleetTakingsWhatTheyAre(s);
     }
 
     /// <summary>
@@ -1933,6 +1934,65 @@ public static class Migrations
                 "ladder: in ATS it only measures how the skill points were spent, so it said more about " +
                 "how you had trained somebody than about them, and its gates were set at figures the " +
                 "game never actually shows. Level is the gate now.",
+        });
+    }
+
+    /// <summary>
+    /// Moves the hired fleet's stored figures onto the name that describes them.
+    ///
+    /// <para>The app took ATS's $/mile for a hired driver as gross revenue. It is profit — the game pays
+    /// the driver, the fuel and the tolls out of the job before it prints that figure — so the company's
+    /// NET was sitting in its revenue line, and the app then worked out a wage share and deducted it
+    /// again. The driver was paid twice: once by the game, once in the books.</para>
+    ///
+    /// <para>The values themselves were always contribution, so they carry across unchanged. What goes
+    /// is the wage that was invented on top: it was never money that moved in the game, and leaving it
+    /// on the record would keep it in the lifetime totals. Reported from play.</para>
+    /// </summary>
+    private static void CallFleetTakingsWhatTheyAre(AppState s)
+    {
+        if (s.SchemaVersion >= 22) return;
+        s.SchemaVersion = 22;
+
+#pragma warning disable CS0618 // reading the superseded fields is the point of the migration
+        var wages = 0m;
+        foreach (var d in s.HiredDrivers)
+        {
+            if (d.LifetimeContribution == 0 && d.LifetimeRevenue != 0) d.LifetimeContribution = d.LifetimeRevenue;
+            wages += d.LifetimeWages;
+            d.LifetimeWages = 0;
+
+            foreach (var p in d.Periods)
+            {
+                if (p.Contribution == 0 && p.Revenue != 0) p.Contribution = p.Revenue;
+                p.Wages = 0;
+            }
+        }
+
+        foreach (var r in s.FleetReports)
+        {
+            if (r.TotalContribution == 0 && r.TotalRevenue != 0) r.TotalContribution = r.TotalRevenue;
+            r.TotalWages = 0;
+            foreach (var line in r.Lines)
+                if (line.Contribution == 0 && line.Revenue != 0) line.Contribution = line.Revenue;
+
+            // The figure the company expands and retrenches on. It used to subtract a wage that was
+            // never paid out of a revenue that was already net.
+            r.NetContribution = Math.Round(r.TotalContribution - r.TotalRepairs - r.TotalCapital, 2);
+        }
+#pragma warning restore CS0618
+
+        if (wages <= 0) return;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "ledger",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"Fleet wages written off the books — ${wages:N0} of them. ATS pays hired drivers out of " +
+                "the job before it shows you their $/mile, so that figure was already net and the app was " +
+                "deducting a second wage from it. What they bring in is contribution now, and the rung's " +
+                "share says what somebody is worth rather than moving money.",
         });
     }
 
