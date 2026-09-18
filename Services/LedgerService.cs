@@ -27,8 +27,14 @@ public static class LedgerService
         return Math.Round(acct.OpeningBalance + s.Ledger.Where(e => e.AccountKey == key).Sum(e => e.Amount), 2);
     }
 
+    /// <param name="gameTime">
+    /// When the money moved, where that is not simply now. A fleet report covers a fortnight that has
+    /// already happened, so stamping its postings with the clock as it stands would file a period's
+    /// worth of money outside the period it belongs to — and anything reading the ledger by date, like
+    /// <see cref="ExpectedBankMovement"/>, would miss the lot.
+    /// </param>
     public static LedgerEntry Post(AppState s, string account, decimal amount, string category,
-        string memo, string tripNumber = "", bool isAdjustment = false)
+        string memo, string tripNumber = "", bool isAdjustment = false, string? gameTime = null)
     {
         var entry = new LedgerEntry
         {
@@ -37,7 +43,7 @@ public static class LedgerService
             Category = category,
             Memo = memo,
             TripNumber = tripNumber,
-            GameTime = s.Status.GameTime,
+            GameTime = string.IsNullOrWhiteSpace(gameTime) ? s.Status.GameTime : gameTime,
             IsAdjustment = isAdjustment
         };
         s.Ledger.Insert(0, entry);
@@ -126,6 +132,50 @@ public static class LedgerService
                 ? Math.Round(s.Driver.LifetimeEarnings / (decimal)loadedMiles, 3) : 0
         };
         return p;
+    }
+
+    /// <summary>
+    /// Categories ATS itself never moves money for.
+    ///
+    /// <para>The app's books are wider than the game's bank on purpose. The player's own wages exist
+    /// only here — in ATS they are the owner and pay themselves nothing, which is why
+    /// <see cref="PostPayroll"/> stamps the memo "not reflected in ATS". Yard upkeep is the app's own
+    /// figure and the game charges no rent on a garage. Per-load overhead and cancellation penalties
+    /// are carrier bookkeeping the game has no concept of. Transfers and the opening entry never leave
+    /// the books at all.</para>
+    ///
+    /// <para>Held apart so that comparing the books against the bank compares like with like. Counting
+    /// these would show a gap every single period that was nothing but the app's own fiction, and the
+    /// one number worth having — what the game charged that the app never saw — would be buried in it.</para>
+    /// </summary>
+    public static readonly string[] AppOnlyCategories =
+    {
+        "Payroll", "YardUpkeep", "Overhead", "Cancellation", "Transfer", "Opening", "Adjustment",
+    };
+
+    /// <summary>
+    /// What the books say the ATS bank should have moved between two game times, counting only the
+    /// entries the game would also have made.
+    ///
+    /// <para><b>Open at the start, closed at the end</b> — after <paramref name="fromGameTime"/>, up to
+    /// and including <paramref name="toGameTime"/>. A fleet report stamps its own postings at its period
+    /// end, so counting that instant in both windows would bill the previous period's takings to this
+    /// one as well, and every comparison after the first would read as money appearing out of nowhere.</para>
+    ///
+    /// <para>An entry with no readable time is left out rather than guessed into the window.</para>
+    /// </summary>
+    public static decimal ExpectedBankMovement(AppState s, string fromGameTime, string toGameTime)
+    {
+        var from = GameClock.TryParse(fromGameTime);
+        var to = GameClock.TryParse(toGameTime);
+
+        return Math.Round(s.Ledger
+            .Where(e => e.AccountKey == Operating)
+            .Where(e => !AppOnlyCategories.Contains(e.Category))
+            .Where(e => GameClock.TryParse(e.GameTime) is { } at
+                        && (from == null || at > from.Value)
+                        && (to == null || at <= to.Value))
+            .Sum(e => e.Amount), 2);
     }
 
     /// <summary>Posts the difference between the books and the game as an explicit adjustment.</summary>

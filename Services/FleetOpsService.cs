@@ -111,6 +111,68 @@ public static class FleetOpsService
     }
 
     /// <summary>
+    /// What the bank actually did over the period, against what the books expected.
+    ///
+    /// <para>One balance is a snapshot. Two are a measurement: the difference between this report's and
+    /// the last one's is exactly what the company's cash did, as the game saw it, including every toll,
+    /// ferry, fine and in-game purchase the app was never told about. Held against the books' own
+    /// game-real entries, the remainder is the size of what the app cannot see — which is worth knowing
+    /// precisely because everything else on this report is an estimate built on a profit rate and an
+    /// odometer reading.</para>
+    ///
+    /// <para><b>Nothing is adjusted and nothing is called an error.</b> The app used to compute this
+    /// variance, name it a mismatch and post an entry to force the books to agree; the note on
+    /// <c>LedgerService.Position</c> explains at length why that was wrong. The difference is the shape
+    /// of the problem, not a fault to chase, so it is stated and left alone.</para>
+    ///
+    /// <para>Skipped in silence where either end is missing. A blank balance means the player did not
+    /// look, which is not the same as zero.</para>
+    /// </summary>
+    private static void ReadTheBankAgainstTheBooks(AppState s, FleetReport report)
+    {
+        if (report.BankBalance <= 0) return;
+
+        var previous = s.FleetReports
+            .Where(r => r.Number != report.Number && r.BankBalance > 0)
+            .OrderByDescending(r => r.PeriodEndGame)
+            .FirstOrDefault();
+        if (previous == null)
+        {
+            report.Findings.Add(
+                $"Bank read ${report.BankBalance:N0} at the end of this period. Nothing to compare it " +
+                "against yet — from the next report on, the difference says what the game charged that " +
+                "I never saw.");
+            return;
+        }
+
+        report.BankMoved = Math.Round(report.BankBalance - previous.BankBalance, 2);
+        report.BooksExpected = LedgerService.ExpectedBankMovement(s, previous.PeriodEndGame, report.PeriodEndGame);
+        report.Unseen = Math.Round(report.BankMoved - report.BooksExpected, 2);
+
+        var moved = report.BankMoved >= 0 ? $"up ${report.BankMoved:N0}" : $"down ${Math.Abs(report.BankMoved):N0}";
+        var books = report.BooksExpected >= 0 ? $"up ${report.BooksExpected:N0}" : $"down ${Math.Abs(report.BooksExpected):N0}";
+
+        // A few hundred either way is ordinary — a ferry, a scale ticket, a splash of fuel. It is only
+        // worth remarking on when it is large enough to mean the estimates are off rather than the map is.
+        var notable = Math.Abs(report.Unseen) >= 1_000m;
+
+        report.Findings.Add(
+            $"Bank went {moved} over the period; the books expected {books}." +
+            (Math.Abs(report.Unseen) < 1m
+                ? " They agree — what I am told about is very nearly all of it."
+                : report.Unseen < 0
+                    ? $" ${Math.Abs(report.Unseen):N0} went out that I never saw: tolls, ferries, fines, " +
+                      "fuel bought off a trip, anything picked up in game without mentioning it."
+                    : $" ${report.Unseen:N0} came in that I never saw. Worth knowing where from — the " +
+                      "figures above are estimates and this is the check on them."));
+
+        if (notable && report.Unseen < 0)
+            report.Findings.Add(
+                "That is a big enough hole to say the reported figures are flattering the company. " +
+                "Nothing is being adjusted — the books are what you told me — but the bank is the cash.");
+    }
+
+    /// <summary>
     /// Posts a period of hired-driver production. Contribution is booked as the game reported it —
     /// no realism factor, because it is a margin and not linehaul — repairs are expensed, and each
     /// unit's damage and service mileage move to what the player reported off the game.
@@ -228,14 +290,15 @@ public static class FleetOpsService
             if (booked > 0)
                 LedgerService.Post(s, LedgerService.Operating, booked, "FleetContribution",
                     $"Fleet contribution — {driver.Name} on unit {line.TruckUnit}, net of what ATS already " +
-                    "took for wages, fuel and tolls" +
-                    report.Number);
+                    "took for wages, fuel and tolls",
+                    report.Number, gameTime: report.PeriodEndGame);
 
             // Repairs and reserve accrual both go through the single cash account — the earmark is a
             // claim on the one bank balance, not a separate pot to move money into.
             if (line.Repairs > 0)
                 LedgerService.Post(s, LedgerService.Operating, -line.Repairs, "Repairs",
-                    $"Unit {line.TruckUnit} — {driver.Name}", report.Number);
+                    $"Unit {line.TruckUnit} — {driver.Name}", report.Number,
+                    gameTime: report.PeriodEndGame);
 
             // Trailer condition, where the driver is on a company trailer. ATS shows stars for a
             // trailer we are not hooked to, never a percentage, so stars are what we record.
@@ -500,6 +563,8 @@ public static class FleetOpsService
 
         if (report.TotalCapital > 0)
             report.Findings.Add($"${report.TotalCapital:N0} went on equipment and property this period.");
+
+        ReadTheBankAgainstTheBooks(s, report);
         if (report.NetContribution < 0)
             report.Findings.Add("The hired fleet lost money this period. Check wages against what they actually brought in.");
         if (report.TotalMiles > 0 && report.TotalContribution > 0)

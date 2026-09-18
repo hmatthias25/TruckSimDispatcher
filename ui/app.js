@@ -3858,7 +3858,13 @@ function fleetOpsHtml() {
                 driver had to remember their own filing history and type it back in. */ ''}
           ${dayTimeInput('fr-start', f.due?.lastPeriodEnd || '', 'Period start (game)')}
           ${dayTimeInput('fr-end', S.status.gameTime, 'Period end (game)')}
+          <label>Bank balance now $ <span class="sub">— optional</span>
+            <input id="fr-bank" type="number" step="1" min="0" placeholder="read it off ATS"></label>
         </div>
+        <p class="hint">The balance is the one figure on this form that is not an estimate. Everything
+          else here is worked out from a profit rate and an odometer — put the bank in and the next
+          report can say how far the two drifted apart, which is the only check there is on whether the
+          numbers above are any good. Leave it blank and that comparison is simply skipped.</p>
         <div class="tablewrap"><table>
           <thead><tr>
             <th>Driver</th><th>Unit</th>
@@ -6818,6 +6824,7 @@ async function handleAction(act, d, ev) {
       return run(async () => {
         const r = absorb(await api('/fleetops/report', 'POST', {
           periodStartGame: readDayTime('fr-start'), periodEndGame: readDayTime('fr-end'),
+          bankBalance: fv('fr-bank'),
           notes: sv('fr-note'), lines, trailerLines,
         }));
         FLEETOPS = await api('/fleetops');

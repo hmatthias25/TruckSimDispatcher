@@ -2296,6 +2296,42 @@ public class FleetReport
     public string PeriodStartGame { get; set; } = "";
     public string PeriodEndGame { get; set; } = "";
     public List<FleetReportLine> Lines { get; set; } = new();
+
+    /// <summary>
+    /// The ATS bank balance as the player read it at the end of the period. Zero means not looked at.
+    ///
+    /// <para>Recorded per report rather than only on <c>Status</c> so there is a series to difference.
+    /// One balance is a snapshot; two are what the company's cash actually did over a fortnight, as the
+    /// game saw it — every toll, ferry, fine and in-game purchase included, whether or not the app was
+    /// ever told about them.</para>
+    ///
+    /// <para><b>This is not a reconciliation.</b> The app used to compute a variance against this number,
+    /// call anything over a pound an error, and post an adjusting entry to force agreement — see the note
+    /// on <c>LedgerService.Position</c> for why that was wrong and was removed. Nothing here adjusts
+    /// anything. It says what the bank did, says what the books expected, and names the difference as
+    /// what the app could not see. That difference is information, not a fault.</para>
+    /// </summary>
+    public decimal BankBalance { get; set; }
+
+    /// <summary>What the bank actually moved over the period. Zero where either end is unknown.</summary>
+    public decimal BankMoved { get; set; }
+
+    /// <summary>
+    /// What the books expected the bank to move — the game-real entries only.
+    ///
+    /// Several categories are the app's own invention and ATS never moves a cent for them: the player's
+    /// own wages (in ATS they are the owner and pay themselves nothing), yard upkeep (the game charges
+    /// no rent on a garage), per-load overhead, and cancellation penalties. Counting those would show a
+    /// permanent gap that was nothing but the app's own fiction.
+    /// </summary>
+    public decimal BooksExpected { get; set; }
+
+    /// <summary>
+    /// Bank movement the books never accounted for — tolls, ferries, fines, fuel bought outside a
+    /// logged trip, anything purchased in game without mentioning it. Positive means the bank did
+    /// better than the books knew about.
+    /// </summary>
+    public decimal Unseen { get; set; }
     /// <summary>What the hired fleet contributed over the period, net. See FleetReportLine.</summary>
     public decimal TotalContribution { get; set; }
     [Obsolete("Renamed to TotalContribution — the figure was never gross revenue.")]
