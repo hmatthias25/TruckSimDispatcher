@@ -852,7 +852,7 @@ public static class TripService
             }
             else
             {
-                var (inc, action) = SafetyService.FileAndDecide(s, new Incident
+                var (inc, action, _) = SafetyService.FileAndDecide(s, new Incident
                 {
                     Kind = "Late",
                     TripNumber = trip.Number,
@@ -887,7 +887,7 @@ public static class TripService
                     $"{damageJump:0.#}% of damage, logged as {Humanize(dmgFault)} — not your fault and not on your " +
                     "record. Get it into a shop before the next load: damage left on a unit comes back as more " +
                     "damage, and it is the company's bill either way. Book it on the Maintenance tab.");
-            var (inc, dmgAction) = SafetyService.FileAndDecide(s, new Incident
+            var (inc, dmgAction, _) = SafetyService.FileAndDecide(s, new Incident
             {
                 Kind = "Damage",
                 TripNumber = trip.Number,

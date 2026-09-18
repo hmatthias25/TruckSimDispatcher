@@ -1033,7 +1033,14 @@ public static class DispatchEngine
         // incompatible, which refused perfectly legitimate freight — a flatbed load of fertilizer, when
         // in game fertilizer rides a flatbed, a dry van or a reefer. No cargo table will ever be right;
         // there are hundreds of cargoes and the rules belong to ATS, not to us. So we trust the board.
-        if (trailer != null && !string.IsNullOrWhiteSpace(load.TrailerType) &&
+        //
+        // Drop and hook is exempt, and it is not a special case so much as the absence of one. It is an
+        // ARRANGEMENT, not a trailer: the driver has no box of their own and pulls whatever the job comes
+        // with, so the listed type IS what ends up hooked and there is nothing for it to disagree with.
+        // TrailerMatches has said so for a long time; this check went through TypeCovers instead, which
+        // does not know, so a drop-and-hook driver was told "listed as a Dry Van and you are on DH-1
+        // (Drop & Hook)" on every single load. Reported from play, and it was on all of them.
+        if (trailer != null && !DropHook.Is(trailer.Type) && !string.IsNullOrWhiteSpace(load.TrailerType) &&
             !EquipmentService.TypeCovers(trailer.Type, load.TrailerType))
         {
             e.Cons.Add($"Listed as a {load.TrailerType} and you are on {trailer.Ref} ({trailer.Type}). " +

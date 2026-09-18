@@ -1719,7 +1719,7 @@ app.MapPost("/api/incidents", (Incident inc) => Results.Ok(store.Mutate<object>(
         s.Status.TrailerDamagePct = box.DamagePct;
     }
 
-    var (created, action) = SafetyService.FileAndDecide(s, inc);
+    var (created, action, probationOutcome) = SafetyService.FileAndDecide(s, inc);
     store.Log(s, "safety", $"{created.Number} {created.Kind} ({created.FaultAttribution} fault): {created.Description}", created.Number);
     if (action != null)
         store.Log(s, "safety", $"{action.Number} {action.Level} issued on {created.Number}.", action.Number);
@@ -1746,7 +1746,11 @@ app.MapPost("/api/incidents", (Incident inc) => Results.Ok(store.Mutate<object>(
         : new[] { assessed.Headline }.Concat(assessed.Instructions).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
     foreach (var line in equipmentNext) store.Log(s, "safety", line, created.Number);
 
-    return new { incident = created, action, writeOff, equipmentNext, snapshot = Snapshot(s) };
+    // What it did to a running probation, said HERE — where they reported it — rather than left to be
+    // discovered at the next home time from a duration figure that had quietly grown. Same reasoning as
+    // equipmentNext above. It was only ever going into the event feed and the incident's own notes.
+    return new { incident = created, action, writeOff, equipmentNext, probation = probationOutcome,
+                 snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/incidents/{number}/forgive", (string number, ForgiveRequest req) => Results.Ok(store.Mutate(s =>
@@ -2362,6 +2366,9 @@ object Snapshot(AppState? given = null)
                 notice = ProbationPlanner.Notice(s) ?? "",
                 attempt = s.Driver.Probation.Attempt,
                 durationDays = s.Driver.Probation.DurationDays,
+                // Kept apart from the total so the screen can say "ninety plus thirty" rather than "a
+                // hundred and twenty", which reads as a period nobody agreed to.
+                extendedDays = s.Driver.Probation.ExtendedDays,
                 workDone = ProbationPlanner.WorkDone(s).Shortfall,
                 standing = Probation.Standing(s),
                 // What is actually in force, not the constant. Your own arrangement stands while the

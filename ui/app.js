@@ -1215,13 +1215,20 @@ function strandedHtml() {
  * which is worse than not asking — the driver goes looking and concludes they have missed something.
  */
 function loadedReportHtml(t) {
-  const loaded = (t.events || []).some((e) => e.kind === 'EndLoad' || e.kind === 'Loaded');
+  const dh = isDropHook(t);
+  // On drop and hook there is no EndLoad and never will be — you back under a loaded trailer and pull
+  // out. Gating this panel on one left the odometer at pickup permanently greyed as "once you are
+  // loaded", on the one arrangement where the odometer is the ONLY thing recorded at the shipper. It is
+  // due the moment the trip is moving.
+  const loaded = dh || (t.events || []).some((e) => e.kind === 'EndLoad' || e.kind === 'Loaded');
   const done = t.loadedReported;
   return `<div class="panel">
-    <div class="panel-head"><h2>Report after loading</h2>
+    <div class="panel-head"><h2>Report after ${dh ? 'hooking' : 'loading'}</h2>
       ${done ? badge('ok', 'reported') : loaded ? badge('warn', 'due now') : badge('mute', 'once you are loaded')}
       <div class="spacer"></div>
-      <span class="sub">${done ? 'dispatch has what it asked for' : 'weight and trailer condition as you pull out'}</span></div>
+      <span class="sub">${done ? 'dispatch has what it asked for'
+        : dh ? 'odometer as you pull out of the shipper'
+        : 'weight and trailer condition as you pull out'}</span></div>
 
     ${done ? `<div class="callout go">
       <p>Reported: ${t.weightLbs > 0 ? `<b>${num(t.weightLbs)} lb</b>` : 'no weight given'}${
@@ -1231,12 +1238,17 @@ function loadedReportHtml(t) {
     </div>` : `
     <div class="grid3">
       <label>Actual weight lb<input id="ld-weight" type="number" step="100" placeholder="${t.weightLbs > 0 ? num(t.weightLbs) : 'from the job'}"></label>
-      <label>Trailer damage % now<input id="ld-trdmg" type="number" step="0.1" min="0" max="100" value="${S.status.trailerDamagePct}"></label>
+      ${dh ? '' : `<label>Trailer damage % now<input id="ld-trdmg" type="number" step="0.1" min="0" max="100" value="${S.status.trailerDamagePct}"></label>`}
       <label>Odometer<input id="ld-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
     </div>
-    <p class="hint">The weight is often not what the board said — scaled heavy is worth having on the record. Trailer
-      damage here is the reading the shop rules work from, so a trailer you hooked at ${num(S.settings.maintenance.stopDispatchPct, 0)}%
-      or worse stops dispatch now rather than at the next delivery. Leave anything blank and it stays as it was.</p>
+    <p class="hint">${dh
+      ? `The odometer is the one that matters here — it is what the loaded miles are measured from, the
+         same as on any other load. The trailer is the shipper's, so its condition is not ours to record
+         and nothing asks for it. Weight is worth having if you scaled. Leave anything blank and it stays
+         as it was.`
+      : `The weight is often not what the board said — scaled heavy is worth having on the record. Trailer
+         damage here is the reading the shop rules work from, so a trailer you hooked at ${num(S.settings.maintenance.stopDispatchPct, 0)}%
+         or worse stops dispatch now rather than at the next delivery. Leave anything blank and it stays as it was.`}</p>
     <div class="row-actions">
       <button class="btn primary" data-act="report-loaded" data-id="${t.id}">Report it</button>
     </div>`}
@@ -1790,10 +1802,15 @@ function viewActive() {
       <div class="panel-head"><h2>Trip log</h2><span class="sub">Log events as they happen.</span></div>
       <div class="grid2">
         ${dayTimeInput('ev-time', S.status.gameTime, 'Game time')}
+        ${/* The load and unload pairs are not offered on drop and hook at all. There is no dock time to
+              record, FacilityLearning refuses to learn from one, and a listed option that is ignored if
+              you pick it is worse than an absent one — it reads as something you were supposed to do. */ ''}
         <label>Event
           <select id="ev-kind">${[
-            ['BeginLoad', 'Begin load'], ['EndLoad', 'End load'],
-            ['BeginUnload', 'Begin unload'], ['EndUnload', 'End unload'],
+            ...(isDropHook(t) ? [] : [
+              ['BeginLoad', 'Begin load'], ['EndLoad', 'End load'],
+              ['BeginUnload', 'Begin unload'], ['EndUnload', 'End unload'],
+            ]),
             ['Fuel', 'Fuel'], ['Break', 'Break'], ['Rest', 'Rest'], ['Scale', 'Scale'],
             ['Delay', 'Delay'], ['Breakdown', 'Breakdown'], ['Note', 'Note'],
           ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
@@ -1805,10 +1822,11 @@ function viewActive() {
       ${/* Drop and hook has no dock time by definition, and FacilityLearning refuses to learn from it —
             so the load/unload pairs are not merely unnecessary, they are ignored. Worth saying, because
             the obvious guess is to log the same time twice and wonder whether that broke something. */ ''}
-      ${isDropHook(t) ? `<p class="hint"><b>On drop and hook, skip the load and unload events.</b> You
-        back under what is there and pull the pin at the other end — there is no dock time to record and
-        the planner will not learn from one. <b>I have arrived</b> above is what stamps when you got
-        there, and that is what your on-time record is judged on.</p>` : ''}
+      ${isDropHook(t) ? `<p class="hint"><b>There are no load or unload events on drop and hook</b>, which
+        is why they are not in the list. You back under what is there and pull the pin at the other end —
+        no dock time to record, and the planner will not learn from one. <b>I have arrived</b> above is
+        what stamps when you got there, and that is what your on-time record is judged on. The odometer
+        at pickup is still wanted, in <b>Report after hooking</b>.</p>` : ''}
       <fieldset><legend>If this is a fuel stop</legend>
         <div class="grid4">
           <label>Gallons<input id="ev-gal" type="number" step="0.1" placeholder="0"></label>
@@ -3320,10 +3338,19 @@ function probationHtml() {
   return `<h3 class="sect">Probation</h3>
     <div class="callout ${p.on ? 'warn' : 'go'}">
       <h4>${esc(p.standing)}</h4>
-      ${p.on ? `<p>You report to the home terminal every <b>${p.intervalDays} days</b>. Each time you come in,
+      ${p.on ? `<p>${p.intervalDays > 0
+          ? `You come home every <b>${p.intervalDays} days</b> on the arrangement you set — probation does not
+             change that.`
+          : `You have no home-time arrangement, and probation does not impose one.`} Each time you come in,
         operations goes through the period with you and writes it up. Those are <b>feedback, not the
-        gate</b> — what ends it is the <b>${p.durationDays}-day period</b> running out, and the review
+        gate</b> — what ends it is the ${p.extendedDays > 0
+          ? `<b>${num(p.durationDays - p.extendedDays, 0)}-day period</b> running out, plus the
+             <b>${num(p.extendedDays, 0)} day(s)</b> added to it`
+          : `<b>${p.durationDays}-day period</b> running out`}, and the review
         taken at your first home time after that.${p.endsOn ? ` Yours ends <b>${gt(p.endsOn)}</b>.` : ''}</p>
+      ${p.extendedDays > 0 ? `<p style="margin:6px 0 0"><b>${num(p.extendedDays, 0)} day(s) were added by
+        preventables during the period.</b> The original period still ends when it always did; these sit
+        on the end of it. Each one was said when you reported the incident.</p>` : ''}
         <p class="hint" style="margin:0">A poor review is not discipline and never touches your safety
           record. It tells you where you stand while there is still time to do something about it.${p.thresholds
             ? ` You also still need the numbers: ${esc(p.thresholds)}` : ''}</p>` : ''}
@@ -7166,6 +7193,20 @@ async function handleAction(act, d, ev) {
         toast(r.action
           ? `${graded}. Safety has issued ${r.action.level} — acknowledge it below.`
           : `${graded}. No discipline attaches.`, r.action ? 'bad' : 'ok');
+
+        // What it did to a running probation. Queued FIRST, ahead of the equipment: a shop visit is this
+        // week, a period being extended is the career. This was going into the event feed and the
+        // incident's own notes and nowhere the driver would see it while driving, so the first they knew
+        // of three extra weeks was a bigger number on the Career tab at their next home time.
+        if (r.probation && r.probation.kind !== 'None') queueModals([() => modal(
+          `<div class="panel-head"><h2>${r.probation.kind === 'Terminated' ? 'That is the job'
+             : r.probation.kind === 'Extended' ? 'Your probation just got longer' : 'On your probation record'}</h2>
+            <div class="spacer"></div>
+            <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+           <div class="callout ${r.probation.kind === 'Warned' ? 'warn' : 'stop'}">
+             <p style="margin:0">${esc(r.probation.message)}</p></div>
+           <p class="hint">On your file against this incident, and on the Career tab. Nothing here is a
+             separate disciplinary step — it is what the period itself makes of it.</p>`)]);
 
         // What it means for the week, not just for the record. A driver who has just reported damage
         // should hear that it is a trip to the yard from the screen they reported it on.

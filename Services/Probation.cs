@@ -111,13 +111,25 @@ public static class Probation
         var days = s.Driver.Probation.DurationDays;
         var attempt = s.Driver.Probation.Attempt >= 2 ? " This is the second look." : "";
 
+        // Said as what it started as plus what was added, never as a bare total.
+        //
+        // "12.4 of 120 day(s) left" reads as a hundred and twenty days to serve, and a driver who started
+        // on ninety and picked up an extension quite reasonably read it that way — reported from play as
+        // "this says I have to do all 120, I think I just have to do 30 more". The total is arithmetically
+        // right and tells them nothing: what they want to know is that the original period stands and
+        // something was added to it, and how much.
+        var added = s.Driver.Probation.ExtendedDays;
+        var period = added > 0
+            ? $"{days - added:0.#}-day period plus the {added:0.#} day(s) added to it"
+            : $"{days}-day period";
+
         if (left is not { } d)
-            return $"On probation — a {days}-day period, reviewed at your first home time after it ends.{attempt}";
+            return $"On probation — a {period}, reviewed at your first home time after it ends.{attempt}";
 
         return d <= 0
             ? $"Probation served. The review that decides it happens at your next home time.{attempt}"
-            : $"On probation. {d:0.#} of {days} day(s) left; the review is taken at the first home time " +
-              $"after that.{attempt}";
+            : $"On probation. {d:0.#} day(s) left of a {period}; the review is taken at the first home " +
+              $"time after that.{attempt}";
     }
 
     /// <summary>

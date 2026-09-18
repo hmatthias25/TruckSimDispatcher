@@ -409,7 +409,18 @@ public static class SafetyService
     /// relationship the app is built on. <see cref="RecommendDiscipline"/> already knew the right
     /// answer; this makes it the decision rather than a suggestion the driver may ignore.
     /// </summary>
-    public static (Incident Incident, DisciplineAction? Action) FileAndDecide(AppState s, Incident inc)
+    /// <summary>
+    /// Files an incident and works out everything that follows from it.
+    ///
+    /// <para>The probation outcome is <b>returned</b>, not just logged. It used to go into the event feed
+    /// and the incident's own notes and nowhere else, so a driver whose period had just been extended by
+    /// three weeks found out at their next home time, days later, from a standing figure on the Career
+    /// tab. Reported from play: "nothing told me my probation would be extended before I took home time —
+    /// the preventable happened days ago, would have thought I'd be told then." They were told. It was
+    /// said in the one place nobody reads while they are driving.</para>
+    /// </summary>
+    public static (Incident Incident, DisciplineAction? Action, ProbationConduct.Outcome? Probation)
+        FileAndDecide(AppState s, Incident inc)
     {
         var created = RecordIncident(s, inc);
 
@@ -430,10 +441,10 @@ public static class SafetyService
         // The period already ended the job. Running the ladder on top of that would issue a suspension
         // against somebody who no longer works here — and worse, applying it overwrites Status, so a
         // termination came out reading "Suspended". The heavier consequence stands.
-        if (onProbation is { Kind: "Terminated" }) return (created, null);
+        if (onProbation is { Kind: "Terminated" }) return (created, null, onProbation);
 
         var level = RecommendDiscipline(s, created);
-        if (level == null) return (created, null);
+        if (level == null) return (created, null, onProbation);
 
         var action = Issue(s, level,
             $"{created.Kind} on {(string.IsNullOrWhiteSpace(created.TripNumber) ? "no trip" : created.TripNumber)} — {created.Description}".Trim(),
@@ -444,7 +455,7 @@ public static class SafetyService
         if (level == "Termination")
             ApplyTermination(s, $"{action.Number}: {created.Kind} — {created.Description}", action.Number);
 
-        return (created, action);
+        return (created, action, onProbation);
     }
 
     /// <summary>
