@@ -1682,7 +1682,39 @@ public static class FleetOpsService
     /// for the work this carrier gets, not because the fleet is one trailer over — so it is traded for
     /// whatever is actually earning rather than simply sold off.
     /// </summary>
+    /// <summary>
+    /// What replaces a trailer coming off the fleet — <b>decided once, then held.</b>
+    ///
+    /// <para>The scoring below runs on utilisation and earnings, and both move every period, so left to
+    /// itself it returns a different answer each report. That was survivable while the answer was only
+    /// ever prose. It stopped being survivable once the answer was also an equipment order, because only
+    /// one of those can be open at a time: the order was raised on the first report and every later one
+    /// re-decided and announced something else beside it. Reported from play as being told to buy a
+    /// flatbed in one half of the popup and a reefer in the other half and on the fleet page.</para>
+    ///
+    /// <para>So a standing order wins. It is the commitment the company has already made and the thing
+    /// the player is acting on. An order raised before this field existed is answered once, now, and the
+    /// answer written back onto it — which is why this needs the state and not just the trailer.</para>
+    /// </summary>
     private static (string Type, string Why) ReplacementFor(AppState s, Trailer tr)
+    {
+        var standing = s.EquipmentOrders.FirstOrDefault(o =>
+            o.Status == "Open" && o.Kind == "TrailerSwap"
+            && o.FromTrailerUnit.Equals(tr.Unit, StringComparison.OrdinalIgnoreCase));
+
+        if (standing != null && !string.IsNullOrWhiteSpace(standing.ReplacementType))
+            return (standing.ReplacementType,
+                    $"{standing.Number} is already raised for a {standing.ReplacementType.ToLowerInvariant()}, " +
+                    "so that is what we are buying. The figures move week to week; the order does not.");
+
+        var decided = Decide(s, tr);
+        // An order from before the type was recorded as data: answer it once and write it back, so the
+        // next report reads the decision rather than making a new one.
+        if (standing != null) standing.ReplacementType = decided.Type;
+        return decided;
+    }
+
+    private static (string Type, string Why) Decide(AppState s, Trailer tr)
     {
         var same = (tr.Type, $"Like for like — another {tr.Type.ToLowerInvariant()}.");
         var util = UtilisationByType(s);
@@ -1730,8 +1762,87 @@ public static class FleetOpsService
     /// Retires a unit once the player has actually replaced it in ATS. History stays attached to the
     /// trips that used it — the record should survive the truck.
     /// </summary>
+    /// <summary>
+    /// Takes a trailer off the fleet, and puts whoever was pulling it onto the replacement.
+    ///
+    /// <para>The replacement is optional and usually is not there yet: the report's own instruction is
+    /// to go and sell the box in ATS and buy the new one, so the order of events is the player's. Naming
+    /// one that is not on the book is refused rather than half-done — being told the trade went through
+    /// and then finding no trailer is worse than being told to add it first.</para>
+    /// </summary>
+    private static string RetireTrailer(AppState s, string unit, string replacementUnit)
+    {
+        var tr = s.Trailers.FirstOrDefault(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
+                 ?? throw new InvalidOperationException($"Trailer {unit} is not in the fleet.");
+
+        if (s.Trips.Any(x => x.Status is "Authorized" or "InTransit" && x.TrailerUnit == tr.Unit))
+            throw new InvalidOperationException($"Trailer {tr.Ref} is on an open load.");
+
+        Trailer? rep = null;
+        if (!string.IsNullOrWhiteSpace(replacementUnit))
+            rep = s.Trailers.FirstOrDefault(x => x.Unit.Equals(replacementUnit, StringComparison.OrdinalIgnoreCase))
+                  ?? throw new InvalidOperationException(
+                      $"Trailer {replacementUnit} is not on the book yet — add it on the Equipment tab first.");
+
+        // The replacement inherits the yard, so the box that takes over is reachable by everything that
+        // filters on it. A trailer with no yard is invisible to the changeover planner.
+        if (rep != null && string.IsNullOrWhiteSpace(rep.HomeTerminalId)) rep.HomeTerminalId = tr.HomeTerminalId;
+
+        var messages = new List<string> { $"Trailer {tr.Ref} ({tr.Type}) retired at {tr.ServiceMiles:N0} mi." };
+
+        // Whoever was on it moves across, driver or hired hand. Left hooked to a retired box, the next
+        // dispatch would plan freight onto a trailer that is off the fleet.
+        if (tr.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase))
+        {
+            s.Driver.AssignedTrailerUnit = rep?.Unit ?? "";
+            messages.Add(rep != null
+                ? $"You are on {rep.Ref} now."
+                : "You are not on a trailer — assign yourself one on the Equipment tab before the next load.");
+        }
+        foreach (var d in s.HiredDrivers.Where(d =>
+                     tr.Unit.Equals(d.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase)))
+        {
+            d.AssignedTrailerUnit = rep?.Unit ?? "";
+            messages.Add(rep != null ? $"{d.Name} moves onto {rep.Ref}." : $"{d.Name} has no trailer now.");
+        }
+
+        if (rep != null) rep.AssignedTruckUnit = tr.AssignedTruckUnit;
+        tr.AssignedTruckUnit = "";
+        tr.Retired = true;
+        tr.Status = "Reserve";
+        tr.RetiredGameTime = s.Status.GameTime;
+
+        // The order that asked for this is done. Leaving it open blocks the next one — there is only
+        // ever one — and the report would keep raising the retirement it has just been told about.
+        var order = s.EquipmentOrders.FirstOrDefault(o =>
+            o.Status == "Open" && o.Kind == "TrailerSwap"
+            && o.FromTrailerUnit.Equals(tr.Unit, StringComparison.OrdinalIgnoreCase));
+        if (order != null && rep != null)
+        {
+            order.ToTrailerUnit = rep.Unit;
+            order.Status = "Completed";
+            order.CompletedGameTime = s.Status.GameTime;
+            messages.Add($"{order.Number} closed out.");
+        }
+        else if (order != null)
+        {
+            messages.Add($"{order.Number} stays open until the replacement is on the book.");
+        }
+
+        return string.Join(" ", messages);
+    }
+
     public static string RetireUnit(AppState s, string unit, string replacementUnit)
     {
+        // A trailer is not a truck and never was. This looked in s.Trucks only, while the fleet report
+        // has been raising trailer retirements with UnitKind "Trailer" and offering the same button for
+        // them — so the button could not work, ever, and said "not in the fleet" about a box the report
+        // was talking about two lines above. Everything below this point is tractor business: assigned
+        // drivers, BestSpare, moving somebody into the replacement. None of it means anything for a box.
+        if (s.Trailers.Any(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
+            && !s.Trucks.Any(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase)))
+            return RetireTrailer(s, unit, replacementUnit);
+
         var t = s.Trucks.FirstOrDefault(x => x.Unit.Equals(unit, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException($"Unit {unit} is not in the fleet.");
         if (s.Trips.Any(x => x.Status is "Authorized" or "InTransit" && x.TruckUnit == t.Unit))

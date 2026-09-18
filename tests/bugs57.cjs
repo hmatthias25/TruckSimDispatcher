@@ -147,9 +147,18 @@ async function place(city, state, day, hm, cycle = 70, drive = 11, shift = 14) {
     unit: 'T700', type: 'Flatbed', division: 'Flatbed', inGameGarage: true, isCompanyOwned: true,
     status: 'InService', homeTerminalId: hq.id, currentLocation: 'Dallas, TX',
   }));
+  // Based at a DIFFERENT yard, which is the case this guards: a trailer whose terminal does not match
+  // the driver's must still be reachable in the control. This used to be written as a blank yard, which
+  // was only ever shorthand for "does not match" — a trailer with no yard at all is now impossible
+  // (#231: an orphan is invisible to the changeover planner and there was no way to fix one), so the
+  // mismatch is expressed as the real thing it stands for.
+  const other = un(await api('/terminals', 'POST', {
+    city: 'Amarillo', state: 'TX', level: 'Medium', truckCapacity: 3, hasFuel: true, hasParking: true,
+  }));
+  const otherYard = other.company.terminals.find((t) => t.city === 'Amarillo');
   S = un(await api('/fleet/trailer', 'POST', {
     unit: 'T701', type: 'Flatbed', division: 'Flatbed', inGameGarage: true, isCompanyOwned: true,
-    status: 'InService', homeTerminalId: '', currentLocation: 'Dallas, TX',
+    status: 'InService', homeTerminalId: otherYard.id, currentLocation: 'Dallas, TX',
   }));
   await api('/fleetops/drivers', 'POST', {
     name: 'K. Reyes', skill: 'Competent', status: 'Active', wageShare: 0.3,

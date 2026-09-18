@@ -585,7 +585,10 @@ public static class Seed
     }
 
     /// <summary>Continues the seeded numbering (101, 104, 107...) rather than colliding with it.</summary>
-    private static string NextTruckUnit(AppState s)
+    /// <summary>The next fleet number for a tractor. The company numbers its own units — nobody outside
+    /// the app cares what it is, and asking the player to invent one was asking them to do the app's
+    /// bookkeeping. What they can actually read off their game is the ATS id, which is a separate field.</summary>
+    public static string NextTruckUnit(AppState s)
     {
         var highest = s.Trucks
             .Select(t => int.TryParse(t.Unit, out var n) ? n : 0)
@@ -594,7 +597,8 @@ public static class Seed
         return $"{Math.Max(101, highest + 3)}";
     }
 
-    private static string NextTrailerUnit(AppState s)
+    /// <summary>The next fleet number for a trailer. See <see cref="NextTruckUnit"/>.</summary>
+    public static string NextTrailerUnit(AppState s)
     {
         var highest = s.Trailers
             .Select(t => int.TryParse(t.Unit.TrimStart('T', 't'), out var n) ? n : 0)

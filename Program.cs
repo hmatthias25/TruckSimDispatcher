@@ -937,6 +937,12 @@ app.MapPost("/api/trips/{id}/notes", (string id, NoteRequest req) => Results.Ok(
 
 app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
 {
+    // See the trailer endpoint: the fleet number is the company's, the ATS id is the player's.
+    if (string.IsNullOrWhiteSpace(t.Unit)) t.Unit = Seed.NextTruckUnit(s);
+    if (string.IsNullOrWhiteSpace(t.HomeTerminalId))
+        t.HomeTerminalId = (s.Company.Terminals.FirstOrDefault(x => x.IsHeadquarters)
+                            ?? s.Company.Terminals.FirstOrDefault())?.Id ?? "";
+
     var existing = s.Trucks.FirstOrDefault(x => x.Unit == t.Unit);
     // Where this unit's service clocks count from. GDC's guide takes the dealer baseline as complete at
     // purchase, so a truck bought at 600,000 mi does not owe every review ever published — but that rule
@@ -1009,6 +1015,18 @@ app.MapPost("/api/fleet/truck", (Truck t) => Results.Ok(store.Mutate(s =>
 
 app.MapPost("/api/fleet/trailer", (Trailer t) => Results.Ok(store.Mutate(s =>
 {
+    // The company numbers its own boxes. Asking the player to invent one was asking them to do the
+    // app's bookkeeping, and what they can actually read off the game is the ATS id below.
+    if (string.IsNullOrWhiteSpace(t.Unit)) t.Unit = Seed.NextTrailerUnit(s);
+
+    // A box with no yard is invisible: the changeover planner, the swap candidates and every yard
+    // utilisation figure filter on HomeTerminalId, so an orphan cannot be found by the machinery that
+    // is supposed to put a driver on it. The UI had no way to set this at all, which is how one ended
+    // up on the books and unreachable.
+    if (string.IsNullOrWhiteSpace(t.HomeTerminalId))
+        t.HomeTerminalId = (s.Company.Terminals.FirstOrDefault(x => x.IsHeadquarters)
+                            ?? s.Company.Terminals.FirstOrDefault())?.Id ?? "";
+
     Equip.GuardGameId(s, t.GameId, t.Unit);
     var existing = s.Trailers.FirstOrDefault(x => x.Unit == t.Unit);
     if (existing == null) s.Trailers.Add(t);

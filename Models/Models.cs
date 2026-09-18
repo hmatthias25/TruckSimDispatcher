@@ -2648,6 +2648,17 @@ public class EquipmentOrder
     public string ToTruckUnit { get; set; } = "";
     public string FromTrailerUnit { get; set; } = "";
     public string ToTrailerUnit { get; set; } = "";
+
+    /// <summary>
+    /// The trailer type this order is buying, on a replacement.
+    ///
+    /// The decision used to live only in <see cref="Notes"/> and <see cref="Instruction"/> as prose, so
+    /// nothing could read it back — and the report that raised it went on recomputing the answer from
+    /// utilisation every period. One open order at a time means the order was raised once and the text
+    /// kept moving, so the fleet page showed the reefer it had ordered while the report was talking
+    /// about a flatbed. Once this is set, it is the answer.
+    /// </summary>
+    public string ReplacementType { get; set; } = "";
     public string TerminalId { get; set; } = "";
     public string TerminalLabel { get; set; } = "";
     /// <summary>Open | Completed | Declined | Expired</summary>

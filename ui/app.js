@@ -3566,7 +3566,7 @@ function fleetDecisionsHtml() {
       <p>${esc(ask.reason)}</p>
       <p><b>${esc(ask.instruction)}</b></p>
       ${ask.unaffordable ? '' : `<div class="grid2" style="margin-top:8px">
-        <label>Unit number<input id="tq-unit" placeholder="e.g. T512"></label>
+        <label>Fleet number — assigned<input id="tq-unit" value="${esc(nextTrailerUnit())}"></label>
         <label>ID shown in ATS — optional<input id="tq-gameid" placeholder="what the game calls it"></label>
         <label>What you paid $<input id="tq-price" type="number" step="1" min="0" placeholder="from ATS"></label>
         ${dayTimeInput('tq-time', S.status.gameTime, 'Bought (game)')}
@@ -3582,7 +3582,8 @@ function fleetDecisionsHtml() {
       <ul>${r.evidence.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>
       <div class="row-actions">
         <button class="btn" data-act="retire-unit" data-unit="${esc(r.unit)}"
-          data-mine="${r.isPlayerUnit ? '1' : ''}">Trade unit ${esc(uref(r.unit))}</button>
+          data-kind="${esc(r.unitKind || 'Truck')}"
+          data-mine="${r.isPlayerUnit ? '1' : ''}">Trade ${r.unitKind === 'Trailer' ? 'trailer' : 'unit'} ${esc(uref(r.unit))}</button>
       </div></div>`).join('')}
 
     ${open.length ? `<h3 class="sect">Trucks with nobody in them</h3>
@@ -5816,6 +5817,14 @@ const BLANK_TRUCK = {
   status: 'InService', homeTerminal: '', lastServiceMiles: 0, serviceIntervalMiles: 25000,
   purchasePrice: 0, monthlyPayment: 0, notes: '',
 };
+/* The next fleet number, worked out the same way the server does it, so the form can show what the
+ * unit will be called rather than asking the player to invent one. The server assigns it anyway when
+ * the field comes back blank — this is only so the number is visible before it is saved. */
+const nextTruckUnit = () => String(Math.max(101,
+  (S.trucks || []).reduce((m, t) => Math.max(m, parseInt(t.unit, 10) || 0), 98) + 3));
+const nextTrailerUnit = () => 'T' + Math.max(501,
+  (S.trailers || []).reduce((m, t) => Math.max(m, parseInt(String(t.unit).replace(/^[Tt]/, ''), 10) || 0), 499) + 2);
+
 const BLANK_TRAILER = {
   unit: '', type: 'Dry Van', subtype: '', division: 'Dry Van', year: new Date().getFullYear(), make: '',
   length: "53'", axles: 'Tandem', inGameGarage: true, damagePct: 0, serviceMiles: 0,
@@ -5829,7 +5838,8 @@ function editTruckModal(unit) {
   if (!t) return;
   modal(`<div class="panel-head"><h2>${isNew ? 'Add a tractor' : 'Unit ' + esc(t.unit)}</h2><div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
-    ${isNew ? `<label>Unit number<input id="et-unit" placeholder="e.g. 119"></label>` : ''}
+    ${isNew ? `<label>Fleet number — assigned, change it if you number your own
+      <input id="et-unit" value="${esc(nextTruckUnit())}"></label>` : ""}
     <label>ID shown in ATS — optional
       <input id="et-gameid" value="${esc(t.gameId || '')}" placeholder="what the game calls this truck"></label>
     <p class="hint">Enter what ATS shows for this unit and the app will use it everywhere instead of
@@ -5930,11 +5940,21 @@ function editTrailerModal(unit) {
   if (!t) return;
   modal(`<div class="panel-head"><h2>${isNew ? 'Add a trailer' : 'Trailer ' + esc(t.unit)}</h2><div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
-    ${isNew ? `<label>Unit number<input id="er-unit" placeholder="e.g. T521"></label>` : ''}
+    ${isNew ? `<label>Fleet number — assigned, change it if you number your own
+      <input id="er-unit" value="${esc(nextTrailerUnit())}"></label>` : ''}
     <label>ID shown in ATS — optional
       <input id="er-gameid" value="${esc(t.gameId || '')}" placeholder="what the game calls this trailer"></label>
     <p class="hint">Enter what ATS shows for this trailer and the app uses it everywhere. Blank keeps the
       assigned number, which is what everything is filed against regardless.</p>
+    <label>Based at yard
+      <select id="er-yard">
+        ${(S.company.terminals || []).map((y) => `<option value="${esc(y.id)}" ${
+          y.id === t.homeTerminalId || (!t.homeTerminalId && y.isHeadquarters) ? 'selected' : ''
+        }>${esc(y.city)}, ${esc(y.state)}</option>`).join('')}
+      </select></label>
+    <p class="hint">Which yard this box belongs to. It is not decoration: the changeover planner, the
+      swap list and every yard utilisation figure only look at trailers based somewhere, so one with no
+      yard cannot be found by the thing that is meant to put you on it.</p>
     <fieldset><legend>Does ATS know about this trailer?</legend>
       <label class="chk"><input type="checkbox" id="er-garage" ${t.inGameGarage ? 'checked' : ''}>
         This trailer exists in my ATS garage</label>
@@ -6598,9 +6618,14 @@ async function handleAction(act, d, ev) {
     case 'reports-all': FLEET_ALL_REPORTS = !FLEET_ALL_REPORTS; return render();
     case 'retire-unit': {
       const mine = d.mine === '1';
-      const rep = prompt(mine
-        ? `Trade unit ${d.unit}.\n\nLeave blank and the company puts you in the best spare on the property.\nOr type the unit number of a replacement you have bought and added on the Equipment tab.`
-        : `Trade unit ${d.unit}.\n\nLeave blank to retire it with nobody moving.\nOr type the unit number of its replacement.`, '');
+      const box = d.kind === 'Trailer';
+      const rep = prompt(box
+        // A trailer has no "best spare" to fall back on — the report's own instruction is to sell it in
+        // ATS and buy the replacement, so the new box usually does not exist yet and blank is normal.
+        ? `Trade trailer ${d.unit}.\n\nLeave blank to retire it on its own — do that if you have not bought the replacement yet.\nOr type the fleet number of the replacement, once it is on the Equipment tab.`
+        : mine
+          ? `Trade unit ${d.unit}.\n\nLeave blank and the company puts you in the best spare on the property.\nOr type the unit number of a replacement you have bought and added on the Equipment tab.`
+          : `Trade unit ${d.unit}.\n\nLeave blank to retire it with nobody moving.\nOr type the unit number of its replacement.`, '');
       if (rep === null) return;
       return run(async () => {
         const r = absorb(await api('/fleetops/retire', 'POST', { unit: d.unit, replacementUnit: rep.trim() }));
@@ -6890,6 +6915,7 @@ async function handleAction(act, d, ev) {
           length: sv('er-len'), axles: sv('er-axles'), damagePct: fv('er-dmg'), status: sv('er-status'),
           inGameGarage: bv('er-garage'),
           gameId: sv('er-gameid'),
+          homeTerminalId: sv('er-yard'),
           serviceMiles: fv('er-svc'), currentLocation: sv('er-loc'), notes: sv('er-notes'),
         }));
         closeModal();

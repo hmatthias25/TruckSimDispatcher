@@ -562,6 +562,7 @@ public static class EquipmentService
             Reason = reason,
             FromTrailerUnit = retiring.Unit,
             ToTrailerUnit = "",
+            ReplacementType = newType,
             TerminalId = homeYard?.Id ?? "",
             TerminalLabel = homeLabel,
             MustPurchase = true,
