@@ -173,6 +173,14 @@ public static class DispatchEngine
             decision.Rationale = string.Join(" ", stops);
             decision.DispatchNotes.AddRange(stops);
             foreach (var e in decision.Evaluations) { e.Recommendation = "Reject"; e.HardFails.AddRange(stops); }
+
+            // A truck ordered home for repair is still a truck going home, and the trailer conversation
+            // belongs to it. This returns before any of the run-home branches below, so a driver blocked
+            // by a damaged box — which is one of the commonest reasons to be pointed at the yard in the
+            // first place — got no trailer question at all and arrived to be re-rigged out of nowhere.
+            // Only for a run-home order: every other blocker leaves them stuck where they are, and the
+            // question is not actionable from there.
+            if (Shop.Assess(s, truck, trailer).Kind == "RunHome") AskAboutTrailersHome(s, decision);
             return decision;
         }
 
@@ -558,6 +566,20 @@ public static class DispatchEngine
     /// </summary>
     private static void AskAboutTrailersHome(AppState s, BoardDecision d)
     {
+        // Said on the board AND kept on the driver's file. The Home time panel reports what was settled
+        // rather than deriving its own answer on the way to the screen — see Driver.ChangeoverNote — so a
+        // verdict that only ever reached the board decision left that panel silent about a run home the
+        // driver had already been given the answer for.
+        void Settle(string note)
+        {
+            d.ChangeoverNote = note;
+            d.DispatchNotes.Add(note);
+            s.Driver.ChangeoverNote = note;
+            // No box named in any of these, so nothing is promised and nothing is to be reserved.
+            s.Driver.ChangeoverUnit = "";
+            s.Driver.ChangeoverReserve = false;
+        }
+
         // No change coming. Said out loud, because "you are not swapping" is an answer the driver wants
         // and silence is not: they are running in to a yard full of trailers with no idea whether one of
         // them is about to become theirs. This is the same run-home moment as everything below, so it is
@@ -570,10 +592,8 @@ public static class DispatchEngine
             var why = s.EquipmentOrders.Any(o => o.Status == "Open" && o.Kind == "TrailerSwap")
                 ? " There is already a swap order open — that one first."
                 : "";
-            var note = $"No trailer change this home time: you keep {on.Ref} ({on.Type.ToLowerInvariant()}).{why} " +
-                       "Nothing to look up and nothing to reserve before you set off.";
-            d.ChangeoverNote = note;
-            d.DispatchNotes.Add(note);
+            Settle($"No trailer change this home time: you keep {on.Ref} ({on.Type.ToLowerInvariant()}).{why} " +
+                   "Nothing to look up and nothing to reserve before you set off.");
             return;
         }
 
@@ -597,12 +617,10 @@ public static class DispatchEngine
         if (TrailerChangeover.Candidates(s, want).Count == 0)
         {
             var on = AssignedTrailer(s);
-            var note = $"Operations would have moved you onto {want.ToLowerInvariant()} this home time, but " +
-                       $"there is nothing on the yard to do it with — so you stay on " +
-                       $"{(on == null ? "what you are pulling" : $"{on.Ref} ({on.Type.ToLowerInvariant()})")}. " +
-                       "Nothing to look up before you set off.";
-            d.ChangeoverNote = note;
-            d.DispatchNotes.Add(note);
+            Settle($"Operations would have moved you onto {want.ToLowerInvariant()} this home time, but " +
+                   $"there is nothing on the yard to do it with — so you stay on " +
+                   $"{(on == null ? "what you are pulling" : $"{on.Ref} ({on.Type.ToLowerInvariant()})")}. " +
+                   "Nothing to look up before you set off.");
             return;
         }
 

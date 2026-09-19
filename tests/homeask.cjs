@@ -39,6 +39,18 @@ async function report(city, state, day, hm = '08:00') {
     terminalId: hq.id, count: 2, alreadyBought: true, transmissionPreference: 'automatic', addTrailers: true,
   });
   S = stock.snapshot;
+
+  // One of each type on the yard, so whatever the re-rig rolls for there is actually a box to make it
+  // with. Without them the run home reports "operations would have moved you onto flatbed, but there is
+  // nothing on the yard to do it with" — true, and not what section 6 is about.
+  for (const [u, ty] of [['SPR-V', 'Dry Van'], ['SPR-R', 'Reefer'], ['SPR-F', 'Flatbed'],
+                         ['SPR-S', 'Step Deck'], ['SPR-T', 'Tanker']])
+    await api('/fleet/trailer', 'POST', {
+      unit: u, type: ty, division: ty, year: 2021, make: 'Utility', length: "53'",
+      inGameGarage: true, status: 'InService', homeTerminalId: hq.id,
+    }).catch(() => {});
+  S = un(await api('/bootstrap'));
+
   ok('a spare tractor is on the property', S.trucks.length > 1, S.trucks.map((t) => t.unit).join(', '));
   ok('still probationary', S.driver.rank === 'probationary', S.driver.rank);
 
@@ -103,8 +115,26 @@ async function report(city, state, day, hm = '08:00') {
   // Walk forward through home times until a reassignment is due, checking the notice precedes it.
   let noticed = null, issuedType = null;
   for (let visit = 2; visit <= 8 && !issuedType; visit++) {
-    const away = 20 + visit * 20;
+    // Far enough out that home time is genuinely due when the board is pulled. At twenty-day steps the
+    // gap between arriving and going out again was eight days of a fortnight, so dispatch quite rightly
+    // handed out a load going the other way and the driver was then teleported home anyway — arriving
+    // without ever having been sent, which is not a run home and is not how the trailer gets settled.
+    const away = 20 + visit * 30;
     await report('Denver', 'CO', away);                 // out on the road
+
+    // #243/#244: the change is settled when dispatch sends the driver home, so the board has to be
+    // pulled for there to be anything to announce. It used to be worked out on every render of the Home
+    // time panel, which is how it came to be announcing a box and a cost two days into a fortnight.
+    await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+    await api('/board/clear', 'POST', {});
+    const bd = await api('/board/add', 'POST', {
+      cargo: 'Machinery', originCity: 'Denver', originState: 'CO',
+      destCity: 'Phoenix', destState: 'AZ', loadedMiles: 600, deadheadMiles: 0,
+      gameRevenue: 2400, deadlineHours: 72, weightLbs: 38000,
+    });
+    console.log(`  ..    visit ${visit}: rejectAll=${bd.rejectAll}, note="${(bd.changeoverNote || '').slice(0, 50)}"`);
+    S = un(await api('/bootstrap'));
+
     // Home time due: the notice, if any, must be visible from here.
     const pending = S.views.homeTime?.reassignmentNotice || '';
     await report('Springfield', 'MO', away + 12);       // arrive
@@ -119,14 +149,20 @@ async function report(city, state, day, hm = '08:00') {
     ok('a reassignment eventually happened', true, issuedType);
     ok('and it was announced before arrival', !!noticed, noticed || '(no advance notice)');
     if (noticed) {
-      ok('the notice says a trailer change is coming',
-        /changing trailers|wants you on/i.test(noticed), noticed);
-      // What the stay is going to cost, in whichever of the four shapes applies. #196 moved this
-      // decision to the drop that ends the tour and gave it one voice, so the wording is the plan's:
-      // a straight hook off a parked box, a forecast in days for one that is out, a shrug where nobody
-      // has reported on it, or a wait while operations sources one we do not own.
+      // #243 gave this more than one true answer. "Operations wants you on flatbed" is one; so are "no
+      // trailer change this home time", "there is nothing on the yard to do it with", and "next tour is
+      // drop and hook". Before, silence covered the last three and the driver ran in not knowing which
+      // of them they were in — so what is asserted is that the notice states the outcome, whichever it
+      // is, and names the box at the end of it.
+      ok('the notice states what is happening to the trailer',
+        /changing trailers|wants you on|no trailer change|nothing on the yard to do it with|drop and hook/i
+          .test(noticed), noticed);
+      // And what the stay is going to cost, in whichever shape applies. #196 gave this one voice, so
+      // the wording is the plan's: a straight hook off a parked box, a forecast in days for one that is
+      // out, a shrug where nobody has reported on it, a wait while operations sources one we do not own,
+      // or — the outcomes #243 added — plainly that nothing is changing and there is nothing to look up.
       ok('and it tells them what to expect of the stay',
-        /straight hook|costs you nothing|day\(s\) skipped|expect a wait|nothing current on where it is/i
+        /straight hook|costs you nothing|day\(s\) skipped|expect a wait|nothing current on where it is|nothing to look up/i
           .test(noticed), noticed);
     }
   } else {

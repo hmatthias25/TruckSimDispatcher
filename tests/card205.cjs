@@ -189,14 +189,53 @@ const stand = async (city, st, day, hm, kind = 'Shipper') => {
   // A re-rig is seeded and occasional, so walk home times until one is actually pending — otherwise this
   // section passes on an empty list and proves nothing. The notice on the home-time panel is how the app
   // says one is coming.
+  //
+  // #243/#244: the panel no longer works the answer out for itself — it reports what dispatch settled on
+  // the run home, so a change being pending is something you find out by pulling a board while overdue,
+  // not by watching a panel from wherever you happen to be standing. That is the whole point of the
+  // change, and it is what this section then goes on to assert, so the walk has to look where the app
+  // now speaks. A pending change means boxes to ask about, not merely a sentence on the screen.
+  // Section 4 put the trailer at 11% and sections 5-6 ran that to its conclusion, which leaves dispatch
+  // blocked. That was invisible while the panel worked the answer out for itself; now the conversation
+  // happens inside a board decision, and a board decision on a truck that cannot run never gets to it.
+  // This section is about the trailer question, not about damage, so the damage is cleared first.
+  {
+    const fix = await api('/export');
+    for (const t of fix.trailers) t.damagePct = 0;
+    for (const t of fix.trucks) t.damagePct = 0;
+    fix.status.trailerDamagePct = 0;
+    fix.status.truckDamagePct = 0;
+    for (const o of fix.equipmentOrders) if (o.status === 'Open') o.status = 'Cancelled';
+    fix.workOrders = [];
+    await api('/import', 'POST', fix);
+  }
+
+  // The walk steps the home-time counter directly rather than by driving home over and over. Arriving
+  // home issues the re-rig, the loop then completed it, and a couple of rounds of that left the driver
+  // with no trailer at all — after which every board reads "not clear to run" and the section is
+  // measuring fixture decay rather than the app. Whether a change is wanted is a seeded roll per home
+  // time, so the index is the only thing that has to move.
   let pending = '';
-  for (let i = 0; i < 10 && !pending; i++) {
-    await stand('Amarillo', 'TX', 40 + i * 15, '08:00');
-    pending = (await api('/bootstrap')).views?.homeTime?.reassignmentNotice || '';
-    if (pending) break;
-    await stand('Springfield', 'MO', 40 + i * 15 + 2, '09:00', 'Terminal');
-    const o2 = (await api('/bootstrap')).views?.equipmentOrder;
-    if (o2) await api(`/equipment/orders/${o2.number}/complete`, 'POST', {}).catch(() => {});
+  for (let taken = 2; taken <= 24 && !pending; taken++) {
+    const st = await api('/export');
+    st.driver.homeTimesTaken = taken;
+    st.driver.assignedTrailerUnit = 'T501';
+    st.driver.changeoverUnit = '';
+    st.driver.changeoverNote = '';
+    st.driver.changeoverReserve = false;
+    st.driver.lastHomeGameTime = iso(40);
+    st.status.gameTime = iso(80);              // well past a fortnight: a genuine run home
+    for (const o of st.equipmentOrders) if (o.status === 'Open') o.status = 'Cancelled';
+    await api('/import', 'POST', st);
+
+    await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+    await api('/board/clear', 'POST', {});
+    const probe = await api('/board/add', 'POST', {
+      cargo: 'Away', trailerType: 'Tanker', receiver: 'X',
+      originCity: 'Amarillo', originState: 'TX', destCity: 'Detroit', destState: 'MI',
+      loadedMiles: 530, deadheadMiles: 0, gameRevenue: 1590, deadlineHours: 40, weightLbs: 40000,
+    });
+    if ((probe.askWhereabouts || []).length) pending = probe.changeoverNote || 'questions raised';
   }
   console.log(`  ..    re-rig pending: ${pending ? 'yes' : 'no'} — "${pending.slice(0, 80)}"`);
   ok('a trailer change is pending, so there is something to ask about', !!pending,

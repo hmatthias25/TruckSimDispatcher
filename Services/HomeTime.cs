@@ -686,20 +686,28 @@ public static class HomeTime
     /// </summary>
     public static string? ReassignmentNotice(AppState s)
     {
-        // One voice for this. It used to compose its own version of the same decision — its own choice of
-        // box, its own reading of where that box was, its own wording — and then the order raised on
-        // arrival made all three again from scratch. Nothing forced them to agree, and they did not: the
-        // notice named whatever trailer of the right type came first out of the list, the order picked a
-        // free one at the home yard.
+        // One voice for this, and it is not this one's. It used to compose its own version of the
+        // decision — its own choice of box, its own reading of where that box was, its own wording — and
+        // the order raised on arrival made all three again from scratch. A driver reserving the box they
+        // were told about only works if it is the same box.
         //
-        // A driver reserving the box they were told about only works if it is the same box.
-        var plan = TrailerChangeover.Decide(s);
-        if (plan == null) return null;
+        // <b>It reports; it does not decide.</b> Calling Decide here meant the panel announced a change
+        // the moment a career was eligible for one, whether or not anybody was going home: reported from
+        // play at two and a half days into a fortnight, naming a trailer a thousand miles away and
+        // costing it in days, against a home time that had not been planned and off positions nobody had
+        // been asked for. #243 moved the decision to the run home and this went on computing its own on
+        // the way to the screen, which is why clearing the stored promise did not stop it appearing.
+        //
+        // So: what was settled, or nothing. Before dispatch sends the driver home there is nothing to
+        // say, and saying nothing is the correct amount.
+        var note = s.Driver.ChangeoverNote;
+        if (string.IsNullOrWhiteSpace(note)) return null;
 
         var current = DispatchEngine.AssignedTrailer(s);
-        return current != null && !DropHook.Is(plan.Type)
-            ? $"{plan.Note} You come off {current.Ref} ({current.Type}) at the same time."
-            : plan.Note;
+        var swapping = !string.IsNullOrWhiteSpace(s.Driver.ChangeoverUnit);
+        return current != null && swapping
+            ? $"{note} You come off {current.Ref} ({current.Type}) at the same time."
+            : note;
     }
 
     public static bool Qualified(AppState s, string trailerType)

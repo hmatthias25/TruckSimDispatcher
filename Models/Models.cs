@@ -508,6 +508,22 @@ public class Driver
     public string ChangeoverGameTime { get; set; } = "";
 
     /// <summary>
+    /// What the driver was told when the change was settled, kept word for word.
+    ///
+    /// <para>The Home time panel used to re-derive this on every render by calling
+    /// <c>TrailerChangeover.Decide</c> afresh, which meant it announced a change the moment a career was
+    /// eligible for one — two and a half days into a fortnight, against a home time nobody had planned,
+    /// naming a box and quoting a cost in days off a position nobody had been asked for. Reported from
+    /// play at 2.5 days out of 14, still appearing after the migration that cleared the promise, because
+    /// there was nothing to clear: it was not stored, it was computed on the way to the screen.</para>
+    ///
+    /// <para>Stored when the decision is actually made, on the run home, and shown until it is kept or
+    /// dropped. One voice: what you were told at the drop is what the panel says and what the order at
+    /// the yard hands over.</para>
+    /// </summary>
+    public string ChangeoverNote { get; set; } = "";
+
+    /// <summary>
     /// How many days the driver says they are taking at home, given with the trailer positions.
     ///
     /// It decides how much a trailer being out actually costs. Marking a box as private in ATS makes the

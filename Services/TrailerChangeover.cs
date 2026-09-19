@@ -315,7 +315,15 @@ public static class TrailerChangeover
     /// </summary>
     public static void Remember(AppState s, Plan? plan)
     {
-        if (plan?.Trailer == null)
+        // Nothing decided at all: clear the lot, note included.
+        if (plan == null) { Forget(s); return; }
+
+        // Decided, but there is no box to name — drop and hook, or a change with nothing on the yard to
+        // make it with. Still worth keeping the words: it is what the driver was told, and the Home time
+        // panel shows what they were told rather than working it out again on the way to the screen.
+        s.Driver.ChangeoverNote = plan.Note ?? "";
+
+        if (plan.Trailer == null)
         {
             s.Driver.ChangeoverUnit = "";
             s.Driver.ChangeoverReserve = false;
@@ -338,6 +346,7 @@ public static class TrailerChangeover
         s.Driver.ChangeoverType = "";
         s.Driver.ChangeoverReserve = false;
         s.Driver.ChangeoverGameTime = "";
+        s.Driver.ChangeoverNote = "";
     }
 
     /// <summary>

@@ -107,6 +107,18 @@ async function runLoad(destCity, destState, d) {
   ok('nor promises a box behind the scenes', !(await api('/export')).driver.changeoverUnit,
     (await api('/export')).driver.changeoverUnit || '(none)');
 
+  head('1b. The Home time panel is silent about it too');
+  // The surface that was missed, and the one actually reported: "TRAILER CHANGE COMING — operations
+  // wants you on flatbed... 48K 9KU is 1,005 mi from the yard... reckon the game charges 4 days", shown
+  // beside "2.5 days out of 14". It called Decide() on every render, so it announced a change the moment
+  // the career was eligible for one, off positions nobody had been asked for — and clearing the stored
+  // promise did not stop it, because it was never reading the stored promise.
+  const hv = (await api('/bootstrap')).views.homeTime;
+  ok('no trailer-change notice two days into the tour', !hv?.reassignmentNotice,
+    (hv?.reassignmentNotice || '(silent)').slice(0, 95));
+  ok('and nothing is stored for it to have come from', !(await api('/export')).driver.changeoverNote,
+    (await api('/export')).driver.changeoverNote?.slice(0, 60) || '(nothing stored)');
+
   head('2. The run home is where the questions are put');
   // Overdue, and every load on the board runs further out. That is the "run it in empty" case.
   //
@@ -191,6 +203,18 @@ async function runLoad(destCity, destState, d) {
       `reserve=${dec.reserve}`);
     ok('the promise is on the record now', (await api('/export')).driver.changeoverUnit === dec.unit,
       (await api('/export')).driver.changeoverUnit);
+
+    // And only NOW does the Home time panel carry it — word for word off what was settled, rather than
+    // a second opinion worked out on the way to the screen.
+    const after = (await api('/bootstrap')).views.homeTime;
+    ok('the Home time panel now shows the change', !!after?.reassignmentNotice,
+      (after?.reassignmentNotice || '(silent)').slice(0, 90));
+    ok('and it is the words the driver was actually given',
+      (after?.reassignmentNotice || '').startsWith(dec.note.slice(0, 40)),
+      (after?.reassignmentNotice || '').slice(0, 70));
+    ok('naming the box they are coming off as well',
+      /you come off /i.test(after?.reassignmentNotice || ''),
+      (after?.reassignmentNotice || '').slice(-60));
   }
 
   head('5. A load that finishes at the yard asks in the same place');
