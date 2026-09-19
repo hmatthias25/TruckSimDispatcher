@@ -68,9 +68,47 @@ public static class Migrations
         RegradeWithoutRating(s);
         CallFleetTakingsWhatTheyAre(s);
         DropChangeoversDecidedTooEarly(s);
+        PutAirBetweenWatchAndShop(s);
         // Not stamped: a box can leave the fleet at any time, and closing an order already closed is a
         // no-op. This is a standing tidy-up rather than a one-off correction.
         CloseOrdersForTrailersAlreadyGone(s);
+    }
+
+    /// <summary>
+    /// Separates "worth a look while you are stopped" from "go to a shop".
+    ///
+    /// <para>The two thresholds shipped on the same figure, five percent, so the band between them had no
+    /// width and five landed straight in "report to the shop after this delivery". Reported from play:
+    /// "5% isn't the threshold here, it is the threshold to get it looked at either on my 34 or at the
+    /// shop." The settings are stored per career, so changing the default fixes nobody already playing.</para>
+    ///
+    /// <para><b>Only where it is still the old default.</b> A player who has deliberately set their own
+    /// figure has said what they want, and a migration that overwrites a deliberate setting is worse than
+    /// the bug it is fixing. Ten to match the line where dispatch stops issuing loads anyway — being sent
+    /// to a shop and handed freight going the other way in the same breath is the incoherence that made
+    /// two separate numbers wrong in the first place.</para>
+    /// </summary>
+    private static void PutAirBetweenWatchAndShop(AppState s)
+    {
+        if (s.SchemaVersion >= 24) return;
+        s.SchemaVersion = 24;
+
+        var m = s.Settings.Maintenance;
+        if (Math.Abs(m.ReportPct - m.MonitorPct) > 0.001 || Math.Abs(m.ReportPct - 5) > 0.001) return;
+
+        m.ReportPct = Math.Min(10, Math.Max(m.MonitorPct + 1, m.StopDispatchPct));
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "maintenance",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"Damage thresholds separated: {m.MonitorPct:0.#}% is now worth a look next time you are " +
+                $"stopped anyway — a 34, a ten, standing at the yard — and {m.ReportPct:0.#}% is where you " +
+                "are told to report to a shop after the delivery. They were the same figure, so anything " +
+                "at five read as a trip to the shop when it was a job for the next time you were parked. " +
+                "Both are on the Settings tab if you want them elsewhere.",
+        });
     }
 
     /// <summary>

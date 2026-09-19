@@ -123,6 +123,14 @@ public static class MaintenanceService
             return ("MandatoryReview", $"{unitLabel} at {damagePct:0.#}% — mandatory maintenance review before the next dispatch.");
         if (damagePct >= m.ReportPct)
             return ("Report", $"{unitLabel} at {damagePct:0.#}% — report to the shop after this delivery.");
+        // The band that was missing. Between the two lines there is something worth doing and it is not
+        // a trip to a shop: it is a job for the next time the truck is standing still anyway, which on
+        // this map is a 34, a ten, or being at the yard. Saying "report to the shop after this delivery"
+        // for a five percent scuff sends a driver across a state for a job they could have had done while
+        // they slept, and reads as the app not knowing the difference.
+        if (damagePct >= m.MonitorPct)
+            return ("Watch", $"{unitLabel} at {damagePct:0.#}% — worth getting looked at next time you are " +
+                             "stopped anyway, on your 34 or at the yard. Not a trip on its own.");
         return ("Monitor", $"{unitLabel} at {damagePct:0.#}% — monitor only.");
     }
 

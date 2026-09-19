@@ -54,7 +54,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 23;
+    public const int Current = 24;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -3159,10 +3159,26 @@ public class FacilityTimeSample
 
 public class MaintenanceThresholds
 {
-    /// <summary>Below this: monitor only.</summary>
+    /// <summary>
+    /// Below this: nothing is said at all. At or above it: worth a look next time the truck is stopped
+    /// anyway — a 34, a reset, standing at the yard — but not worth a trip.
+    ///
+    /// <para>This used to be set to the same figure as <see cref="ReportPct"/>, which gave the band
+    /// between them no width and put five percent straight into "report to the shop after this
+    /// delivery". Reported from play: "5% isn't the threshold here, it is the threshold to get it looked
+    /// at either on my 34 or at the shop." Quite right — and the field existed to say exactly that, and
+    /// was read by nothing.</para>
+    /// </summary>
     public double MonitorPct { get; set; } = 5;
-    /// <summary>At or above this: report to shop after delivery.</summary>
-    public double ReportPct { get; set; } = 5;
+
+    /// <summary>
+    /// At or above this: report to the shop after this delivery. A trip, not an opportunity.
+    ///
+    /// <para>Ten, so it lands on <see cref="StopDispatchPct"/>. The moment the company tells a driver to
+    /// go to a shop should be the moment it stops handing them loads — two different numbers there means
+    /// being sent to the shop and given freight going the other way in the same breath.</para>
+    /// </summary>
+    public double ReportPct { get; set; } = 10;
     /// <summary>At or above this: mandatory maintenance review before next dispatch.</summary>
     public double MandatoryReviewPct { get; set; } = 15;
     /// <summary>At or above this: out of service, stop and contact operations.</summary>

@@ -1124,7 +1124,7 @@ public static class HomeTime
         // Only equipment ATS actually knows about has real condition to act on.
         if (truck is { InGameGarage: true })
         {
-            if (truck.DamagePct >= m.ReportPct)
+            if (truck.DamagePct >= m.MonitorPct)
                 jobs.Add($"Unit {truck.Ref} is at {truck.DamagePct:0.#}% — get it repaired.");
             // Whichever schedule is in force says whether there is work to book in for. Quoting the
             // single PM cycle under GDC named a clock nothing on that schedule ever moves.
@@ -1148,7 +1148,7 @@ public static class HomeTime
             }
         }
         // Nothing to book in for a trailer we do not own. Whatever was hooked went back to the shipper.
-        if (trailer is { InGameGarage: true } && !DropHook.Is(trailer.Type) && trailer.DamagePct >= m.ReportPct)
+        if (trailer is { InGameGarage: true } && !DropHook.Is(trailer.Type) && trailer.DamagePct >= m.MonitorPct)
             jobs.Add($"Trailer {trailer.Ref} is at {trailer.DamagePct:0.#}% — get it done at the same time.");
 
         var openWork = s.WorkOrders.Count(w => w.Status == "Open");
@@ -1262,7 +1262,7 @@ public static class HomeTime
         {
             if (truck.DamagePct >= m.MandatoryReviewPct)
                 b.Shop.Add($"Unit {truck.Ref} is at {truck.DamagePct:0.#}% — over our {m.MandatoryReviewPct:0}% review line. Repair it before you go back out.");
-            else if (truck.DamagePct >= m.ReportPct)
+            else if (truck.DamagePct >= m.MonitorPct)
                 b.Shop.Add($"Unit {truck.Ref} is at {truck.DamagePct:0.#}%. Worth putting through the shop while it is standing.");
             else
                 b.Shop.Add($"Unit {truck.Ref} is fine at {truck.DamagePct:0.#}% — nothing needed.");
@@ -1301,7 +1301,7 @@ public static class HomeTime
 
         if (trailer is { InGameGarage: true } && !DropHook.Is(trailer.Type))
         {
-            if (trailer.DamagePct >= m.ReportPct)
+            if (trailer.DamagePct >= m.MonitorPct)
                 b.Shop.Add($"Trailer {trailer.Ref} is at {trailer.DamagePct:0.#}% — get it done at the same time.");
             else
                 b.Shop.Add($"Trailer {trailer.Ref} is fine at {trailer.DamagePct:0.#}%.");
