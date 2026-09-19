@@ -210,8 +210,15 @@ public static class DispatchEngine
         // Home-time disqualification sits in its own list so the reason can be told apart from a
         // licence or an out-of-service truck, but it bars a load exactly as hard. Nothing here is a
         // load dispatch will take, and nothing here is a load the driver can overrule it on.
+        // A plan that opens with a ten-hour reset is not a load dispatch takes either. It is legal and it
+        // is not now: the driver sleeps first, and by the time they are legal this board has turned over.
+        // Committing to one books today's rate against tomorrow's freight and parks the truck at a
+        // shipper's gate to do it. Reported from play as freight offered on forty-four minutes of drive
+        // clock — the out-of-hours check further down says exactly that, and never saw the board, because
+        // authorisation happens up here and "feasible after you sleep" counted as feasible.
         var clear = decision.Evaluations
             .Where(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
+                        && !e.Feasibility.BeginsWithRest
                         && (e.Feasibility.Verdict == "Feasible" || TightButHeadsHome(e)))
             .ToList();
 
@@ -816,8 +823,12 @@ public static class DispatchEngine
         {
             // A hard fail is a rate, equipment, qualification or account problem — not the clock.
             if (e.HardFails.Count > 0 || e.HomeTimeFails.Count > 0) return false;
-            // Anything still runnable means the board is fine and the driver is not stuck.
-            if (e.Feasibility.Verdict != "Infeasible") return false;
+            // Anything still runnable means the board is fine and the driver is not stuck — but a plan
+            // that opens with a ten-hour reset is not runnable NOW, it is tomorrow's load with today's
+            // rate on it. Reported from play: forty-four minutes on the drive clock at a dock, and
+            // freight offered anyway. The clock check below is what should have caught that, and it
+            // never got the chance because "feasible after you sleep" counted as feasible.
+            if (e.Feasibility.Verdict != "Infeasible" && !e.Feasibility.BeginsWithRest) return false;
         }
 
         var rules = s.Settings.Hos;

@@ -3521,6 +3521,15 @@ public class FeasibilityResult
     /// getting it wrong.
     /// </summary>
     public bool ParkingReserveApplied { get; set; }
+
+    /// <summary>
+    /// The plan's first move is a rest, so this is a load for tomorrow rather than one to take now.
+    ///
+    /// Legal, and useless as an answer to "what can I run": by the time the driver wakes up the board
+    /// has turned over. Dispatch reads it so a board full of these is reported as being out of hours
+    /// rather than offered.
+    /// </summary>
+    public bool BeginsWithRest { get; set; }
     public int BreaksRequired { get; set; }
     public int FuelStopsRequired { get; set; }
     public bool CycleRestartRequired { get; set; }

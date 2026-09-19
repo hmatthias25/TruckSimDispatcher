@@ -730,6 +730,19 @@ public static class HosEngine
         }
 
         result.Timeline = timeline;
+
+        // Whether this is a load for now or a load for tomorrow.
+        //
+        // A plan whose first move is a ten-hour reset is perfectly legal and perfectly useless as an
+        // answer to "what can I take": the driver is not running it, they are sleeping and then running
+        // it, and by the time they wake the board has turned over. It matters more since the parking
+        // reserve went in, because a driver under the reserve now gets a reset planned instead of a
+        // refusal — which turned "infeasible on forty-four minutes" into "feasible, after you sleep",
+        // and that is what put freight in front of a driver who had none of the clock to run it.
+        var firstDrive = timeline.FindIndex(t => t.Kind == "Drive" && t.Hours > 0.01);
+        var firstRest = timeline.FindIndex(t => t.Kind == "Rest");
+        result.BeginsWithRest = firstRest >= 0 && (firstDrive < 0 || firstRest < firstDrive);
+
         result.DriveHours = Math.Round(timeline.Where(t => t.Kind == "Drive").Sum(t => t.Hours), 2);
         result.OnDutyHours = Math.Round(timeline.Where(t => t.Kind is "Drive" or "OnDuty").Sum(t => t.Hours), 2);
         result.ElapsedHours = Math.Round((clock - start.Value).TotalHours, 2);
@@ -955,8 +968,20 @@ public static class HosEngine
             v.NextRequiredAction = $"{r.OffDutyReset:0.#}-hour off-duty reset before any driving.";
         else if (r.RequireBreak && h.BreakRemaining <= 0.01)
             v.NextRequiredAction = $"{r.BreakLength * 60:0}-minute break required before driving again.";
-        else if (r.RequireBreak)
+        // Name the clock that is actually stopping them.
+        //
+        // This said "clear to drive X before the 30-minute break is due" whatever X was measured
+        // against, and X is the binding minimum of drive, shift and cycle capped by the break — so a
+        // driver who had JUST TAKEN their break, with 8:00 back on the break clock and 0:44 left on the
+        // eleven, read "0:44 before the break is due". Reported from play exactly that way. The
+        // arithmetic was right and the sentence was not: the forty-four minutes is the drive clock, and
+        // the break is not due for another eight hours.
+        else if (r.RequireBreak && h.BreakRemaining < v.DrivableNowHours - 0.01)
             v.NextRequiredAction = $"Clear to drive {Hhmm.Of(v.StintBeforeBreakHours)} before the {r.BreakLength * 60:0}-minute break is due.";
+        else if (r.RequireBreak)
+            v.NextRequiredAction = $"Clear to drive {Hhmm.Of(v.DrivableNowHours)} — that is the {binding}, " +
+                                   $"not the break. The {r.BreakLength * 60:0}-minute break is not due for " +
+                                   $"another {Hhmm.Of(h.BreakRemaining)}.";
         else
             v.NextRequiredAction = $"Clear to drive {Hhmm.Of(v.DrivableNowHours)} — breaks are switched off, so the {r.ShiftLimit:0.#}-hour window is your next stop.";
 
