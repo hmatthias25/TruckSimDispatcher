@@ -66,6 +66,20 @@ public class PlanRequest
     /// Defaults to true so a plan that never sets it behaves as it always did.
     /// </summary>
     public bool ReceiverAllowsOvernight { get; set; } = true;
+
+    /// <summary>
+    /// Whether the SHIPPER will let a truck sit on their property overnight.
+    ///
+    /// Judged the same way and for the same reason as the receiver. It matters on any plan where the
+    /// clock runs out before the truck has left the pickup — hook a preloaded trailer on the last of the
+    /// day and the ten gets sat where you are standing, which is their yard. Drop and hook makes that
+    /// ordinary rather than rare: the hook is twenty-five minutes, so it fits in a window that would
+    /// never have covered a live load, and the driver is parked up on somebody's property having been
+    /// told nothing about it.
+    ///
+    /// Defaults to true so a plan that never sets it behaves as it always did.
+    /// </summary>
+    public bool ShipperAllowsOvernight { get; set; } = true;
     /// <summary>
     /// How many real deliveries the unload figure is averaged over, or -1 where the caller does not know.
     ///
@@ -285,6 +299,11 @@ public static class HosEngine
         // Never more than a quarter of the drive limit: a reserve big enough to eat a whole shift is a
         // rule set nobody asked for, and a typo in Settings should not silently halve the day.
         var parkingReserve = Math.Clamp(s.ParkingBufferHours, 0, rules.DriveLimit * 0.25);
+        // Where the truck is standing, when it is standing on somebody's property and has not moved since
+        // working their dock. Null the moment it rolls. Read by TakeReset, which is the only place the
+        // question "where does this day end" gets answered.
+        string? atFacility = null;
+        var drivenToday = 0.0;
         double drive = Math.Max(0, hos.DriveRemaining);
         double shift = Math.Max(0, hos.ShiftRemaining);
         double brk = Math.Max(0, hos.BreakRemaining);
@@ -363,7 +382,37 @@ public static class HosEngine
             shift = rules.ShiftLimit;
             brk = rules.DrivingBeforeBreak;
             result.RestsRequired++;
-            Step($"{rules.OffDutyReset:0.#}-hour off-duty reset", "Rest", rules.OffDutyReset, 0);
+
+            // WHERE the ten is sat, when the app knows. A reset out on the road is the driver's own
+            // problem and they will find a truck stop; one taken without having moved since a dock is on
+            // somebody's property, and that is a fact about the plan they are being asked to accept.
+            //
+            // It went unsaid because the case used to be rare: a live load needs hours of window, so a
+            // driver with the clock to load had the clock to leave. Drop and hook makes it ordinary —
+            // the hook is twenty-five minutes and fits a window that would never have covered a load —
+            // and the plan came back as "deadhead, hook, ten-hour reset" with nothing about the ten being
+            // sat in the shipper's yard. Reported from play as exactly that run.
+            var label = $"{rules.OffDutyReset:0.#}-hour off-duty reset";
+            if (atFacility != null)
+            {
+                var welcome = atFacility == "the shipper" ? req.ShipperAllowsOvernight : req.ReceiverAllowsOvernight;
+                label += welcome
+                    ? $" — on {atFacility}'s property, having not moved since"
+                    : $" — and you are still on {atFacility}'s lot";
+
+                result.Warnings.Add(welcome
+                    ? $"Your day ends at {atFacility} without the truck moving: only {Hhmm.Of(drivenToday)} " +
+                      $"of driving happens today and the rest of this load is tomorrow's work. They will have " +
+                      $"you overnight, so the {rules.OffDutyReset:0.#} is sat where you are standing."
+                    : $"Your day ends at {atFacility} without the truck moving, and they do NOT allow overnight " +
+                      $"parking. Only {Hhmm.Of(drivenToday)} of driving happens today, and you will " +
+                      $"have to get off their lot to take the {rules.OffDutyReset:0.#} — check you have the clock " +
+                      "to reach a truck stop before you commit to this.");
+            }
+
+            Step(label, "Rest", rules.OffDutyReset, 0);
+            atFacility = null;
+            drivenToday = 0;          // a new driving day starts on the other side of it
             // Recap is credited in Step, against each batch's own due date. It used to be done here,
             // on any midnight a reset happened to cross, which is what made dispatch optimistic.
         }
@@ -683,6 +732,9 @@ public static class HosEngine
                     drive -= cap; shift -= cap; cycle -= cap;
                     if (requireBreak) brk -= cap;
                     remaining -= cap; milesRemaining -= miles;
+                    // The truck has moved, so wherever it was standing it is not standing there now.
+                    atFacility = null;
+                    drivenToday += cap;
                     Step(task.Label + (cap < task.Hours - Eps ? " (segment)" : ""), "Drive", cap, miles);
                 }
                 else
@@ -724,6 +776,10 @@ public static class HosEngine
                     }
                     shift -= cap; cycle -= cap;
                     remaining -= cap;
+                    // Standing on their property with the work done and the truck not yet moved. If the
+                    // day ends here, it ends here — which is what TakeReset now says out loud.
+                    if (task.AtDock && remaining <= Eps)
+                        atFacility = task.IsUnload ? "the receiver" : "the shipper";
                     Step(task.Label + (cap < dockWork - Eps ? " (segment)" : ""), "OnDuty", cap, 0);
                 }
             }

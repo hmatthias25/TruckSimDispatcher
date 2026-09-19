@@ -1263,6 +1263,10 @@ public static class DispatchEngine
             SiteHoursAreGuess = siteHours && dockKind.HoursAreGuess,
             ReceiverAllowsOvernight = Facilities.AllowsOvernightParking(
                 s, load.DestCity, load.DestState, load.Receiver),
+            ShipperAllowsOvernight = Facilities.AllowsOvernightParking(
+                s, string.IsNullOrWhiteSpace(load.OriginCity) ? s.Status.LocationCity : load.OriginCity,
+                string.IsNullOrWhiteSpace(load.OriginState) ? s.Status.LocationState : load.OriginState,
+                load.Shipper),
             UsableFuelRangeMiles = fuelRange,
             StartGameTime = s.Status.GameTime,
             Label = load.Cargo
