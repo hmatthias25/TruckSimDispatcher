@@ -463,7 +463,19 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
     if (string.IsNullOrWhiteSpace(l.OriginCity)) { l.OriginCity = s.Status.LocationCity; l.OriginState = s.Status.LocationState; }
     l.OriginState = (l.OriginState ?? "").Trim().ToUpperInvariant();
     l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
-    if (string.IsNullOrWhiteSpace(l.TrailerType)) l.TrailerType = DispatchEngine.AssignedTrailer(s)?.Type ?? "";
+    // Fill a blank trailer type from what is hooked — except the arrangement, which is not a trailer.
+    //
+    // Drop and hook is modelled as a trailer type, and this is where that leaks: a listing entered
+    // without a type was stamped "Drop & Hook", which then became its DIVISION, which no carrier
+    // operates, so every load on the board hard-failed with "Drop & Hook is not a division this company
+    // operates". Reported from play out of Odessa with two perfectly good listings refused.
+    //
+    // On the arrangement the freight decides the type and the listing may not say, so blank stays blank.
+    // Everything downstream already handles that: DivisionFor reads the listing rather than the
+    // arrangement, and the fit check does not gate on it at all.
+    var hooked = DispatchEngine.AssignedTrailer(s)?.Type ?? "";
+    if (string.IsNullOrWhiteSpace(l.TrailerType) && !DropHook.Is(hooked)) l.TrailerType = hooked;
+    if (DropHook.Is(l.TrailerType)) l.TrailerType = "";
 
     // How long the listing itself has left. Anchored to the game clock here rather than trusted as a
     // frozen number, so it runs down as the driver reports time — see BoardExpiry.

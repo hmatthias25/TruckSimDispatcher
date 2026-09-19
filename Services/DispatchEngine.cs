@@ -1803,6 +1803,11 @@ public static class DispatchEngine
 
     public static string DivisionForTrailer(string trailerType) => (trailerType ?? "").Trim() switch
     {
+        // The arrangement is never a division. It reached here by being stamped onto a listing as its
+        // trailer type, and came out the far end as "Drop & Hook is not a division this company
+        // operates" against freight the carrier runs all day. A board row that only knows it came off
+        // the Freight Market tells us nothing about the freight, which is what the blank means.
+        var dh when DropHook.Is(dh) => "Dry Van",
         "Reefer" or "Refrigerated" => "Reefer",
         "Flatbed" or "Step Deck" or "Conestoga" => "Flatbed",
         "Lowboy" or "RGN" or "Heavy Haul" => "Heavy Haul",
