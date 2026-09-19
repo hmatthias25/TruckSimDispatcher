@@ -749,8 +749,15 @@ public static class DispatchEngine
         // the thirty-four and clears the board. The line between them is whether the driver could still
         // legally drive to parking: below that they cannot do anything at all, which is the out-of-hours
         // case; above it they can move but cannot work a dock, which is this one.
-        var canReachParking = Math.Max(0, s.Settings.ParkingBufferHours);
-        if (shift <= canReachParking + 0.01) return null;
+        //
+        // The handoff is to the number OutOfHoursOnly actually uses, not to the parking buffer. Both were
+        // 0.75 so the two read as interchangeable, and they are not: the parking buffer is how much clock
+        // a driver wants in hand, and this is the line under which the app stops offering work at all.
+        // Raising the buffer to an hour opened a gap between them — a driver on 46 minutes of window fell
+        // through this check as "out of hours" and through that one as "has hours", and was handed a board
+        // they could not legally start anything on. Read one from the other and they cannot drift again.
+        var noWorkPossibleBelow = Math.Max(0, rules.StopDispatchAtDriveHours);
+        if (shift <= noWorkPossibleBelow + 0.01) return null;
 
         var dock = FacilityLearning.For(s, trailer?.Type);
         var needed = Math.Max(s.Settings.HookHours, dock.Loading) + Math.Max(0, s.Settings.ParkingBufferHours);

@@ -423,8 +423,15 @@ const gday = (day, hm) => {
     (tEval.feasibility.blockers || []).join(' | ') || 'no blockers');
 
   const timeline = (tEval.feasibility.timeline || []).map((x) => x.label || x).join(' | ');
-  ok('the pre-dock wait is rested, not idled on duty',
-    /taken as the reset|Rest timed to the opening/i.test(timeline), timeline.slice(-130) || '(none)');
+
+  // #244 changed what this particular run looks like. The driving day now stops an hour short of the
+  // eleven to leave time to find parking, so this plan takes an ordinary reset out on the road and
+  // arrives after the window has opened — there is no pre-dock wait left in it to rest. That is a
+  // better plan, not a worse one, but it stops exercising the rule, so the rule gets its own fixture
+  // below. What this run still has to show is that the reset it takes is a real one.
+  ok('the long run rests out on the road rather than idling anywhere',
+    /off-duty reset/i.test(timeline) && !/idle|waiting at the gate/i.test(timeline),
+    timeline.slice(-130) || '(none)');
   // This used to assert a ten-hour rest never appeared here, which is exactly how the phantom reset
   // hid: the plan credited a full 11 and 14 for a six-hour sit and the timeline looked reasonable.
   // A reset costs a reset. What must NOT happen is sitting it AT the receiver, and the next section
@@ -434,9 +441,25 @@ const gday = (day, hm) => {
       ? /Rest timed to the opening — (1[0-9]|[2-9][0-9]):/.test(timeline)
       : true,
     timeline.match(/Rest timed to the opening — [0-9:]+/)?.[0] || 'no such rest in this plan');
+  head('A long wait before a dock is rested, not idled on duty');
+  // The rule the Rock Springs run used to carry. A run short enough to finish inside the day, against a
+  // window that does not open until well after arrival: the driver gets there early with hours of window
+  // in hand and nothing to do, and sitting it at the gate burns the 14 they need for the unload.
+  await api('/board/clear', 'POST', {});
+  const early = await api('/board/add', 'POST', {
+    cargo: 'Pumpjack', trailerType: 'Flatbed',
+    originCity: 'Rock Springs', originState: 'WY', destCity: 'Casper', destState: 'WY',
+    loadedMiles: 250, deadheadMiles: 0, gameRevenue: 900,
+    appointmentOpensHours: 22, deadlineHours: 30, weightLbs: 6600,
+  });
+  const eEval = (early.evaluations || [])[0];
+  const eTimeline = (eEval.feasibility.timeline || []).map((x) => x.label || x).join(' | ');
+  console.log(`     ${eTimeline.slice(0, 180)}`);
+  ok('the pre-dock wait is rested, not idled on duty',
+    /taken as the reset|Rest timed to the opening/i.test(eTimeline), eTimeline.slice(-140) || '(none)');
   ok('the driver is told why',
-    (tEval.feasibility.warnings || []).some((x) => /Sleep in at your last stop|reset there|unload fresh/i.test(x)),
-    (tEval.feasibility.warnings || []).find((x) => /Sleep in|reset/i.test(x))?.slice(0, 120) || '(none)');
+    (eEval.feasibility.warnings || []).some((x) => /Sleep in at your last stop|reset there|unload fresh/i.test(x)),
+    (eEval.feasibility.warnings || []).find((x) => /Sleep in|reset/i.test(x))?.slice(0, 120) || '(none)');
 
   head('A short wait with plenty of window left is still spent on duty');
   // The fix must not turn every early arrival into a ten-hour sit. Where the window survives the wait,

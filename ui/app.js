@@ -1791,6 +1791,11 @@ function viewActive() {
         <p><b>${esc(f.verdict)}</b> — ${hhmm(f.slackHours)} slack against a ${hhmm(f.requiredBufferHours)} required buffer.
           ${f.restsRequired} rest(s), ${f.breaksRequired} break(s), ${f.fuelStopsRequired} fuel stop(s),
           ${hhmm(f.driveHours)} driving over ${num(f.totalMiles)} mi.</p>
+        ${/* Said, because a driver checking the timeline against their own arithmetic will find a leg
+              ending before the 11 does, and an unexplained gap reads as the app getting it wrong. */ ''}
+        ${f.parkingReserveApplied ? `<p class="hint" style="margin:0">A driving day here stops
+          <b>${hhmm(S.settings.parkingBufferHours)}</b> short of the clock so there is time to find
+          parking. Change it under Settings &rarr; Operational assumptions.</p>` : ''}
         ${f.warnings.length ? `<ul>${f.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
       </div>
       <details class="score"><summary>Full HOS timeline</summary>${timelineHtml(f)}</details>` : ''}
@@ -5698,6 +5703,11 @@ function viewSettings() {
       ${facilityTimesHtml()}
       <p class="hint">Effective planning speed is governed mph × speed factor — currently
         <b>${num(s.governedMph * s.speedFactor, 1)} mph</b>.</p>
+      <p class="hint"><b>Parking buffer</b> is where the driving day stops short. The plan holds this much
+        clock back so there is time to go and find somewhere legal to sit — ATS thins the truck stops out
+        and a full lot at ten at night is a real drive to the next one. It only applies where the CLOCK
+        ends the leg: arriving at a shipper, a receiver or the yard, you park there and the reserve does
+        not cost you the last twenty minutes of a run. Capped at a quarter of the drive limit.</p>
       <p class="hint"><b>Window left when empty</b> is a different risk from the safety buffer. That one is about
         missing an appointment; this one is about a dock holding you until your 14 runs out — at which point
         finishing the work is legal but moving the truck is not, and you are parked on their property for a

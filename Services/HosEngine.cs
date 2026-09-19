@@ -281,6 +281,10 @@ public static class HosEngine
         // Working clocks. With breaks switched off the break clock is simply not part of the
         // simulation — it never binds and no break is ever inserted.
         var requireBreak = rules.RequireBreak;
+        // What the day stops short by, so there is clock in hand to go and find somewhere legal to sit.
+        // Never more than a quarter of the drive limit: a reserve big enough to eat a whole shift is a
+        // rule set nobody asked for, and a typo in Settings should not silently halve the day.
+        var parkingReserve = Math.Clamp(s.ParkingBufferHours, 0, rules.DriveLimit * 0.25);
         double drive = Math.Max(0, hos.DriveRemaining);
         double shift = Math.Max(0, hos.ShiftRemaining);
         double brk = Math.Max(0, hos.BreakRemaining);
@@ -629,6 +633,41 @@ public static class HosEngine
                     var cap = requireBreak
                         ? Min(drive, shift, brk, cycle, remaining)
                         : Min(drive, shift, cycle, remaining);
+
+                    // ---- park before the clock runs out, not as it does
+                    //
+                    // The plan used to drive every clock to nought and rest on the spot, which is a plan
+                    // that ends wherever the eleventh hour happens to end — the hard shoulder, an exit
+                    // ramp, a mile short of a full lot. Reported from play: "it is taking the drive right
+                    // up to 0 HOS. A player has to find a truck stop, and in ATS they are not as plentiful
+                    // as in real life, so running to fifteen minutes left is not a good plan. I try to
+                    // stop with about an hour left."
+                    //
+                    // So the last of the day is reserved for finding somewhere legal. Only where the CLOCK
+                    // is what ends this leg: if the task finishes first the driver is arriving somewhere —
+                    // a shipper, a receiver, the yard — and parks there rather than going looking, so
+                    // reserving against that would refuse the last twenty minutes of a run for no reason.
+                    //
+                    // Not applied to the thirty-minute break either. That is a ramp, a scale or a rest
+                    // area for half an hour, not a bunk for ten, and it is easy to place.
+                    // The DAILY clocks only — the eleven and the fourteen. The seventy is a week's budget,
+                    // not a driving day: running it out does not leave a driver hunting for a space, it
+                    // parks them until a restart or a recap, which the restart path already handles. Held
+                    // back out of the cycle it did something quite different and wrong — it shortened the
+                    // week, pushed a trip across another midnight, and had the plan lean on recap hours
+                    // that the shorter version finished before it ever needed.
+                    var daily = Math.Min(drive, shift);
+                    var dayEnds = daily < remaining - Eps && daily <= cycle + Eps;
+                    if (dayEnds && parkingReserve > Eps)
+                    {
+                        var room = daily - parkingReserve;
+                        // Too little left to be worth rolling: park now and take the ten. Driving twenty
+                        // minutes to burn the clock down is how a driver ends up looking for a space with
+                        // nothing in hand to reach the next one.
+                        if (room <= Eps) { TakeReset(); continue; }
+                        cap = Math.Min(cap, room);
+                        result.ParkingReserveApplied = true;
+                    }
 
                     if (cap <= Eps)
                     {

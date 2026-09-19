@@ -2890,8 +2890,19 @@ public class AppSettings
     public double SpeedFactor { get; set; } = 0.86;
     /// <summary>Minimum HOS slack the company requires between projected arrival and the deadline.</summary>
     public double SafetyBufferHours { get; set; } = 2.0;
-    /// <summary>Time reserved at the end of a shift to find legal parking.</summary>
-    public double ParkingBufferHours { get; set; } = 0.75;
+    /// <summary>
+    /// Time held back at the end of a shift to go and find legal parking.
+    ///
+    /// <para>An hour, because ATS is not the real interstate: the truck stops are a thinned-out selection
+    /// of the real ones and a full lot at ten at night is a real drive to the next. Reported from play —
+    /// "I try to stop with about an hour left" — against a planner that drove every clock to nought and
+    /// rested on the spot, which is a plan that ends wherever the eleventh hour happens to end.</para>
+    ///
+    /// <para>Read in two different places and it is the same idea both times: against the delivery
+    /// deadline, where it says the truck has to be able to stop after arriving; and inside the HOS
+    /// projection, where it decides when the driving day ends. It used to be read only in the first.</para>
+    /// </summary>
+    public double ParkingBufferHours { get; set; } = 1.0;
 
     /// <summary>
     /// How long past a booked appointment still counts as ordinary slippage.
@@ -3485,6 +3496,15 @@ public class FeasibilityResult
     public double SlackHours { get; set; }
     public double RequiredBufferHours { get; set; }
     public int RestsRequired { get; set; }
+
+    /// <summary>
+    /// True where the plan stops driving short of the clock to leave time to find parking.
+    ///
+    /// Worth surfacing rather than hiding: a driver comparing the timeline against their own arithmetic
+    /// will find it ends forty minutes before the eleven does, and an unexplained gap reads as the app
+    /// getting it wrong.
+    /// </summary>
+    public bool ParkingReserveApplied { get; set; }
     public int BreaksRequired { get; set; }
     public int FuelStopsRequired { get; set; }
     public bool CycleRestartRequired { get; set; }
