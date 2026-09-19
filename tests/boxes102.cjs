@@ -79,18 +79,19 @@ const trailerOf = (snap, unit) => (snap.trailers || []).find((t) => t.unit === u
   ok('both trailers are on the books', !!trailerOf(S, 'T800').unit && !!trailerOf(S, 'T801').unit,
     'T800, T801');
 
-  head('1. #102 The question is asked about the trailer, and names no driver');
+  head('1. #102 The question is about the trailer — and #242 moved when it is put');
+  // #102's principle is unchanged and is asserted where the rows are actually produced now: the drop
+  // that ends the tour, in changeover196. What changed is that the home yard stopped asking. It was the
+  // one place the question bought nothing — the driver is standing on the property, the boxes are based
+  // on that property, and the decision the answers feed was made before they pulled in.
   let r = await goHome(15);
   let ask = r.homeBrief?.askWhereabouts || [];
-  ok('the arrival brief asks about the company boxes', ask.length >= 2,
-    ask.map((a) => a.unit).join(', ') || '(nothing asked)');
-  ok('each row is keyed on a trailer unit', ask.every((a) => !!a.unit), ask.map((a) => a.unit).join(', '));
-  ok('and no driver is named anywhere in it',
+  ok('arriving at the yard asks about no boxes', ask.length === 0,
+    ask.map((a) => a.unit).join(', ') || 'nothing asked');
+  ok('so nothing can name a driver in it either',
     ask.every((a) => !('driver' in a) && !('driverId' in a)), 'no driver fields');
-  ok('it never asks about the one under the truck',
+  ok('and least of all the one under the truck',
     !ask.some((a) => a.unit === mine), `mine is ${mine}`);
-  ok('what it knows is said per box', /T800|nothing on where/i.test(ask[0]?.known || ''),
-    (ask[0]?.known || '').slice(0, 90));
 
   head('2. #102 Parked is an answer, and it means available');
   // There was no way to say a box was sitting doing nothing. That is the commonest state of a spare

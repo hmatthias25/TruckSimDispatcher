@@ -117,6 +117,22 @@ async function dropAwayFrom(city, st, day) {
     ok(`tour ${tour}: only home-yard boxes are asked about`,
       !rows.some((x) => /^FAR-/i.test(x.unit || '')), rows.map((x) => x.unit).join(', ') || '(no rows)');
 
+    // #102's principle, asserted where the rows are actually produced. It used to be pinned on the home
+    // arrival brief, which #242 stopped asking — the question belongs at the drop, so this is where the
+    // shape of it has to be held. Keyed on the box, because whoever the app has down as pulling one is
+    // the part that goes stale the first time an AI driver hooks something else.
+    if (rows.length) {
+      ok(`tour ${tour}: every row is keyed on a trailer unit`, rows.every((x) => !!x.unit),
+        rows.map((x) => x.unit).join(', '));
+      ok(`tour ${tour}: and no driver is named in any of them`,
+        rows.every((x) => !('driver' in x) && !('driverId' in x)), 'no driver fields');
+      ok(`tour ${tour}: nor is the box under the driver's own truck`,
+        !rows.some((x) => x.unit === S.driver.assignedTrailerUnit),
+        `on ${S.driver.assignedTrailerUnit}`);
+      ok(`tour ${tour}: each says what is known about it`, rows.every((x) => !!x.known),
+        (rows[0].known || '').slice(0, 80));
+    }
+
     if (note && /drop and hook/i.test(note)) {
       ok('a drop-and-hook posting asks about no trailers at all', rows.length === 0,
         `${rows.length} row(s)`);

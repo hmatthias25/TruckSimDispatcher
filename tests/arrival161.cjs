@@ -72,9 +72,11 @@ async function report(city, st, day, kind = 'TruckStop', moved = 0) {
   const brief = home.homeBrief;
   ok('arriving at the yard produced a brief', !!brief, `wentHome=${home.wentHome}`);
 
+  // #242: the position questions moved to the drop that ends the tour. Asking them here was asking a
+  // driver standing on the yard where the yard's own trailers were, for a decision already made.
   const asked = (brief?.askWhereabouts || []).map((x) => x.unit);
-  ok('it asks about boxes on this yard', asked.length > 0, asked.join(', ') || '(none)');
-  ok('and not about one in Denver', !asked.includes('FAR1'), asked.join(', '));
+  ok('it asks about no boxes at the yard', asked.length === 0, asked.join(', ') || 'none asked');
+  ok('least of all one in Denver', !asked.includes('FAR1'), asked.join(', ') || 'none asked');
 
   head('2. #164 The trailer decision is stated either way');
   const equip = (brief?.equipment || []).join(' | ');

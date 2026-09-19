@@ -1395,20 +1395,17 @@ public static class HomeTime
             && s.Driver.LastTrailerDecisionGameTime == s.Status.GameTime)
             b.Equipment.Add(s.Driver.LastTrailerDecision);
 
-        // Company trailers we have nothing recent on. Asked per BOX rather than per driver, because the
-        // driver the app has down for a trailer is the part that goes stale.
-        foreach (var t in Whereabouts.WorthAsking(s))
-            b.AskWhereabouts.Add(new
-            {
-                unit = t.Unit,
-                trailer = t.Ref,
-                trailerType = t.Type,
-                current = t.Whereabouts,
-                city = t.WhereaboutsCity,
-                state = t.WhereaboutsState,
-                known = Whereabouts.Assess(s, t).Text,
-            });
-
+        // Nothing is asked about trailer positions here, and that is the point.
+        //
+        // This used to sweep every box based at the yard the driver was standing on and ask where each
+        // one was. #59d7f5c moved that whole conversation to the drop that ends the tour — "every piece
+        // of it arrived too late to act on" — so that dispatch can pick a box and quote the wait while
+        // the driver is still driving home. The sweep here was left behind, and it is the worst version
+        // of the question: asked at the yard, about boxes based at that yard, which the driver can see
+        // out of the windscreen, for a decision that was made before they pulled in.
+        //
+        // Reported from play: "I got the trailer position form when I got BACK to the garage. Supposed
+        // to only get this on the last load I drop before I deadhead home." Correct, and it was.
         b.NothingToDo = b.Shop.All(x => x.Contains("fine at") || x.Contains("nothing needed"))
                         && b.Equipment.Count == 0 && b.Paperwork.Count == 0
                         && b.Review == null && b.ReviewNotice.Length == 0

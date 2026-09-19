@@ -87,20 +87,22 @@ const goHome = async (day) => { await report('Amarillo', 'TX', day - 1); return 
   ok('and no due-back date is kept anywhere', !('trailerDueBackGameTime' in after),
     Object.keys(after).filter((k) => /due/i.test(k)).join(', ') || 'no such field');
 
-  head('63c. Where the TRAILER is gets asked at the yard');
-  // #102: asked per box, not per driver. It used to name whoever the app had down as pulling one, which
-  // AI drivers make wrong the first time they hook something else — so the question named the wrong
-  // person and the answer was filed against the wrong trailer.
+  head('63c. Where the TRAILER is is NOT asked at the yard');
+  // #102 put the question on the box rather than the driver, and that part stands — see changeover196,
+  // which asserts the shape of the rows where they are actually asked for.
+  //
+  // #242 moved WHEN. This used to fire on arrival at the home yard, which is the one place it buys
+  // nothing: the driver is standing on the property, the boxes it asks about are based on that property
+  // and visible out of the windscreen, and whatever the answers were going to change had been decided
+  // before they pulled in. The questions belong at the drop that ends the tour, so operations can pick a
+  // box and quote the wait while the driver is still driving home.
   let r = await goHome(35);
   const ask = r.homeBrief?.askWhereabouts || [];
-  ok('the arrival brief asks about the trailer', ask.length >= 1,
-    ask.map((a) => `${a.unit}/${a.trailer}`).join(', ') || '(nothing asked)');
-  ok('it is keyed on the unit, not on a driver', !!ask[0]?.unit && !('driverId' in (ask[0] || {})),
-    ask[0]?.unit || '(no unit)');
-  ok('and no driver is named in it', !('driver' in (ask[0] || {})), 'no driver field');
-  ok('it says what it currently knows', !!ask[0]?.known, (ask[0]?.known || '').slice(0, 120));
-  ok('which is that it knows nothing yet',
-    /nothing on where U100 is/i.test(ask[0]?.known || ''), (ask[0]?.known || '').slice(0, 60));
+  ok('arriving home asks for no positions', ask.length === 0,
+    ask.map((a) => `${a.unit}/${a.trailer}`).join(', ') || 'nothing asked');
+  ok('and nothing is invented for the box either',
+    !(await api('/export')).trailers.find((t) => t.unit === 'U100')?.whereabouts,
+    'U100 position still unknown');
 
   head('63d. An inbound trailer nearby is worth waiting for');
   let est = (await api('/fleetops/whereabouts', 'POST',
