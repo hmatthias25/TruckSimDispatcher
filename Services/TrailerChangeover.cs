@@ -106,31 +106,20 @@ public static class TrailerChangeover
     private static List<Trailer> Assignable(AppState s, IEnumerable<Trailer> boxes) =>
         boxes.Where(t => HomeTime.Qualified(s, t.Type)).ToList();
 
-    /// <summary>
-    /// Whether to put the position questions in front of the driver at this drop.
+    /// <remarks>
+    /// <b>Retired: there used to be an AskAtDrop here.</b>
     ///
-    /// Only on the way in. A change decided at a drop three weeks out is a forecast, and any position given
-    /// for it would be stale long before it was used.
-    /// </summary>
-    public static bool AskAtDrop(AppState s)
-    {
-        var st = HomeTime.Status(s);
-
-        // Any reason the truck is being pointed at the yard counts, not just the schedule. Reported from
-        // play after a damaged trailer put a driver under a run-home order: no positions were asked for,
-        // and a box was promised anyway on a record that turned out to be a thousand miles stale.
-        var runningHome = st.Tracked && (st.DueSoon || st.Overdue);
-        if (!runningHome
-            && Shop.Assess(s, DispatchEngine.AssignedTruck(s), DispatchEngine.AssignedTrailer(s)).Kind != "RunHome")
-            return false;
-        if (st.AtYard) return false;                  // already there; the home brief has this
-
-        var want = ComingType(s);
-        if (want == null) return false;
-        if (DropHook.Is(want)) return false;          // no box, no position, nothing to ask
-
-        return Candidates(s, want).Count > 0;
-    }
+    /// <para>It answered yes from three quarters of the way through the interval — day ten and a half of
+    /// a fortnight — so a driver with two or three loads still to run got the questions, and a forecast
+    /// built on the answers, about a home time that had not been planned yet. Reported from play: "having
+    /// a heads up show with bad info a day out on my tour is not realistic and wrong."</para>
+    ///
+    /// <para>There is no drop-side ask any more. The questions belong to the moment dispatch actually
+    /// sends the driver home — a load that finishes at the yard, or an order to run it in empty — and
+    /// that is the only place <see cref="AskRows"/> is called from now. Kept as a comment rather than a
+    /// method because the reasoning is the useful part: the trigger being early was not a tuning
+    /// problem, it was asking a question before the thing it is about had been decided.</para>
+    /// </remarks>
 
     /// <summary>The rows to ask about, in the shape the whereabouts form already renders.</summary>
     public static List<object> AskRows(AppState s)

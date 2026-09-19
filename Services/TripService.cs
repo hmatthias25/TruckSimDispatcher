@@ -986,38 +986,17 @@ public static class TripService
         if (!audit.GotYouHome && audit.HomeTimeInstructions.Count > 0)
             audit.WhatsNext.Add(audit.HomeTimeInstructions[0]);
 
-        // A trailer change coming at the home time they are running toward, settled HERE — at the drop
-        // that ends the tour — rather than sprung on them once they have parked.
+        // Nothing about a trailer change is said here, and that is the point.
         //
-        // Both halves happen at this moment now. The positions are asked for while the driver is still
-        // sitting at the receiver with the trailer screen a keypress away, and the box is picked off what
-        // they say. Doing the picking at the yard meant the wait for a trailer got tacked onto the end of
-        // home time instead of overlapping with it, and doing the asking at the yard meant the answers
-        // arrived after the only decision they could have changed had already been made.
-        var homeStatus = HomeTime.Status(s);
-        if (homeStatus.Tracked && (homeStatus.DueSoon || homeStatus.Overdue || audit.GotYouHome))
-        {
-            if (TrailerChangeover.AskAtDrop(s))
-                audit.AskWhereabouts = TrailerChangeover.AskRows(s);
-
-            // Decided on what is known right now. Answering a whereabouts question re-runs this, so a
-            // driver who fills the rows in gets the picked box and the cost immediately rather than on
-            // some later screen.
-            var plan = TrailerChangeover.Decide(s);
-            if (plan != null)
-            {
-                TrailerChangeover.Remember(s, plan);
-                audit.ChangeoverNote = plan.Note;
-                audit.WhatsNext.Add(plan.Note);
-            }
-            else
-            {
-                // Nothing coming. Drop any promise left over from a tour where something was — the seed
-                // is per home time, and a stale unit here would hand them a trailer nobody decided on.
-                TrailerChangeover.Forget(s);
-            }
-        }
-
+        // It used to fire at any drop from three quarters of the way through the interval — day ten and a
+        // half of a fortnight — so a driver with two or three loads still to run was handed a forecast
+        // about a home time that had not been planned yet, built on positions nobody had asked for. It was
+        // wrong as often as not, and being wrong early is worse than being silent: reported from play as
+        // "having a heads up show with bad info a day out on my tour is not realistic and wrong."
+        //
+        // The whole conversation now happens at the one moment it is actually about something — when
+        // dispatch sends the driver home, either by putting a load under them that finishes at the yard or
+        // by telling them to run it in empty. See DispatchEngine.AskAboutTrailersHome.
         return audit;
     }
 

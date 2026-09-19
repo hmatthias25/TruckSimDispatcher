@@ -1590,12 +1590,19 @@ function decisionHtml() {
     ${/* Asked HERE, at the moment the run home is ordered — not at the yard, which is too late to act
           on. The whole value of the answer is that a parked box can be marked as your own in ATS BEFORE
           you set off, so no AI driver takes it while you are driving in. */ ''}
-    ${(d.askWhereabouts || []).length ? `<div class="callout info">
-      <h4>Before you set off — where are the yard's trailers?</h4>
-      <p>You are running in empty, so this is the moment to settle what you pick up when you get there.
-        Have a look at the trailer screen now: a box that is parked costs you nothing and I will tell you
-        to reserve it, and one that is out costs days off your home time.</p>
-      ${d.changeoverNote ? `<p class="hint">${esc(d.changeoverNote)}</p>` : ''}
+    ${/* Its own block, not folded into the run-home instruction. Nested inside one it read as more small
+          print on an instruction that was already several paragraphs, and the driver could not tell what
+          they were being told to DO from what they were being asked to ANSWER. Reported from play as the
+          run-home direction feeling confusing, with the swap form as the part that cluttered it. */ ''}
+    ${(d.askWhereabouts || []).length ? `<div class="panel" style="margin-top:14px">
+      <div class="panel-head"><h2>Then: your trailer for this home time</h2>
+        ${badge('warn', 'two answers needed')}
+        <div class="spacer"></div>
+        <span class="sub">separate from the run above — nothing here changes where you are going</span></div>
+      <p class="hint" style="margin-top:0">Do the run first; this is about what you pick up when you get
+        there. Answer it now rather than at the yard, because if the box worth having is parked I will
+        tell you to go and mark it as your own <b>before</b> you pull out, and at the yard that is too
+        late to be worth saying.</p>
       ${whereaboutsHtml({ askWhereabouts: d.askWhereabouts })}
     </div>` : ''}
     ${d.wantCityBoard ? `<div class="callout warn">
@@ -6311,11 +6318,32 @@ async function handleAction(act, d, ev) {
         })),
       });
       absorb(r);
-      if (r.changeover) queueModals([() => modal(
-        `<div class="panel-head"><h2>Your next trailer</h2>
+      // The answer, as an answer. This is the moment the driver finds out whether they are swapping, and
+      // it used to echo a paragraph and leave them to read the verdict out of it.
+      const dec = r.decision;
+      if (dec) queueModals([() => modal(
+        `<div class="panel-head"><h2>${dec.swapping ? 'You are swapping trailers' : 'You are keeping your trailer'}</h2>
           <div class="spacer"></div>
           <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
-         <div class="callout go"><p style="margin:0">${esc(r.changeover)}</p></div>`)]);
+         <div class="callout ${dec.swapping ? 'warn' : 'go'}">
+           <h4 style="margin:0 0 6px">${dec.swapping
+             ? `Onto ${esc(dec.trailer)}${dec.type ? ` — ${esc(dec.type)}` : ''}`
+             : 'No change this home time'}</h4>
+           <p style="margin:0">${esc(dec.note)}</p></div>
+         ${dec.swapping ? `<div class="kv" style="margin-top:10px">
+           <span>home <b>${dec.homeDays} day${dec.homeDays === 1 ? '' : 's'}</b></span>
+           <span>wait <b>${dec.idle ? 'none — it is parked'
+             : dec.waitDays == null ? 'not known' : `${num(dec.waitDays, 1)} day(s)`}</b></span>
+           <span>costs you <b>${dec.idle || (dec.waitDays != null && dec.waitDays <= 0)
+             ? 'nothing' : 'days off home time'}</b></span>
+         </div>` : ''}
+         ${dec.reserve ? `<div class="callout stop" style="margin-top:10px">
+           <h4>Do this before you pull out</h4>
+           <p style="margin:0">Mark <b>${esc(dec.trailer)}</b> as your own in the ATS trailer manager now.
+             Whoever is on it finishes their load and drops it, and no other driver can take it while you
+             are running in. Leave it and you may arrive to find it gone.</p></div>` : ''}
+         <p class="hint">This is settled. You will see it again next to your home time, and the order is
+           waiting at the yard when you get there.</p>`)]);
       else toast(`${(r.filed || []).length} position(s) noted.`, 'ok');
     });
 

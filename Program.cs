@@ -1462,12 +1462,34 @@ app.MapPost("/api/fleetops/whereabouts/all", (WhereaboutsBulkRequest req) => Res
         filed.Add(new { unit = t.Unit, trailer = t.Ref, estimate = est });
     }
 
-    // One decision, once everything is in.
+    // One decision, once everything is in — and the whole of it handed back, not just the prose.
+    //
+    // This is the moment the driver finds out whether they are swapping, so the answer has to be legible
+    // as an answer: swapping or not, onto what, what it costs, and whether they have to go and mark it as
+    // their own before they pull out. It used to return the note alone and the screen had to guess the
+    // rest out of the sentence.
     var plan = TrailerChangeover.Decide(s);
     TrailerChangeover.Remember(s, plan);
     if (plan != null) store.Log(s, "fleet", plan.Note);
 
-    return new { filed, changeover = plan?.Note ?? "", snapshot = Snapshot(s) };
+    return new
+    {
+        filed,
+        changeover = plan?.Note ?? "",
+        decision = plan == null ? null : new
+        {
+            swapping = plan.Trailer != null,
+            unit = plan.Trailer?.Unit ?? "",
+            trailer = plan.Trailer?.Ref ?? "",
+            type = plan.Trailer?.Type ?? plan.Type,
+            idle = plan.Idle,
+            waitDays = plan.WaitDays,
+            reserve = plan.Reserve,
+            homeDays = s.Driver.HomeDaysPlanned,
+            note = plan.Note,
+        },
+        snapshot = Snapshot(s)
+    };
 })));
 
 app.MapPost("/api/fleetops/whereabouts", (WhereaboutsRequest req) => Results.Ok(store.Mutate<object>(s =>

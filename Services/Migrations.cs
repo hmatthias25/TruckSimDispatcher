@@ -67,9 +67,64 @@ public static class Migrations
         LiftFuelPricesToWhatDieselCosts(s);
         RegradeWithoutRating(s);
         CallFleetTakingsWhatTheyAre(s);
+        DropChangeoversDecidedTooEarly(s);
         // Not stamped: a box can leave the fleet at any time, and closing an order already closed is a
         // no-op. This is a standing tidy-up rather than a one-off correction.
         CloseOrdersForTrailersAlreadyGone(s);
+    }
+
+    /// <summary>
+    /// Throws away every trailer change decided under the old timing.
+    ///
+    /// <para>The decision used to be taken at any drop from three quarters of the way through the home-time
+    /// interval, off whatever trailer positions happened to be on file — usually none — and a long way
+    /// before the home time it was about had been planned. Anything sitting on a career now was arrived at
+    /// that way, and it is not a promise worth keeping: the driver was told a box on the strength of
+    /// information nobody had, and the whole point of the new timing is that the answer waits for the
+    /// questions.</para>
+    ///
+    /// <para><b>Open swap orders go too.</b> That is the player's call, made knowing the cost: a driver who
+    /// has already gone and marked a box as private in ATS will find the app has forgotten why. The
+    /// alternative was leaving orders standing that were raised on the same bad basis, and a stale
+    /// instruction to collect a particular trailer is worse than no instruction — it is the one thing the
+    /// driver cannot tell is stale. One will be raised again, properly, at the next run home.</para>
+    /// </summary>
+    private static void DropChangeoversDecidedTooEarly(AppState s)
+    {
+        if (s.SchemaVersion >= 23) return;
+        s.SchemaVersion = 23;
+
+        var had = s.Driver.ChangeoverUnit;
+        var reserved = s.Driver.ChangeoverReserve;
+        TrailerChangeover.Forget(s);
+
+        var closed = new List<string>();
+        foreach (var o in s.EquipmentOrders.Where(o => o.Status == "Open" && o.Kind == "TrailerSwap"))
+        {
+            o.Status = "Cancelled";
+            o.CompletedGameTime = s.Status.GameTime;
+            o.Notes = string.IsNullOrWhiteSpace(o.Notes)
+                ? "Cancelled: decided under the old home-time timing."
+                : o.Notes + " | Cancelled: decided under the old home-time timing.";
+            closed.Add(o.Number);
+        }
+
+        if (string.IsNullOrWhiteSpace(had) && closed.Count == 0) return;
+
+        var said = "Trailer changes for home time are decided at the run home now, not days out on tour. ";
+        if (!string.IsNullOrWhiteSpace(had))
+            said += $"The box you had been promised ({had}) was picked before anybody asked where the " +
+                    "trailers were, so it is dropped. ";
+        if (closed.Count > 0)
+            said += $"So {(closed.Count == 1 ? "is the order" : "are the orders")} raised on the same " +
+                    $"basis — {string.Join(", ", closed)}. ";
+        if (reserved)
+            said += "If you marked that trailer as your own in ATS you can release it; nothing is holding " +
+                    "you to it. ";
+        said += "You will be asked about the yard's boxes when dispatch next sends you home, and told " +
+                "there and then whether you are swapping and onto what.";
+
+        s.Events.Insert(0, new LogEvent { Channel = "fleet", GameTime = s.Status.GameTime, Message = said });
     }
 
     /// <summary>

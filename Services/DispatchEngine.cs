@@ -541,10 +541,70 @@ public static class DispatchEngine
         return miles is { } m && m <= 50;
     }
 
+    /// <summary>
+    /// The trailer conversation, at the one moment it is about something.
+    ///
+    /// <para>Called from exactly three places, and all three are the same event seen from different
+    /// angles: dispatch is sending the driver home. A load that finishes at the yard, a run-home order
+    /// with nothing on the board going that way, or a board where everything runs further out and home
+    /// time is already late. Until one of those happens the app says nothing about trailers at all.</para>
+    ///
+    /// <para><b>Ask, then decide — not both at once.</b> It used to pick a box in the same breath as
+    /// asking where the boxes were, off whatever stale positions happened to be on file, and then
+    /// re-decide when the answers came in. So the first thing the driver read was a forecast built on
+    /// nothing, and the second was a different one. The determination now waits for the answers, which is
+    /// what the questions are for; where there is nothing to ask, it is made immediately because there is
+    /// nothing to wait for.</para>
+    /// </summary>
     private static void AskAboutTrailersHome(AppState s, BoardDecision d)
     {
-        if (TrailerChangeover.ComingType(s) is not { } want || DropHook.Is(want)) return;
-        if (TrailerChangeover.Candidates(s, want).Count == 0) return;
+        // No change coming. Said out loud, because "you are not swapping" is an answer the driver wants
+        // and silence is not: they are running in to a yard full of trailers with no idea whether one of
+        // them is about to become theirs. This is the same run-home moment as everything below, so it is
+        // the moment to settle it either way.
+        if (TrailerChangeover.ComingType(s) is not { } want)
+        {
+            var on = AssignedTrailer(s);
+            if (on == null || DropHook.Is(on.Type)) return;
+
+            var why = s.EquipmentOrders.Any(o => o.Status == "Open" && o.Kind == "TrailerSwap")
+                ? " There is already a swap order open — that one first."
+                : "";
+            var note = $"No trailer change this home time: you keep {on.Ref} ({on.Type.ToLowerInvariant()}).{why} " +
+                       "Nothing to look up and nothing to reserve before you set off.";
+            d.ChangeoverNote = note;
+            d.DispatchNotes.Add(note);
+            return;
+        }
+
+        // Being put on drop and hook is a change, and a bigger one than swapping a box — it changes how
+        // the driver works for the whole tour. There is nothing to look up and nothing to reserve, which
+        // is why it skips the questions, but skipping the questions had it skip the telling too.
+        if (DropHook.Is(want))
+        {
+            if (TrailerChangeover.Decide(s) is { } dh)
+            {
+                d.ChangeoverNote = dh.Note;
+                d.DispatchNotes.Add(dh.Note);
+                TrailerChangeover.Remember(s, dh);
+            }
+            return;
+        }
+
+        // A change is wanted and there is nothing on the yard to make it with. Also said, for the same
+        // reason: the driver is running in expecting something to happen to their trailer, and a silence
+        // here is indistinguishable from the app having forgotten.
+        if (TrailerChangeover.Candidates(s, want).Count == 0)
+        {
+            var on = AssignedTrailer(s);
+            var note = $"Operations would have moved you onto {want.ToLowerInvariant()} this home time, but " +
+                       $"there is nothing on the yard to do it with — so you stay on " +
+                       $"{(on == null ? "what you are pulling" : $"{on.Ref} ({on.Type.ToLowerInvariant()})")}. " +
+                       "Nothing to look up before you set off.";
+            d.ChangeoverNote = note;
+            d.DispatchNotes.Add(note);
+            return;
+        }
 
         d.AskWhereabouts = TrailerChangeover.AskRows(s);
 
@@ -564,6 +624,19 @@ public static class DispatchEngine
             return;
         }
 
+        // Questions outstanding: say what happens next and nothing more. A determination made now would be
+        // made off positions nobody has given yet, and it is the one the driver would read first.
+        if (d.AskWhereabouts.Count > 0)
+        {
+            var note = "Before I settle your trailer for this home time I need to know where the boxes are " +
+                       "and how long you are staying. Fill the two in below and I will tell you straight away " +
+                       "whether you are swapping, and onto what.";
+            d.ChangeoverNote = note;
+            d.DispatchNotes.Add(note);
+            return;
+        }
+
+        // Nothing to ask, so nothing to wait for.
         if (TrailerChangeover.Decide(s) is { } plan)
         {
             d.ChangeoverNote = plan.Note;

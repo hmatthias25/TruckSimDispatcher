@@ -105,8 +105,28 @@ async function dropAwayFrom(city, st, day) {
     day += 13;
     await report('Amarillo', 'TX', day, 'TruckStop', 500);
     const closed = await dropAwayFrom('Amarillo', 'TX', day);
-    const rows = closed.audit?.askWhereabouts || [];
-    const note = closed.audit?.changeoverNote || '';
+
+    // #243: the trailer conversation moved off the drop and onto the run home. Dropping the last load is
+    // no longer the moment — pulling the board that sends the driver home is, whether that comes back as
+    // a load to the yard or as "run it in empty". So the drop happens, and then the board is pulled.
+    //
+    // Home time is forced overdue for the pull. The tour walk steps thirteen days against a fortnightly
+    // arrangement, so it drifts in and out of being due, and a pass where the driver is not due home is
+    // one where dispatch rightly says nothing about trailers at all — which would make the walk depend on
+    // the drift rather than on the seed it is here to exercise.
+    const pre = await api('/export');
+    pre.driver.lastHomeGameTime = at(day - 20);
+    S = un(await api('/import', 'POST', pre));
+
+    await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+    await api('/board/clear', 'POST', {});
+    const board = await api('/board/add', 'POST', {
+      cargo: 'Machinery', originCity: 'Amarillo', originState: 'TX',
+      destCity: 'Phoenix', destState: 'AZ', loadedMiles: 600, deadheadMiles: 0,
+      gameRevenue: 2400, deadlineHours: 72, weightLbs: 38000,
+    });
+    const rows = board.askWhereabouts || [];
+    const note = board.changeoverNote || '';
     console.log(`  ..    tour ${tour}: on ${S.driver.assignedTrailerUnit}, ${rows.length} row(s)`
       + `${note ? ` — ${note.slice(0, 64)}...` : ''}`);
 
@@ -154,10 +174,16 @@ async function dropAwayFrom(city, st, day) {
   if (!askedAt) {
     ok('a trailer change came up inside nine tours', false, '(none rolled — seed drifted)');
   } else {
-    head('3. The questions arrive at the drop, not at the yard');
-    ok('the close-out asks where the home-yard boxes are', askedAt.rows.length > 0,
+    head('3. The questions arrive on the run home, not at the yard');
+    ok('the run home asks where the home-yard boxes are', askedAt.rows.length > 0,
       askedAt.rows.map((x) => x.unit).join(', '));
-    ok('and it says a change is coming', /wants you on/i.test(noteAt), noteAt.slice(0, 140));
+    // #243: no box is named yet, and that is the fix. The note used to pick one in the same breath as
+    // asking where they all were — a verdict reached without the answers, and the one the driver read
+    // first. It now says the answer is coming and waits.
+    ok('but no box is named while the questions are outstanding',
+      !/wants you on .* so you are changing|going on that/i.test(noteAt), noteAt.slice(0, 120));
+    ok('it says the answer follows the answers', /fill the two in|tell you straight away/i.test(noteAt),
+      noteAt.slice(0, 120));
     ok('the driver is not at the yard when asked', S.driver.atHomeYard !== true,
       `atHomeYard=${S.driver.atHomeYard}`);
 
