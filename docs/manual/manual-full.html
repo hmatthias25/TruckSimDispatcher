@@ -868,14 +868,34 @@
   <table>
     <tr><th style="width:1.35in">Setting</th><th>Default</th><th>What it does</th></tr>
     <tr><td>Safety buffer</td><td class="mono">2:00</td><td>Minimum slack between projected arrival and the deadline. Below this a load is <b>Tight</b>.</td></tr>
-    <tr><td>Parking buffer</td><td class="mono">0:45</td><td>Time reserved at the end of a shift to find legal parking.</td></tr>
-    <tr><td>Speed factor</td><td class="mono">0.86</td><td>Fraction of governed speed actually averaged, allowing for traffic, ramps and terrain.</td></tr>
+    <tr><td>Parking buffer</td><td class="mono">1:00</td><td>Time held back at the end of a shift to go and find legal parking. The driving day stops short by it.</td></tr>
+    <tr><td>Speed factor</td><td class="mono">0.86</td><td>Fraction of governed speed actually averaged, allowing for traffic, ramps and terrain. <b>Learned from your deliveries</b> &mdash; see below.</td></tr>
     <tr><td>Pre / post trip</td><td class="mono">0:15</td><td>On-duty time that eats the 14-hour window without moving the truck.</td></tr>
     <tr><td>Fuel stop</td><td class="mono">0:21</td><td>Time per fuel stop, and how many are needed comes from your range.</td></tr>
   </table>
 
   <p>All of them are editable in Settings. If your plans consistently drift by more than three hours the
     audit will tell you to adjust the speed factor.</p>
+
+  <div class="rule">
+    <h4>The speed factor teaches itself</h4>
+    <p>Every hour the app projects is miles divided by <b>governed mph &times; speed factor</b>. That one
+      number decides whether a load is feasible, what it leaves on your 70-hour cycle and how much slack
+      the plan thinks it has &mdash; so it shipping as an assumption somebody picked was felt everywhere.</p>
+    <p style="margin-top:6pt">It is measured now, the same way dock times have always been. Every delivered
+      run over <b>50 miles</b> is timed from pulling out of the shipper to arriving at the receiver, the
+      logged stops come off, and what is left is real driving against real miles. The result folds in
+      slowly: the shipped figure counts as a couple of runs, so one bad afternoon on a mountain pass does
+      not become your planning speed.</p>
+    <p style="margin-top:6pt"><b>Outliers are thrown out rather than averaged in.</b> A run that comes out
+      faster than the truck's own governor means hours were spent and never logged; one that comes out far
+      too slow to be driving means most of it was something the log does not show. Neither is evidence with
+      a bit of noise on it, so neither is used.</p>
+    <p style="margin-top:6pt">Where the clock comes from: a live load has it on the <b>End load</b> event.
+      Drop and hook has no load events, so <b>Report after hooking</b> asks for the time you pulled out,
+      beside the odometer. Type a speed factor in yourself and it stops learning &mdash; you can see your
+      own game. Settings shows how many runs are behind the current figure.</p>
+  </div>
 
   <div class="pfoot"><span>7 &middot; Hours of service</span><span>11</span></div>
 </div>

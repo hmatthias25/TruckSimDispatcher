@@ -1240,6 +1240,10 @@ function loadedReportHtml(t) {
       <label>Actual weight lb<input id="ld-weight" type="number" step="100" placeholder="${t.weightLbs > 0 ? num(t.weightLbs) : 'from the job'}"></label>
       ${dh ? '' : `<label>Trailer damage % now<input id="ld-trdmg" type="number" step="0.1" min="0" max="100" value="${S.status.trailerDamagePct}"></label>`}
       <label>Odometer<input id="ld-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
+      ${/* When the wheels started turning. A live load has this off its End load event; drop and hook has
+            no load events at all, so it is asked for here — read off the game like the odometer beside it
+            rather than stamped when the panel happens to be filed. See SpeedLearning. */ ''}
+      ${dh ? dayTimeInput('ld-out', S.status.gameTime, 'Pulled out (game)') : ''}
     </div>
     <p class="hint">${dh
       ? `The odometer is the one that matters here — it is what the loaded miles are measured from, the
@@ -5688,7 +5692,10 @@ function viewSettings() {
       <div class="panel-head"><h2>Operational assumptions</h2></div>
       <div class="grid2">
         <label>Governed mph<input id="op-gov" type="number" step="1" value="${s.governedMph}"></label>
-        <label>Speed factor<input id="op-factor" type="number" step="0.01" min="0.3" max="1" value="${s.speedFactor}"></label>
+        <label>Speed factor<input id="op-factor" type="number" step="0.01" min="0.3" max="1" value="${s.speedFactor}">
+          <span class="sub">${s.speedFactorManual ? 'set by hand — no longer learning'
+            : s.speedFactorSamples > 0 ? `learned from ${s.speedFactorSamples} run(s)`
+            : 'starting assumption — learns as you deliver'}</span></label>
         <label>Safety buffer<input id="op-buffer" inputmode="numeric" value="${hhmm(s.safetyBufferHours)}"></label>
         <label>Parking buffer<input id="op-park" inputmode="numeric" value="${hhmm(s.parkingBufferHours)}"></label>
         <label>Window left when empty<input id="op-strand" inputmode="numeric" value="${hhmm(s.strandedMarginHours)}"></label>
@@ -5702,7 +5709,13 @@ function viewSettings() {
       </div>
       ${facilityTimesHtml()}
       <p class="hint">Effective planning speed is governed mph × speed factor — currently
-        <b>${num(s.governedMph * s.speedFactor, 1)} mph</b>.</p>
+        <b>${num(s.governedMph * s.speedFactor, 1)} mph</b>. Every hour the app projects is miles divided
+        by that, so it decides whether a load is feasible, what it leaves on your cycle and how much slack
+        there is. It <b>learns</b>: every delivered run over ${num(50, 0)} miles, timed from pulling out of
+        the shipper to arriving at the receiver with the logged stops taken off, folds into it. A run whose
+        arithmetic lands somewhere it cannot be — faster than the governor, or slower than driving — is
+        thrown out rather than averaged in. Type a figure here yourself and it stops learning, because you
+        can see your own game.</p>
       <p class="hint"><b>Parking buffer</b> is where the driving day stops short. The plan holds this much
         clock back so there is time to go and find somewhere legal to sit — ATS thins the truck stops out
         and a full lot at ten at night is a real drive to the next one. It only applies where the CLOCK
@@ -7116,6 +7129,8 @@ async function handleAction(act, d, ev) {
           weightLbs: fvn('ld-weight'),
           trailerDamagePct: fvn('ld-trdmg'),
           odometer: fvn('ld-odo'),
+          // Only asked for on drop and hook; a live load takes it off its End load event.
+          pulledOutGameTime: $('ld-out-day') ? readDayTime('ld-out') : null,
         }));
         toast((r.notes || []).join(' ') || 'Reported.', 'ok');
       });

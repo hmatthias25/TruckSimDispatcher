@@ -270,7 +270,7 @@ public static class TripService
     /// game should not have it recorded as none.
     /// </summary>
     public static (Trip Trip, List<string> Notes) ReportLoaded(AppState s, string tripId,
-        double? weightLbs, double? trailerDamagePct, double? odometer)
+        double? weightLbs, double? trailerDamagePct, double? odometer, string? pulledOutGameTime = null)
     {
         var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
                    ?? throw new InvalidOperationException("Trip not found.");
@@ -328,7 +328,29 @@ public static class TripService
             notes.AddRange(MeasureDeadhead(s, trip, odometer.Value));
         }
 
+        // When the wheels started turning. The far end of a measured run — see SpeedLearning, which uses
+        // it and the arrival to work out what this player's roads actually average, instead of the app
+        // dividing every projection by a number somebody picked.
+        if (!string.IsNullOrWhiteSpace(pulledOutGameTime) && GameClock.TryParse(pulledOutGameTime) != null)
+        {
+            trip.PulledOutGameTime = pulledOutGameTime!;
+            s.Status.GameTime = pulledOutGameTime!;
+            notes.Add($"Pulled out {GameClock.Pretty(pulledOutGameTime!)} — the run is timed from there to your arrival.");
+        }
+
         trip.LoadedReported = true;
+
+        // And the load is moving. A live load goes InTransit on its End load event; drop and hook has no
+        // load events at all since #241 took them out, so a drop-and-hook trip sat on Authorized for its
+        // whole life and nothing downstream that asks "is this driver running" ever said yes. Reported
+        // from play. This panel is the drop-and-hook equivalent of pulling off the dock, so it is the
+        // right place — and on a live load the status has already moved, which makes this a no-op.
+        if (trip.Status == "Authorized")
+        {
+            trip.Status = "InTransit";
+            notes.Add($"{trip.Number} is in transit.");
+        }
+
         if (notes.Count == 0) notes.Add("Nothing to change. Marked as reported so I stop asking.");
         return (trip, notes);
     }
@@ -526,6 +548,20 @@ public static class TripService
         FacilityLearning.Record(s, trip.TrailerType,
             facility.LoadDerived && !trip.PreLoaded ? facility.LoadingHours : null,
             facility.UnloadDerived ? facility.UnloadingHours : null);
+
+        // And what the run said about how fast this player's roads actually are. Same bargain as the dock
+        // times above: measured off clocks the driver read, folded in slowly, and thrown away where the
+        // arithmetic lands somewhere it cannot be. Nothing is backfilled — a career upgrading into this
+        // starts learning from its next delivered run, because the trips behind it have no pull-out clock
+        // to measure from and inventing one would be training the planner on a guess.
+        if (SpeedLearning.Record(s, trip, DispatchEngine.AssignedTruck(s)) is { } learned)
+        {
+            audit.ServiceFindings.Add(learned);
+            s.Events.Insert(0, new LogEvent
+            {
+                Channel = "dispatch", GameTime = s.Status.GameTime, Message = learned,
+            });
+        }
         if (trip.PreLoaded && facility.LoadDerived)
             audit.ServiceFindings.Add(
                 "Pre-loaded pickup, so the hook time is not counted toward what this dock takes to load a " +

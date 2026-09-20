@@ -1393,6 +1393,21 @@ public class Trip
     /// instruction keeps asking; after it, the instruction stops. Same rule as the clocks carry-forward.
     /// </summary>
     public bool LoadedReported { get; set; }
+
+    /// <summary>
+    /// The game clock when the truck pulled out of the shipper, which is when driving began.
+    ///
+    /// <para>The far end of a measured drive is <see cref="ArrivedGameTime"/>; this is the near end. A
+    /// live load derives it from the <c>EndLoad</c> event and has no need of this, but drop and hook has
+    /// no load events at all — see #241, which took them out because there is nothing to time at a hook —
+    /// so on that arrangement it is asked for beside the odometer in Report after hooking.</para>
+    ///
+    /// <para>Asked rather than stamped on submission. A driver who files the panel an hour after pulling
+    /// out would otherwise teach the planner that the run was an hour faster than it was, and a figure
+    /// read off the game has a different standing from a moment the app inferred — the same argument the
+    /// odometer beside it has always been held to.</para>
+    /// </summary>
+    public string PulledOutGameTime { get; set; } = "";
     /// <summary>Trailer condition as hooked, which may not be the trailer they had yesterday.</summary>
     public double TrailerDamageAtHook { get; set; }
     /// <summary>Set when the scaled weight differed from what the board said.</summary>
@@ -2902,8 +2917,30 @@ public class AppSettings
 
     // --- operational assumptions
     public int GovernedMph { get; set; } = 65;
-    /// <summary>Fraction of governed speed actually averaged over a leg (traffic, ramps, terrain).</summary>
+    /// <summary>
+    /// Fraction of governed speed actually averaged over a leg (traffic, ramps, terrain).
+    ///
+    /// <para><b>Learned from delivered trips</b>, the same way dock times are — see
+    /// <see cref="Services.SpeedLearning"/>. It starts as an assumption and stops being one: every run
+    /// long enough to be a highway average folds into it, so the planner's speed becomes this player's
+    /// roads on this player's map rather than a number somebody picked. That matters more than it looks,
+    /// because every hour the plan projects is this figure divided into miles.</para>
+    ///
+    /// <para>Kept as a FACTOR rather than an mph so it carries when the truck changes: it describes the
+    /// roads, and each tractor's own governed speed still applies on top of it.</para>
+    /// </summary>
     public double SpeedFactor { get; set; } = 0.86;
+
+    /// <summary>Delivered runs behind the figure above. 0 = still the starting assumption.</summary>
+    public int SpeedFactorSamples { get; set; }
+
+    /// <summary>
+    /// The driver set the speed factor by hand, so it stops moving.
+    ///
+    /// The same bargain as a hand-set dock time: they can see their own game, and an app that quietly
+    /// overwrote a deliberate setting with its own average would be worse than one that never learned.
+    /// </summary>
+    public bool SpeedFactorManual { get; set; }
     /// <summary>Minimum HOS slack the company requires between projected arrival and the deadline.</summary>
     public double SafetyBufferHours { get; set; } = 2.0;
     /// <summary>

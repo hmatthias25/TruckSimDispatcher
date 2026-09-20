@@ -225,9 +225,20 @@ app.MapPost("/api/hos/plan", (PlanRequest req) =>
 app.MapPost("/api/settings", (AppSettings incoming) => Results.Ok(store.Mutate(s =>
 {
     var keepKey = s.Settings.AnthropicApiKey;
+
+    // Typing a speed factor in is a decision, and it stops the learning — the same bargain a hand-set
+    // dock time has always had. Detected by the value changing rather than by a checkbox nobody would
+    // find: the browser sends the whole settings object back, so an untouched field arrives identical.
+    // The sample count is carried over either way, so clearing the override later resumes rather than
+    // starting from nothing.
+    var handSetSpeed = Math.Abs(incoming.SpeedFactor - s.Settings.SpeedFactor) > 0.0005;
+    var keepSamples = s.Settings.SpeedFactorSamples;
+
     s.Settings = incoming;
     // A blank key in the payload means "unchanged", so the key is never echoed to the browser.
     if (string.IsNullOrWhiteSpace(incoming.AnthropicApiKey)) s.Settings.AnthropicApiKey = keepKey;
+    s.Settings.SpeedFactorSamples = keepSamples;
+    if (handSetSpeed) s.Settings.SpeedFactorManual = true;
     if (string.IsNullOrWhiteSpace(s.Settings.FreightPrefix)) s.Settings.FreightPrefix = s.Company.Code;
     return Snapshot(s);
 })));
@@ -888,7 +899,7 @@ app.MapPost("/api/facility/rebuild", () => Results.Ok(store.Mutate<object>(s =>
 
 app.MapPost("/api/trips/{id}/loaded", (string id, LoadedReportRequest req) => Results.Ok(store.Mutate(s =>
 {
-    var (trip, notes) = TripService.ReportLoaded(s, id, req.WeightLbs, req.TrailerDamagePct, req.Odometer);
+    var (trip, notes) = TripService.ReportLoaded(s, id, req.WeightLbs, req.TrailerDamagePct, req.Odometer, req.PulledOutGameTime);
     store.Log(s, "dispatch", $"{trip.Number} loaded report: {string.Join(" ", notes)}", trip.Number);
     var paid = SettleDue(s);
     return new { trip, notes, paid, snapshot = Snapshot(s) };
@@ -2658,7 +2669,7 @@ record AcknowledgePayRequest(List<string>? Numbers);
 record AssignRequest(string? TruckUnit, string? TrailerUnit, bool Force);
 record CompleteWoRequest(decimal Cost, double DamageAfter, string Vendor, string PaidBy, string Notes);
 record WriteOffRequest(string Unit, bool DriverFault, decimal ScrapRecovery, string? Notes);
-record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? Odometer);
+record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? Odometer, string? PulledOutGameTime);
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
 record ArrivedRequest(string? GameTime);
 record ReportTrailerRequest(string? TrailerUnit, string? Type, string? Subtype, string? GameId, string? Length);
