@@ -1901,6 +1901,16 @@ function viewActive() {
     </div>` : ''}
     <div class="panel">
       <div class="panel-head"><h2>Close the load out</h2><span class="sub">Operations audits the trip from these numbers.</span></div>
+      ${/* Said where the driver is looking at the box, because the figure looks wrong otherwise: they
+            were held until 10:20 and the field says 7:30. It is the ARRIVAL on purpose — that is what
+            the appointment is judged against, and time spent waiting on a receiver's door is the
+            receiver's. The clock carries the wait forward separately. Reported from play. */ ''}
+      ${t.workStartsGameTime && t.arrivedGameTime && t.workStartsGameTime > t.arrivedGameTime
+        ? `<div class="callout info"><p style="margin:0">You arrived <b>${gt(t.arrivedGameTime)}</b> and they
+             would not take you until <b>${gt(t.workStartsGameTime)}</b>. The box below is your
+             <b>arrival</b>, which is right — that is what your on-time record is judged on, and the wait
+             for their door is theirs, not yours. The clock moves to when they took you when you close
+             out.</p></div>` : ''}
       <div class="grid2">
         ${dayTimeInput('c-time', arrivedFromLog(t) || S.status.gameTime, 'Arrived at the receiver (game)')}
         <label>Ending odometer<input id="c-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>

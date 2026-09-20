@@ -708,6 +708,25 @@ public static class TripService
         var spentAtDock = trip.UnloadingHours + trip.DetentionHours;
         var arrivedAt = GameClock.TryParse(trip.DeliveredGameTime);
 
+        // The hold the app itself issued. Where the receiver could not take the truck on arrival, the
+        // arrival call said so and told the driver which time to set their clock to — see ReceiverCall,
+        // and WorkStartsGameTime is that answer, stored at arrival.
+        //
+        // Those hours were spent. Reported from play: arrived 7:30, told they would not be taken until
+        // 10:20, advanced the clock and unloaded, and the close-out put the clock BACK to 7:30 — because
+        // the only things that moved it were a released-at reading or a stated dock time, and neither
+        // knows about a wait the app itself ordered. Everything downstream plans off that moment: the
+        // next load's window, its recap, whether it is even legal. Rewinding it three hours is not a
+        // display problem.
+        //
+        // DeliveredGameTime stays the ARRIVAL and is meant to — it is what the appointment is judged
+        // against, and charging the receiver's door to the driver's service record is the thing the
+        // comment above this exists to prevent. Where the truck was is not the same question as what
+        // time it is.
+        var heldUntil = GameClock.TryParse(trip.WorkStartsGameTime);
+        var wasHeld = heldUntil != null && arrivedAt != null && heldUntil.Value > arrivedAt.Value;
+        var workableFrom = wasHeld ? heldUntil!.Value : arrivedAt;
+
         // Three ways to know when the driver was released, best first. An EndUnload event is the same
         // reading as the optional field below, logged at the dock instead of typed at close-out — so a
         // driver who logs Begin/End needs no extra box and no extra tick.
@@ -731,12 +750,27 @@ public static class TripService
                 $"Off the clock: arrived {GameClock.Pretty(trip.DeliveredGameTime)}, board came up " +
                 $"{GameClock.Pretty(s.Status.GameTime)} \u2014 {Hhmm.Of(spentAtDock)} at the dock.");
         }
-        else if (req.UnloadAlreadyRan && spentAtDock > 0 && arrivedAt != null)
+        else if (req.UnloadAlreadyRan && spentAtDock > 0 && workableFrom != null)
         {
-            s.Status.GameTime = GameClock.Format(arrivedAt.Value.AddHours(spentAtDock));
+            // On top of when they could actually start, not when they rolled up. Those are the same
+            // moment unless the receiver held them, and where they are not, the wait is real time.
+            s.Status.GameTime = GameClock.Format(workableFrom.Value.AddHours(spentAtDock));
+            audit.CarriedForward.Add(wasHeld
+                ? $"Unload ran when you opened the board: they took you at " +
+                  $"{GameClock.Pretty(trip.WorkStartsGameTime)} and it was {Hhmm.Of(spentAtDock)} on the dock, " +
+                  $"so it is {GameClock.Pretty(s.Status.GameTime)} now."
+                : $"Unload ran when you opened the board: {Hhmm.Of(spentAtDock)} on top of {GameClock.Pretty(trip.DeliveredGameTime)}, " +
+                  $"so it is {GameClock.Pretty(s.Status.GameTime)} now.");
+        }
+        else if (wasHeld)
+        {
+            // Held, and nothing else said when they got away. The wait itself is still hours that passed,
+            // and the clock cannot go backwards over a delay this app told the driver to sit.
+            s.Status.GameTime = GameClock.Format(heldUntil!.Value);
             audit.CarriedForward.Add(
-                $"Unload ran when you opened the board: {Hhmm.Of(spentAtDock)} on top of {GameClock.Pretty(trip.DeliveredGameTime)}, " +
-                $"so it is {GameClock.Pretty(s.Status.GameTime)} now.");
+                $"You arrived {GameClock.Pretty(trip.DeliveredGameTime)} and they would not take you until " +
+                $"{GameClock.Pretty(trip.WorkStartsGameTime)}, so that is the clock now. The arrival is what " +
+                "your service record is judged on — waiting for their door is theirs, not yours.");
         }
         s.Status.ActiveTripId = "";
         s.Status.DutyStatus = "OnDuty";
