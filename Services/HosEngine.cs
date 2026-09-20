@@ -25,6 +25,16 @@ public class HosTask
 public class PlanRequest
 {
     public double DeadheadMiles { get; set; }
+
+    /// <summary>
+    /// The deadhead above is the app's own estimate rather than a figure off the listing.
+    ///
+    /// ATS very often quotes no deadhead at all, and the driver's clocks were read wherever they were
+    /// standing when they read them — so planning zero is not neutral, it understates the hours by
+    /// exactly the run nobody counted. Estimated off the city coordinates and said so wherever it shows,
+    /// because a number the app worked out and a number the game stated are not the same kind of thing.
+    /// </summary>
+    public bool DeadheadIsEstimate { get; set; }
     public double LoadedMiles { get; set; }
     public double LoadingHours { get; set; }
     public double UnloadingHours { get; set; }
@@ -196,7 +206,7 @@ public static class HosEngine
         if (req.DeadheadMiles > 0)
             tasks.Add(new HosTask
             {
-                Label = $"Deadhead {req.DeadheadMiles:0} mi",
+                Label = $"Deadhead {req.DeadheadMiles:0} mi{(req.DeadheadIsEstimate ? " (estimated)" : "")}",
                 Kind = "Drive",
                 Hours = driveHours * dhShare,
                 Miles = req.DeadheadMiles

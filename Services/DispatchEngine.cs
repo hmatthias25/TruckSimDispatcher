@@ -1206,9 +1206,49 @@ public static class DispatchEngine
                         && takesEarly
                         && load.AppointmentOpensHours <= 0;
 
+        // The run to the shipper, when the listing does not quote one and the driver is not standing on
+        // it. ATS very often quotes nothing, and the clocks the driver typed in were read wherever they
+        // were when they read them — so planning zero is not neutral, it is wrong in one direction every
+        // time, and it understates the hours by exactly the run nobody counted. Reported from play as
+        // 18:21 of plan against 19:08 of cycle, with forty miles to the shipper that were in neither
+        // figure; the driver's own note was that there was no way for the app to know it, which is true
+        // of the exact distance and not of the fact that there IS one.
+        //
+        // Estimated off the city coordinates with a road factor — the measured path in Geo, not the
+        // state-centroid fallback — and labelled as an estimate wherever it shows. Where the city is not
+        // in the table at all, which means a map mod, nothing is invented: the plan stays as the listing
+        // stated it and the driver is told the run is missing from it.
+        //
+        // PLANNING ONLY. It does not touch the deadhead ratio or the scoring, because a load refused on
+        // an estimated distance is a refusal the app made up, and it does not touch what gets booked —
+        // empty miles are measured off the odometer at the shipper and always have been.
+        // Both towns have to be ones we actually have coordinates for. MilesBetween falls back to a flat
+        // 130 miles for an unknown city in a known state, which is fine for "is this load heading home"
+        // and is not fine here: it would plan two hours of driving nobody can check into a trip, off a
+        // map mod's town name. Geo.Knows is the difference between a measurement and a placeholder.
+        var quoted = load.DeadheadMiles;
+        double? guessedDeadhead = null;
+        if (quoted <= 0 && !load.AtLocation && !string.IsNullOrWhiteSpace(load.OriginCity)
+            && Geo.Knows(s.Status.LocationCity, s.Status.LocationState)
+            && Geo.Knows(load.OriginCity, load.OriginState))
+            guessedDeadhead = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState,
+                                               load.OriginCity, load.OriginState);
+
+        // And it has to be a plausible hop. Past a couple of hundred miles the likelier explanation is
+        // not that the driver is about to deadhead across two states to get under a load — it is that the
+        // position on file is stale, because they moved and entered a board for where they are now
+        // without reporting in first. Planning the gap then is worse than planning nothing: it invents
+        // most of a day's driving out of a reading nobody updated. Said as what it probably is instead.
+        const double plausibleRepositionMiles = 250;
+        var staleLooking = guessedDeadhead is { } far && far > plausibleRepositionMiles;
+        if (staleLooking) guessedDeadhead = null;
+
+        var planDeadhead = quoted > 0 ? quoted : Math.Max(0, guessedDeadhead ?? 0);
+
         var planReq = new PlanRequest
         {
-            DeadheadMiles = load.DeadheadMiles,
+            DeadheadMiles = planDeadhead,
+            DeadheadIsEstimate = quoted <= 0 && planDeadhead > 0.5,
             LoadedMiles = load.LoadedMiles,
             LoadingHours = pickupHours,
             UnloadingHours = dock.Unloading,
@@ -1373,6 +1413,27 @@ public static class DispatchEngine
         // Already parked on it. The deadhead penalty above is meant to cover this and only does where a
         // deadhead figure is known — pasted boards carry none, so a job across town scored identically
         // to the one at the dock under the truck.
+        // The run to the shipper that nobody quoted. Said either way: with a figure where the cities are
+        // known, and as a plain gap where they are not.
+        if (quoted <= 0 && !load.AtLocation && !string.IsNullOrWhiteSpace(load.OriginCity))
+        {
+            if (guessedDeadhead is { } dh && dh > 0.5)
+                e.Cons.Add($"The listing quotes no deadhead and you are not at the shipper. I have planned " +
+                           $"about {dh:0} mi to {Place(load.OriginCity, load.OriginState)} — that is an estimate " +
+                           $"off the city coordinates, not a figure from the game, and it is in the hours and " +
+                           "the clocks above. Your odometer decides what actually gets paid.");
+            else if (staleLooking)
+                e.Cons.Add($"I have you at {Place(s.Status.LocationCity, s.Status.LocationState)}, which is a long " +
+                           $"way from {Place(load.OriginCity, load.OriginState)}. If you have moved since you last " +
+                           "reported in, report in again — the clocks and hours below are worked from where I think " +
+                           "you are, and I am not going to plan a run across two states on a reading that old.");
+            else if (guessedDeadhead == null)
+                e.Cons.Add($"The listing quotes no deadhead, you are not at the shipper, and " +
+                           $"{Place(load.OriginCity, load.OriginState)} is not a town I have coordinates for — a " +
+                           "map mod, most likely. The hours and the clocks below assume you are already there, " +
+                           "so add the run to them yourself before you decide.");
+        }
+
         if (load.AtLocation)
         {
             score += w.AtDockEdge;
