@@ -203,7 +203,47 @@ async function run(miles, realMph, { logBreak = false } = {}) {
   ok('a run with a logged break still lands on the same speed',
     Math.abs(afterBreak - beforeBreak) < 0.02, `${beforeBreak} → ${afterBreak}`);
 
-  head('7. Setting it by hand stops it moving');
+  head('7. A run with no arrival stamp says why it taught nothing');
+  // The far end of every measurement is the "I have arrived" stamp. Close out without pressing it and
+  // there is no sample — which, said silently, makes the whole thing look like it does not work.
+  // Eight runs in and home time has come due, which quite rightly refuses a load going the wrong way.
+  // Not what this section is about, so the clock is pushed back.
+  {
+    const st7 = await api('/export');
+    st7.driver.lastHomeGameTime = at(day, '06:00');
+    S = un(await api('/import', 'POST', st7));
+  }
+  await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
+  await api('/board/clear', 'POST', {});
+  const nb = await api('/board/add', 'POST', {
+    cargo: 'Machinery', trailerType: 'Dry Van', originCity: S.status.locationCity,
+    originState: S.status.locationState, destCity: 'Boise', destState: 'ID',
+    loadedMiles: 400, deadheadMiles: 0, gameRevenue: 1040, deadlineHours: 96,
+    weightLbs: 38000, atLocation: true,
+  });
+  const na = await api('/dispatch/authorize', 'POST', { loadId: (nb.evaluations || [])[0].load.id });
+  await api(`/trips/${na.trip.id}/loaded`, 'POST',
+    { weightLbs: 38000, odometer: odo, pulledOutGameTime: at(day, '06:00') });
+  odo += 400;
+  const skipped = await api(`/trips/${na.trip.id}/complete`, 'POST', {
+    deliveredGameTime: at(day, '20:00'), actualMiles: 400, endOdometer: odo, actualRevenue: 1040,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 3, trailerDamageAfter: 0, cargoDamagePct: 0,
+    loadingHours: 0, unloadingHours: 0, detentionHours: 0, layoverDays: 0, breakdownDays: 0,
+    extraStops: 0, tarpsUsed: 0, delayReason: '', damageCause: '', notes: '',
+    locationCity: 'Boise', locationState: 'ID', locationKind: 'Receiver',
+    fuelPct: 60, gameTime: at(day, '20:00'),
+  });
+  S = skipped.snapshot; day += 1;
+  const said = (skipped.audit.serviceFindings || []).find((x) => /driving speed/i.test(x)) || '';
+  console.log(`  ..    ${said.slice(0, 150) || '(silent)'}`);
+  ok('it says nothing was learned', /Nothing learned about driving speed/i.test(said), said.slice(0, 90));
+  ok('and names the missing arrival stamp', /no arrival time on it/i.test(said), 'named');
+  ok('telling them which button produces it', /I have arrived/i.test(said), 'named the button');
+  ok('and it did not quietly use the delivered time instead',
+    (await settings()).speedFactorSamples === 8, `${(await settings()).speedFactorSamples} sample(s)`);
+
+  head('8. Setting it by hand stops it moving');
   let st = await api('/export');
   st.settings.speedFactor = 0.9;
   await api('/settings', 'POST', st.settings);

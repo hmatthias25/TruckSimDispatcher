@@ -562,6 +562,11 @@ public static class TripService
                 Channel = "dispatch", GameTime = s.Status.GameTime, Message = learned,
             });
         }
+        // And where a run long enough to have taught something did not, say why. Otherwise the whole
+        // thing simply looks like it does not work — the commonest reason is closing out without ever
+        // pressing "I have arrived", which leaves no far end to measure to.
+        else if (SpeedLearning.WhyNothingLearned(s, trip, DispatchEngine.AssignedTruck(s)) is { } quiet)
+            audit.ServiceFindings.Add(quiet);
         if (trip.PreLoaded && facility.LoadDerived)
             audit.ServiceFindings.Add(
                 "Pre-loaded pickup, so the hook time is not counted toward what this dock takes to load a " +

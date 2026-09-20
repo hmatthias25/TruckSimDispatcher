@@ -142,6 +142,37 @@ public static class SpeedLearning
     /// Returns null where the run taught nothing, which is the ordinary case for a short hop or a trip
     /// with half its hours missing from the log.
     /// </summary>
+    /// <summary>
+    /// Why a run that looked long enough to teach something taught nothing, or null where there is
+    /// nothing worth saying.
+    ///
+    /// <para>Silence is the wrong answer here. The far end of every measurement is the <b>I have
+    /// arrived</b> stamp, and a driver who closes out without pressing it produces no sample at all — so
+    /// the feature would simply appear not to work, run after run, with nothing to suggest what was
+    /// missing. A short hop is not worth mentioning; a five-hundred-mile run that could not be timed is.</para>
+    ///
+    /// <para>There is deliberately no fallback to the delivered time. That clock is stamped after the
+    /// unload, so using it would fold dock time into the driving and teach the planner the roads are
+    /// slower than they are — quietly, and by an amount small enough to get past the believable band.</para>
+    /// </summary>
+    public static string? WhyNothingLearned(AppState s, Trip trip, Truck? truck)
+    {
+        if (s.Settings.SpeedFactorManual) return null;
+
+        var miles = trip.ActualMiles > 0 ? trip.ActualMiles : trip.DispatchedMiles;
+        if (miles < MinMilesToLearn) return null;          // too short to be worth a word either way
+
+        var r = Measure(s, trip, truck);
+        if (r.Usable) return null;
+
+        if (string.IsNullOrWhiteSpace(trip.ArrivedGameTime))
+            return $"Nothing learned about driving speed from this one: there is no arrival time on it. " +
+                   $"Press <b>I have arrived</b> when you reach the receiver and a run like this " +
+                   $"({miles:0} mi) teaches the planner what your roads actually average.";
+
+        return $"Nothing learned about driving speed from this one — {r.Why}.";
+    }
+
     public static string? Record(AppState s, Trip trip, Truck? truck)
     {
         if (s.Settings.SpeedFactorManual) return null;
