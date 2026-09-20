@@ -269,6 +269,16 @@ public static class FacilityProfile
     /// So the plan stays as it was and the advice is fresh, exactly the way the overnight-parking note
     /// works — same seed, same answer every time it is asked, nothing to migrate onto old trips.
     /// </summary>
+    /// <summary>
+    /// Whether a load already running is going to a site rather than a dock.
+    ///
+    /// Worked out live off the trip, like <see cref="SiteHoursFor"/> and for the same reason: it is a
+    /// fact about the place and the freight, so there is nothing to store and nothing to migrate onto
+    /// trips that were dispatched before the app knew to ask.
+    /// </summary>
+    public static bool IsSiteTrip(Trip? trip) =>
+        trip != null && trip.Kind == "Freight" && KindOf(FreightTypeOf(trip)) == Kind.Site;
+
     public static object? SiteHoursFor(AppState s, Trip? trip)
     {
         if (trip == null || trip.Kind != "Freight") return null;

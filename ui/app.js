@@ -1746,6 +1746,10 @@ function viewActive() {
   // there is nothing to be early for, and something to be late for. Read live, so a load already running
   // when this arrived picks it up without its dispatch plan being rewritten under it.
   const sh = S.views.receiverSiteHours;
+  // Whether this one is going to a site at all. sh goes quiet once the game has stated a window — those
+  // hours are then the game's to state — but the gate is still a gate, and "no appointment" means
+  // something different there than it does at a warehouse.
+  const isSite = S.views.receiverIsSite;
   // Said before the state line rather than on the settlement afterwards, which is the only time
   // it can change what the driver does.
   const fx = S.views.fuelCrossing;
@@ -1763,13 +1767,25 @@ function viewActive() {
       <dt>Dispatched at</dt><dd>${gt(t.dispatchedGameTime)}</dd>
       ${t.appointmentOpensGameTime
         ? `<dt>Window</dt><dd>${gt(t.appointmentOpensGameTime)} → <b>${gt(t.dueGameTime)}</b>
-             <div class="sub">${t.receiverTakesEarly
-               ? 'They agreed to take it whenever you arrive — do not sit waiting for the window.'
-               : 'They will not take it before the window opens.'}</div></dd>`
+             ${/* This said "do not sit waiting for the window", which is not true anywhere: nobody is
+                   taken before the window opens, at a dock or a site. What being unbooked changes is
+                   only what happens inside it. Reported from play on a flatbed, where the briefing
+                   promised no waiting and the arrival then held the truck at the gate. */ ''}
+             <div class="sub">${!t.receiverTakesEarly
+               ? 'They will not take it before the window opens.'
+               : isSite
+                 ? 'They will not take it before the window opens — a site gate does not go up early. No slot inside it, though.'
+                 : 'They will not take it before the window opens. After that, any hour works — no slot to sit for.'}</div></dd>`
         : `<dt>Due</dt><dd>${gt(t.dueGameTime)}</dd>`}
-      ${t.receiverTakesEarly
+      ${t.receiverTakesEarly && isSite
+        ? `<dt>Appointment</dt><dd>${badge('info', 'no slot — take your turn')}
+             <div class="sub">Nobody booked you in, so there is no time to hit. It is a gate rather than a
+               door: turn up before they open and you wait, and when they do open you are behind whoever
+               queued. Being early buys you a place in the line, not an early start.</div></dd>`
+        : t.receiverTakesEarly
         ? `<dt>Appointment</dt><dd>${badge('ok', 'taking it early')}
-             <div class="sub">No slot to keep. Anything you save is yours to reload against.</div></dd>`
+             <div class="sub">No slot to keep, so anything you save inside their window is yours to reload
+               against. They still will not take it before the window opens.</div></dd>`
         : t.appointmentGameTime
           ? `<dt>Appointment</dt><dd><b>${gt(t.appointmentGameTime)}</b>
                <div class="sub">Aim for the slot. Past it you have ${num(S.settings.appointmentGraceHours, 1)}h

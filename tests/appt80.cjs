@@ -153,7 +153,7 @@ async function offer(cargo, opensHours = 8, deadlineHours = 20) {
       /take it whenever you get there/i.test(trip.authorizationRationale || ''),
       (trip.authorizationRationale || '').slice(-120));
 
-    head('6. Delivered early: on time, credited to the receiver, no window warning');
+    head('6. Delivered early: on time, credited to the receiver — but still queried');
     const done = await api(`/trips/${trip.id}/complete`, 'POST', {
       deliveredGameTime: iso(day, '12:00'), actualMiles: 22, endOdometer: 0, actualRevenue: 700,
       fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
@@ -168,8 +168,17 @@ async function offer(cargo, opensHours = 8, deadlineHours = 20) {
     ok('it counts as on time, nothing more', t2.serviceResult === 'OnTime', t2.serviceResult);
     ok('the report credits the receiver, not the driver',
       /receiver (took|had agreed)/i.test(findings), findings.slice(0, 140));
-    ok('no "they would not have taken it yet" warning',
-      !/would not have taken it/i.test(t2.windowWarning || ''), t2.windowWarning || 'none');
+    // This used to assert the opposite, on the reading that an agreeable receiver would take freight
+    // before they were open. None of them do, and nothing in the app ever behaved as though they did:
+    // ReceiverCall.BeforeTheyOpen holds every truck to the window whether or not anybody booked a slot.
+    // Unbooked means no slot INSIDE the window, which is a different claim — see gatesite255.
+    //
+    // It is a query and not a penalty, and the two assertions above are what say so: the load is still
+    // OnTime and still credited to the receiver. What the app is asking is which of the two times is
+    // wrong, because they cannot both be right.
+    ok('and the delivery before the doors opened is queried, not waved through',
+      /would not have taken it/i.test(t2.windowWarning || ''), t2.windowWarning || 'none');
+    ok('without it costing the driver anything', t2.serviceResult === 'OnTime', t2.serviceResult);
   }
 
   head('7. Missing the slot: grace first, then it counts');

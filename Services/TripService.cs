@@ -1546,7 +1546,12 @@ public static class TripService
         // was not taking it yet, so either the time is wrong or the window was. Said, not blocked:
         // this app reconciles what the driver saw, the same as it does for an odometer that reads
         // backwards.
-        if (del != null && !trip.ReceiverTakesEarly
+        //
+        // This used to let a takes-early load past it, on the reading that an agreeable receiver would
+        // take freight before they were open. None of them do — ReceiverCall holds every truck to the
+        // window and always has. Unbooked means no slot INSIDE the window, which is a different thing,
+        // and the guard here was the last place still confusing the two.
+        if (del != null
             && GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opens && del < opens)
             trip.WindowWarning =
                 $"Delivered {GameClock.Pretty(del.Value)}, but the window did not open until " +

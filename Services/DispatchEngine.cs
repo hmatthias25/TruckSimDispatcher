@@ -1351,6 +1351,9 @@ public static class DispatchEngine
         // this card contradict each other, one printing a 19:00 slot while the other said there was no
         // appointment at all.
         e.ReceiverTakesEarly = !booked && load.AppointmentOpensHours > 0;
+        // What an unbooked receiver being unbooked actually buys you, which is not the same at both kinds
+        // of place. On the card because it changes how the driver should drive the load.
+        e.ReceiverIsSite = dockKind.Kind == FacilityProfile.Kind.Site;
         if (booked && load.AppointmentOpensHours > 0
             && GameClock.TryParse(s.Status.GameTime) is { } evalNow)
         {
@@ -1364,9 +1367,24 @@ public static class DispatchEngine
             e.AppointmentGameTime = dueShown == null || shown <= dueShown.Value ? GameClock.Format(shown) : "";
         }
 
-        if (e.ReceiverTakesEarly)
+        // Unbooked is worth saying either way, but it is worth two different things and saying only the
+        // dock one was read from the seat as a promise the site never made. Reported from play on a
+        // flatbed: "it says they can take it early but that isn't totally the case — I thought this was
+        // the case where if we get there before the window we have to wait."
+        //
+        // It is. Nothing is taken before the window opens, at either kind of place; what the booking
+        // decides is what happens INSIDE it. At a dock that is a door, and an unbooked one is free of the
+        // wait. At a site it is a gate with a line behind it, and no appointment means no appointment for
+        // anybody — so the hours come back as a queue instead of a slot.
+        if (e.ReceiverTakesEarly && e.ReceiverIsSite)
+            e.Pros.Add($"No booked slot at {Place(load.DestCity, load.DestState)} — they take it when you " +
+                       "get there, so there is no time to hit. It is a job site rather than a dock, though: " +
+                       "they still will not open the gate before the window does, and when it goes up you " +
+                       "are behind whoever queued. Early buys you a place in the line, not an early start.");
+        else if (e.ReceiverTakesEarly)
             e.Pros.Add($"No booked slot at {Place(load.DestCity, load.DestState)} — any hour inside their " +
-                       "window works, so none of it is spent waiting on a door.");
+                       "window works, so none of it is spent waiting on a door. They will not take it " +
+                       "before the window opens; after that you are straight in.");
         else if (!string.IsNullOrWhiteSpace(e.AppointmentGameTime))
             e.Cons.Add($"Booked in at {GameClock.Pretty(e.AppointmentGameTime)}. Arriving before that is " +
                        "sitting on their gate, not slack.");
@@ -2233,10 +2251,21 @@ public static class DispatchEngine
                 ? Math.Max(0, (GameZones.BackHere(s, slot, load.DestState) - from).TotalHours
                               - eval.Feasibility.ElapsedHours)
                 : 0;
-            trip.AuthorizationRationale +=
-                $" {DispatchEngine.Place(load.DestCity, load.DestState)} is quiet this week — they will take it " +
-                "whenever you get there, appointment or not. Do not sit on their gate waiting for a slot" +
-                (saved > 0.25 ? $"; that is about {Hhmm.Of(saved)} you do not have to spend, so a reload is worth looking at." : ".");
+
+            // "Do not sit on their gate" is a dock's answer and was being given to job sites, which is
+            // the one place the driver WILL be sitting on the gate — ReceiverCall.BeforeTheyOpen holds
+            // them to the window and AtSite puts them behind the queue. The briefing promised one thing
+            // and the arrival delivered another, on the same load.
+            var siteRun = FacilityProfile.KindOf(FacilityProfile.FreightTypeOf(trip)) == FacilityProfile.Kind.Site;
+            trip.AuthorizationRationale += siteRun
+                ? $" Nobody has booked you in at {DispatchEngine.Place(load.DestCity, load.DestState)} — they take " +
+                  "it when you get there. That is a site, though, not a dock: the gate does not go up before the " +
+                  "window does, and the trucks that waited for it go in ahead of you. Get there for the opening " +
+                  "and expect a line; there is no slot being held for you either way."
+                : $" {DispatchEngine.Place(load.DestCity, load.DestState)} is quiet this week — they will take it " +
+                  "whenever you get there inside the window, appointment or not. Once they are open there is no " +
+                  "slot to sit for" +
+                  (saved > 0.25 ? $"; that is about {Hhmm.Of(saved)} you do not have to spend, so a reload is worth looking at." : ".");
         }
         else if (!string.IsNullOrWhiteSpace(trip.AppointmentGameTime))
         {

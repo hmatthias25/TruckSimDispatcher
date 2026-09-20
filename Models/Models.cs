@@ -3727,6 +3727,15 @@ public class LoadEvaluation
     /// </summary>
     public bool ReceiverTakesEarly { get; set; }
 
+    /// <summary>
+    /// The freight is going to a job site, yard or mill rather than a warehouse dock.
+    ///
+    /// Paired with <see cref="ReceiverTakesEarly"/> because unbooked means two different things at the
+    /// two kinds of place, and saying only the dock one reads as a promise a site never made: a gate
+    /// still opens on a clock and still has a line behind it. See FacilityProfile.
+    /// </summary>
+    public bool ReceiverIsSite { get; set; }
+
     /// <summary>The booked slot at the receiver, as a game time. Empty when the window gave no range.</summary>
     public string AppointmentGameTime { get; set; } = "";
     public bool DestResetFriendly { get; set; }
