@@ -69,9 +69,63 @@ public static class Migrations
         CallFleetTakingsWhatTheyAre(s);
         DropChangeoversDecidedTooEarly(s);
         PutAirBetweenWatchAndShop(s);
+        PutProbationaryDriversBackOnTheProbationaryScale(s);
         // Not stamped: a box can leave the fleet at any time, and closing an order already closed is a
         // no-op. This is a standing tidy-up rather than a one-off correction.
         CloseOrdersForTrailersAlreadyGone(s);
+    }
+
+    /// <summary>
+    /// Puts a driver still serving probation back on their carrier's probationary rate.
+    ///
+    /// <para>Reported from play: a probationary driver at Prime Inc. on $0.57 a loaded mile, which is
+    /// Prime's <b>posted company rate</b> — the figure a cleared company driver earns. The probationary
+    /// multiplier is nine tenths of it, so the rate should be $0.513, and a hire made today gets exactly
+    /// that. The player also noticed the shape of it from the outside: nothing else on the board they
+    /// could get hired by started as high, because the number was not a starting rate at all.</para>
+    ///
+    /// <para><see cref="Carriers.ApplyPayScale"/> says why it exists in as many words — "without this an
+    /// experienced hire started ON the company rate, and clearing probation was worth nothing at all:
+    /// same money, new title". Pay is written at hire and then only ever rewritten by a promotion or a
+    /// carrier change, so a career created before that landed carries the old number for as long as its
+    /// probation lasts, and then gets "promoted" to the rate it was already on.</para>
+    ///
+    /// <para><b>Only downwards.</b> A second-chance scale, a hand-set rate, anything below the
+    /// probationary figure is left alone — this corrects being overpaid by a bug and is not licence to
+    /// go rewriting pay generally. Settlements already run are untouched: they were paid, and unpaying
+    /// them would be inventing history to fix a different mistake.</para>
+    /// </summary>
+    private static void PutProbationaryDriversBackOnTheProbationaryScale(AppState s)
+    {
+        if (s.SchemaVersion >= 25) return;
+        s.SchemaVersion = 25;
+
+        if (!s.Onboarded || s.Driver.Rank != "probationary") return;
+        if (string.IsNullOrWhiteSpace(s.Company.Code) || s.Application == null) return;
+
+        var (loaded, deadhead, _) = Carriers.StartingRate(s, s.Company.Code, s.Application);
+        if (loaded <= 0 || s.Driver.Pay.LoadedCpm <= loaded + 0.0005m) return;
+
+        var was = s.Driver.Pay.LoadedCpm;
+        var wasDh = s.Driver.Pay.DeadheadCpm;
+        Carriers.ApplyPayScale(s, s.Company.Code, s.Application);
+
+        // Never up. ApplyPayScale reproduces the hire exactly, which is right for the reported case and
+        // would be a raise for anybody sitting under it for a reason.
+        if (s.Driver.Pay.LoadedCpm > was) s.Driver.Pay.LoadedCpm = was;
+        if (s.Driver.Pay.DeadheadCpm > wasDh) s.Driver.Pay.DeadheadCpm = wasDh;
+
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "pay",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"Your loaded rate is corrected from ${was:0.000} to ${s.Driver.Pay.LoadedCpm:0.000} a mile, " +
+                $"and empty from ${wasDh:0.000} to ${s.Driver.Pay.DeadheadCpm:0.000}. You were on " +
+                $"{s.Company.Name}'s full company rate while still serving probation — that is the figure a " +
+                "cleared company driver earns, and it meant clearing probation was worth nothing at all. " +
+                "Settlements already run stay as they were paid.",
+        });
     }
 
     /// <summary>
