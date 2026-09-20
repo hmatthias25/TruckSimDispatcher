@@ -1395,6 +1395,47 @@ public static class DispatchEngine
                        "There may be nothing coming out of there to get you back, which makes the next one " +
                        "an empty run home or a late one.");
 
+        // What the load LEAVES on the seventy, which is a different question from what is on it now and
+        // is the one the driver is actually deciding. Every other use of the reset-watch line reads
+        // Hos.CycleRemaining — where they are standing — so a driver comfortably above it can be handed a
+        // load that lands them under it, and none of the reset positioning above ever engages. Reported
+        // from play: 18:21 of plan against 19:08 of cycle, which is 47 minutes left on arrival and no
+        // mention of it anywhere. CycleRemainingAfter was computed, printed on the card, and read by
+        // nothing.
+        var cycleLeft = e.Feasibility.CycleRemainingAfter;
+        if (e.Feasibility.Verdict != "Infeasible" && cycleLeft > 0 && cycleLeft <= w.ResetWatchCycleHours)
+        {
+            // Thin enough that the estimate itself is the risk. The plan runs at governed speed times a
+            // factor; real roads, weather and traffic do not, and a margin smaller than a tenth of the
+            // driving is inside the error on the figure it is measured against.
+            var razor = cycleLeft <= Math.Max(2.0, e.Feasibility.DriveHours * 0.10);
+            e.Cons.Add(razor
+                ? $"This finishes you with about {Hhmm.Of(cycleLeft)} left on the {s.Settings.Hos.CycleLimit:0}-hour cycle, " +
+                  $"against {Hhmm.Of(e.Feasibility.DriveHours)} of driving planned at {e.Feasibility.EffectiveMph:0} mph. " +
+                  "That is a thinner margin than the estimate is worth — a slow stretch of road, weather or a " +
+                  "queue and you are over. Take it knowing the 34 may start before you are unloaded."
+                : $"This finishes you with about {Hhmm.Of(cycleLeft)} left on the {s.Settings.Hos.CycleLimit:0}-hour cycle, " +
+                  "so you will be sitting a restart before you run again. Where it drops you decides whether " +
+                  "that is somewhere you can sit it.");
+
+            if (!e.DestResetFriendly)
+                e.Cons.Add($"And {Place(load.DestCity, load.DestState)} is not somewhere we know you can sit a " +
+                           "34. Worth knowing before you are parked there with no hours.");
+
+            // And it counts in the choice, not only in the small print. Between two loads that both pay,
+            // the one that does not spend the rest of the week is the better load, and the app should be
+            // the thing that notices rather than the driver reading the cycle-after figure off the card
+            // and doing it themselves. Scaled by how thin it lands, and marked down harder where there is
+            // nowhere to sit the restart it is about to require.
+            var thinness = 1.0 - Math.Clamp(cycleLeft / Math.Max(1.0, w.ResetWatchCycleHours), 0, 1);
+            var burnPts = -(razor ? 1.4 : 1.0) * thinness * w.ResetPositioning
+                          * (e.DestResetFriendly ? 1.0 : 1.5);
+            score += burnPts;
+            detail.Add($"Leaves {Hhmm.Of(cycleLeft)} on the cycle — " +
+                       $"{(razor ? "inside the estimate's own error" : "a restart before the next load")}" +
+                       $"{(e.DestResetFriendly ? "" : ", somewhere that cannot hold one")}: {burnPts:+0.00;-0.00}");
+        }
+
         if (s.Hos.CycleRemaining <= w.ResetWatchCycleHours)
         {
             // The restart and the home time are the SAME thirty-four hours. Where both are due and the
