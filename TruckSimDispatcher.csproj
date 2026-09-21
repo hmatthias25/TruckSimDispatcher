@@ -36,6 +36,9 @@
     <!-- Real US city coordinates, so distances are measured rather than guessed. MIT, attributed
          in the file header and in the credits. ~800 KB, nothing against a 52 MB exe. -->
     <EmbeddedResource Include="data-embedded\us-cities.txt" LogicalName="data/us-cities.txt" />
+    <!-- And Canada, for the map mods that go there. CC BY 4.0, attributed the same way. Without it
+         every distance rule went silent north of the border — see Geo. -->
+    <EmbeddedResource Include="data-embedded\ca-cities.txt" LogicalName="data/ca-cities.txt" />
   </ItemGroup>
 
   <ItemGroup>

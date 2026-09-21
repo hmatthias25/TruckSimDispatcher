@@ -15,6 +15,11 @@ US city coordinates come from [kelvins/US-Cities-Database](https://github.com/ke
 with the app so distances can be measured rather than guessed — which matters with a map mod like Coast
 to Coast, where the board will name cities the app's own market table has never heard of.
 
+Canadian city coordinates come from [GeoNames](https://www.geonames.org/) (CC BY 4.0) — about 19,000
+populated places across all ten provinces and three territories, so Coast to Coast and the Canadian
+packs get measured distances too. Without them every distance rule went quiet north of the border,
+including the home-time ceiling that stops a load running the wrong way.
+
 ---
 
 ## Running it

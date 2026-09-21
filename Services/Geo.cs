@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 
 namespace TruckSimDispatcher.Services;
 
@@ -47,6 +48,16 @@ public static class Geo
         ["TX"] = (31.5, -99.3), ["UT"] = (39.3, -111.7), ["VT"] = (44.1, -72.7), ["VA"] = (37.5, -78.9),
         ["WA"] = (47.4, -120.5), ["WV"] = (38.6, -80.6), ["WI"] = (44.6, -89.7), ["WY"] = (43.0, -107.5),
         ["AK"] = (64.0, -152.0), ["HI"] = (20.8, -156.3), ["DC"] = (38.9, -77.0),
+
+        // Canadian provinces and territories, on the same footing as the states: the answer for a town
+        // the city table has never heard of. Rough by construction — Ontario is 900 miles across and one
+        // point cannot be near both Windsor and Thunder Bay — which is equally true of Texas above, and
+        // is why Knows() exists to tell a measurement from a placeholder.
+        ["AB"] = (55.0, -115.0), ["BC"] = (54.0, -125.0), ["MB"] = (55.0, -97.0),
+        ["NB"] = (46.5, -66.1), ["NL"] = (53.2, -60.5), ["NS"] = (45.0, -63.0),
+        ["NT"] = (65.0, -119.0), ["NU"] = (70.0, -92.0), ["ON"] = (50.0, -86.0),
+        ["PE"] = (46.4, -63.2), ["QC"] = (53.0, -72.0), ["SK"] = (54.5, -105.5),
+        ["YT"] = (63.5, -135.5),
     };
 
     /// <summary>
@@ -67,12 +78,18 @@ public static class Geo
         {
             if (_cities != null) return _cities;
             var map = new Dictionary<string, (double, double)>(StringComparer.OrdinalIgnoreCase);
-            try
+
+            // Two files, one format, one table. Canada is a separate resource because it comes from a
+            // different source under a different licence and both have to be attributable — not because
+            // the app cares which side of the border a city is on. Reported from play: a C2C career can
+            // switch Ontario on under "Where you run" and then every distance rule goes quiet on it,
+            // including the home-time ceiling that is the only thing stopping a run the wrong way.
+            foreach (var resource in new[] { "data/us-cities.txt", "data/ca-cities.txt" })
             {
-                using var stream = Assembly.GetExecutingAssembly()
-                    .GetManifestResourceStream("data/us-cities.txt");
-                if (stream != null)
+                try
                 {
+                    using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource);
+                    if (stream == null) continue;
                     using var reader = new StreamReader(stream);
                     while (reader.ReadLine() is { } line)
                     {
@@ -84,10 +101,11 @@ public static class Geo
                         map[Key(p[0], p[1])] = (lat, lon);
                     }
                 }
-            }
-            catch
-            {
-                // A missing or unreadable table is not fatal — centroids still answer, just roughly.
+                catch
+                {
+                    // A missing or unreadable table is not fatal — centroids still answer, just roughly.
+                    // Carry on to the next one rather than losing both to one bad read.
+                }
             }
             _cities = map;
             return _cities;
@@ -106,7 +124,7 @@ public static class Geo
     /// </summary>
     private static string Normalise(string city)
     {
-        var c = city.Trim().ToLowerInvariant()
+        var c = Fold(city).Trim().ToLowerInvariant()
             .Replace("’", "")
             .Replace("'", "")
             .Replace(".", "")
@@ -114,6 +132,60 @@ public static class Geo
         if (c.StartsWith("saint ")) c = "st " + c[6..];
         c = string.Join(" ", c.Split(' ', StringSplitOptions.RemoveEmptyEntries));
         return c;
+    }
+
+    /// <summary>
+    /// Strips accents, so Montréal and Montreal are one place.
+    ///
+    /// <para>Needed the moment Canada arrived: Québec, Trois-Rivières and Rivière-du-Loup are how the
+    /// game and the mods spell them, and they are not what somebody types on a US keyboard. The shipped
+    /// tables are pure ASCII, so this only ever runs on what the driver entered — but it has to run, or
+    /// the accented spelling misses a row sitting right there in the file.</para>
+    ///
+    /// <para><b>Written out by hand on purpose.</b> The obvious implementation is to decompose with
+    /// <c>Normalize(FormD)</c>, drop the combining marks and recompose — and it does not work here.
+    /// This app publishes with <c>InvariantGlobalization</c>, so there is no ICU, and in that mode
+    /// <c>Normalize</c> does not throw: it returns the string unchanged. The fold silently did nothing
+    /// and Montréal went on missing, with a plausible-looking centroid distance to cover for it.</para>
+    ///
+    /// <para>So: an explicit map, which needs nothing from the platform. Latin-1 covers French and
+    /// Spanish place names, which is the whole of what North America needs; a bare combining mark is
+    /// dropped too, in case a name arrives already decomposed. Anything else is passed through rather
+    /// than deleted — it will not match, which is the same answer as before and an honest one.</para>
+    /// </summary>
+    private static string Fold(string text)
+    {
+        var plain = true;
+        foreach (var ch in text) if (ch > 127) { plain = false; break; }
+        if (plain) return text;                         // the common case, and free
+
+        var sb = new StringBuilder(text.Length);
+        foreach (var ch in text)
+        {
+            if (ch < 128) { sb.Append(ch); continue; }
+            if (ch is >= '̀' and <= 'ͯ') continue;      // a combining mark on its own
+            sb.Append(ch switch
+            {
+                'À' or 'Á' or 'Â' or 'Ã' or 'Ä' or 'Å' or 'à' or 'á' or 'â' or 'ã' or 'ä' or 'å' => "a",
+                'Æ' or 'æ' => "ae",
+                'Ç' or 'ç' => "c",
+                'È' or 'É' or 'Ê' or 'Ë' or 'è' or 'é' or 'ê' or 'ë' => "e",
+                'Ì' or 'Í' or 'Î' or 'Ï' or 'ì' or 'í' or 'î' or 'ï' => "i",
+                'Ð' or 'ð' or 'Đ' or 'đ' => "d",
+                'Ñ' or 'ñ' => "n",
+                'Ò' or 'Ó' or 'Ô' or 'Õ' or 'Ö' or 'Ø' or 'ò' or 'ó' or 'ô' or 'õ' or 'ö' or 'ø' => "o",
+                'Œ' or 'œ' => "oe",
+                'Ù' or 'Ú' or 'Û' or 'Ü' or 'ù' or 'ú' or 'û' or 'ü' => "u",
+                'Ý' or 'ý' or 'ÿ' => "y",
+                'Þ' or 'þ' => "th",
+                'ß' => "ss",
+                'Š' or 'š' => "s",
+                'Ž' or 'ž' => "z",
+                'Ł' or 'ł' => "l",
+                _ => ch.ToString(),
+            });
+        }
+        return sb.ToString();
     }
 
     /// <summary>The coordinates of a city, or null when it is not one we know.</summary>
