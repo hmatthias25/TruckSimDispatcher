@@ -89,7 +89,8 @@ const bin = (id) => api(`/trips/${id}/cancel`, 'POST', { reason: 'fixture — on
   }
   S = un(await api('/import', 'POST', st));
   const free = S.driver.pay.detentionFreeHours;
-  console.log(`  ..    free window is ${free}h per stop`);
+  const queueFree = S.driver.pay.queueFreeHours;
+  console.log(`  ..    free windows: ${free}h on the work, ${queueFree}h on waiting`);
 
   head('1. The trip carries the dock time the plan was built on');
   // Was a flat one hour for everything, whatever was hooked. FacilityLearning seeds a reefer at three
@@ -160,13 +161,16 @@ const bin = (id) => api(`/trips/${id}/cancel`, 'POST', { reason: 'fixture — on
   ok('the whole wait is stated, not just the billable part',
     /on their property 2:30/i.test(findings), findings.match(/On their property [^—]*/i)?.[0] || '(silent)');
   ok('detention is recorded', closed.detentionHours > 0, `${closed.detentionHours}h`);
-  ok('at the wait less the free window', Math.abs(closed.detentionHours - (2.5 - free)) < 0.01,
-    `${closed.detentionHours}h = 2:30 less ${free}h free`);
-  ok('and the free window is named rather than silently applied',
-    new RegExp(`after ${free}:00 free`, 'i').test(findings),
-    findings.match(/after \d+:\d+ free/i)?.[0] || '(not said)');
+  // The split. Nobody was on the trailer for those 2:30, so it is charged against the queue window and
+  // not the one that exists to cover unloading — 2:00 billable rather than the 0:30 it used to be.
+  ok('the wait is billed against the queue window, not the work one',
+    Math.abs(closed.detentionHours - (2.5 - queueFree)) < 0.01,
+    `${closed.detentionHours}h = 2:30 less ${queueFree}h of queue allowance`);
+  ok('and which window bit is said, not left as arithmetic',
+    /gets .* free rather than the .* the work gets/i.test(findings),
+    findings.match(/of it was waiting[^.]*\./i)?.[0]?.slice(0, 110) || '(not said)');
 
-  head('4. A wait inside the free window is not payable, and says so');
+  head('4. A short queue is still just trucking');
   await rig('DH-1');
   const quick = await take('Flatbed');
   await api(`/trips/${quick.id}/loaded`, 'POST',
@@ -175,7 +179,9 @@ const bin = (id) => api(`/trips/${id}/cancel`, 'POST', { reason: 'fixture — on
   st = await api('/export');
   const q = st.trips.find((t) => t.id === quick.id);
   q.arrivedGameTime = at(6, '05:44');
-  q.workStartsGameTime = at(6, '07:00');       // 1:16, inside the two free hours
+  // Twenty minutes behind a couple of trucks. Half an hour is allowed for exactly this — billing a short
+  // line from the first minute would make every arrival a claim, which is not what the split is for.
+  q.workStartsGameTime = at(6, '06:04');
   S = un(await api('/import', 'POST', st));
   odo += 110;
   const done2 = await api(`/trips/${quick.id}/complete`, 'POST', {
@@ -188,9 +194,9 @@ const bin = (id) => api(`/trips/${id}/cancel`, 'POST', { reason: 'fixture — on
     fuelPct: 60, gameTime: at(6, '05:44'),
   });
   const q2 = done2.snapshot.trips.find((t) => t.id === quick.id);
-  console.log(`  ..    1:16 at the gate → detention ${q2.detentionHours}h, clock ${hm(done2.snapshot.status.gameTime)}`);
-  ok('nothing billable inside the free window', q2.detentionHours === 0, `${q2.detentionHours}h`);
-  ok('but the clock still moved over it', hm(done2.snapshot.status.gameTime) === '07:00',
+  console.log(`  ..    0:20 at the gate → detention ${q2.detentionHours}h, clock ${hm(done2.snapshot.status.gameTime)}`);
+  ok('a twenty-minute line costs them nothing', q2.detentionHours === 0, `${q2.detentionHours}h`);
+  ok('but the clock still moved over it', hm(done2.snapshot.status.gameTime) === '06:04',
     hm(done2.snapshot.status.gameTime));
 
   head('5. The quoted time is a default, not a fact — the driver can overrule it');
@@ -227,8 +233,8 @@ const bin = (id) => api(`/trips/${id}/cancel`, 'POST', { reason: 'fixture — on
     hm(t3.workStartsGameTime));
   ok('and it is said rather than swapped quietly', /Going with yours/i.test(f3),
     f3.match(/You put them taking you[^.]*\./)?.[0]?.slice(0, 110) || '(silent)');
-  ok('detention follows the real wait', Math.abs(t3.detentionHours - (3.267 - free)) < 0.02,
-    `${t3.detentionHours}h from 3:16`);
+  ok('detention follows the real wait', Math.abs(t3.detentionHours - (3.267 - queueFree)) < 0.02,
+    `${t3.detentionHours}h from a 3:16 wait`);
   ok('and so does the clock', hm(done3.snapshot.status.gameTime) === '09:00',
     hm(done3.snapshot.status.gameTime));
 

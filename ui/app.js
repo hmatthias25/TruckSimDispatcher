@@ -2218,6 +2218,7 @@ function facilityHtml(t) {
   const load = span('BeginLoad', 'EndLoad');
   const unload = span('BeginUnload', 'EndUnload');
   const free = S.driver.pay.detentionFreeHours || 0;
+  const queueFree = S.driver.pay.queueFreeHours || 0;
 
   /* The receiver's clock runs from when they were DUE to have you, not from when they got round to it —
      the same rule the server bills on. Worked out here as well because this preview is the number the
@@ -2233,23 +2234,34 @@ function facilityHtml(t) {
     ? dueAt : arrivedAt;
 
   let onProperty = null;
+  // How much of the spell was spent waiting rather than being worked on, because the two get different
+  // free windows — see DriverPay.QueueFreeHours. Kept separately rather than derived back out of the
+  // total, so this preview does the same arithmetic the server does.
+  let waiting = 0;
   if (startAt) {
     const endedAt = at('EndUnload');
     if (endedAt) {
       onProperty = hrs(startAt, endedAt);
+      const tookYou = t.workStartsGameTime || at('BeginUnload');
+      const w = tookYou ? hrs(startAt, tookYou) : null;
+      if (w !== null && w > 0) waiting = Math.min(w, onProperty);
     } else {
       // No end stamp, so the wait is measurable and the work still has to be added onto it.
       const tookYou = t.workStartsGameTime || at('BeginUnload');
-      const waited = tookYou ? hrs(startAt, tookYou) : null;
-      if (waited !== null && waited >= 0) onProperty = waited + (unload ?? t.unloadingHours ?? 0);
+      const w = tookYou ? hrs(startAt, tookYou) : null;
+      if (w !== null && w >= 0) { waiting = w; onProperty = w + (unload ?? t.unloadingHours ?? 0); }
     }
     if (onProperty !== null && onProperty < 0) onProperty = null;
   }
 
   // Only interesting where it beats the unload itself — otherwise it IS the unload and nothing changed.
   const held = onProperty !== null && onProperty > (unload ?? 0) ? onProperty : null;
+  const billable = (total, waited) => {
+    const wait = Math.min(Math.max(waited, 0), Math.max(total, 0));
+    return Math.max(0, (total - wait) - free) + Math.max(0, wait - queueFree);
+  };
   const det = (load === null && unload === null && held === null) ? null
-    : Math.max(0, (load ?? 0) - free) + Math.max(0, (held ?? unload ?? 0) - free);
+    : Math.max(0, (load ?? 0) - free) + billable(held ?? unload ?? 0, held === null ? 0 : waiting);
 
   const line = (label, hours, a, b) => hours === null
     ? `<tr><td>${label}</td><td colspan="2" class="sub">not logged — log <b>${a}</b> and <b>${b}</b>, or type it below</td></tr>`
@@ -2266,8 +2278,16 @@ function facilityHtml(t) {
           dueAt && startAt === dueAt ? ' — your slot, not when you rolled in' : ''}</td></tr>`}
       ${det === null ? '' : `<tr><td><b>Detention</b></td>
         <td class="num"><b style="color:${det > 0 ? 'var(--amber2)' : 'var(--ink3)'}">${hhmm(det)}</b></td>
-        <td class="sub">${det > 0 ? `beyond ${hhmm(free)} free at each stop — this is paid`
-          : `both stops inside the ${hhmm(free)} free window`}</td></tr>`}
+        ${/* Two windows, so the caption has to name the one that actually bit. Saying "beyond 2:00 free"
+              beside a figure that came out of a queue with half an hour free reads as arithmetic nobody
+              can follow. */ ''}
+        <td class="sub">${det > 0
+          ? (waiting > 0.01
+              ? `${hhmm(free)} free on the work, ${hhmm(queueFree)} on the ${hhmm(waiting)} you spent waiting — this is paid`
+              : `beyond ${hhmm(free)} free at each stop — this is paid`)
+          : (waiting > 0.01
+              ? `work inside the ${hhmm(free)} free window, the wait inside ${hhmm(queueFree)}`
+              : `both stops inside the ${hhmm(free)} free window`)}</td></tr>`}
     </tbody></table></div>
     ${/* The gate wait is the one figure in this app that is PRESCRIBED rather than measured. ATS has no
           opinion about a queue, so the arrival call rolls one, tells the driver to set their clock to it,
@@ -4601,7 +4621,8 @@ function viewPayroll() {
         <dt>Loaded mile</dt><dd>$${p.loadedCpm.toFixed(3)}</dd>
         <dt>Empty mile</dt><dd>$${p.deadheadCpm.toFixed(3)}</dd>
         <dt>Reefer / hazmat / oversize</dt><dd>+$${p.reeferCpm.toFixed(3)} / +$${p.hazmatCpm.toFixed(3)} / +$${p.oversizeCpm.toFixed(3)}</dd>
-        <dt>Detention</dt><dd>${money(p.detentionPerHour)}/h after ${hhmm(p.detentionFreeHours)} free</dd>
+        <dt>Detention</dt><dd>${money(p.detentionPerHour)}/h after ${hhmm(p.detentionFreeHours)} free on the
+          work, ${hhmm(p.queueFreeHours)} on waiting</dd>
         <dt>Layover / breakdown</dt><dd>${money(p.layoverPerDay)} / ${money(p.breakdownPerDay)} per day</dd>
         <dt>Stop / tarp</dt><dd>${money(p.extraStopPay)} / ${money(p.tarpPay)}</dd>
         <dt>On-time bonus</dt><dd>$${p.onTimeBonusCpm.toFixed(3)}/loaded mi at 100% service</dd>

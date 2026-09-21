@@ -756,9 +756,33 @@ public class PayPlan
     public decimal DedicatedDropHookCpm { get; set; } = 0.08m;
     public decimal TarpPay { get; set; } = 50m;
     public decimal ExtraStopPay { get; set; } = 25m;
-    /// <summary>Paid per hour after DetentionFreeHours at a shipper/receiver.</summary>
+    /// <summary>Paid per hour after the free window at a shipper/receiver.</summary>
     public decimal DetentionPerHour { get; set; } = 20m;
+
+    /// <summary>
+    /// Free time for the WORK — loading, unloading, the hook. Two hours is the industry figure and it is
+    /// there because a receiver is entitled to some time with the trailer: they have to actually get the
+    /// freight off, and that time is priced into the rate rather than billed on top.
+    /// </summary>
     public double DetentionFreeHours { get; set; } = 2;
+
+    /// <summary>
+    /// Free time for WAITING to be started on — the line at a gate, a dock running behind.
+    ///
+    /// <para>Deliberately much shorter, because it is not the same thing. Nobody is touching the trailer
+    /// while you sit in a queue; that time buys the receiver nothing and costs the driver their 14-hour
+    /// window regardless. Charging it against a window that exists to cover unloading handed a site two
+    /// hours of somebody's day for nothing — reported from play as 2:30 at a gate on a drop and hook,
+    /// where the actual work was twenty-five minutes and the payable detention came to fifty-four.</para>
+    ///
+    /// <para>Half an hour rather than nothing: a couple of trucks ahead of you is ordinary trucking and
+    /// billing it from the first minute would make every arrival a claim. Half a morning is not ordinary,
+    /// and now it costs them.</para>
+    ///
+    /// <para>Absent from an older career file, so it takes this default on load — no migration, because
+    /// there is no prior value to carry and nothing already recorded changes.</para>
+    /// </summary>
+    public double QueueFreeHours { get; set; } = 0.5;
     public decimal LayoverPerDay { get; set; } = 125m;
     public decimal BreakdownPerDay { get; set; } = 100m;
     /// <summary>Retroactive per-mile kicker paid on a settlement with 100% on-time service.</summary>

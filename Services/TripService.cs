@@ -1197,6 +1197,9 @@ public static class TripService
     {
         var f = new FacilityTimes();
         var free = Math.Max(0, s.Driver.Pay.DetentionFreeHours);
+        // Waiting to be started on is not the same thing as being worked on, and it does not get the same
+        // free time. See DriverPay.QueueFreeHours.
+        var queueFree = Math.Max(0, s.Driver.Pay.QueueFreeHours);
 
         double? Span(string beginKind, string endKind)
         {
@@ -1227,13 +1230,14 @@ public static class TripService
             // Nothing logged — but the trip may still know when they arrived and when the receiver got
             // round to them, and on drop and hook that is the ONLY way it can know: there is no unload
             // to log, so before this a driver held two hours in a yard reported it by hand or not at all.
-            var held = TimeOnTheirProperty(trip, f.UnloadingHours, out var heldFrom, out var heldWhy);
-            if (held is { } onIt && onIt - free > 0.01)
+            var held = TimeOnTheirProperty(trip, f.UnloadingHours, out var heldFrom, out var heldWhy,
+                                           out var heldWait);
+            if (held is { } onIt && Billable(onIt, heldWait, free, queueFree) > 0.01)
             {
-                f.DetentionHours = Math.Round(Math.Max(0, onIt - free), 2);
+                f.DetentionHours = Math.Round(Billable(onIt, heldWait, free, queueFree), 2);
                 if (heldWhy != null) f.Explain.Add(heldWhy);
                 f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)} — on their clock from " +
-                              $"{GameClock.Pretty(heldFrom!.Value)}, after {Hhmm.Of(free)} free. " +
+                              $"{GameClock.Pretty(heldFrom!.Value)}. {Windows(onIt, heldWait, free, queueFree)} " +
                               "Nothing logged, so this is off the arrival and what they told you.");
                 if (typedDetention > 0 && Math.Abs(typedDetention - f.DetentionHours) > 0.25)
                     f.Explain.Add($"You reported {Hhmm.Of(typedDetention)}; their own clock works out to " +
@@ -1258,9 +1262,10 @@ public static class TripService
         // Time sat in their yard waiting for a door is the whole reason detention exists — the unload
         // itself is just the job. Measuring from Begin unload paid for the work and nothing for the wait,
         // while the app's own backed-up notice was telling the driver "the whole 2:15 is detention".
-        var onProperty = TimeOnTheirProperty(trip, f.UnloadingHours, out var from, out var why)
+        var onProperty = TimeOnTheirProperty(trip, f.UnloadingHours, out var from, out var why,
+                                             out var waitedAtReceiver)
                          ?? f.UnloadingHours;
-        var atReceiver = Math.Max(0, onProperty - free);
+        var atReceiver = Billable(onProperty, waitedAtReceiver, free, queueFree);
         f.DetentionHours = Math.Round(atShipper + atReceiver, 2);
 
         if (why != null) f.Explain.Add(why);
@@ -1273,12 +1278,15 @@ public static class TripService
                 parts.Add(from == null
                     ? $"{Hhmm.Of(atReceiver)} at the receiver"
                     : $"{Hhmm.Of(atReceiver)} at the receiver, on their clock from {GameClock.Pretty(from.Value)}");
-            f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)} — {string.Join(" plus ", parts)}, " +
-                          $"after {Hhmm.Of(free)} free at each stop.");
+            f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)} — {string.Join(" plus ", parts)}. " +
+                          Windows(onProperty, waitedAtReceiver, free, queueFree));
         }
         else
         {
-            f.Explain.Add($"No detention — both stops came in inside the {Hhmm.Of(free)} free window.");
+            f.Explain.Add($"No detention — the work came in inside the {Hhmm.Of(free)} free window" +
+                          (waitedAtReceiver > 0.01
+                              ? $" and the {Hhmm.Of(waitedAtReceiver)} you waited inside the {Hhmm.Of(queueFree)} allowed for a queue."
+                              : "."));
         }
 
         // A typed figure that disagrees with the log is worth saying out loud rather than discarding.
@@ -1305,11 +1313,43 @@ public static class TripService
     /// which is exactly what this did before any of them existed. There is nothing else honest to do with
     /// a trip that never said when it got there.</para>
     /// </summary>
+    /// <summary>
+    /// What is payable out of a spell on a customer's property, given how much of it was spent waiting.
+    ///
+    /// <para>Two windows, because the hours are two different things. The WORK gets the standard free
+    /// time: a receiver is entitled to some of it, they have to get the freight off, and it is priced
+    /// into the rate. WAITING to be started on gets a much shorter one, because nobody is touching the
+    /// trailer and it buys the receiver nothing while costing the driver their fourteen.</para>
+    ///
+    /// <para>One window over the lot meant a 2:30 queue at a gate, with twenty-five minutes of hook at
+    /// the end of it, paid fifty-four minutes — the site got two hours of somebody's day for nothing
+    /// because the window that covers unloading absorbed a wait that was not unloading. Reported from
+    /// play; this is the split that came out of it.</para>
+    /// </summary>
+    private static double Billable(double onProperty, double waited, double workFree, double queueFree)
+    {
+        var waiting = Math.Clamp(waited, 0, Math.Max(0, onProperty));
+        var working = Math.Max(0, onProperty - waiting);
+        return Math.Max(0, working - workFree) + Math.Max(0, waiting - queueFree);
+    }
+
+    /// <summary>The sentence that says which window ate what, so a driver can check the arithmetic.</summary>
+    private static string Windows(double onProperty, double waited, double workFree, double queueFree)
+    {
+        var waiting = Math.Clamp(waited, 0, Math.Max(0, onProperty));
+        var working = Math.Max(0, onProperty - waiting);
+        return waiting > 0.01
+            ? $"{Hhmm.Of(waiting)} of it was waiting, which gets {Hhmm.Of(queueFree)} free rather than the " +
+              $"{Hhmm.Of(workFree)} the work gets — nobody was on the trailer for it."
+            : $"After {Hhmm.Of(workFree)} free on {Hhmm.Of(working)} of work.";
+    }
+
     private static double? TimeOnTheirProperty(Trip trip, double unloadingHours,
-        out DateTime? from, out string? explain)
+        out DateTime? from, out string? explain, out double waitedHours)
     {
         from = null;
         explain = null;
+        waitedHours = 0;
 
         var arrived = GameClock.TryParse(trip.ArrivedGameTime);
         var due = GameClock.TryParse(trip.AppointmentGameTime)
@@ -1342,6 +1382,7 @@ public static class TripService
         // Only worth explaining when it differs from the unload itself — which is precisely the case the
         // driver asked about, and precisely the one that used to vanish.
         var waited = hours - unloadingHours;
+        waitedHours = Math.Max(0, waited);
         if (waited > 0.01)
             explain = due != null && due.Value > arrived.Value
                 ? $"On their property {Hhmm.Of(hours)} — their clock started at your " +

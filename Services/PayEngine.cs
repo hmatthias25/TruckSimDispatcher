@@ -94,7 +94,11 @@ public static class PayEngine
         if (b.StopPay > 0) b.Lines.Add($"{trip.ExtraStops} extra stop(s) @ ${p.ExtraStopPay:N2} = ${b.StopPay:N2}");
         if (b.TarpPay > 0) b.Lines.Add($"{trip.TarpsUsed} tarp(s) @ ${p.TarpPay:N2} = ${b.TarpPay:N2}");
         if (b.DetentionPay > 0)
-            b.Lines.Add($"Detention {Hhmm.Of(billableDetention)} billable, beyond {Hhmm.Of(p.DetentionFreeHours)} free per stop @ ${p.DetentionPerHour:N2}/h = ${b.DetentionPay:N2}");
+            // Two windows now, so naming only the work one on the stub would misdescribe a figure that
+            // came mostly out of the other. The trip audit has the breakdown; this says which two.
+            b.Lines.Add($"Detention {Hhmm.Of(billableDetention)} billable, beyond {Hhmm.Of(p.DetentionFreeHours)} free " +
+                        $"on the work and {Hhmm.Of(p.QueueFreeHours)} on waiting, per stop " +
+                        $"@ ${p.DetentionPerHour:N2}/h = ${b.DetentionPay:N2}");
         if (b.LayoverPay > 0) b.Lines.Add($"Layover {trip.LayoverDays:0.#} day(s) @ ${p.LayoverPerDay:N2} = ${b.LayoverPay:N2}");
         if (b.BreakdownPay > 0) b.Lines.Add($"Breakdown {trip.BreakdownDays:0.#} day(s) @ ${p.BreakdownPerDay:N2} = ${b.BreakdownPay:N2}");
         if (b.Chargebacks > 0) b.Lines.Add($"Chargeback: {b.ChargebackMemo} = -${b.Chargebacks:N2}");

@@ -187,8 +187,12 @@ const logEvent = (trip, kind, gameTime) =>
   await logEvent(trip, 'EndUnload', plus(slot, 5));
   r = await close(trip, plus(slot, 5.1));
   console.log(`  ..    five hours on the property from ${slot}: detention ${hhmm(r.done.detentionHours)}`);
-  ok('five hours on the property is three hours billable',
-    Math.abs(r.done.detentionHours - 3) < 0.02, hhmm(r.done.detentionHours));
+  // Four hours of it waiting for a door and one hour being unloaded, and the two no longer share a free
+  // window: the work gets its two hours, the wait gets half an hour. So 3:30, not the 3:00 this asserted
+  // while one window covered the lot. See DriverPay.QueueFreeHours — the whole point of the split is that
+  // sitting in a line is not the receiver working on your trailer.
+  ok('five hours on the property, four of them waiting, is three and a half billable',
+    Math.abs(r.done.detentionHours - 3.5) < 0.02, hhmm(r.done.detentionHours));
   const stub = r.done.pay || {};
   console.log(`  ..    detention pay $${stub.detentionPay}`);
   ok('and it reaches the pay stub', (stub.detentionPay || 0) > 0, `$${stub.detentionPay}`);
