@@ -2088,6 +2088,13 @@ public static class DispatchEngine
         var number = TakeNumber(s, "Freight");
         var division = DivisionFor(load, trailer);
 
+        // Read exactly the way Evaluate reads it, so the trip carries the same dock time the plan was
+        // built on. On drop and hook that is the hook time and nothing else; everywhere else it is the
+        // learned figure for whatever is actually hooked.
+        var dockAtDispatch = FacilityLearning.For(s, DropHook.Active(s)
+            ? trailer?.Type
+            : string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
+
         var trip = new Trip
         {
             Number = number,
@@ -2133,11 +2140,20 @@ public static class DispatchEngine
             TrailerUnit = trailer?.Unit ?? "",
             TruckDamageBefore = Math.Max(truck?.DamagePct ?? 0, s.Status.TruckDamagePct),
             TrailerDamageBefore = Math.Max(trailer?.DamagePct ?? 0, s.Status.TrailerDamagePct),
-            LoadingHours = s.Settings.DefaultLoadingHours,
+            // The dock time this trailer actually takes, which is what the HOS plan was built on three
+            // hundred lines up. These two were a flat DefaultLoadingHours/DefaultUnloadingHours — one
+            // hour each, for everything — so the PLAN knew a reefer takes three hours and a drop and
+            // hook takes twenty-five minutes, and the TRIP was stamped with an hour either way.
+            //
+            // It matters because close-out reads the trip, not the plan: spentAtDock is
+            // UnloadingHours + DetentionHours, and on a drop and hook that is an hour of dock work
+            // nobody did being pushed onto the game clock. Found while looking into a gate wait on a
+            // flatbed drop and hook, which came back carrying an hour of unload it never had.
+            LoadingHours = dockAtDispatch.Loading,
             // Never recorded as pre-loaded any more. Nothing off a facility board is a hook — see the
             // note in Evaluate — so every one of these has a real loading time to learn from.
             PreLoaded = false,
-            UnloadingHours = s.Settings.DefaultUnloadingHours,
+            UnloadingHours = dockAtDispatch.Unloading,
             ExtraStops = load.ExtraStops,
             IsHazmat = load.IsHazmat,
             HazmatClass = load.HazmatClass,
