@@ -5646,6 +5646,56 @@ function facilityTimesHtml() {
 }
 
 /* ============================================================ SETTINGS */
+/* Which states and provinces the driver actually runs.
+ *
+ * A map mod is not an instruction to work the whole continent. C2C lays the lot down at once, so a
+ * driver who wanted the west gets offered Maine — and the only thing between them and a four-day
+ * deadhead was remembering to say no every time. Ticked regions are the ones dispatch will take freight
+ * out of and send the truck into; everything else is refused on the map setting and says so.
+ *
+ * Drawn as three columns of checkboxes rather than a multi-select, because the answer to "am I running
+ * Ontario" should be readable without opening anything. */
+function mapCoveragePanel() {
+  const mc = S.views && S.views.mapCoverage;
+  if (!mc) return '';
+  const group = (country, title, note) => {
+    const rows = mc.regions.filter((r) => r.country === country);
+    const on = rows.filter((r) => r.on).length;
+    return `
+      <h4 class="sect" style="margin:14px 0 4px">${title}
+        <span class="sub">${on} of ${rows.length}</span></h4>
+      ${note ? `<p class="hint" style="margin:0 0 6px">${note}</p>` : ''}
+      <div class="mapgrid">${rows.map((r) => `
+        <label class="chk" title="${esc(r.name)}"><input type="checkbox" data-mc="${r.code}"
+          ${r.on ? 'checked' : ''}> ${r.code} <span class="sub">${esc(r.name)}</span></label>`).join('')}</div>`;
+  };
+  // Full width. Ninety-six checkboxes in a 340px settings column is one region per row and a panel
+  // taller than four screens; across the page it is four columns and scannable.
+  return `
+    <div class="panel" style="grid-column:1/-1">
+      <div class="panel-head"><h2>Where you run</h2>
+        <span class="sub">${mc.selectedCount} region${mc.selectedCount === 1 ? '' : 's'} on</span></div>
+      ${mc.strandedNote ? `<div class="callout warn"><p style="margin:0">${esc(mc.strandedNote)}</p></div>` : ''}
+      <p class="hint">Dispatch will not take a load that <b>loads in</b> or <b>delivers to</b> a region you
+        have switched off — it is refused on the board with the reason, not scored down. Nothing is said
+        about what a run passes <i>through</i>: this app has city coordinates and no roads, and a guess at
+        your route is not something to refuse a load on.</p>
+      <p class="hint">Defaults to every US state, which is a superset of anywhere base ATS goes — so on a
+        stock install this does nothing at all. It is here for map mods. Turn a region off when you do not
+        have it installed, or have it and do not want the work.</p>
+      <div class="row-actions">
+        <button class="btn" data-act="mc-preset" data-which="us">All US states</button>
+        <button class="btn" data-act="mc-preset" data-which="all">Everything</button>
+        <button class="btn" data-act="mc-preset" data-which="none">Clear all</button>
+      </div>
+      ${group('US', 'United States', '')}
+      ${group('CA', 'Canada', 'Coast to Coast, Promods Canada and the Canadian packs. Off unless you run one.')}
+      ${group('MX', 'Mexico', 'Viva Mexico and the southern packs. Off unless you run one.')}
+      <p class="hint">Clearing every box is read as "not set" and falls back to the US default, because a
+        board that refuses everything with no explanation is indistinguishable from a broken app.</p>
+    </div>`;
+}
+
 function viewSettings() {
   const s = S.settings, h = s.hos, m = s.maintenance, w = s.scoring;
   return `
@@ -5683,6 +5733,8 @@ function viewSettings() {
       <p class="hint">Turning it on applies to loads planned from here. Freight already on the truck
         keeps the times it was dispatched with rather than having its appointment moved underneath it.</p>
     </div>
+
+    ${mapCoveragePanel()}
 
     <div class="panel">
       <div class="panel-head"><h2>HOS rule set</h2>
@@ -7359,6 +7411,16 @@ async function handleAction(act, d, ev) {
     case 'facility-release': return run(async () => absorb(await api('/settings/facility-time', 'POST', {
       trailerType: d.type, loadingHours: 0, unloadingHours: 0, manual: false,
     })), `${d.type} back to learning from your loads.`);
+    // Ticks boxes only. Nothing is saved until Save is pressed, the same as every other field on this
+    // screen — a preset that wrote straight through would be the one control here that cannot be
+    // reconsidered before it takes effect.
+    case 'mc-preset': {
+      const us = new Set((S.views.mapCoverage || {}).usDefault || []);
+      for (const box of document.querySelectorAll('input[data-mc]')) {
+        box.checked = d.which === 'all' ? true : d.which === 'none' ? false : us.has(box.dataset.mc);
+      }
+      return toast('Ticked — press Save settings to apply it.', 'ok');
+    }
     case 'save-settings': return run(async () => absorb(await api('/settings', 'POST', collectSettings())), 'Settings saved.');
     case 'snapshot': return run(async () => {
       const r = await api('/backups/snapshot', 'POST', { notes: 'manual' });
@@ -7432,6 +7494,12 @@ function collectSettings() {
     usesHosMod: s.usesHosMod, hosModName: s.hosModName, usesEconomyMod: s.usesEconomyMod,
     carrierRoster: sv('se-roster') || s.carrierRoster,
     timeZonesOn: bv('se-tz'),
+    // The boxes if the panel is on screen, and whatever the career already had if it is not. Reading an
+    // absent panel as "no regions" would quietly reset somebody's map from a screen that never showed
+    // it — and the server treats empty as unset, so the damage would be silent rather than obvious.
+    runnableStates: document.querySelector('input[data-mc]')
+      ? [...document.querySelectorAll('input[data-mc]')].filter((b) => b.checked).map((b) => b.dataset.mc)
+      : s.runnableStates,
     hos: {
       ...s.hos,
       driveLimit: hv('hr-drive'), shiftLimit: hv('hr-shift'),

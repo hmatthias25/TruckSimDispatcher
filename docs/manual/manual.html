@@ -137,7 +137,7 @@
 
 <!-- ============================================================ COVER -->
 <div class="page cover">
-  <div class="kicker">User manual &middot; v0.59 alpha</div>
+  <div class="kicker">User manual &middot; v0.63 alpha</div>
   <h1>TruckSim<br>Dispatcher</h1>
   <div class="rulebar"></div>
   <div class="sub">A dispatch office for American&nbsp;Truck&nbsp;Simulator.<br>
@@ -148,13 +148,13 @@
     <div><span>Runs on</span> Windows &middot; one portable .exe &middot; no install</div>
     <div><span>Needs</span> Nothing. No internet, no account, no runtime</div>
     <div><span>Your game</span> ATS, any DLC, mods welcome</div>
-    <div><span>This manual</span> Covers v0.59 alpha &middot; the build is shown in the app header</div>
+    <div><span>This manual</span> Covers v0.63 alpha &middot; the build is shown in the app header</div>
   </div>
 
   <div class="alphabox">
     <div class="ab-tag">Alpha</div>
     <div>
-      <b>This is v0.59 alpha and is not ready for release.</b>
+      <b>This is v0.63 alpha and is not ready for release.</b>
       It is being play-tested. Expect rough edges, expect things to change, and expect the occasional
       bug. Keep backups of your career file — Settings → Data will take one for you.
       Please report anything that looks wrong.
@@ -1177,7 +1177,8 @@
   </figure>
 
   <h3>Hard gates come first</h3>
-  <p>Before anything is scored, a load can be refused outright: missing endorsement, a restriction on
+  <p>Before anything is scored, a load can be refused outright: a pickup or delivery in a state you have
+    switched off under <b>Settings &rarr; Where you run</b>, a missing endorsement, a restriction on
     your file, freight you will not haul, a trailer you cannot pull, or an infeasible plan. A trailer
     mismatch is the exception — it produces a swap plan rather than killing the load.</p>
 
@@ -3300,9 +3301,11 @@
         economy, maintenance thresholds, scoring weights, trip numbering, settlement period and the
         fleet-report interval.</p>
 
-      <h4>Tell it about your mods</h4>
-      <p>Record your HOS mod, economy mod and map mods. The map mods matter most — they add cities the
-        market table does not know, and the app will tell you when it cannot judge a destination.</p>
+      <h4>Where you run</h4>
+      <p>Tick the states and provinces you actually work. Dispatch refuses any load that <b>loads in</b>
+        or <b>delivers to</b> one you have switched off — refused on the board with the reason, not
+        scored down. Defaults to every US state, so a stock install never notices; it is there for map
+        mods like Coast to Coast, which lay the whole continent down at once.</p>
     </div>
   </div>
 
@@ -3317,7 +3320,7 @@
       if that is genuinely what you want.</p>
   </div>
 
-  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.59 alpha</b>.</p>
+  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.63 alpha</b>.</p>
 
   <h3>Updating without losing your career</h3>
   <p>Replace <code>TruckSimDispatcher.exe</code> in the folder you are already using and leave the

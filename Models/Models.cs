@@ -54,7 +54,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 25;
+    public const int Current = 26;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
     public bool Onboarded { get; set; }
@@ -2987,6 +2987,19 @@ public class AppSettings
     /// be re-rolled by reloading the page.
     /// </summary>
     public double ReceiverTakesEarlyPct { get; set; } = 12;
+
+    /// <summary>
+    /// The states and provinces the driver is willing to run, by postal abbreviation.
+    ///
+    /// A map mod is not an instruction to work the whole continent. Coast to Coast lays down the lot at
+    /// once, and a driver who wanted the western states then gets offered Maine — so this is the list
+    /// they keep, and dispatch refuses anything loading or delivering outside it.
+    ///
+    /// Defaults to the 50 states and DC, with Canada and Mexico off: base ATS is a subset of the US
+    /// either way, so a stock career never notices, and a modded one turns the rest on deliberately.
+    /// Empty is read as unset and falls back to that default — see <see cref="Services.MapCoverage"/>.
+    /// </summary>
+    public List<string> RunnableStates { get; set; } = Services.MapCoverage.DefaultSelection();
 
     /// <summary>
     /// On-duty time for hooking a trailer that is already loaded.

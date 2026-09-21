@@ -70,6 +70,7 @@ public static class Migrations
         DropChangeoversDecidedTooEarly(s);
         PutAirBetweenWatchAndShop(s);
         PutProbationaryDriversBackOnTheProbationaryScale(s);
+        GiveEveryCareerTheUnitedStates(s);
         // Not stamped: a box can leave the fleet at any time, and closing an order already closed is a
         // no-op. This is a standing tidy-up rather than a one-off correction.
         CloseOrdersForTrailersAlreadyGone(s);
@@ -126,6 +127,36 @@ public static class Migrations
                 "cleared company driver earns, and it meant clearing probation was worth nothing at all. " +
                 "Settlements already run stay as they were paid.",
         });
+    }
+
+    /// <summary>
+    /// Fills in the map the driver runs, for a career that pre-dates there being one.
+    ///
+    /// <para>The 50 states and DC, which is the setting's own default and a superset of everywhere base
+    /// ATS has ever gone — so a stock career cannot tell this ran, and that is the point. Nobody's board
+    /// changes on the strength of an upgrade.</para>
+    ///
+    /// <para>A modded career gains the thing the setting is for: Canada and Mexico off until the player
+    /// says otherwise. That IS a change to their board, and it is the change they asked for. It is also
+    /// the only safe direction — starting a C2C career with the whole continent switched on would make
+    /// the setting do nothing until it was found, and the driver who wanted it is the driver being
+    /// offered Maine.</para>
+    ///
+    /// <para>Left alone where the list already has something in it, which on this version can only mean
+    /// a hand-edited file or an import from a newer build. A migration that overwrites a deliberate
+    /// choice is worse than the gap it fills.</para>
+    /// </summary>
+    private static void GiveEveryCareerTheUnitedStates(AppState s)
+    {
+        if (s.SchemaVersion >= 26) return;
+        s.SchemaVersion = 26;
+
+        if (s.Settings.RunnableStates is { Count: > 0 }) return;
+        s.Settings.RunnableStates = MapCoverage.DefaultSelection();
+
+        // Not logged. Nothing happened to this career that the driver did not already have — every state
+        // base ATS knows about is on the list, and an event announcing that would be noise on a screen
+        // that is meant to be read.
     }
 
     /// <summary>

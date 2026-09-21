@@ -71,6 +71,12 @@ public static class DispatchEngine
 
         decision.InfoNeeded.AddRange(MissingContext(s));
 
+        // Parked in a region the driver has switched off. Every load on the board then fails on its
+        // origin, correctly and identically, which reads as the app having lost its mind rather than as
+        // one setting doing its job. Said once, at the top, as the thing that explains the rest of the
+        // screen — it blocks nothing by itself.
+        if (MapCoverage.StrandedNote(s) is { } offMapHere) decision.DispatchNotes.Add(offMapHere);
+
         var truck = AssignedTruck(s);
         var trailer = AssignedTrailer(s);
 
@@ -1077,6 +1083,18 @@ public static class DispatchEngine
         e.DestResetFriendly = (dest?.ResetFriendly ?? false) || IsOwnYard(s, load.DestCity, load.DestState);
 
         // ---- hard gates
+
+        // Where the driver's map goes. First of the gates because it is the only one that is not about
+        // this load at all: a region switched off is not freight judged and found wanting, it is freight
+        // in a place the driver does not drive to. Reasoning about the rate of a load to Nova Scotia is
+        // work nobody asked for.
+        //
+        // Both ends. "Dispatched from" was the ask; delivering INTO a region the driver does not run is
+        // the same problem arriving later, with the truck parked at the far end of it and nothing to
+        // pull out. Nothing is said about what the run passes THROUGH — the app has coordinates and no
+        // roads, and a guess about the route is not a thing to refuse a load on.
+        if (MapCoverage.RejectionFor(s, load) is { } offMap) e.HardFails.Add(offMap);
+
         e.HardFails.AddRange(QualificationFails(s, load, trailer));
 
         // The listing's own clock, which is not the load's. A row can be entered with fifty minutes on

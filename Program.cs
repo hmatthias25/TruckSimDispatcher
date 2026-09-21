@@ -240,6 +240,11 @@ app.MapPost("/api/settings", (AppSettings incoming) => Results.Ok(store.Mutate(s
     s.Settings.SpeedFactorSamples = keepSamples;
     if (handSetSpeed) s.Settings.SpeedFactorManual = true;
     if (string.IsNullOrWhiteSpace(s.Settings.FreightPrefix)) s.Settings.FreightPrefix = s.Company.Code;
+
+    // The map the driver runs, tidied on the way in: the list is a set of boxes this app drew, so
+    // anything else in it came from a hand-edited file. Kept in the order the picker shows them, which
+    // is the order anybody reading the career file would expect to find them.
+    s.Settings.RunnableStates = MapCoverage.Clean(s.Settings.RunnableStates);
     return Snapshot(s);
 })));
 
@@ -2495,6 +2500,9 @@ object Snapshot(AppState? given = null)
             // And whether it is a site at all, which SiteHoursFor stays deliberately quiet about once the
             // game has stated a window. The hours are then the game's to state; the gate is still a gate.
             receiverIsSite = FacilityProfile.IsSiteTrip(TripService.Active(s)),
+            // The states and provinces the driver runs, for the settings picker — and the note for when
+            // the truck is standing in one they have switched off.
+            mapCoverage = MapCoverage.View(s),
             // What fuel costs where, so a route can be planned around it rather than paid for after.
             fuel = Fuel.PlanningView(s),
             // Said before the state line, which is the only time it is any use. Null when the run does
