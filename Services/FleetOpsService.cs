@@ -245,8 +245,7 @@ public static class FleetOpsService
             // Whichever trailer the player picked is the one this driver is on from now on.
             AssignReportedTrailer(s, report, driver, line);
 
-            // Wages default to the driver's agreed share of what they brought in.
-            // Revenue, from what the game actually shows. ATS reports a driver's average income per
+            // What the driver brought in, from what the game actually shows. ATS reports an average income per
             // mile and per day; it does not report a period total, so asking for one asked the player
             // to do arithmetic on figures they would have had to invent. Per-mile against the odometer
             // difference is the better of the two — both readings are real, and miles are exact where
@@ -570,8 +569,28 @@ public static class FleetOpsService
             report.Findings.Add($"${report.TotalCapital:N0} went on equipment and property this period.");
 
         ReadTheBankAgainstTheBooks(s, report);
+        // No wages to check. ATS pays a hired driver before it reports their profit, so there has never
+        // been a wage line on this report — the advice outlived the figure it was about by two schema
+        // versions. What actually eats a period is the shop and the chequebook, so it names those.
         if (report.NetContribution < 0)
-            report.Findings.Add("The hired fleet lost money this period. Check wages against what they actually brought in.");
+        {
+            // Only what actually happened. Naming a shop bill of zero and then sending the player to
+            // look at what went through the shop is the report talking past its own figures.
+            //
+            // N0 with a literal dollar, like every other figure in this file. C0 takes the machine's
+            // culture, and on a box that is not set to en-US it prints the generic currency sign: the
+            // first run of this said "¤500 brought in against ¤14,000 of repairs".
+            var against = new List<string>();
+            if (report.TotalRepairs > 0) against.Add($"${report.TotalRepairs:N0} of repairs");
+            if (report.TotalCapital > 0) against.Add($"${report.TotalCapital:N0} on equipment and property");
+
+            report.Findings.Add(
+                $"The hired fleet lost money this period: ${report.TotalContribution:N0} brought in" +
+                (against.Count > 0 ? $" against {string.Join(" and ", against)}" : "") + ". " +
+                (report.TotalRepairs > 0
+                    ? "Look at what went through the shop, and at whether anything is worth keeping on the road."
+                    : "Nothing went through the shop, so it is what they are bringing in that is the problem."));
+        }
         if (report.TotalMiles > 0 && report.TotalContribution > 0)
             report.Findings.Add($"Fleet netted ${report.TotalContribution / (decimal)report.TotalMiles:0.00}/mi over {report.TotalMiles:N0} mi, after what ATS took.");
 

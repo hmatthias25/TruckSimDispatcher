@@ -2695,10 +2695,20 @@ function fleetReportModal(r) {
       <div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
 
+    ${/* These read totalRevenue and totalWages, both of which schema 22 retired and now permanently
+          zero — so every filed report has said "revenue $0.00  wages $0.00" beside a five-figure net
+          ever since, which is the app confidently reporting nothing. Reported from play.
+
+          There was never a wage: ATS pays a hired driver before it reports their profit, so the app
+          used to invent one and subtract it. And the figure was never gross revenue either — what the
+          game hands back is already net of what it took, which is why it is called contribution now.
+
+          Capital is here because without it the strip does not add up: net is contribution less
+          repairs less what the company spent on yards and equipment. */ ''}
     <div class="kv" style="margin-bottom:10px">
-      <span>revenue <b>${money0(r.totalRevenue)}</b></span>
-      <span>wages <b>${money0(r.totalWages)}</b></span>
+      <span>contribution <b>${money0(r.totalContribution)}</b></span>
       <span>repairs <b>${money0(r.totalRepairs)}</b></span>
+      ${r.totalCapital ? `<span>equipment &amp; property <b>${money0(r.totalCapital)}</b></span>` : ''}
       <span>miles <b>${num(r.totalMiles || 0)}</b></span>
     </div>
 
@@ -3987,13 +3997,14 @@ function fleetOpsHtml() {
                   and then wanted again later — usually to find the figure to take out of ATS. */ ''}
             <button class="btn tiny ghost" data-act="show-report" data-num="${esc(r.number)}">What it did</button>
             <b style="font-family:var(--mono)">net ${money(r.netContribution)}</b></div>
+          ${/* Same two retired fields as the filing modal — see the note there. */ ''}
           <div class="kv">
-            <span>revenue <b>${money(r.totalRevenue)}</b></span>${
+            <span>contribution <b>${money(r.totalContribution)}</b></span>${
               r.lines?.find((l) => l.revenueBasis)
                 ? `<span class="hint">from ${esc(r.lines.find((l) => l.revenueBasis).revenueBasis)}${
                     r.lines.filter((l) => l.revenueBasis).length > 1 ? ' and others' : ''}</span>` : ''}
-            <span>wages <b>${money(r.totalWages)}</b></span>
             <span>repairs <b>${money(r.totalRepairs)}</b></span>
+            ${r.totalCapital ? `<span>equipment &amp; property <b>${money(r.totalCapital)}</b></span>` : ''}
             <span>miles <b>${num(r.totalMiles)}</b></span>
             <span>drivers <b>${r.lines.length}</b></span>
           </div>
