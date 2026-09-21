@@ -363,13 +363,29 @@ public static class HomeTime
         // What is happening at THIS visit is LastTrailerDecision, which the brief already carries.
         st.ReassignmentNotice = st.AtYard ? "" : ReassignmentNotice(s) ?? "";
 
+        // Say what is actually enforced, with the figure.
+        //
+        // This used to read "Dispatch is routing you toward Springfield, MO" and "Operations is working
+        // freight back toward Springfield, MO". Neither is what the rule does. What the rule does is
+        // put a CEILING on how much further out a load may leave the driver — see OutboundAllowance —
+        // and score homeward freight ahead of the rest. Those are not the same promise: standing in
+        // Wichita two days out, a load to Chicago passes the ceiling while ending 261 miles further
+        // from the yard, on a screen that said freight was being worked back toward it.
+        //
+        // Asked in exactly those terms: "I get a warning that dispatch is routing me toward home. But
+        // is it?" A driver reading a promise bigger than the protection will plan against the promise.
+        var cap = st.OutboundAllowance is { } miles
+            ? $"Nothing gets authorised that leaves you more than {miles:N0} mi further out than you are now"
+            : "Freight that closes the distance is scored ahead of freight that does not";
+
         st.Headline = st.Overdue
             ? $"Home time is OVERDUE — {st.DaysOut:0.#} days out against a {st.IntervalDays}-day arrangement. " +
               (st.AtYard ? "You are at the yard — take it now."
                   : st.AtHome ? "You are close; bring it in to {0} and report in at the yard.".Replace("{0}", st.TerminalLabel)
-                  : "Dispatch is routing you toward {0}.".Replace("{0}", st.TerminalLabel))
+                  : $"{cap}, and getting you back outranks the rate.")
             : st.DueSoon
-                ? $"Home time due in {st.DaysUntilDue:0.#} days. Operations is working freight back toward {st.TerminalLabel}."
+                ? $"Home time due in {st.DaysUntilDue:0.#} days. {cap}, and freight that closes the " +
+                  $"distance to {st.TerminalLabel} scores ahead of freight that does not."
                 : $"{st.DaysOut:0.#} days out, home time in {st.DaysUntilDue:0.#} days.";
 
         return st;
@@ -754,6 +770,39 @@ public static class HomeTime
     /// The home-time contribution to a load's score, plus the line that explains it. Returns zero and
     /// no line when there is no arrangement, so nothing changes for a driver who chose to stay out.
     /// </summary>
+    /// <summary>
+    /// How far a load has to move the driver before it counts either way, in miles.
+    ///
+    /// <para>Freight does not run in straight lines, and a scorer that reacts to every wobble makes the
+    /// board unusable — so there has to be a band in the middle where a load is simply lateral. What
+    /// there does not have to be is the SAME band all the way through an arrangement.</para>
+    ///
+    /// <para>It used to be a flat 150 miles until the date passed and then 50. A hundred and fifty is a
+    /// fair description of noise with a week still to run. Two days out it is most of a driving day: a
+    /// load 149 miles the wrong way scored a flat zero, said "roughly neutral on home time", and was
+    /// then decided on rate — while the app's own headline was telling the driver freight was being
+    /// worked back toward the yard. Asked in exactly those terms.</para>
+    ///
+    /// <para>So it tapers with the days left and lands on the overdue figure exactly as the date
+    /// arrives. No step at the boundary: a driver does not become more sensitive to a lateral load
+    /// because midnight passed. Floored at the overdue figure because below that the geography cannot
+    /// resolve the difference anyway — the same reasoning as
+    /// <see cref="MinOutboundWhenOverdueMiles"/>.</para>
+    /// </summary>
+    public const double DeadBandWhenOverdueMiles = 50;
+
+    /// <summary>The widest the band ever gets, at the moment home time first comes into view.</summary>
+    public const double DeadBandMaxMiles = 150;
+
+    /// <summary>How much the band widens per day still in hand. 25 mi/day reaches 150 at four days out.</summary>
+    public const double DeadBandPerDayMiles = 25;
+
+    public static double DeadBandMiles(HomeStatus st) =>
+        st.Overdue
+            ? DeadBandWhenOverdueMiles
+            : Math.Clamp(DeadBandWhenOverdueMiles + Math.Max(0, st.DaysUntilDue) * DeadBandPerDayMiles,
+                         DeadBandWhenOverdueMiles, DeadBandMaxMiles);
+
     public static (double Points, string? Detail, string? Pro, string? Con) ScoreLoad(AppState s, BoardLoad load, HomeStatus st)
     {
         if (!st.Tracked || !st.DueSoon) return (0, null, null, null);
@@ -773,14 +822,7 @@ public static class HomeTime
         var nowMiles = st.MilesFromHome ?? destMiles.Value;
         var closes = nowMiles - destMiles.Value;   // positive = ends up nearer home
 
-        // How far a move has to be before it counts either way.
-        //
-        // A hundred and fifty miles is right while home time is merely coming due — freight does not run
-        // in straight lines and penalising every wobble would make the board unusable. Once the company
-        // is actually LATE it is far too generous: a load 150 miles further out scored a flat zero and
-        // won on rate, which is how a driver overdue by weeks got sent from Rock Springs to Salt Lake
-        // City and told it was "roughly neutral on home time".
-        var deadBand = st.Overdue ? 50.0 : 150.0;
+        var deadBand = DeadBandMiles(st);
 
         if (destMiles.Value <= radius)
         {
@@ -818,7 +860,10 @@ public static class HomeTime
                     : $"Takes you {Math.Abs(closes):N0} mi further from {st.TerminalLabel} with home time due in {st.DaysUntilDue:0.#} days.");
         }
 
-        return (0, $"Roughly neutral on home time ({nowMiles:N0} → {destMiles.Value:N0} mi from {st.TerminalLabel}).", null, null);
+        // The band is quoted, because "roughly neutral" is the one verdict here with no number in it and
+        // it is the verdict a driver is most likely to want to argue with.
+        return (0, $"Roughly neutral on home time ({nowMiles:N0} → {destMiles.Value:N0} mi from " +
+                   $"{st.TerminalLabel}, inside the {deadBand:N0} mi either way I treat as lateral).", null, null);
     }
 
     /// <summary>
