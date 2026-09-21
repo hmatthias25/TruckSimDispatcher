@@ -193,6 +193,86 @@ const bin = (id) => api(`/trips/${id}/cancel`, 'POST', { reason: 'fixture — on
   ok('but the clock still moved over it', hm(done2.snapshot.status.gameTime) === '07:00',
     hm(done2.snapshot.status.gameTime));
 
+  head('5. The quoted time is a default, not a fact — the driver can overrule it');
+  // The gate wait is the one figure here that is PRESCRIBED rather than measured. ATS has no opinion
+  // about a queue, so the arrival call rolls one, tells the driver to set their clock to it, and the
+  // driver makes it true by doing so. That left our own guess standing with nothing to correct it:
+  // "so where do you get my ACTUAL unload time?"
+  await rig('DH-1');
+  const late = await take('Flatbed');
+  await api(`/trips/${late.id}/loaded`, 'POST',
+    { startOdometer: odo, weightLbs: 40000, pulledOutGameTime: at(7, '03:30') });
+  await api(`/trips/${late.id}/arrived`, 'POST', { gameTime: at(7, '05:44') });
+  st = await api('/export');
+  const lt = st.trips.find((t) => t.id === late.id);
+  lt.arrivedGameTime = at(7, '05:44');
+  lt.workStartsGameTime = at(7, '08:14');       // what the app quoted
+  S = un(await api('/import', 'POST', st));
+  odo += 110;
+  const done3 = await api(`/trips/${late.id}/complete`, 'POST', {
+    deliveredGameTime: at(7, '05:44'), actualMiles: 110, endOdometer: odo, actualRevenue: 900,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 3, trailerDamageAfter: 0, cargoDamagePct: 0,
+    loadingHours: 0, unloadingHours: 0, detentionHours: 0, layoverDays: 0, breakdownDays: 0,
+    extraStops: 0, tarpsUsed: 0, delayReason: '', damageCause: '', notes: '',
+    locationCity: 'Pueblo', locationState: 'CO', locationKind: 'Receiver',
+    fuelPct: 60, gameTime: at(7, '05:44'),
+    tookYouGameTime: at(7, '09:00'),            // they were actually another 46 minutes
+  });
+  const t3 = done3.snapshot.trips.find((t) => t.id === late.id);
+  const f3 = (done3.audit.serviceFindings || []).join(' | ');
+  console.log(`  ..    quoted 08:14, driver says 09:00 → taken ${hm(t3.workStartsGameTime)}, ` +
+              `detention ${t3.detentionHours}h, clock ${hm(done3.snapshot.status.gameTime)}`);
+  ok('the driver\'s reading replaces the quote', hm(t3.workStartsGameTime) === '09:00',
+    hm(t3.workStartsGameTime));
+  ok('and it is said rather than swapped quietly', /Going with yours/i.test(f3),
+    f3.match(/You put them taking you[^.]*\./)?.[0]?.slice(0, 110) || '(silent)');
+  ok('detention follows the real wait', Math.abs(t3.detentionHours - (3.267 - free)) < 0.02,
+    `${t3.detentionHours}h from 3:16`);
+  ok('and so does the clock', hm(done3.snapshot.status.gameTime) === '09:00',
+    hm(done3.snapshot.status.gameTime));
+
+  head('6. A correction before the arrival is a typo, not a correction');
+  await rig('DH-1');
+  const typo = await take('Flatbed');
+  await api(`/trips/${typo.id}/loaded`, 'POST',
+    { startOdometer: odo, weightLbs: 40000, pulledOutGameTime: at(8, '03:30') });
+  await api(`/trips/${typo.id}/arrived`, 'POST', { gameTime: at(8, '05:44') });
+  st = await api('/export');
+  const tp = st.trips.find((t) => t.id === typo.id);
+  tp.arrivedGameTime = at(8, '05:44');
+  tp.workStartsGameTime = at(8, '08:14');
+  S = un(await api('/import', 'POST', st));
+  odo += 110;
+  const done4 = await api(`/trips/${typo.id}/complete`, 'POST', {
+    deliveredGameTime: at(8, '05:44'), actualMiles: 110, endOdometer: odo, actualRevenue: 900,
+    fuelStops: [], tolls: 0, repairCost: 0, fines: 0, otherExpense: 0,
+    truckDamageAfter: 3, trailerDamageAfter: 0, cargoDamagePct: 0,
+    loadingHours: 0, unloadingHours: 0, detentionHours: 0, layoverDays: 0, breakdownDays: 0,
+    extraStops: 0, tarpsUsed: 0, delayReason: '', damageCause: '', notes: '',
+    locationCity: 'Pueblo', locationState: 'CO', locationKind: 'Receiver',
+    fuelPct: 60, gameTime: at(8, '05:44'),
+    tookYouGameTime: at(8, '04:00'),            // before the truck was even there
+  });
+  const t4 = done4.snapshot.trips.find((t) => t.id === typo.id);
+  console.log(`  ..    said 04:00 against an 05:44 arrival → taken ${hm(t4.workStartsGameTime)}`);
+  ok('a time before the arrival is ignored', hm(t4.workStartsGameTime) === '08:14',
+    hm(t4.workStartsGameTime));
+
+  head('7. The gate survives the close-out, on the record');
+  // It used to vanish: the finished trip showed a delivery time and a detention figure and nothing
+  // joining them, and on a drop and hook there are no Begin/End events in the log either.
+  const kept = done.snapshot.trips.find((t) => t.id === trip.id);
+  console.log(`  ..    closed trip still holds arrived ${hm(kept.arrivedGameTime)} / ` +
+              `taken ${hm(kept.workStartsGameTime)}`);
+  ok('the arrival is still on the closed trip', hm(kept.arrivedGameTime) === '05:44',
+    hm(kept.arrivedGameTime));
+  ok('and so is the time they took the truck', hm(kept.workStartsGameTime) === '08:14',
+    hm(kept.workStartsGameTime));
+  ok('which is what makes the detention checkable',
+    kept.detentionHours > 0 && kept.workStartsGameTime > kept.arrivedGameTime,
+    `${kept.detentionHours}h against a 2:30 gap`);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); process.exit(1); });

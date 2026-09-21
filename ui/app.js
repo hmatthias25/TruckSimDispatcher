@@ -135,6 +135,12 @@ const timeOf = (iso) => {
   return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
 };
 /** Treat the stored local-style timestamp as UTC so day maths never shifts with the machine. */
+/** Hours between two game stamps, or null where either is missing or unreadable. */
+function gapHours(a, b) {
+  const x = Date.parse(isoUtc(a)), y = Date.parse(isoUtc(b));
+  return Number.isFinite(x) && Number.isFinite(y) ? (y - x) / 3600000 : null;
+}
+
 function isoUtc(iso) {
   if (!iso) return '';
   return /[zZ]|[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + 'Z';
@@ -156,15 +162,38 @@ function toIso(day, hhmm) {
  * day. Blank means not noted, and the app falls back to the typed unload duration.
  */
 function releasedIso() {
-  const hm = sv('c-released').trim();
+  return dayOfDelivery('c-released', false);
+}
+
+/**
+ * What time the receiver actually got round to the driver, as a full timestamp.
+ *
+ * A DIFFERENT moment from releasedIso: this is when the work started, that is when it finished. Equal to
+ * the arrival is allowed here and is not allowed there — being taken the moment you roll up is ordinary,
+ * being finished the moment you roll up is not.
+ */
+function tookYouIso() {
+  return dayOfDelivery('c-tookyou', true);
+}
+
+/**
+ * A time of day typed into one of the close-out boxes, resolved against the delivery day.
+ *
+ * Entered as a time of day because that is what the game shows. It belongs to the delivery day unless it
+ * reads earlier than the arrival, in which case the clock has gone past midnight and it is the next one.
+ */
+function dayOfDelivery(fieldId, allowSameMoment) {
+  const el = document.getElementById(fieldId);
+  const hm = el ? (el.value || '').trim() : '';
   if (!hm) return '';
   const arrived = readDayTime('c-time') || (S ? S.status.gameTime : '');
   if (!arrived) return '';
   const day = dayOf(arrived);
   const [h, m] = hm.split(':').map((x) => parseInt(x, 10) || 0);
-  const sameDay = toIso(day, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-  return sameDay > arrived ? sameDay
-    : toIso(day + 1, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+  const stamp = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const sameDay = toIso(day, stamp);
+  const fits = allowSameMoment ? sameDay >= arrived : sameDay > arrived;
+  return fits ? sameDay : toIso(day + 1, stamp);
 }
 
 /**
@@ -2240,12 +2269,29 @@ function facilityHtml(t) {
         <td class="sub">${det > 0 ? `beyond ${hhmm(free)} free at each stop — this is paid`
           : `both stops inside the ${hhmm(free)} free window`}</td></tr>`}
     </tbody></table></div>
+    ${/* The gate wait is the one figure in this app that is PRESCRIBED rather than measured. ATS has no
+          opinion about a queue, so the arrival call rolls one, tells the driver to set their clock to it,
+          and the driver makes it true by doing so. That left our own guess standing as fact with nothing
+          to correct it — asked in exactly those terms, "so where do you get my ACTUAL unload time?".
+          Said plainly, and prefilled, so it reads as a default to overrule rather than a box to decode. */ ''}
+    ${t.workStartsGameTime && t.arrivedGameTime && t.workStartsGameTime > t.arrivedGameTime ? `
+    <div class="callout info" style="margin:8px 0">
+      <p style="margin:0 0 6px">You arrived <b>${gt(t.arrivedGameTime)}</b> and I told you at the gate they
+        would take you at <b>${gt(t.workStartsGameTime)}</b>. That was <b>my estimate</b>, not something the
+        game measured — if they actually got to you at a different time, put it here and I will use yours.</p>
+      <label style="max-width:16rem">They actually took you at
+        <input id="c-tookyou" inputmode="numeric" placeholder="HH:MM"
+          value="${esc((t.workStartsGameTime || '').slice(11, 16))}"></label>
+    </div>` : ''}
     ${load === null || unload === null ? `<div class="grid3" style="margin-top:8px">
       <label>Loading<input id="c-load" inputmode="numeric" placeholder="h:mm" value="${hhmm(t.loadingHours)}"></label>
       <label>Unloading<input id="c-unload" inputmode="numeric" placeholder="h:mm" value="${hhmm(t.unloadingHours)}"></label>
       <label class="chk" title="ATS finishes the unload the moment you press 'loads from this location' and only then shows the board, so the clock has already moved.">
         <input id="c-unloadran" type="checkbox"> Unload already ran (took the next load off this facility's board)</label>
-      <label>Clock when the board came up
+      ${/* Retitled. "Clock when the board came up" and the box above are two different moments — this one
+            is when you were DONE and away, that one is when the work started. On a drop and hook they are
+            minutes apart and on a live load they are hours, so neither label may be ambiguous. */ ''}
+      <label>Clock when you were finished and away
         <input id="c-released" inputmode="numeric" placeholder="HH:MM — optional, beats a duration"></label>
       <label>Detention<input id="c-det" inputmode="numeric" placeholder="h:mm" value="0:00"></label>
     </div>
@@ -2916,6 +2962,14 @@ function tripDetailModal(id) {
       ${row('Odometer', num(t.startOdometer) + ' → ' + num(t.endOdometer))}
       ${row('ATS revenue / booked', money(t.gameRevenue) + ' / ' + money(t.companyRevenue))}
       ${row('Dispatched / due / delivered', gt(t.dispatchedGameTime) + ' · ' + gt(t.dueGameTime) + ' · ' + gt(t.deliveredGameTime))}
+      ${/* What happened at the gate, which used to vanish the moment the load closed out. The record
+            showed a delivery time and a detention figure and nothing connecting them — and on a drop and
+            hook there are no Begin/End events in the log either, so there was no way to see where the
+            detention came from. Reported as "where do you get my ACTUAL unload time?". */ ''}
+      ${t.arrivedGameTime && t.workStartsGameTime && t.workStartsGameTime > t.arrivedGameTime
+        ? row('At the receiver', 'arrived ' + gt(t.arrivedGameTime) + ' · they took you '
+            + gt(t.workStartsGameTime) + ' · ' + hhmm(gapHours(t.arrivedGameTime, t.workStartsGameTime)) + ' waiting')
+        : t.arrivedGameTime ? row('At the receiver', 'arrived ' + gt(t.arrivedGameTime) + ' · straight in') : ''}
       ${t.appointmentOpensGameTime
         ? row('Delivery window', gt(t.appointmentOpensGameTime) + ' → ' + gt(t.dueGameTime)) : ''}
       ${row('Fuel', num(t.fuelGallons, 1) + ' gal · ' + money(t.fuelCost))}
@@ -6706,6 +6760,9 @@ async function handleAction(act, d, ev) {
         // The unload runs before the board appears, so the clock has to be carried across it.
         unloadAlreadyRan: $('c-unloadran')?.checked === true,
         releasedGameTime: releasedIso(),
+        // Only present when the app held them at a gate. Blank everywhere else, and blank means the
+        // quoted time stands — which is the normal case and needs no typing.
+        tookYouGameTime: tookYouIso(),
         layoverDays: fv('c-lay'), breakdownDays: fv('c-bd'), extraStops: fv('c-stops'), tarpsUsed: fv('c-tarps'),
         delayReason: sv('c-delay'), faultOverride: sv('c-fault'),
         damageCause: sv('c-dmgcause'), notes: sv('c-notes'),

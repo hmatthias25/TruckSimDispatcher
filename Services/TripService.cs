@@ -52,6 +52,24 @@ public class CompleteTripRequest
     /// on trust.
     /// </summary>
     public string ReleasedGameTime { get; set; } = "";
+
+    /// <summary>
+    /// What time they actually got round to you, where the app had to tell you a time at the gate.
+    ///
+    /// <para><b>Not the same moment as <see cref="ReleasedGameTime"/>.</b> This is when the work
+    /// STARTED; that is when it finished and you were away. On a drop and hook they are minutes apart
+    /// and on a live load they are hours, so they are two boxes and they say so.</para>
+    ///
+    /// <para>It exists because the gate wait is the one figure in this app that is <b>prescribed rather
+    /// than measured</b>. ATS has no opinion about a queue, so ReceiverCall rolls one, tells the driver
+    /// to set their clock to it, and the driver makes it true by doing so. That works — but it left the
+    /// app's own guess standing as fact with no way to say "they were actually another half hour".
+    /// Asked in exactly those terms: "so where do you get my ACTUAL unload time?"</para>
+    ///
+    /// <para>Blank means the driver did what they were told and the quoted time stands, which is the
+    /// normal case and needs no typing.</para>
+    /// </summary>
+    public string TookYouGameTime { get; set; } = "";
     public double LayoverDays { get; set; }
     public double BreakdownDays { get; set; }
     public int ExtraStops { get; set; }
@@ -521,6 +539,28 @@ public static class TripService
         // A trailer we do not own cannot come back damaged. Whatever was hooked went back to the shipper.
         trip.TrailerDamageAfter = DropHook.Is(trip.TrailerType) ? 0 : req.TrailerDamageAfter;
         trip.CargoDamagePct = req.CargoDamagePct;
+        // When they actually got round to the driver, where the app had to quote a time at the gate.
+        //
+        // BEFORE the facility times, because detention is measured from it: doing this afterwards moved
+        // the game clock onto the corrected time and left the detention on our own superseded guess,
+        // which is the worst of both and was exactly what the first cut of this did.
+        //
+        // The quoted figure is the app's own roll — ATS has no opinion about a queue, so ReceiverCall
+        // invents one, tells the driver to set their clock to it, and the driver makes it true by doing
+        // so. It is a default to be overruled, not a measurement to be defended. Forward of the arrival
+        // only: a start before the truck was there is a typo, not a correction.
+        if (GameClock.TryParse(req.TookYouGameTime) is { } saidTaken
+            && GameClock.TryParse(trip.ArrivedGameTime) is { } gotThere && saidTaken >= gotThere)
+        {
+            var quoted = GameClock.TryParse(trip.WorkStartsGameTime);
+            if (quoted == null || Math.Abs((saidTaken - quoted.Value).TotalHours) > 0.01)
+                audit.ServiceFindings.Add(
+                    $"You put them taking you at {GameClock.Pretty(GameClock.Format(saidTaken))}" +
+                    (quoted != null ? $", against the {GameClock.Pretty(quoted.Value)} I quoted at the gate" : "") +
+                    ". Going with yours — you were there.");
+            trip.WorkStartsGameTime = GameClock.Format(saidTaken);
+        }
+
         // Facility time comes from the Begin/End pairs in the log where they exist. Detention is pay,
         // so it is derived from clock times rather than taken on trust.
         var facility = DeriveFacilityTimes(s, trip, req.LoadingHours, req.UnloadingHours, req.DetentionHours);
@@ -723,6 +763,7 @@ public static class TripService
         // against, and charging the receiver's door to the driver's service record is the thing the
         // comment above this exists to prevent. Where the truck was is not the same question as what
         // time it is.
+        // Already corrected above, before the facility times were worked out. Read as stored.
         var heldUntil = GameClock.TryParse(trip.WorkStartsGameTime);
         var wasHeld = heldUntil != null && arrivedAt != null && heldUntil.Value > arrivedAt.Value;
         var workableFrom = wasHeld ? heldUntil!.Value : arrivedAt;
