@@ -437,7 +437,7 @@ app.MapPost("/api/onboarding/hire", (HireRequest req) => Results.Ok(store.Mutate
         }
 
         var (lengthKeys, _, lengthDefault) = Carriers.TripLengthOffer(
-            Carriers.SizeOf(req.Code), Carriers.CreditedExperienceFor(s), true);
+            Carriers.SizeOf(req.Code), Carriers.CreditedExperienceFor(s));
         if (string.IsNullOrWhiteSpace(a.PreferredTripLength)
             || !lengthKeys.Contains(a.PreferredTripLength, StringComparer.OrdinalIgnoreCase))
             a.PreferredTripLength = lengthDefault;
@@ -1144,10 +1144,48 @@ app.MapDelete("/api/fleet/trailer/{unit}", (string unit) => Results.Ok(store.Mut
 
 app.MapPost("/api/fleet/stock", (StockRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
+    var before = s.Trucks.Select(t => t.Unit).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var beforeTrailers = s.Trailers.Select(t => t.Unit).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     var result = Seed.StockYard(s, req.TerminalId, req.Count, req.AlreadyBought, req.AddTrailers);
     store.Log(s, "system", $"Yard stocked: {result.Message}");
     CareerService.Recalculate(s);
-    return new { snapshot = Snapshot(s), result };
+
+    // A shopping list for what just went on the books.
+    //
+    // Stocking a yard puts five tractors on the record and the driver then has to go and buy them in
+    // ATS — and the answer to "buy what, exactly" was a type on a table row. Every one of these is a
+    // different truck with a different engine and gearbox, so the list says which, the same way the
+    // new-hire checklist does for the first one. Reported from play.
+    var yard = s.Company.Terminals.FirstOrDefault(t => t.Id == req.TerminalId);
+    var buy = s.Trucks.Where(t => !before.Contains(t.Unit)).Select(t => new
+    {
+        unit = t.Ref,
+        what = $"{t.Year} {t.Make} {t.Model}",
+        // Which dealer to walk into. "2021 Mack Anthem" is the answer to what, not to where, and ATS
+        // puts every make behind its own dealer door.
+        dealer = t.Make,
+        t.Engine,
+        transmission = t.Transmission,
+        dealerHint = Seed.DealerHint(t.Make, t.Model, t.Year),
+    }).ToList();
+    var buyTrailers = s.Trailers.Where(t => !beforeTrailers.Contains(t.Unit)).Select(t => new
+    {
+        unit = t.Ref,
+        what = $"{t.Length} {TrailerSpec.Describe(t.Type, t.Subtype)}",
+        advice = TrailerSpec.LengthAdvice(t.Type),
+    }).ToList();
+
+    return new
+    {
+        snapshot = Snapshot(s),
+        result,
+        buy,
+        buyTrailers,
+        limiter = Carriers.LimitsSpeed(s.Company.Code),
+        yardLabel = yard == null ? "" : $"{yard.City}, {yard.State}",
+        californiaRule = TrailerSpec.CaliforniaRule,
+    };
 })));
 
 app.MapPost("/api/fleet/trim", (TrimRequest req) => Results.Ok(store.Mutate<object>(s =>
@@ -2118,7 +2156,7 @@ app.MapPost("/api/career/trip-length", (TripLengthRequest req) => Results.Ok(sto
     if (Carriers.Exists(s.Company.Code))
     {
         var (offered, note, _) = Carriers.TripLengthOffer(
-            Carriers.SizeOf(s.Company.Code), Carriers.CreditedExperienceFor(s), true);
+            Carriers.SizeOf(s.Company.Code), Carriers.CreditedExperienceFor(s));
         if (offered.Count > 0 && !offered.Contains(pref, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 $"{s.Company.Name} does not run you {pref}. {note}");
@@ -2426,6 +2464,25 @@ object Snapshot(AppState? given = null)
         // which is how the switcher came to show the carrier's name over a career the player had
         // called something else.
         careerName = s.CareerName,
+        // The terms your employer sets, so the Career tab can show what is actually on offer instead of
+        // a free dropdown the endpoint then refuses. Reported from play: both pickers still read as the
+        // driver's choice after the carrier became the one who decides.
+        terms = new
+        {
+            homeTimeOffered = Carriers.Exists(s.Company.Code)
+                ? Carriers.HomeTimeOffer(Carriers.StandingFor(s.Company.Code).HomeTime).Keys
+                : HomeTime.Options.Select(o => o.Key).ToList(),
+            homeTimeNote = Carriers.Exists(s.Company.Code)
+                ? Carriers.HomeTimeOffer(Carriers.StandingFor(s.Company.Code).HomeTime).Note : "",
+            tripLengthsOffered = Carriers.Exists(s.Company.Code)
+                ? Carriers.TripLengthOffer(Carriers.SizeOf(s.Company.Code),
+                    Carriers.CreditedExperienceFor(s)).Keys
+                : new List<string> { "short", "medium", "long", "otr" },
+            tripLengthNote = Carriers.Exists(s.Company.Code)
+                ? Carriers.TripLengthOffer(Carriers.SizeOf(s.Company.Code),
+                    Carriers.CreditedExperienceFor(s)).Note : "",
+            limitsSpeed = Carriers.LimitsSpeed(s.Company.Code),
+        },
         // Diagnostic: the shape this career file is in. 2 means day numbers match the game.
         schemaVersion = s.SchemaVersion,
         company = s.Company,

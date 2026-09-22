@@ -480,7 +480,21 @@ public static class Seed
             Notes = "Match this to the tractor you actually buy in game — edit the spec on the Equipment tab."
         });
 
-        var primary = divisions.FirstOrDefault() ?? "Dry Van";
+        // The division the driver was HIRED INTO, not the first one on the carrier's list.
+        //
+        // On a generated carrier these are the same thing, because the list is built from the
+        // application. On a real one they are not: Schneider's divisions start at Dry Van, so a driver
+        // who applied to run intermodal was put on a 53' dry van and the setup checklist sent them to
+        // the dealer for one. Reported from play — "wouldn't we want to get an intermodal trailer for
+        // this one?". A company driver is put on a trailer, but they are put on the trailer for the
+        // work they were taken on to do.
+        //
+        // Only if the carrier actually runs it. Asking for flatbed at a reefer house does not conjure a
+        // flatbed division; that driver takes what the carrier hauls.
+        var wanted = DivisionExperience.Norm(app.PreferredDivision ?? "");
+        var primary = divisions.FirstOrDefault(d =>
+                          d.Equals(wanted, StringComparison.OrdinalIgnoreCase))
+                      ?? divisions.FirstOrDefault() ?? "Dry Van";
         var (type, subtype, len) = TrailerSpec.ForCarrier(s, primary);
 
         // An auto carrier gets no box at all: ATS sells no car carrier, so the division resolves to the
@@ -677,6 +691,8 @@ public static class Seed
         "Lowboy" => "Trail King RGN",
         "Livestock" => "Wilson Silverstar",
         "Log" => "Peerless log trailer",
+        // A chassis, not a box -- intermodal used to be handed a dry van.
+        "Container" => "Wabash 53ft container chassis",
         _ => "Great Dane"
     };
 

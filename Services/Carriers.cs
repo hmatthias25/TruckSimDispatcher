@@ -89,9 +89,15 @@ public static class Carriers
     /// the applicant filled in and the carrier then overrode, which is the app offering a choice it is
     /// about to take back — so it is the carrier's call now, stated on their card, and chosen by
     /// choosing them.</para>
+    ///
+    /// <para>This took a <c>takesRookies</c> argument that nothing in the body ever read, and the card
+    /// passed the carrier's flag while every runtime path passed <c>true</c>. Harmless only for as long
+    /// as it stayed unread: the moment it meant something, the terms on the card would have stopped
+    /// matching the terms in the seat. Whether a carrier trains rookies is already in
+    /// <paramref name="creditedYears"/> by way of the hiring screen.</para>
     /// </summary>
     public static (List<string> Keys, string Note, string Default) TripLengthOffer(
-        string size, double creditedYears, bool takesRookies)
+        string size, double creditedYears)
     {
         if (string.Equals(size, "Regional", StringComparison.OrdinalIgnoreCase))
             return (new List<string> { "short", "medium" },
@@ -752,9 +758,9 @@ public static class Carriers
                 HomeTimeOffered = HomeTimeOffer(spec.HomeTimeStars).Keys,
                 HomeTimeNote = HomeTimeOffer(spec.HomeTimeStars).Note,
                 TripLengthsOffered = TripLengthOffer(spec.Size,
-                    CreditedExperience(s, s.Application?.ExperienceYears ?? 0), spec.TakesRookies).Keys,
+                    CreditedExperience(s, s.Application?.ExperienceYears ?? 0)).Keys,
                 TripLengthNote = TripLengthOffer(spec.Size,
-                    CreditedExperience(s, s.Application?.ExperienceYears ?? 0), spec.TakesRookies).Note,
+                    CreditedExperience(s, s.Application?.ExperienceYears ?? 0)).Note,
                 // Probation varies by record and by carrier, and it was decided silently at hire. It is
                 // a term of the job — one carrier holding you ninety days while another holds you sixty
                 // is worth as much as a cent a mile — so it is worked out and shown before signing.
@@ -1174,12 +1180,31 @@ public static class Carriers
                 spec.MaxFaults, spec.MaxAvgDamage);
     }
 
-    /// <summary>Declared years plus time served, which is what every bar is actually measured against.</summary>
+    /// <summary>
+    /// Whether this carrier limits its trucks, and what the driver does about it in ATS.
+    ///
+    /// <para><b>The limiter is a game setting, not a purchase.</b> It lives in Options → Gameplay and it
+    /// is on or off — ATS caps a limited truck at 65 mph and there is no dial. The setup checklist was
+    /// telling people to "set the speed limiter to about 65 mph" as though it were something you spec at
+    /// the dealer. Reported from play.</para>
+    ///
+    /// <para>Who limits is a real difference between employers and worth having on the card: the better
+    /// seats do not. A four-star equipment fleet is handing you a new truck and trusting you with it; a
+    /// three-star one is governing it at 65 and you will feel that every day.</para>
+    /// </summary>
+    public static bool LimitsSpeed(string? code) =>
+        (AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
+             ?.EquipmentStars ?? 3) < 4;
+
+    /// <summary>The cap ATS applies when the limiter is switched on.</summary>
+    public const int LimiterMph = 65;
+
     /// <summary>Whether a carrier is Large, Regional or small, without being employed by them.</summary>
     public static string SizeOf(string? code) =>
         AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
             ?.Size ?? "";
 
+    /// <summary>Declared years plus time served, which is what every bar is actually measured against.</summary>
     public static double CreditedExperienceFor(AppState s) =>
         CreditedExperience(s, s.Application?.ExperienceYears ?? 0);
 
@@ -1443,21 +1468,30 @@ public static class Carriers
         if (truck != null)
             steps.Add(new SetupStep
             {
-                // Named the way the ATS dealer names them, because this is a shopping list. It used to
-                // read off a real-world brochure — a Freightliner Coronado, an "Eaton Fuller 18-spd
-                // manual" — and sent people looking for trucks and gearboxes the game does not sell.
                 // Named the way the ATS dealer names them, because this is a shopping list, and with the
-                // variant spelled out where the model is sold twice. Plain text: these go through esc().
+                // variant spelled out where the model is sold twice. It used to read off a real-world
+                // brochure — a Freightliner Coronado, an "Eaton Fuller 18-spd manual" — and sent people
+                // looking for trucks and gearboxes the game does not sell. Plain text: these go
+                // through esc(), so a <b> here reaches the player as the literal characters.
                 Title = $"Buy a tractor — {truck.Year} {truck.Make} {truck.Model}",
                 Detail = $"Go to the {truck.Make} dealer and ask for the {truck.Model}. "
                          + (Seed.DealerHint(truck.Make, truck.Model, truck.Year) is { Length: > 0 } hint
                              ? hint + " " : "")
                          + $"\n\nSpec it with:\n"
                          + $"  Engine: {truck.Engine}\n"
-                         + $"  Transmission: {truck.Transmission}\n"
-                         + $"  Speed limiter: about {truck.GovernedMph} mph\n\n"
-                         + "Each of those is a line on the dealer screen. If you cannot see one, you are at the "
+                         + $"  Transmission: {truck.Transmission}\n\n"
+                         + "Both of those are lines on the dealer screen. If you cannot see one, you are at the "
                          + "wrong dealer or that variant is not unlocked in your game yet.\n\n"
+                         // The limiter is a game OPTION, on or off, not something you spec at the dealer.
+                         // This step used to say "set the speed limiter to about 65 mph", which is not a
+                         // thing you can do anywhere in ATS. Reported from play.
+                         + (LimitsSpeed(s.Company.Code)
+                             ? $"{s.Company.Name} governs its trucks. In ATS go to Options, Gameplay, and turn "
+                               + $"the truck speed limiter ON — that caps you at {LimiterMph} mph, which is what "
+                               + "the planner is working to.\n\n"
+                             : $"{s.Company.Name} does not govern its trucks. Leave the truck speed limiter OFF "
+                               + "in Options, Gameplay — the seat is yours to run at the truck's own speed, and "
+                               + "the planner already assumes that.\n\n")
                          + "Exact match is not required: buy what you can afford, then open Fleet, unit "
                          + $"{truck.Ref}, Edit, and change the make, model, engine, transmission and governed "
                          + "speed to what you actually bought. The planner uses those numbers for drive time.",

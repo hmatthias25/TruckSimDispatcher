@@ -58,10 +58,16 @@ let S;
     dutyStatus: 'OnDuty', atsBankBalance: 90000,
   }));
   // The report had 14:03 of cycle against a LEARNED dock time of 1:51 each end, measured off forty
-  // flatbed loads. A fresh fixture has no history and assumes 3:00, which costs 2:18 more on the day —
-  // so the cycle here is set to leave the same room, not the same number.
+  // flatbed loads.
+  //
+  // This used to carry 16.4 instead, because a flatbed applicant at Prime was handed Prime's FIRST
+  // division — a reefer — and a reefer seeds at 3:00 each end. So the fixture was inflating the cycle
+  // by 2:18 to buy back dock time the reported driver never spent. With the trailer following the
+  // division the driver was hired into, the seed is the flatbed's 2:00 loading and 1:30 unloading,
+  // which is within minutes of the 1:51 each end the report measured — so the same room IS the same
+  // number now, and the fixture can carry the figure the report actually carried.
   await api('/hos', 'POST', {
-    driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 16.4,
+    driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 14.05,
   });
 
   const hs = (await api('/bootstrap')).views.homeTime;
@@ -81,7 +87,10 @@ let S;
     cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
     originCity: 'Oklahoma City', originState: 'OK', destCity: 'Kansas City', destState: 'MO',
     // Deliverable, but inside the safety buffer — Tight, which is what dropped it before ranking.
-    loadedMiles: 343, deadheadMiles: 0, gameRevenue: 1237, deadlineHours: 14.5, weightLbs: 30000,
+    // The deadline was 14.5 while the fixture was spending a reefer's 6:00 of dock time on this run;
+    // on the flatbed this driver was actually hired onto that is 3:30, so 14.5 stopped being tight and
+    // the load simply authorized. The margin is what this fixture is pinning, not the figure.
+    loadedMiles: 343, deadheadMiles: 0, gameRevenue: 1237, deadlineHours: 12.0, weightLbs: 30000,
   });
 
   const kc = (bd.evaluations || []).find((e) => e.load.destCity === 'Kansas City');
@@ -133,7 +142,8 @@ let S;
   const stale = await api('/board/add', 'POST', {
     cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
     originCity: 'Oklahoma City', originState: 'OK', destCity: 'Kansas City', destState: 'MO',
-    loadedMiles: 343, deadheadMiles: 0, gameRevenue: 1237, deadlineHours: 14.5, weightLbs: 30000,
+    // Same load as section 2, same deadline: Tight is the state this section is re-entering.
+    loadedMiles: 343, deadheadMiles: 0, gameRevenue: 1237, deadlineHours: 12.0, weightLbs: 30000,
   });
   ok('a row left over from Amarillo does not answer for Oklahoma City',
     stale.wantCityBoard === true, `wantCityBoard=${stale.wantCityBoard}`);

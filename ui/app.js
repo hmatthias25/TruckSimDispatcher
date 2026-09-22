@@ -1252,7 +1252,7 @@ function viewDispatch() {
         <div class="grid2">
           <label>Cargo<input id="b-cargo" placeholder="e.g. Frozen Foods"></label>
           <label>Trailer required
-            <select id="b-trailer">${['', 'Dry Van', 'Reefer', 'Flatbed', 'Step Deck', 'Tanker', 'Lowboy', 'Car Hauler', 'Livestock', 'Log', 'Hopper', 'Dump']
+            <select id="b-trailer">${['', 'Dry Van', 'Reefer', 'Flatbed', 'Step Deck', 'Container', 'Tanker', 'Lowboy', 'Car Hauler', 'Livestock', 'Log', 'Hopper', 'Dump']
               .map((x) => `<option value="${x}" ${(tr && tr.type === x) ? 'selected' : ''}>${x || '(same as assigned)'}</option>`).join('')}</select></label>
           ${BOARD_STAGE === 'local'
             ? `<input type="hidden" id="b-ocity" value="${esc(st.locationCity)}">
@@ -3252,7 +3252,7 @@ function viewEquipment() {
         </select></label>
       <label>…or type<select id="rt-type">
         <option value="">—</option>
-        ${['Dry Van', 'Reefer', 'Flatbed', 'Step Deck', 'Lowboy', 'Tanker', 'Dump', 'Hopper',
+        ${['Dry Van', 'Reefer', 'Flatbed', 'Step Deck', 'Container', 'Lowboy', 'Tanker', 'Dump', 'Hopper',
            'Log', 'Livestock', 'Car Hauler'].map((x) => `<option>${x}</option>`).join('')}</select></label>
       <label>Subtype <span class="sub">— tankers</span>
         <input id="rt-subtype" placeholder="e.g. Food Grade"></label>
@@ -3593,28 +3593,42 @@ function domicilePrefsHtml() {
       <button class="btn" data-act="settle-transfer" data-id="${esc(t.id)}">
         Check on the ${esc(t.toTerminalName)} request (${t.loadsRequired} loads asked)</button></div>`).join('')}
 
-    <h3 class="sect">What you want to be running</h3>
-    <p class="hint">Dispatch weighs the board on this. It is a real thumb on the scale &mdash; on
-      <b>medium</b> a load over 700 miles scores a fifth of what a mid-length one does, so if the boards
-      have felt short on long freight, this is why. Multi-day runs are planned properly either way:
-      breaks, ten-hour resets and 34-hour restarts all get worked into the plan.</p>
-    <div class="grid3">
+    ${/* What you RUN, not what you want. Both of these were free dropdowns with an Update button, and
+          both are the carrier's call now — the endpoints refuse anything they do not offer, so the
+          pickers were presenting choices the app was about to take back. Reported from play.
+
+          Offered set only, and where a carrier offers exactly one it is stated rather than picked:
+          a dropdown with a single option is a question with one answer. */ ''}
+    <h3 class="sect">What ${esc(S.company.name)} runs you</h3>
+    <p class="hint">Your employer decides this, not you — it was on their card when you applied.
+      Dispatch weighs the board on it: on <b>medium</b> a load over 700 miles scores a fifth of what a
+      mid-length one does. Multi-day runs are planned properly either way, with breaks, ten-hour resets
+      and 34-hour restarts worked into the plan.</p>
+    ${S.terms?.tripLengthNote ? `<div class="callout info" style="margin-bottom:8px">
+      <p style="margin:0">${esc(S.terms.tripLengthNote)}</p></div>` : ''}
+    ${(S.terms?.tripLengthsOffered || []).length > 1 ? `<div class="grid3">
       <label>Trip length
         <select id="tl-pref">
           ${[['short', 'Short — day cabs and regional, under 250 mi'],
              ['medium', 'Medium — 200 to 700 mi'],
              ['long', 'Long — 600 mi and up'],
              ['otr', 'OTR — 800 mi and up, out for weeks']]
+            .filter(([k]) => (S.terms.tripLengthsOffered || []).includes(k))
             .map(([k, label]) => `<option value="${k}" ${(S.application && S.application.preferredTripLength === k) ? 'selected' : ''}>${esc(label)}</option>`).join('')}
         </select></label>
-      <label style="align-self:end"><button class="btn primary wide" data-act="save-trip-length">Update preference</button></label>
-      <div><p class="hint" style="margin-top:22px">Takes effect on the next board you pull.</p></div>
-    </div>
+      <label style="align-self:end"><button class="btn primary wide" data-act="save-trip-length">Update</button></label>
+      <div><p class="hint" style="margin-top:22px">Within what they run. Takes effect on the next board
+        you pull.</p></div>
+    </div>` : `<p style="margin:0 0 4px"><b>${esc(S.application?.preferredTripLength || '—')}</b>
+      <span class="sub">— the only thing they put you on. It opens up as you put time in.</span></p>`}
 
     <h3 class="sect">Home-time arrangement</h3>
-    <p class="hint">What you agreed to when you signed on. Dispatch routes for it: as the date gets
-      close, loads finishing near your home yard start outranking better-paying freight going the other
-      way, and you are told when a load is your ride home.</p>
+    <p class="hint">What ${esc(S.company.name)} signs you to &mdash; theirs to set, and on their card
+      before you applied. Dispatch routes for it: as the date gets close, loads finishing near your home
+      yard start outranking better-paying freight going the other way, and you are told when a load is
+      your ride home.</p>
+    ${S.terms?.homeTimeNote ? `<div class="callout info" style="margin-bottom:8px">
+      <p style="margin:0">${esc(S.terms.homeTimeNote)}</p></div>` : ''}
     ${S.views.probation?.on ? (S.views.probation.reviewDue ? `<div class="callout warn">
       <p style="margin:0">Your probation period is served &mdash; the review that closes it is taken at
         the yard, so it happens the next time you are home. Nothing else is outstanding, and nothing is
@@ -6394,6 +6408,51 @@ function stockYardModal(yardId) {
     </div>`);
 }
 
+/* What to go and buy in ATS for the yard you just stocked.
+ *
+ * The units are on the books the moment you press the button; the game knows nothing about them until
+ * you buy them. So this is the list: which truck, which engine, which gearbox, and which dealer entry
+ * where the model is sold twice — the same detail the new-hire checklist gives for your first tractor,
+ * because the question is identical. */
+function stockedBuyListModal(r) {
+  const trucks = r.buy || [];
+  const trailers = r.buyTrailers || [];
+  if (!trucks.length && !trailers.length) return closeModal();
+
+  modal(`<div class="panel-head"><h2>Buy these in ATS</h2>
+      <span class="sub">${esc(r.yardLabel || '')} · ${trucks.length} tractor(s)${
+        trailers.length ? ` · ${trailers.length} trailer(s)` : ''}</span>
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+    <p class="hint">These are on the company books now. ATS knows nothing about them until you buy them,
+      so anything you have not bought stays marked <b>backdrop</b> — no damage is invented for it and you
+      will never be sent to a shop for a truck that does not exist. Tick a unit as in-garage on the
+      Equipment tab as you buy it.</p>
+    ${trucks.map((t) => `<div class="loadcard backup">
+      <div class="loadcard-head"><span class="unit">${esc(t.unit)}</span>
+        <span class="lane">${esc(t.what)}</span></div>
+      ${t.dealer ? `<p style="margin:0 0 4px"><b>Go to the ${esc(t.dealer)} dealer</b> and ask for the
+        ${esc(t.what)}.</p>` : ''}
+      <p style="margin:0 0 4px;color:var(--ink2);white-space:pre-wrap">  Engine: ${esc(t.engine)}
+  Transmission: ${esc(t.transmission)}</p>
+      ${t.dealerHint ? `<p class="hint" style="margin:0">${esc(t.dealerHint)}</p>` : ''}
+    </div>`).join('')}
+    ${trailers.length ? `<h3 class="sect">Trailers</h3>
+      <p class="hint">At the trailer dealer, which is its own lot — not the truck dealer.</p>
+      ${trailers.map((t) => `<div class="loadcard backup">
+        <div class="loadcard-head"><span class="unit">${esc(t.unit)}</span>
+          <span class="lane">${esc(t.what)}</span></div>
+        ${t.advice ? `<p class="hint" style="margin:0">${esc(t.advice)}</p>` : ''}
+      </div>`).join('')}
+      <p class="hint">${esc(r.californiaRule || '')}</p>` : ''}
+    ${/* The limiter is a game option, not a purchase — see Carriers.LimitsSpeed. */ ''}
+    <p class="hint">${r.limiter
+      ? `Your carrier governs its trucks: Options &rarr; Gameplay &rarr; truck speed limiter <b>ON</b>.`
+      : `Your carrier does not govern its trucks: leave the truck speed limiter <b>OFF</b> in Options &rarr; Gameplay.`}</p>
+    <div class="row-actions"><div style="flex:1"></div>
+      <button class="btn primary" data-act="close-modal">Done</button></div>`);
+}
+
 function editTrailerModal(unit) {
   const isNew = !unit;
   const t = isNew ? { ...BLANK_TRAILER } : S.trailers.find((x) => x.unit === unit);
@@ -7379,7 +7438,10 @@ async function handleAction(act, d, ev) {
         terminalId: sv('sk-yard'), count: fv('sk-count'), alreadyBought: bv('sk-bought'),
         addTrailers: bv('sk-trailers'),
       }));
-      closeModal();
+      // A shopping list rather than a toast. Five tractors just went on the books and every one is a
+      // different truck with its own engine and gearbox — "go and buy them" is not an instruction
+      // without saying which. Reported from play.
+      stockedBuyListModal(r);
       toast(r.result.message, 'ok');
     });
 

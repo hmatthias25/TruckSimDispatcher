@@ -707,10 +707,20 @@ public static class DispatchEngine
         var room = s.Hos.ShiftRemaining
                    - FacilityLearning.For(s, load.TrailerType).Unloading
                    - s.Settings.ParkingBufferHours;
-        if (room > 0)
+        var latest = DeliveryWindow.PrevHalfHour(now.AddHours(Math.Max(0, room)));
+        if (slot > latest)
         {
-            var latest = DeliveryWindow.PrevHalfHour(now.AddHours(room));
-            if (slot > latest && latest > opensAt) slot = latest;
+            // The day reaches past the opening: take the latest slot it reaches.
+            if (latest > opensAt) slot = latest;
+            // It does not reach even the opening. Then the driver is resting before this dock whatever
+            // is booked, and the right time to book is the first hour the receiver will take it —
+            // after a ten the fourteen is fresh, so the earliest slot is also the cheapest.
+            //
+            // This branch used to skip the clamp entirely and leave the seed's time standing, which is
+            // how an 08:00 start came to be booked at 21:00 against a receiver who opened at 19:00: two
+            // hours of nothing, on a day that could not work either time. The comment underneath has
+            // always said the slot stays at the opening here. It did not.
+            else slot = opensAt;
         }
 
         // And a slot has to leave room to finish inside the window, not just to start inside it.
@@ -735,6 +745,23 @@ public static class DispatchEngine
         // receiver will actually open their doors.
         return Math.Max(0, Math.Round((slot - now).TotalHours, 2));
     }
+
+    /// <summary>
+    /// When the plan has the truck stood at the receiver, ready to be worked.
+    ///
+    /// <para>A slot is a time to BE somewhere, so anything asking "can the plan make this appointment"
+    /// has to ask against the gate, not against the end of the plan. <c>ProjectedArrivalGameTime</c> is
+    /// the latter — it includes the dock work — and two places were comparing slots with it. The effect
+    /// was silent and exactly the size of the unload: a slot clamped to 19:30 so the driver could finish
+    /// inside their fourteen was handed back as 21:00, which is when they would have been done.</para>
+    ///
+    /// <para>Falls back to the end of the plan for a plan with no dock work in it at all, where the two
+    /// are the same thing.</para>
+    /// </summary>
+    public static DateTime? GateArrivalOf(FeasibilityResult f) =>
+        GameClock.TryParse(string.IsNullOrWhiteSpace(f.ProjectedDockStartGameTime)
+            ? f.ProjectedArrivalGameTime
+            : f.ProjectedDockStartGameTime) is { } at ? at : null;
 
     /// <summary>
     /// True when the booked slot cannot be worked on the hours the driver has now — they will be resting
@@ -1379,7 +1406,7 @@ public static class DispatchEngine
             // A slot is a door being held at the far end, so it is quoted in the time kept there.
             var shown = GameZones.AtReceiver(s, evalNow.AddHours(AppointmentHoursFor(s, load)), load.DestState);
             // Same rule as authorisation: never quote a slot the plan does not reach.
-            if (GameClock.TryParse(e.Feasibility.ProjectedArrivalGameTime) is { } plannedAt && plannedAt > shown)
+            if (GateArrivalOf(e.Feasibility) is { } plannedAt && plannedAt > shown)
                 shown = DeliveryWindow.NextHalfHour(plannedAt);
             var dueShown = GameClock.TryParse(e.Feasibility.DueGameTime);
             e.AppointmentGameTime = dueShown == null || shown <= dueShown.Value ? GameClock.Format(shown) : "";
@@ -1954,6 +1981,7 @@ public static class DispatchEngine
         "Livestock" => "Livestock",
         "Log" or "Logging" => "Log",
         "Dump" or "Hopper" => "Bulk",
+        "Container" => "Intermodal",
         "" => "Dry Van",
         var t => t
     };
@@ -2266,7 +2294,10 @@ public static class DispatchEngine
             // leg, a required 34 — the arrival IS the appointment. Handing out a plan that cannot meet
             // the slot we just invented, then marking the driver late for the difference, is the app
             // blaming somebody for its own arithmetic.
-            if (GameClock.TryParse(eval.Feasibility.ProjectedArrivalGameTime) is { } planned && planned > slot)
+            // Against the time the plan is STOOD AT THE GATE, not the time it finishes unloading. The
+            // end of the plan includes the dock work, so comparing a slot with it pushed every
+            // appointment out by the dock hours and quietly undid the shift-clock clamp above.
+            if (GateArrivalOf(eval.Feasibility) is { } planned && planned > slot)
                 slot = DeliveryWindow.NextHalfHour(planned);
 
             // Past the deadline there is no slot worth stating; the window closing governs.

@@ -739,7 +739,9 @@ public static class HomeTime
     {
         // Dedicated is not a trailer type — the customer's freight decides what you pull.
         "Dedicated" => "",
-        "Intermodal" => "Dry Van",
+        // A chassis, not a box. ATS sells a container carrier; handing out a dry van for intermodal was
+        // an approximation nobody asked for -- see TrailerSpec.LengthAdvice.
+        "Intermodal" or "Container" => "Container",
         "Reefer" or "Refrigerated" => "Reefer",
         "Dry Van" or "Van" => "Dry Van",
         "Flatbed" or "Open Deck" => "Flatbed",

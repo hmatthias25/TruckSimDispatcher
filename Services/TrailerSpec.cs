@@ -94,6 +94,14 @@ public static class TrailerSpec
             "Log" => "At the trailer dealer that is the log trailer. Logs only; nothing else loads on it.",
             "Livestock" => "At the trailer dealer that is the livestock trailer. Livestock only.",
             "Hopper" or "Dump" => "At the trailer dealer that is the dumper. Bulk only.",
+            // Intermodal rides a chassis, not a box. This division used to hand out a 53' dry van, which
+            // is simply a different trailer — reported from play looking at a unit labelled "Intermodal"
+            // and typed "53' Dry Van". ATS sells a container carrier and has since ownable trailers
+            // arrived, so there is no reason to approximate it.
+            "Container" =>
+                "At the trailer dealer that is the container carrier — a chassis, not a box. Take the 53' "
+                + "one; it also carries the 20' and 40' containers with the locks moved. Note the "
+                + "triple-axle 53' is one of the configurations California refuses.",
             _ => "",
         };
     }
@@ -151,7 +159,7 @@ public static class TrailerSpec
             "car hauler" or "auto" or "car hauling" => (DropHook.TrailerType, CarHauling),
             "log" => ("Log", ""),
             "dump" => ("Dump", ""),
-            "intermodal" => ("Dry Van", ""),
+            "intermodal" or "container" => ("Container", ""),
             _ => ("Dry Van", "")
         };
     }
@@ -177,6 +185,7 @@ public static class TrailerSpec
             "Reefer" => "53'",
             "Flatbed" => "48'",
             "Step Deck" => "48'",
+            "Container" => "53' chassis",
             "Lowboy" => "48' RGN",
             "Tanker" => "42'",
             "Livestock" => "53'",
@@ -194,6 +203,7 @@ public static class TrailerSpec
             "reefer" => "Reefer",
             "flatbed" => "Flatbed",
             "step deck" => "Step Deck",
+            "container" => "Intermodal",
             "lowboy" => "Heavy Haul",
             "tanker" => "Tanker",
             "livestock" => "Livestock",

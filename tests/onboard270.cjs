@@ -26,6 +26,8 @@ async function api(p, m = 'GET', b) {
   return j;
 }
 const un = (r) => r.snapshot || r;
+const fs = require('fs'), path = require('path');
+const js = fs.readFileSync(path.join(__dirname, '..', 'ui', 'app.js'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? ' -- ' + d : ''}`); } else { fail++; console.log(`  FAIL  ${l}${d ? ' -- ' + d : ''}`); } };
 const head = (t) => console.log(`\n=== ${t} ===`);
@@ -234,6 +236,96 @@ const market = async (a) => (await api('/onboarding/market', 'POST', a)).market
   ok('with the tier that yard actually is, not a hardcoded small',
     new RegExp(String(moved.level), 'i').test(before?.detail || ''),
     `${moved.level}`);
+
+  head('13. The speed limiter is a game setting, not something bought at the dealer');
+  // It said "set the speed limiter to about 65 mph", which is not a thing you can do anywhere in ATS.
+  // The limiter lives in Options, Gameplay, and it is on or off. Reported from play in those words.
+  const limiterText = truckStep?.detail || '';
+  console.log(`  ..    ${limiterText.match(/[^\n]*speed limiter[^\n]*/i)?.[0]?.slice(0, 120) || '(not mentioned)'}`);
+  ok('the checklist sends the driver to the options screen',
+    /Options, Gameplay/i.test(limiterText), 'named');
+  ok('and says which way to set it, not what number to dial',
+    /limiter (ON|OFF)\b/.test(limiterText),
+    limiterText.match(/limiter (ON|OFF)/)?.[0] || '(no switch)');
+  ok('nothing tells the player to set it TO a speed',
+    !/(set|spec).{0,24}limiter.{0,24}\b(to|at)\b.{0,12}\d{2}\s*mph/i.test(all), 'clean');
+  // The cap is worth stating where it applies, because the planner works to it — but only as the
+  // consequence of switching it on, never as a value the player types in at the dealer.
+  // Top level on the snapshot, beside careerName — NOT under views. It was written there and read from
+  // S.views.terms, so every note rendered blank and the run-length picker always took the "they offer
+  // exactly one" branch, which is the single-option text. A panel reading a key that is not there fails
+  // silently and looks like a design decision.
+  const boot = await api('/bootstrap');
+  const governed = boot.terms;
+  ok('the terms are where the browser looks for them', !!governed, governed ? 'found' : 'undefined');
+  ok('and nothing still reads them off views', !/S\.views\.terms/.test(js), 'clean');
+  ok('the snapshot says whether this employer governs its trucks',
+    typeof governed?.limitsSpeed === 'boolean', String(governed?.limitsSpeed));
+  ok('and the checklist agrees with it',
+    governed.limitsSpeed === /turn .*limiter ON/i.test(limiterText),
+    governed.limitsSpeed ? 'governed, told to switch it on' : 'ungoverned, told to leave it off');
+
+  head('14. The career tab offers only what the carrier runs');
+  // A dropdown listing four run lengths where the endpoint refuses three of them is the app presenting
+  // choices it is about to take back. The picker is filtered to the offered set, and where a carrier
+  // offers exactly one it is stated rather than picked.
+  ok('the offered run lengths are published to the browser',
+    Array.isArray(governed?.tripLengthsOffered) && governed.tripLengthsOffered.length > 0,
+    (governed?.tripLengthsOffered || []).join('/'));
+  ok('they match what the card said before signing',
+    JSON.stringify([...(governed.tripLengthsOffered || [])].sort())
+      === JSON.stringify([...(strict.tripLengthsOffered || [])].sort()),
+    `${(governed.tripLengthsOffered || []).join('/')} vs ${(strict.tripLengthsOffered || []).join('/')}`);
+  ok('and the reason is carried with them', (governed.tripLengthNote || '').length > 0,
+    (governed.tripLengthNote || '').slice(0, 80));
+  ok('the home-time arrangements are published the same way',
+    Array.isArray(governed?.homeTimeOffered) && governed.homeTimeOffered.length > 0,
+    (governed?.homeTimeOffered || []).join('/'));
+  // Every offered key must be one the endpoint will actually accept. This is the invariant the whole
+  // section exists for: offered and accepted are the same list, or the picker lies.
+  let refused = [];
+  for (const k of governed.tripLengthsOffered) {
+    try { await api('/career/trip-length', 'POST', { preference: k }); } catch (e) { refused.push(k); }
+  }
+  ok('every run length on offer is one the endpoint takes', refused.length === 0,
+    refused.join(', ') || 'all accepted');
+  refused = [];
+  for (const k of governed.homeTimeOffered) {
+    try { await api('/career/home-time', 'POST', { preference: k }); } catch (e) { refused.push(k); }
+  }
+  ok('and every arrangement on offer is signable', refused.length === 0,
+    refused.join(', ') || 'all accepted');
+
+  head('15. Stocking a yard says what to go and buy in ATS');
+  // It put five tractors on the books and told the player the type on a table row. Every one is a
+  // different truck with a different engine and gearbox. Reported from play: "I also need to know what
+  // to purchase in ATS (like my own truck), this just vaguely mentions a truck type".
+  const stocked = await api('/fleet/stock', 'POST',
+    { terminalId: S.company.terminals[0].id, count: 3, addTrailers: true });
+  console.log(`  ..    ${(stocked.buy || []).length} tractors, ${(stocked.buyTrailers || []).length} trailers at ${stocked.yardLabel}`);
+  ok('the yard it stocked is named back', (stocked.yardLabel || '').includes(pick.c), stocked.yardLabel);
+  ok('every tractor bought is listed', (stocked.buy || []).length > 0, `${(stocked.buy || []).length}`);
+  ok('each one names a real truck, not a type',
+    (stocked.buy || []).every((b) => /\d{4} \w+/.test(b.what || '')),
+    (stocked.buy || [])[0]?.what || '');
+  ok('and which dealer to walk into, because that is the other half of the instruction',
+    (stocked.buy || []).every((b) => (b.dealer || '').length > 0),
+    (stocked.buy || [])[0]?.dealer || '(not said)');
+  ok('with the engine and gearbox to spec it with',
+    (stocked.buy || []).every((b) => (b.engine || '').length > 0 && (b.transmission || '').length > 0),
+    `${(stocked.buy || [])[0]?.engine} / ${(stocked.buy || [])[0]?.transmission}`);
+  ok('and the unit it goes on the books as',
+    (stocked.buy || []).every((b) => (b.unit || '').length > 0),
+    (stocked.buy || []).map((b) => b.unit).join(' '));
+  if ((stocked.buyTrailers || []).length) {
+    ok('the trailers say what to buy too',
+      (stocked.buyTrailers || []).every((b) => (b.what || '').length > 0),
+      (stocked.buyTrailers || [])[0]?.what || '');
+    ok('and carry the California warning with them',
+      (stocked.californiaRule || '').length > 0, (stocked.californiaRule || '').slice(0, 70));
+  } else { ok('no trailers stocked in this run', true, 'skipped'); }
+  ok('nothing in the buy list reaches the player as markup',
+    !/<\/?(b|i|em|strong|p|br|div|span|ul|li|a)\b[^>]*>/i.test(JSON.stringify(stocked)), 'clean');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

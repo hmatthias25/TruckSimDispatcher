@@ -233,12 +233,16 @@ async function offer(cargo, opensHours = 8, deadlineHours = 20) {
     weightLbs: 40000, appointmentOpensHours: 6,
   })).evaluations[0];
 
-  const arrive = far.feasibility.projectedArrivalGameTime;
+  // The time the plan is STOOD AT THE GATE. This read projectedArrivalGameTime, which is the end of the
+  // whole plan with the dock work in it — so it was asserting that the slot is no earlier than the
+  // moment the driver finishes unloading, which every correct slot fails. It only ever passed because
+  // the app was making the same mistake and pushing the slot out to match.
+  const arrive = far.feasibility.projectedDockStartGameTime || far.feasibility.projectedArrivalGameTime;
   ok('the plan arrives when it arrives', !!arrive, arrive || '(none)');
   if (far.appointmentGameTime && arrive) {
     ok('the quoted slot is not before that arrival',
       new Date(far.appointmentGameTime + 'Z') >= new Date(arrive + 'Z'),
-      `slot ${far.appointmentGameTime} vs arrival ${arrive}`);
+      `slot ${far.appointmentGameTime} vs gate ${arrive}`);
   } else {
     ok('no slot is quoted when the plan cannot make one', !far.appointmentGameTime,
       far.appointmentGameTime || 'none quoted');
@@ -246,10 +250,11 @@ async function offer(cargo, opensHours = 8, deadlineHours = 20) {
 
   const auth8 = await api('/dispatch/authorize', 'POST', { loadId: far.load.id });
   const slot8 = auth8.trip.appointmentGameTime;
-  const plan8 = auth8.trip.feasibilityAtDispatch?.projectedArrivalGameTime;
+  const plan8 = auth8.trip.feasibilityAtDispatch?.projectedDockStartGameTime
+                || auth8.trip.feasibilityAtDispatch?.projectedArrivalGameTime;
   if (slot8 && plan8) {
     ok('and the trip agrees', new Date(slot8 + 'Z') >= new Date(plan8 + 'Z'),
-      `slot ${slot8} vs plan ${plan8}`);
+      `slot ${slot8} vs gate ${plan8}`);
   }
 
   // Deliver exactly on the slot the app stated. This must never be late.
@@ -293,12 +298,22 @@ async function offer(cargo, opensHours = 8, deadlineHours = 20) {
     const slotIn = hoursBetween(S.status.gameTime, late.appointmentGameTime);
     const rests = (late.feasibility.timeline || [])
       .some((x) => /reset|rest/i.test(x.kind || '') || /reset|rest/i.test(x.label || ''));
+    // The dock allowance the APP is planning against, not a figure written in here. This read a flat
+    // 1.5, which was the dry-van seed — but by section 9 the suite has closed out several loads and the
+    // learned average has moved, so the test was holding the planner to a number the planner had
+    // stopped using. The invariant is about the app's own arithmetic agreeing with itself.
+    const learned = ((await api('/bootstrap')).views.facilityTimes || [])
+      .find((f) => (f.trailerType || '').toLowerCase() === (late.load.trailerType || '').toLowerCase());
+    const dock = learned ? learned.unloadingHours : 1.5;
+    const parking = S.settings.parkingBufferHours ?? 1;
+    console.log(`  ..    slot ${slotIn.toFixed(1)}h in, ${dock}h at the dock, ${parking}h to park` +
+                ` (gate ${late.feasibility.projectedDockStartGameTime}, plan ends ${late.feasibility.projectedArrivalGameTime})`);
     // Either the slot fits the hours in hand, or the plan rests first — after a ten the fourteen is
     // fresh and a later slot is perfectly workable. What must never happen is a slot that needs
     // neither: burning the day on duty at the gate and running out at the dock.
     ok('the slot either fits the day or the plan rests before it',
-      slotIn + 1.5 <= 14 || rests,
-      `slot ${slotIn.toFixed(1)}h in, rest planned: ${rests}`);
+      slotIn + dock + parking <= 14.001 || rests,
+      `slot ${slotIn.toFixed(1)}h + ${dock}h dock + ${parking}h parking, rest planned: ${rests}`);
     ok('and it is inside the window', slotIn <= 30, `${slotIn.toFixed(1)}h against a 30h deadline`);
   } else {
     ok('no slot quoted when none fits the day', true, 'left to the rest-before-dock rule');

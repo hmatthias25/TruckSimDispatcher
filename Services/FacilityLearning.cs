@@ -30,6 +30,9 @@ public static class FacilityLearning
             // estimating it would let through exactly the load this is meant to stop.
             ["Flatbed"] = (2.0, 1.5),
             ["Step Deck"] = (2.0, 1.5),
+            // A box lifted on or a chassis dropped. Quick at both ends compared with a live load, and
+            // the waiting at a ramp is the gate queue rather than the work.
+            ["Container"] = (0.75, 0.75),
             ["Lowboy"] = (1.5, 1.5),
             ["Tanker"] = (2.0, 2.0),
             ["Car Hauler"] = (2.5, 2.5),

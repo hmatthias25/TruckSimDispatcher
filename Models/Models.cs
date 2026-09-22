@@ -3607,6 +3607,12 @@ public class FeasibilityResult
     public double OnDutyHours { get; set; }
     public double ElapsedHours { get; set; }
     public string ProjectedArrivalGameTime { get; set; } = "";
+    /// <summary>
+    /// When the plan has the truck stood at the receiver ready to be worked — after every wait and rest,
+    /// before the dock time. <see cref="ProjectedArrivalGameTime"/> is the end of the plan, unloading
+    /// included, so anything comparing itself against a GATE time wants this one instead.
+    /// </summary>
+    public string ProjectedDockStartGameTime { get; set; } = "";
     public string DueGameTime { get; set; } = "";
     /// <summary>Hours between projected arrival (incl. parking buffer) and the deadline.</summary>
     public double SlackHours { get; set; }

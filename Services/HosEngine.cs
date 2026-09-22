@@ -665,6 +665,15 @@ public static class HosEngine
             // On the DOCK clock, not idle: you are on the property with the engine running and it comes
             // off the fourteen exactly like the unload does. The appointment-idle term prices a truck sat
             // outside a gate it is not allowed through yet, which is a different thing.
+            // When the truck is actually stood at the receiver ready to be worked — every wait, reset and
+            // reposition already served, and the dock time still ahead of it.
+            //
+            // This is what a booked slot is a time FOR. ProjectedArrivalGameTime is the end of the whole
+            // plan, unloading included, and quoting a slot against that pushed every appointment out by
+            // the dock hours: a slot correctly clamped to 19:30 to fit the fourteen came back to the
+            // driver as 21:00, which is when they would have been finished, not when they were due.
+            if (task.IsUnload) result.ProjectedDockStartGameTime = Shown(clock);
+
             var queue = 0.0;
             if (task.IsUnload && task.AtDock && req.SiteQueuePeakHours > 0 && req.SiteOpenHour >= 0)
             {

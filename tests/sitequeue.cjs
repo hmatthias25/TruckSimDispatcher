@@ -185,8 +185,14 @@ async function report(city, st, day, hm, kind = 'Receiver') {
   // The other half of arriving, from play: "If I get to a warehouse at 2:30 for a 3PM appointment, they
   // COULD take me early, on time OR be backed up and take me later than my appointment."
   //
-  // The roll is seeded on the trip and the hour they pulled in, so one booked load turned up at fourteen
-  // different times exercises it honestly — and proves the same arrival never changes its mind.
+  // The roll is seeded on the trip and the hour they pulled in, so one booked load turned up at a spread
+  // of times exercises it honestly — and proves the same arrival never changes its mind.
+  //
+  // The window opens 8 hours out, not 20. A slot is never booked later than the driver's fourteen can
+  // reach; where the opening itself is out of reach the slot IS the opening, because they will be
+  // resting before that dock whatever is written down. At 20 hours that is what happened, and then
+  // every arrival sampled below — all of them before the slot — was an arrival before the place opened,
+  // where nobody is taking anybody early. The question this section asks only exists inside the window.
   await report('Denver', 'CO', 30, '05:00', 'Shipper');
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 60 });
   await api('/board/clear', 'POST', {});
@@ -194,7 +200,7 @@ async function report(city, st, day, hm, kind = 'Receiver') {
     cargo: 'Palletised Goods', trailerType: 'Dry Van', receiver: 'Blue Ridge Foods',
     originCity: 'Denver', originState: 'CO', destCity: 'Pueblo', destState: 'CO',
     loadedMiles: 115, deadheadMiles: 0, gameRevenue: 900, deadlineHours: 34,
-    weightLbs: 30000, preLoaded: true, atLocation: true, appointmentOpensHours: 20,
+    weightLbs: 30000, preLoaded: true, atLocation: true, appointmentOpensHours: 8,
   });
   const bkEv = (bk.evaluations || [])[0];
   if (bkEv) S = un(await api('/dispatch/authorize', 'POST', { loadId: bkEv.load.id }).catch(() => ({})));
@@ -205,7 +211,13 @@ async function report(city, st, day, hm, kind = 'Receiver') {
   const kinds = {};
   if (booked && booked.appointmentOpensGameTime) {
     const slot = Date.parse(booked.appointmentOpensGameTime + ':00Z');
-    for (let h = 1; h <= 14; h++) {
+    // Half-hour steps across the same 1-to-14-hour range. The roll is seeded on the trip and the hour
+    // they pulled in, so fourteen whole-hour draws are fourteen fixed seeds — and any change that moves
+    // the slot moves all fourteen at once. That is not the dock behaving differently, it is the sample
+    // being too small to say anything: one such move produced no TakenEarly at all out of fourteen.
+    // Twenty-seven draws over the same window tests the same distribution without being hostage to a
+    // particular set of seeds.
+    for (let h = 1; h <= 14; h += 0.5) {
       const at = new Date(slot - h * 3600000).toISOString().slice(0, 16);
       const call = (await api(`/trips/${booked.id}/arrived`, 'POST', { gameTime: at })).call;
       const k = call ? call.kind : 'StraightIn';
@@ -216,11 +228,11 @@ async function report(city, st, day, hm, kind = 'Receiver') {
     ok('a booked dock does not always do the same thing', Object.keys(kinds).length >= 2,
       Object.keys(kinds).join(', '));
     ok('sometimes they have a door free and take you early', (kinds.TakenEarly || 0) > 0,
-      `${kinds.TakenEarly || 0} of 14`);
+      `${kinds.TakenEarly || 0} of 27`);
     ok('sometimes it is the slot and not a minute before', (kinds.OnTime || 0) > 0,
-      `${kinds.OnTime || 0} of 14`);
+      `${kinds.OnTime || 0} of 27`);
     ok('and sometimes they are behind and you wait past your own appointment',
-      (kinds.BackedUp || 0) > 0, `${kinds.BackedUp || 0} of 14`);
+      (kinds.BackedUp || 0) > 0, `${kinds.BackedUp || 0} of 27`);
 
     const twice = (await api(`/trips/${booked.id}/arrived`, 'POST',
       { gameTime: new Date(slot - 3600000).toISOString().slice(0, 16) })).call;
@@ -234,11 +246,11 @@ async function report(city, st, day, hm, kind = 'Receiver') {
   ok('a booked dock does not always do the same thing', Object.keys(kinds).length >= 2,
     Object.keys(kinds).join(', '));
   ok('sometimes they have a door free and take you early', (kinds.TakenEarly || 0) > 0,
-    `${kinds.TakenEarly || 0} of 14`);
+    `${kinds.TakenEarly || 0} of 27`);
   ok('sometimes it is the slot and not a minute before', (kinds.OnTime || 0) > 0,
-    `${kinds.OnTime || 0} of 14`);
+    `${kinds.OnTime || 0} of 27`);
   ok('and sometimes they are behind and you wait past your own appointment',
-    (kinds.BackedUp || 0) > 0, `${kinds.BackedUp || 0} of 14`);
+    (kinds.BackedUp || 0) > 0, `${kinds.BackedUp || 0} of 27`);
 
   console.log(`  ..    ${snags} snags across ${seen} arrivals`);
     ok('a site does sometimes have a bad day', snags > 0, `${snags}/${seen}`);

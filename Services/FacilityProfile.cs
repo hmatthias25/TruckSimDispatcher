@@ -77,7 +77,9 @@ public static class FacilityProfile
             // terminal, and both are buildings with a gate and receiving hours. Reported from play as a
             // Coca-Cola delivery being described to the driver as a construction site.
             "Dry Van" or "Reefer" or "Refrigerated" or "Van" or "Tanker" => Kind.Dock,
-            "Flatbed" or "Step Deck" or "Lowboy" or "Dump"
+            // A rail ramp or port terminal is a SITE: a gate with hours and a line behind it, not a staffed
+            // warehouse door. Anybody who has sat at a container gate knows which of the two it is.
+            "Container" or "Flatbed" or "Step Deck" or "Lowboy" or "Dump"
                 or "Hopper" or "Log" or "Livestock" or "Car Hauler" => Kind.Site,
             _ => Kind.Dock,      // unknown freight is treated as the gentler case
         };

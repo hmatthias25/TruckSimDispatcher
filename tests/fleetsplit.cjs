@@ -101,10 +101,12 @@ function body(js, name) {
   const prefs = body(js, 'domicilePrefsHtml');
   const career = body(js, 'viewCareer');
   ok('the yards panel is only yards', !/<h3 class="sect">Home terminal<\/h3>/.test(yards), 'clean');
-  ok('no trip-length preference on it', !/What you want to be running/.test(yards), 'clean');
+  // The trip-length section is matched on its tail rather than its full heading: the carrier's name is
+  // interpolated into it now that the term is theirs to set, so the wording ahead of "runs you" moves.
+  ok('no trip-length preference on it', !/runs you<\/h3>/.test(yards), 'clean');
   ok('no home-time arrangement on it', !/Home-time arrangement/.test(yards), 'clean');
   ok('they moved to their own panel', /<h3 class="sect">Home terminal<\/h3>/.test(prefs)
-    && /What you want to be running/.test(prefs) && /Home-time arrangement/.test(prefs), 'all three');
+    && /runs you<\/h3>/.test(prefs) && /Home-time arrangement/.test(prefs), 'all three');
   ok('mounted on Career, with the other asks',
     /\$\{domicilePrefsHtml\(\)\}/.test(career), 'mounted');
 
