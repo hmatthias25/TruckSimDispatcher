@@ -2237,10 +2237,13 @@ function garageOpportunitiesHtml() {
         <td><b>${esc(c.city)}</b>${c.state ? ', ' + esc(c.state) : ''}</td>
         <td>${c.discoveredGameTime ? gt(c.discoveredGameTime) : '—'}</td>
         <td>${c.tier ? `Tier ${c.tier}${c.resetFriendly ? ' · reset-friendly' : ''}` : '—'}</td>
-        <td class="row-actions" style="justify-content:flex-end">
+        ${/* Not .row-actions: that is display:flex, and a flex table cell stops being a cell — it drops
+              out of the column sizing and takes the row's alignment with it. A right-aligned cell with
+              nowrap does the same job and stays a cell. */ ''}
+        <td class="num" style="white-space:nowrap">
           <button class="btn tiny primary" data-act="open-yard-here"
             data-city="${esc(c.city)}" data-state="${esc(c.state)}">Open a yard</button>
-          <button class="btn tiny ghost" data-act="decline-garage"
+          <button class="btn tiny ghost" style="margin-left:7px" data-act="decline-garage"
             data-city="${esc(c.city)}" data-state="${esc(c.state)}">Dismiss</button></td></tr>`).join('')}
     </tbody></table></div>
   </div>`;
@@ -5017,7 +5020,7 @@ function positionHtml() {
         <input id="pos-bank" type="number" step="1"
           value="${p.hasReportedBalance ? Math.round(p.atsBankBalance) : ''}"
           placeholder="open ATS and read it off"></label>
-      <div class="row-actions" style="margin:0">
+      <div class="row-actions" style="margin-top:0">
         <button class="btn primary" data-act="set-balance">${p.hasReportedBalance ? 'Update balance' : 'Report balance'}</button>
         ${p.hasReportedBalance ? `<button class="btn ghost" data-act="clear-balance"
           title="Go back to treating it as unreported">Clear</button>` : ''}
@@ -5653,7 +5656,7 @@ function dedicatedHtml() {
       <label>Customer, exactly as it appears on your ATS board
         <input id="ded-account" value="${esc(d.dedicatedAccount || '')}"
           placeholder="e.g. Walmart, Sunny Fields, Trameri"></label>
-      <div class="row-actions" style="margin:0">
+      <div class="row-actions" style="margin-top:0">
         ${d.onDedicated
           ? `<button class="btn primary" data-act="set-dedicated" data-on="1">${d.dedicatedAccount ? 'Change customer' : 'Set customer'}</button>
              <button class="btn ghost" data-act="set-dedicated" data-on="">Come off dedicated</button>`

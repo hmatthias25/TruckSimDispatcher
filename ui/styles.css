@@ -168,6 +168,17 @@ legend{padding:0 6px;font:700 9.5px/1 var(--mono);letter-spacing:.14em;text-tran
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:0 13px}
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:0 12px}
 .span2{grid-column:1/-1}
+/* A button beside an input sits on the same line as the input, not 11px under it.
+   A <label> carries `margin-bottom:11px` as the gap between stacked rows, so in a grid with
+   align-items:end it is the label's MARGIN box that gets lined up, not the input inside it. Anything
+   else dropped into the same grid — a bare .row-actions, a loose button — has no such margin and
+   settles exactly that 11px lower than the control it is meant to sit beside. Measured at 11.0px
+   against an input, and 0.0px for the same button once wrapped in a label, which is why the places
+   that DO wrap it have always looked right.
+   Bottom margin only: these grids are also used without align-items:end, where the top edge is what
+   matters and a margin-top here would shift rows that are already correct. */
+.grid2 > .row-actions,.grid3 > .row-actions,.grid4 > .row-actions,
+.grid2 > .btn,.grid3 > .btn,.grid4 > .btn{margin-bottom:11px}
 .hint{margin:2px 0 9px;font:11.5px/1.5 inherit;color:var(--ink3)}
 /* The career switcher on the company name, and the list it opens. */
 .careerpick{

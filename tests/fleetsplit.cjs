@@ -204,6 +204,26 @@ function body(js, name) {
     /levelChanged[\s\S]{0,400}prompt\(/.test(js), 'asked');
   ok('and posts it to be booked', /costPaid:/.test(js), 'posted');
 
+  head('15. A button beside an input sits on the same line as it');
+  // Reported from play: "lots of buttons are now out of alignment with text on several pages."
+  //
+  // Measured cause: a <label> carries margin-bottom:11px as the gap between stacked rows, so in a grid
+  // with align-items:end it is the label's MARGIN box that gets lined up, not the input inside it.
+  // Anything else dropped into the same grid — a bare .row-actions, a loose button — has no such margin
+  // and settles exactly 11px lower than the control beside it. Measured at 11.0px before and 0.0px
+  // after, against the same button wrapped in a label, which is why the places that DO wrap it were
+  // always right.
+  ok('grid children that are not labels carry the label\'s bottom margin',
+    /\.grid2 > \.row-actions[^}]*\{[^}]*margin-bottom:\s*11px/.test(css), 'rule present');
+  ok('and a loose button in a grid gets it too',
+    /\.grid2 > \.btn[^}]*\{[^}]*margin-bottom:\s*11px/.test(css), 'rule present');
+  // The inline shorthand zeroed the bottom margin the rule needs, so those became margin-top only.
+  ok('nothing zeroes it back out inline', !/row-actions" style="margin:0"/.test(js), 'clean');
+  // display:flex on a <td> stops it being a table cell: it drops out of the column sizing and takes
+  // the row's alignment with it.
+  ok('no table cell is turned into a flex container',
+    !/<td class="row-actions"/.test(js) && !/<td[^>]*display:flex/.test(js), 'cells stay cells');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('ERROR', e.message); process.exit(1); });
