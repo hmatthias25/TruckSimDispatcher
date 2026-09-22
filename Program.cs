@@ -1747,8 +1747,12 @@ app.MapPost("/api/career/domicile", (DomicileRequest req) => Results.Ok(store.Mu
     return new
     {
         level,
+        // The checklist again, because half of it names this city. It is built once at hire and was then
+        // left on screen saying "buy a garage in Green Bay" under a note saying you are domiciled in
+        // Phoenix. Reported from play. The caller swaps it for this one.
+        setup = Carriers.SetupChecklist(s),
         // What to go and do in the game, because the app cannot buy a garage for you.
-        setUp = $"In ATS, buy a garage at {city}, {state} and take it to {level.ToLowerInvariant()} " +
+        buyThis = $"In ATS, buy a garage at {city}, {state} and take it to {level.ToLowerInvariant()} " +
                 $"({Migrations.CapacityOf(level)} truck slot{(Migrations.CapacityOf(level) == 1 ? "" : "s")}). " +
                 "That is the one garage you own for now — the rest of their network opens up a yard at a " +
                 "time as you actually deliver to those cities.",

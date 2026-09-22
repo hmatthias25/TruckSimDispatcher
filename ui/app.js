@@ -812,7 +812,7 @@ document.addEventListener('click', async (ev) => {
           <dt>Trailer</dt><dd>${tr ? `${esc(tr.unit)} — ${esc(tr.length)} ${esc(tr.type)}` : '—'}</dd>
         </dl>
         ${domicilePickerHtml(r.company)}
-        ${setupChecklistHtml(r.setup)}
+        <div id="setup-list">${setupChecklistHtml(r.setup)}</div>
         <div class="row-actions"><button class="btn primary" data-act="enter-app">Go to the dispatch board</button></div>`);
       toast(`Hired at ${r.company.name}.`, 'ok');
     });
@@ -827,12 +827,16 @@ document.addEventListener('click', async (ev) => {
       if (box) {
         box.innerHTML = `<div class="callout go" style="margin-top:8px">
           <h4>Domiciled at ${esc(city)}, ${esc(state)} — a ${esc(String(r.level).toLowerCase())} yard</h4>
-          <p style="margin:0">${esc(r.setUp)}</p></div>`;
+          <p style="margin:0">${esc(r.buyThis)}</p></div>`;
       }
       // The buttons carry which one is picked, so redraw them rather than leaving the old one primary.
       document.querySelectorAll('[data-act="set-domicile"]').forEach((b) => {
         b.classList.toggle('primary', b.dataset.city === city && b.dataset.state === state);
       });
+      // And the checklist, half of which names this city. It was built at hire and left saying "buy a
+      // garage in Green Bay" under a note saying you are domiciled in Phoenix.
+      const list = $('setup-list');
+      if (list && r.setup) list.innerHTML = setupChecklistHtml(r.setup);
     }, `Home terminal set to ${city}, ${state}.`);
   }
 

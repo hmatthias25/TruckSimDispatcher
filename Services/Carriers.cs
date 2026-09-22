@@ -1379,12 +1379,12 @@ public static class Carriers
         var truckCount = s.Trucks.Count;
         steps.Add(new SetupStep
         {
-            Title = "First — you start with one yard and one truck",
+            Title = $"First — you start with {yardCount} yard and {truckCount} truck",
             Detail =
-                $"{s.Company.Name} opens with {yardCount} yard and {truckCount} tractor, because that is what " +
-                "a fresh ATS profile can afford. Seed some cash with an editor and you can start bigger: buy " +
-                "a large garage, set the yard to Large here, and stock it with a full fleet from the Fleet " +
-                "tab in one step.\n\n" +
+                $"{s.Company.Name} opens with {yardCount} yard and {truckCount} tractor. One yard is the point: " +
+                "the rest of their network opens a yard at a time as you actually deliver to those cities. " +
+                "Seed some cash with an editor and you can start with more trucks in it — stock it from the " +
+                "Fleet tab in one step.\n\n" +
                 "What money cannot buy you is coverage. ATS only generates cargo for cities you have actually " +
                 "driven to — reveal a city with a save editor and it stays undiscovered as far as the freight " +
                 "system is concerned, so no jobs will ever appear there.\n\n" +
@@ -1405,15 +1405,22 @@ public static class Carriers
                 "make them discovered — they will show on the map and still never offer freight."
         });
 
+        // The tier this driver's yard ACTUALLY is, not a hardcoded "small". A hire's HQ takes its tier
+        // from the carrier now, so a big outfit starts you on a Large yard — and this step was still
+        // telling everybody to buy the small garage, contradicting the line above it and the domicile
+        // note. Reported from play alongside the stale city.
+        var hqLevel = hq?.Level ?? "Small";
+        var hqSlots = Migrations.CapacityOf(hqLevel);
         steps.Add(new SetupStep
         {
             Title = $"Buy a garage in {s.Company.TerminalCity}, {s.Company.TerminalState}",
-            Detail = "This is your headquarters yard. A small garage — one truck — is all you need to start, " +
-                     "and it is what a fresh profile can afford.\n\n" +
-                     "It is not a ceiling. If you have seeded cash, buy the large garage instead, set the " +
-                     "tier to Large on the Terminals tab, and use 'Stock a yard' on the Equipment tab to put a " +
-                     "five-truck fleet in it in one step. Tier decides capacity: Small 1, Medium 3, Large 5, " +
-                     "matching the ATS garage upgrades. Upgrade the garage in game whenever you want more room.\n\n" +
+            Detail = $"This is your headquarters yard, and it is a {hqLevel.ToLowerInvariant()} one — " +
+                     $"{hqSlots} truck slot{(hqSlots == 1 ? "" : "s")}. Buy that size at the garage screen in " +
+                     $"{s.Company.TerminalCity} if you can afford it.\n\n" +
+                     "If you cannot yet, buy the small one and upgrade later — it is not a ceiling either way. " +
+                     "Tier decides capacity: Small 1, Medium 3, Large 5, matching the ATS garage upgrades. " +
+                     "Change the tier on the Terminals tab so the app matches what you actually bought, and " +
+                     "use 'Stock a yard' on the Equipment tab to fill it in one step.\n\n" +
                      "If you already own a garage elsewhere, either buy one here or edit the terminal so the " +
                      "app matches your game.",
             Why = "Dispatch plans your first load out of this city and treats it as home. Start where you " +
@@ -1426,36 +1433,47 @@ public static class Carriers
                 // Named the way the ATS dealer names them, because this is a shopping list. It used to
                 // read off a real-world brochure — a Freightliner Coronado, an "Eaton Fuller 18-spd
                 // manual" — and sent people looking for trucks and gearboxes the game does not sell.
+                // Named the way the ATS dealer names them, because this is a shopping list, and with the
+                // variant spelled out where the model is sold twice. Plain text: these go through esc().
                 Title = $"Buy a tractor — {truck.Year} {truck.Make} {truck.Model}",
-                Detail = $"At the {truck.Make} dealer, ask for the <b>{truck.Model}</b>. Spec it with the " +
-                         $"<b>{truck.Engine}</b> engine and the <b>{truck.Transmission}</b> gearbox, and set the " +
-                         $"speed limiter to about {truck.GovernedMph} mph.\n\n" +
-                         "Every one of those is a line on the ATS dealer screen — if you cannot see it, you are " +
-                         "at the wrong dealer or that variant is not unlocked in your game yet.\n\n" +
-                         "Exact match is not required: buy what you can afford, then open Fleet → " +
-                         $"unit {truck.Ref} → Edit and change the make, model, engine, transmission and governed " +
-                         "speed to what you actually bought. The planner uses those numbers for drive time.",
+                Detail = $"Go to the {truck.Make} dealer and ask for the {truck.Model}. "
+                         + (Seed.DealerHint(truck.Make, truck.Model, truck.Year) is { Length: > 0 } hint
+                             ? hint + " " : "")
+                         + $"\n\nSpec it with:\n"
+                         + $"  Engine: {truck.Engine}\n"
+                         + $"  Transmission: {truck.Transmission}\n"
+                         + $"  Speed limiter: about {truck.GovernedMph} mph\n\n"
+                         + "Each of those is a line on the dealer screen. If you cannot see one, you are at the "
+                         + "wrong dealer or that variant is not unlocked in your game yet.\n\n"
+                         + "Exact match is not required: buy what you can afford, then open Fleet, unit "
+                         + $"{truck.Ref}, Edit, and change the make, model, engine, transmission and governed "
+                         + "speed to what you actually bought. The planner uses those numbers for drive time.",
                 Why = "Governed speed and fuel capacity drive every feasibility calculation."
             });
 
         if (trailer != null)
             steps.Add(new SetupStep
             {
-                Title = $"Decide on trailers — you are assigned {trailer.Ref}, a {trailer.Length} " +
-                        $"{TrailerSpec.Describe(trailer.Type, trailer.Subtype)}",
+                // ASSIGNED, not chosen. This read "Decide on trailers — you can either buy your own or
+                // just take market trailers", which is an owner-operator's decision. A company driver is
+                // put on the trailer the company puts them on. Reported from play in those words.
+                //
                 // Which one, how long, and which axle setup — because "buy a dry van" leaves somebody at
                 // a dealer with three lengths and half a dozen axle options, two of which cannot enter
                 // California. That is a refused delivery a thousand miles later.
-                Detail = $"{s.Company.Name} runs {string.Join(", ", s.Company.Divisions)}. You can either buy your own " +
-                         (TrailerSpec.IsTanker(trailer.Type)
-                            ? $"in ATS — {TrailerSpec.BuyingAdvice(s, trailer.Type, trailer.Subtype)} — and run company trailers, "
-                            : $"{trailer.Type.ToLowerInvariant()} in ATS and run company trailers, ") +
-                         "or just take market trailers with each job and treat the company trailer as paperwork. " +
-                         "Either works — the app only needs to know which trailer type you are pulling so it can gate " +
-                         "freight correctly.\n\n" +
-                         (TrailerSpec.LengthAdvice(trailer.Type) is { Length: > 0 } which
+                Title = $"You are on {trailer.Ref} — a {trailer.Length} " +
+                        $"{TrailerSpec.Describe(trailer.Type, trailer.Subtype)}",
+                Detail = $"{s.Company.Name} has put you on this one. Go and buy the matching trailer in ATS so "
+                         + "what is behind your cab in the game is what is on your paperwork here.\n\n"
+                         + (TrailerSpec.IsTanker(trailer.Type)
+                             ? $"That is {TrailerSpec.BuyingAdvice(s, trailer.Type, trailer.Subtype)}\n\n"
+                             : "")
+                         + (TrailerSpec.LengthAdvice(trailer.Type) is { Length: > 0 } which
                              ? which + "\n\n" + TrailerSpec.CaliforniaRule
-                             : TrailerSpec.CaliforniaRule),
+                             : TrailerSpec.CaliforniaRule)
+                         + "\n\nIf you would rather not own one yet, you can take the trailer that comes with "
+                         + "each job instead and leave this as paperwork. Dispatch does not care which — it "
+                         + "only needs to know the TYPE you are pulling, so it can gate freight correctly.",
                 Why = "Freight requiring a trailer you cannot pull is hard-rejected at dispatch."
             });
 

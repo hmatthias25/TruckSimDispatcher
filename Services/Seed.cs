@@ -178,6 +178,34 @@ public static class Seed
 
     // ---------------------------------------------------------------- fleet
 
+    /// <summary>
+    /// Which entry on the ATS dealer screen, where the model name alone is not enough.
+    ///
+    /// <para>Three of the trucks in this game are sold twice. "Buy a Cascadia" is not an instruction when
+    /// the dealer has a 2019 one, a 2024 one and an electric eCascadia next to each other; the same goes
+    /// for the T680 and the VNL. Reported from play in exactly those words — "just says buy a Cascadia,
+    /// which one? there are 2-3 models".</para>
+    ///
+    /// <para>Empty for everything sold once, because a hint that says nothing is noise.</para>
+    /// </summary>
+    public static string DealerHint(string? make, string? model, int year)
+    {
+        var m = (model ?? "").Trim();
+        return m switch
+        {
+            "Cascadia" => year >= 2024
+                ? "Take the 2024 Cascadia. Not the eCascadia — that one is electric."
+                : "Take the older 2019 Cascadia, not the 2024 and not the electric eCascadia.",
+            "T680" => year >= 2022
+                ? "Take the 2022 T680 — the newer, squarer body."
+                : "Take the original 2014 T680, not the 2022 one.",
+            "VNL" => year >= 2025 ? "Take the newest 2025 VNL."
+                : year >= 2018 ? "Take the 2018 VNL, not the 2014 or the 2025."
+                : "Take the original 2014 VNL.",
+            _ => "",
+        };
+    }
+
     /// <summary><see cref="Tier"/> is the equipment standard a carrier has to hold to issue this unit.</summary>
     private record TruckSpec(string Make, string Model, int Year, string Engine, int Hp,
         string Trans, string TransType, string Cab, int Governed, double Fuel, double Mpg, int Tier);
@@ -419,7 +447,7 @@ public static class Seed
         {
             Unit = "101",
             Make = spec.Make, Model = spec.Model, Year = spec.Year,
-            Engine = $"{spec.Engine} {spec.Hp} hp", Horsepower = spec.Hp,
+            Engine = spec.Engine, Horsepower = spec.Hp,
             Transmission = spec.Trans, TransmissionType = spec.TransType,
             CabConfig = spec.Cab,
             Wheelbase = spec.Cab == "Day Cab" ? "228\"" : "265\"",
@@ -534,7 +562,7 @@ public static class Seed
             {
                 Unit = unit,
                 Make = spec.Make, Model = spec.Model, Year = spec.Year,
-                Engine = $"{spec.Engine} {spec.Hp} hp", Horsepower = spec.Hp,
+                Engine = spec.Engine, Horsepower = spec.Hp,
                 Transmission = spec.Trans, TransmissionType = spec.TransType,
                 CabConfig = spec.Cab,
                 Wheelbase = spec.Cab == "Day Cab" ? "228\"" : "265\"",

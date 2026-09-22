@@ -148,8 +148,8 @@ const market = async (a) => (await api('/onboarding/market', 'POST', a)).market
     `${S.status.locationCity} / ${S.status.locationKind}`);
   ok('the tier follows the carrier, not a flat small', ['Small', 'Medium', 'Large'].includes(moved.level),
     moved.level);
-  ok('and it says what to go and buy in the game', /buy a garage/i.test(moved.setUp || ''),
-    (moved.setUp || '').slice(0, 90));
+  ok('and it says what to go and buy in the game', /buy a garage/i.test(moved.buyThis || ''),
+    (moved.buyThis || '').slice(0, 90));
 
   head('8. Somewhere they do not run is refused');
   threw = '';
@@ -166,17 +166,58 @@ const market = async (a) => (await api('/onboarding/market', 'POST', a)).market
   console.log(`  ..    ${truckStep?.title || '(no truck step)'}`);
   ok('there is a tractor to go and buy', !!truckStep);
   ok('with the engine named', /engine/i.test(truckStep?.detail || ''), 'named');
-  ok('and the gearbox named', /gearbox/i.test(truckStep?.detail || ''), 'named');
+  ok('and the transmission named', /Transmission:/i.test(truckStep?.detail || ''), 'named');
   for (const gone of ['Coronado', 'Columbia', 'W900L', 'T800', 'ProStar', 'Eaton Fuller']) {
     ok(`no ${gone} — it is not in the game`, !all.includes(gone), gone);
   }
 
-  const trailerStep = setup.find((x) => /trailer/i.test(x.title || ''));
+  const trailerStep = setup.find((x) => /you are on/i.test(x.title || ''));
   if (trailerStep) {
-    console.log(`  ..    ${(trailerStep.detail || '').split('\n\n').pop().slice(0, 150)}`);
-    ok('the trailer step warns about California', /California/i.test(trailerStep.detail || ''));
-    ok('and says singles only, no doubles', /no doubles/i.test(trailerStep.detail || ''));
+    console.log(`  ..    ${trailerStep.title}`);
+    ok('the trailer warns about California', /California/i.test(trailerStep.detail || ''));
+    ok('and says one trailer, no doubles', /no doubles/i.test(trailerStep.detail || ''));
+    // A company driver is PUT on a trailer. "Decide on trailers — you can either buy your own or take
+    // market trailers" is an owner-operator's decision and this driver does not get it.
+    ok('it reads as an assignment, not a choice', !/^Decide/i.test(trailerStep.title || ''),
+      trailerStep.title);
+    ok('and says the company put them on it', /has put you on this one/i.test(trailerStep.detail || ''));
   } else { ok('no trailer step in this career', true, 'skipped'); }
+
+  head('10. Nothing in the checklist reaches the player as markup');
+  // These strings are rendered through esc(), so a <b> in one arrives as the literal characters. It did,
+  // twice in one sitting.
+  // Real tag names only. The save-path instructions legitimately contain <profile> and <slot>, which are
+  // placeholders in a Windows path and are meant to reach the player exactly as written.
+  const markup = setup.filter((x) =>
+    /<\/?(b|i|em|strong|p|br|div|span|ul|li|a)\b[^>]*>/i.test(`${x.title} ${x.detail} ${x.why} ${x.caution || ''}`));
+  ok('no HTML tags anywhere in the checklist', markup.length === 0,
+    markup.map((x) => x.title).join(', ') || 'clean');
+
+  head('11. A model sold twice says which one');
+  // ATS sells a 2019 Cascadia, a 2024 Cascadia and an electric eCascadia side by side. "Buy a Cascadia"
+  // is not an instruction. Same for the T680 and the VNL.
+  if (/Cascadia|T680|VNL/.test(truckStep?.title || '')) {
+    ok('the dealer variant is named', /Take the/i.test(truckStep?.detail || ''),
+      (truckStep?.detail || '').match(/Take the[^.]*\./)?.[0] || '(not said)');
+  } else {
+    ok('this truck is only sold one way, so no variant needed', true, truckStep?.title || '');
+  }
+  ok('the horsepower is not printed twice',
+    !/(\d{3})\s+\1\s*hp/i.test(truckStep?.detail || ''),
+    (truckStep?.detail || '').match(/Engine: [^\n]*/)?.[0] || '');
+
+  head('12. Choosing a domicile redraws the checklist for the new city');
+  // It was built at hire and left on screen: "buy a garage in Green Bay" under a note saying you are
+  // domiciled in Phoenix. Reported from play.
+  const before = (moved.setup || []).find((x) => /Buy a garage/i.test(x.title || ''));
+  console.log(`  ..    ${before?.title || '(no garage step returned)'}`);
+  ok('the domicile change hands back a fresh checklist', (moved.setup || []).length > 0,
+    `${(moved.setup || []).length} steps`);
+  ok('and its garage step names the city just chosen',
+    (before?.title || '').includes(pick.c), before?.title || '');
+  ok('with the tier that yard actually is, not a hardcoded small',
+    new RegExp(String(moved.level), 'i').test(before?.detail || ''),
+    `${moved.level}`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
