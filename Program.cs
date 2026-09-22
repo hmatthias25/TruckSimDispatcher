@@ -945,7 +945,19 @@ app.MapPost("/api/trips/{id}/loaded", (string id, LoadedReportRequest req) => Re
 
 app.MapPost("/api/trips/{id}/complete", (string id, CompleteTripRequest req) => Results.Ok(store.Mutate(s =>
 {
+    // Taken BEFORE anything moves, so a close-out can be undone exactly rather than approximately.
+    //
+    // This is the widest thing the app does in one press — pay, ledger, learned dock times, planning
+    // speed, the truck's position, the city's discovery, career advance, possibly home time and
+    // possibly a whole settlement. Reported from play after closing out a load that had not actually
+    // been delivered. Writing an inverse for all of that would be a dozen guesses; the file as it
+    // stood one instant earlier is not a guess.
+    var reversalPoint = "";
+    try { reversalPoint = Path.GetFileName(store.Snapshot($"before-closeout-{id}")); }
+    catch { /* a career that cannot write a backup still gets to close its load out */ }
+
     var audit = TripService.Complete(s, id, req);
+    audit.Trip.ReversalSnapshot = reversalPoint;
     store.Log(s, "trip", audit.Headline, audit.Trip.Number);
 
     // A yard they are passing may have the box the next month's freight wants. Decided here because
@@ -985,6 +997,96 @@ app.MapPost("/api/trips/{id}/complete", (string id, CompleteTripRequest req) => 
     var paid = SettleDue(s);
     return new { audit, paid, wentHome, homeBrief, rerig, snapshot = Snapshot(s) };
 })));
+
+/// <summary>
+/// Undo a close-out by putting the career back exactly as it stood the instant before it.
+///
+/// <para>Reported from play: "I accidentally closed out and audited a load that was not delivered. I
+/// need a way to reverse that and if the settlement hasn't happened pull back that settlement."</para>
+///
+/// <para>The settlement comes back on its own, and so does everything else, because this restores the
+/// file rather than trying to compute an inverse. That is the whole argument for doing it this way: a
+/// close-out pays the driver, posts the ledger, folds the run into two running averages, moves the
+/// truck, discovers the city and can advance a career — an inverse for that is a dozen chances to get
+/// the arithmetic wrong, and a wrong inverse is worse than no button.</para>
+///
+/// <para><b>It takes back everything since, not just the close-out.</b> Loads run after it, reports
+/// filed, money reported — all of it goes with the restore, because the restore is a point in time. The
+/// caller is told exactly what that costs before it happens, and a backup of the present is taken first,
+/// so undoing the undo is possible too.</para>
+/// </summary>
+app.MapPost("/api/trips/{id}/reverse-closeout", (string id) =>
+{
+    var s = store.State;
+    var trip = s.Trips.FirstOrDefault(t => t.Id == id)
+               ?? throw new InvalidOperationException("Trip not found.");
+    if (!trip.Status.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException(
+            $"{trip.Number} is {trip.Status.ToLowerInvariant()}, not closed out — there is nothing to reverse.");
+    if (string.IsNullOrWhiteSpace(trip.ReversalSnapshot))
+        throw new InvalidOperationException(
+            $"{trip.Number} was closed out before the app started keeping a reversal point, so there is " +
+            "nothing to put back. The backups on the Settings tab may still have something from around " +
+            "that time.");
+
+    var number = trip.Number;
+    store.RestoreBackup(trip.ReversalSnapshot);
+    store.Log(store.State, "trip",
+        $"{number} close-out reversed — the career is back as it stood immediately before it was closed. " +
+        "Anything done after that close-out went back with it. A backup of the moment before this " +
+        "reversal is on the Settings tab if you want it.", number);
+    return Results.Ok(new { reversed = number, snapshot = Snapshot() });
+});
+
+/// <summary>
+/// What a reversal would cost, so the driver is asked with the facts in front of them rather than a
+/// bare "are you sure". Everything listed here goes back with the restore.
+/// </summary>
+app.MapGet("/api/trips/{id}/reverse-closeout/preview", (string id) =>
+{
+    var s = store.State;
+    var trip = s.Trips.FirstOrDefault(t => t.Id == id);
+    if (trip == null) return Results.NotFound(new { error = "Trip not found." });
+
+    var canReverse = trip.Status.Equals("Delivered", StringComparison.OrdinalIgnoreCase)
+                     && !string.IsNullOrWhiteSpace(trip.ReversalSnapshot);
+
+    // Everything closed out AFTER this one goes back too, because the restore is a point in time.
+    var closedSince = s.Trips
+        .Where(t => t.Id != trip.Id
+                    && t.Status.Equals("Delivered", StringComparison.OrdinalIgnoreCase)
+                    && string.CompareOrdinal(t.DeliveredGameTime, trip.DeliveredGameTime) > 0)
+        .Select(t => t.Number)
+        .ToList();
+
+    // Whether this load has already been paid out, which is the thing actually asked about: "if the
+    // settlement hasn't happened pull back that settlement". Either way the restore handles it — a
+    // settlement that has happened simply goes back with everything else — but the driver should be
+    // told which case they are in, because one of them means a payslip they have seen is being undone.
+    var settledOn = s.Settlements
+        .Where(x => x.TripNumbers.Contains(trip.Number, StringComparer.OrdinalIgnoreCase))
+        .Select(x => x.Number)
+        .ToList();
+
+    return Results.Ok(new
+    {
+        canReverse,
+        number = trip.Number,
+        status = trip.Status,
+        lane = DispatchEngine.Place(trip.OriginCity, trip.OriginState)
+               + " → " + DispatchEngine.Place(trip.DestCity, trip.DestState),
+        deliveredGameTime = trip.DeliveredGameTime,
+        driverPay = trip.Pay?.Total ?? 0,
+        unsettledPayNow = s.Driver.UnsettledPay,
+        closedSince,
+        settledOn,
+        alreadyPaid = settledOn.Count > 0,
+        why = canReverse ? "" :
+            !trip.Status.Equals("Delivered", StringComparison.OrdinalIgnoreCase)
+                ? $"{trip.Number} is {trip.Status.ToLowerInvariant()}, not closed out."
+                : $"{trip.Number} was closed out before the app kept a reversal point.",
+    });
+});
 
 app.MapPost("/api/trips/{id}/cancel", (string id, CancelRequest req) => Results.Ok(store.Mutate(s =>
 {

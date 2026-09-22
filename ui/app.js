@@ -3163,7 +3163,21 @@ function tripDetailModal(id) {
     ${t.events.length ? `<h3 class="sect">Trip log</h3><div class="log">${t.events.map((e) =>
       `<div><span class="ch">${esc(e.kind)}</span><span>${gt(e.gameTime)} — ${esc(e.detail)}</span></div>`).join('')}</div>` : ''}
     ${t.feasibilityAtDispatch ? `<h3 class="sect">Plan at authorization (${esc(t.feasibilityAtDispatch.verdict)})</h3>
-      ${timelineHtml(t.feasibilityAtDispatch)}` : ''}`);
+      ${timelineHtml(t.feasibilityAtDispatch)}` : ''}
+    ${/* Closing out a load that was not delivered is one press and takes a dozen things with it — the
+          pay, the ledger, the learned dock times and planning speed, the truck's position, the career.
+          Reported from play. The way back is here, on the record of the load it happened to. */ ''}
+    ${t.status === 'Delivered' ? `<h3 class="sect">Closed this one by mistake?</h3>
+      ${t.reversalSnapshot
+        ? `<p class="hint">Reversing puts the whole career back exactly as it stood the instant before
+             this load was closed out — the pay, the books, the settlement if one ran, and everything the
+             close-out taught the planner. Anything you have done since goes back with it.</p>
+           <div class="row-actions">
+             <button class="btn danger" data-act="reverse-closeout" data-id="${esc(t.id)}">
+               Reverse this close-out</button></div>`
+        : `<p class="hint">This one was closed out before the app started keeping a reversal point, so
+             there is nothing to put back. The backups on the Settings tab may still hold something from
+             around that time.</p>`}` : ''}`);
 }
 
 /* ============================================================ FLEET */
@@ -7087,7 +7101,48 @@ async function handleAction(act, d, ev) {
       return render();
     }
 
-    case 'complete-trip': return run(async () => {
+    // Reversing is destructive in a way the driver cannot see from the button, so the confirm carries
+    // the facts: what was paid, whether it has already been settled, and what else goes back with it.
+    case 'reverse-closeout': return run(async () => {
+      const p = await api(`/trips/${d.id}/reverse-closeout/preview`);
+      if (!p.canReverse) return toast(p.why, 'bad');
+      const lines = [
+        `Reverse the close-out of ${p.number}?`,
+        '',
+        `${p.lane}, delivered ${p.deliveredGameTime}.`,
+        `Driver pay on it: ${money(p.driverPay)}.`,
+        p.alreadyPaid
+          ? `WARNING: this load has already been paid out on ${p.settledOn.join(', ')}. That settlement `
+            + 'goes back too.'
+          : 'It has not been settled yet, so the pay comes straight back off the unsettled total.',
+        p.closedSince.length
+          ? `WARNING: ${p.closedSince.length} load(s) closed out after this one — ${p.closedSince.join(', ')}`
+            + ' — will be undone as well.'
+          : 'Nothing has been closed out since, so this is the last thing that happened.',
+        '',
+        'The career goes back to exactly how it stood before the close-out. A backup of right now is',
+        'taken first, so this can itself be undone from Settings.',
+      ];
+      if (!confirm(lines.join('\n'))) return;
+      absorb(await api(`/trips/${d.id}/reverse-closeout`, 'POST', {}));
+      TRIP_AUDIT = null;
+      closeModal();
+      toast(`${p.number} close-out reversed — the load is back in transit.`, 'ok');
+    });
+
+    case 'complete-trip': {
+      // One press pays the driver, posts the books, teaches the planner and moves the truck. Reported
+      // from play after closing out a load that had not been delivered: "can we put a confirmation box
+      // on the audit so that this can be caught if the close and audit button is accidentally pressed?"
+      const closing = (S.trips || []).find((x) => x.id === d.id);
+      const where = closing
+        ? `${closing.destCity}, ${closing.destState}` : 'the receiver';
+      if (!confirm(
+        `Close out ${closing ? closing.number : 'this load'} and file the audit?\n\n`
+        + `This says the load is DELIVERED at ${where}. It pays you, posts the books, moves the truck `
+        + 'there and teaches the planner from the run.\n\n'
+        + 'Only press OK if you have actually delivered it in ATS.')) return;
+      return run(async () => {
       const r = await api(`/trips/${d.id}/complete`, 'POST', {
         deliveredGameTime: readDayTime('c-time'), deliveredLate: bv('c-late') ? true : null,
         actualMiles: fv('c-miles'), endOdometer: fv('c-odo'), actualRevenue: fv('c-rev') || null,
@@ -7125,6 +7180,7 @@ async function handleAction(act, d, ev) {
         paid.length ? () => paydayModal(paid) : null,
       ]);
     });
+    }
     case 'show-report': {
       const rep = (FLEETOPS?.reports || []).find((x) => x.number === d.num);
       return rep ? fleetReportModal(rep) : toast('That report is not loaded.', 'bad');

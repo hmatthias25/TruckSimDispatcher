@@ -1456,6 +1456,20 @@ public class Trip
     public string DeliveredGameTime { get; set; } = "";
     public double DeadlineHoursAtDispatch { get; set; }
 
+    /// <summary>
+    /// The backup taken immediately before this load was closed out, so the close-out can be undone.
+    ///
+    /// <para>A close-out is the widest thing the app does in one press: it pays the driver, posts the
+    /// ledger, folds the run into the learned dock times and the planning speed, moves the truck, marks
+    /// the city discovered, advances the career, may take home time and may run a settlement. Reported
+    /// from play after closing out a load that had not been delivered — and inverting a dozen
+    /// subsystems by hand is a guess, where restoring the file is the thing itself.</para>
+    ///
+    /// <para>Empty on trips closed before this existed, and on cancelled ones. Those cannot be reversed
+    /// from here and the app says so rather than offering a button that half works.</para>
+    /// </summary>
+    public string ReversalSnapshot { get; set; } = "";
+
     /// <summary>Total gallons across every stop on the trip. Rolled up from <see cref="FuelStops"/>.</summary>
     public double FuelGallons { get; set; }
     /// <summary>Total fuel spend across every stop. Rolled up from <see cref="FuelStops"/>.</summary>
