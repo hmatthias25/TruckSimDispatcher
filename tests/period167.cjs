@@ -90,9 +90,13 @@ async function report(city, st, day, o = {}) {
   ok('and fewer miles', shortP.requiredMiles < before169.requiredMiles,
     `${before169.requiredMiles} -> ${shortP.requiredMiles} mi`);
 
-  await api('/career/trip-length', 'POST', { preference: 'otr' });
+  // Medium rather than OTR. SFL is a regional carrier and the app now holds a driver to what their
+  // employer actually runs — a regional outfit has no over-the-road board to put anybody on, so asking
+  // for one is refused. The point here is that the bar moves with the SHAPE, and short to medium is a
+  // shape change like any other.
+  await api('/career/trip-length', 'POST', { preference: 'medium' });
   const otrP = (await boot()).driver.probation;
-  ok('going OTR asks for fewer deliveries', otrP.requiredLoads < shortP.requiredLoads,
+  ok('running longer asks for fewer deliveries', otrP.requiredLoads < shortP.requiredLoads,
     `${shortP.requiredLoads} -> ${otrP.requiredLoads} loads`);
   ok('and more miles', otrP.requiredMiles > shortP.requiredMiles,
     `${shortP.requiredMiles} -> ${otrP.requiredMiles} mi`);

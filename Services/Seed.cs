@@ -191,17 +191,31 @@ public static class Seed
     public static string DealerHint(string? make, string? model, int year)
     {
         var m = (model ?? "").Trim();
+
+        // Two years, two different things, and saying both without saying which is which reads as the
+        // app contradicting itself: "Buy a 2022 Cascadia ... take the 2019 Cascadia". Reported from
+        // play in those words. The heading year is how old the UNIT is; the dealer's year names the
+        // BODY STYLE, and a 2022 truck is a 2019-body Cascadia three years old. Said outright.
+        const string same = "(The year in the heading is how old your unit is, not which body it is.)";
+
         return m switch
         {
             "Cascadia" => year >= 2024
-                ? "Take the 2024 Cascadia. Not the eCascadia — that one is electric."
-                : "Take the older 2019 Cascadia, not the 2024 and not the electric eCascadia.",
+                ? $"ATS lists two Cascadia bodies plus an electric one. Take the later body — the dealer "
+                  + $"calls it the 2024 Cascadia. Not the eCascadia, which is the electric. {same}"
+                : $"ATS lists two Cascadia bodies plus an electric one. Take the earlier body — the dealer "
+                  + $"calls it the 2019 Cascadia. Not the 2024, and not the electric eCascadia. {same}",
             "T680" => year >= 2022
-                ? "Take the 2022 T680 — the newer, squarer body."
-                : "Take the original 2014 T680, not the 2022 one.",
-            "VNL" => year >= 2025 ? "Take the newest 2025 VNL."
-                : year >= 2018 ? "Take the 2018 VNL, not the 2014 or the 2025."
-                : "Take the original 2014 VNL.",
+                ? $"ATS lists two T680 bodies. Take the newer, squarer one — the dealer calls it the 2022 "
+                  + $"T680. {same}"
+                : $"ATS lists two T680 bodies. Take the original — the dealer calls it the 2014 T680, not "
+                  + $"the 2022. {same}",
+            "VNL" => year >= 2025
+                ? $"ATS lists three VNL bodies. Take the newest — the dealer calls it the 2025 VNL. {same}"
+                : year >= 2018
+                    ? $"ATS lists three VNL bodies. Take the middle one — the dealer calls it the 2018 VNL, "
+                      + $"not the 2014 or the 2025. {same}"
+                    : $"ATS lists three VNL bodies. Take the oldest — the dealer calls it the 2014 VNL. {same}",
             _ => "",
         };
     }

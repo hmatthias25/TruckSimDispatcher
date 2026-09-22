@@ -104,32 +104,48 @@ const market = async (a) => (await api('/onboarding/market', 'POST', a)).market
       (bigVet.tripLengthsOffered || []).join('/'));
   } else { ok('nothing to compare against', true, 'skipped'); }
 
-  head('5. Asking for something they do not offer gets their answer, and it is logged');
+  head('5. The carrier sets both, because the application no longer asks');
   const strict = open.find((c) => c.minHomeTimeDays > 7) || open[0];
   // The whole response, not just the snapshot: the setup checklist rides on the hire and is what
   // section 9 reads. It is the one moment it is handed over, because it is a list of things to go and
   // do in the game before the first load.
+  // Both blank on the way in — the form has no field for either any more. They are terms of the job,
+  // not preferences: asking and then overriding was the app offering a choice it was about to take back.
   const hire = await api('/onboarding/hire', 'POST', {
-    application: rookie({ homeTimePreference: 'weekly', preferredTripLength: 'short' }),
-    force: true, gameTime: iso(1), code: strict.code,
+    application: rookie(), force: true, gameTime: iso(1), code: strict.code,
   });
   let S = un(hire);
-  console.log(`  ..    asked weekly + short at ${strict.name} → ` +
-              `${S.application.homeTimePreference} / ${S.application.preferredTripLength}`);
-  ok('the arrangement is what the carrier signs', S.driver.homeTimeIntervalDays >= strict.minHomeTimeDays,
+  console.log(`  ..    signed at ${strict.name} → home ${S.application.homeTimePreference}, ` +
+              `runs ${S.application.preferredTripLength}`);
+  ok('an arrangement is on the file even though nobody asked for one',
+    !!S.application.homeTimePreference && S.driver.homeTimeIntervalDays > 0,
+    `${S.application.homeTimePreference} / ${S.driver.homeTimeIntervalDays}d`);
+  ok('and it is one this carrier actually signs',
+    S.driver.homeTimeIntervalDays >= strict.minHomeTimeDays,
     `${S.driver.homeTimeIntervalDays} days against a ${strict.minHomeTimeDays}-day minimum`);
-  ok('and the driver is told, not left to notice',
-    (S.events || []).some((e) => /you asked for/i.test(e.message || '')),
-    (S.events || []).find((e) => /you asked for/i.test(e.message || ''))?.message?.slice(0, 100) || '(silent)');
+  ok('a run length is set too', (strict.tripLengthsOffered || []).includes(S.application.preferredTripLength),
+    `${S.application.preferredTripLength} from ${(strict.tripLengthsOffered || []).join('/')}`);
+  ok('and the driver is told what they signed up to, not left to find out',
+    (S.events || []).some((e) => /runs you .* and gets you home/i.test(e.message || '')),
+    (S.events || []).find((e) => /runs you/i.test(e.message || ''))?.message?.slice(0, 110) || '(silent)');
 
-  head('6. And it cannot be set from the career tab afterwards either');
-  // Otherwise the gate at hire is decoration: take the job, change the setting a minute later.
+  head('6. And neither can be talked into from the career tab afterwards');
+  // Otherwise the terms on the card are decoration: take the job, change the setting a minute later.
   let threw = '';
   try { await api('/career/home-time', 'POST', { preference: 'weekly' }); } catch (e) { threw = e.message; }
-  console.log(`  ..    ${threw.slice(0, 120) || '(allowed)'}`);
+  console.log(`  ..    ${threw.slice(0, 110) || '(allowed)'}`);
   ok('a carrier that will not sign weekly still will not', !!threw);
   ok('and it says so rather than silently doing something else',
     /will not sign/i.test(threw), threw.slice(0, 60));
+
+  const barred = ['short', 'medium', 'long', 'otr'].find((k) => !(strict.tripLengthsOffered || []).includes(k));
+  if (barred) {
+    threw = '';
+    try { await api('/career/trip-length', 'POST', { preference: barred }); } catch (e) { threw = e.message; }
+    console.log(`  ..    ${threw.slice(0, 110) || '(allowed)'}`);
+    ok(`and they will not put you on ${barred} runs either`, /does not run you/i.test(threw),
+      threw.slice(0, 70));
+  } else { ok('this carrier runs everything, so nothing to refuse', true, 'skipped'); }
 
   head('7. You pick which of their yards you are based at');
   const net = S.company.networkCities || [];

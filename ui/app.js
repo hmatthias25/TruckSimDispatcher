@@ -499,11 +499,12 @@ function readApplication() {
     secondDivision: sv('ap-div2'),
     experienceYears: fv('ap-exp'),
     freightExperience: ticked('ap-freight'),
-    preferredTripLength: sv('ap-length'),
-    homeTimePreference: sv('ap-hometime'),
-    // No home city here any more. Where you are domiciled is picked from your employer's own yards
-    // once they have taken you on — see the terminal choice after hiring. Sent blank rather than
-    // dropped so the shape of the application is unchanged for anything reading it.
+    // Blank on purpose, all four. Trip length and home time are terms the CARRIER sets and states on
+    // its card; where you are domiciled is picked from your employer's own yards after they take you
+    // on. Sent empty rather than dropped so the shape of the application is unchanged for anything
+    // reading it, and the hire fills them in from whoever you signed with.
+    preferredTripLength: '',
+    homeTimePreference: '',
     homeCity: '',
     homeState: '',
     willNotHaul: ticked('ap-nohaul'),
@@ -3285,7 +3286,8 @@ function viewEquipment() {
     <div class="panel-head"><h2>Tractors (${S.trucks.length})</h2>
       <span class="sub">${S.trucks.filter((t) => t.inGameGarage).length} in your ATS garage</span>
       <div class="spacer"></div>
-      <button class="btn tiny" data-act="stock-yard">Stock a yard</button>
+      ${/* "Stock a yard" has moved to the yards themselves, further down this tab — a bulk action for a
+            particular yard belongs on that yard, not in a header that cannot say which one it means. */ ''}
       <button class="btn tiny primary" data-act="add-truck">Add tractor</button></div>
     <div class="tablewrap"><table>
       <thead><tr><th>Unit</th><th>Tractor</th><th>Driveline</th><th>Cab</th><th class="num">Gov</th>
@@ -3834,6 +3836,12 @@ function equipmentByYardHtml() {
         ${y.isHeadquarters ? badge('warn', 'HQ') : ''}
         ${y.id === homeId ? badge('info', 'your home') : ''}
         <div class="spacer"></div>
+        ${/* On the yard it stocks, not on a panel three sections up. It sat in the Tractors header with
+              no way to tell which yard it meant, and answering that took a dropdown inside the modal.
+              Here the yard IS the answer, and the button goes when the yard is full — an action with
+              nothing left to do is a question with one answer. */ ''}
+        ${full ? '' : `<button class="btn tiny" data-act="stock-yard" data-yard="${esc(y.id)}"
+          title="Add tractors to this yard in one step">Stock this yard</button>`}
         ${badge(full ? 'bad' : 'ok', `${used}/${y.truckCapacity} tractors`)}
       </div>
       <p class="hint" style="margin:0 0 8px">${esc(y.level)} yard ·
@@ -6344,14 +6352,16 @@ function editTruckModal(unit) {
 
 /* Bulk-fill a yard. Starting at one truck is what a fresh profile can afford — it is not a ceiling.
    Upgrade the garage in ATS, re-tier it here, and put a real fleet in it. */
-function stockYardModal() {
+function stockYardModal(yardId) {
   const yards = S.company.terminals || [];
   if (!yards.length) return toast('No yards yet — open one on the Terminals tab first.', 'bad');
   const rows = yards.map((y) => {
     const based = S.trucks.filter((t) => t.homeTerminalId === y.id && t.status !== 'OutOfService').length;
     return { ...y, based, room: y.truckCapacity - based };
   });
-  const first = rows.find((r) => r.room > 0) || rows[0];
+  // Opened from a yard's own header, so that yard is the answer and the dropdown starts on it. The
+  // button used to live in the Tractors panel with no way to tell which yard it meant.
+  const first = rows.find((r) => r.id === yardId) || rows.find((r) => r.room > 0) || rows[0];
 
   modal(`<div class="panel-head"><h2>Stock a yard</h2><div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
@@ -7363,7 +7373,7 @@ async function handleAction(act, d, ev) {
     case 'edit-trailer': return editTrailerModal(d.unit);
     case 'add-truck': return editTruckModal('');
     case 'add-trailer': return editTrailerModal('');
-    case 'stock-yard': return stockYardModal();
+    case 'stock-yard': return stockYardModal(d.yard);
     case 'do-stock': return run(async () => {
       const r = absorb(await api('/fleet/stock', 'POST', {
         terminalId: sv('sk-yard'), count: fv('sk-count'), alreadyBought: bv('sk-bought'),

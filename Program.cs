@@ -416,40 +416,37 @@ app.MapPost("/api/onboarding/hire", (HireRequest req) => Results.Ok(store.Mutate
             $"{s.Driver.Name} starts as a Company Driver rather than on probation: the skill levels are " +
             "already there for the freight they run.");
     }
-    // The terms the carrier actually signs, which are not always the ones asked for.
+    // The terms of the job, set by whoever you signed with.
     //
-    // A driver ticks "home every week" and a two-star home-time outfit is not going to do that, and a
-    // rookie ticks "short runs" at a big over-the-road carrier that gives its regional seats to people
-    // who have earned them. Both were silently accepted and then quietly not honoured. The card now
-    // states each of these before signing; this is the half that makes the card true.
+    // The application used to ask for a trip length and a home-time interval, and the carrier then
+    // overrode both — the app offering a choice it was about to take back. They are not preferences:
+    // a regional carrier does not run coast to coast however much you want it, a big over-the-road
+    // carrier will not hand a rookie its regional board, and a three-star home-time outfit will not
+    // sign weekly. Every card states both before you apply, so the choice is the carrier.
+    //
+    // Anything already on the application still wins where the carrier will actually sign it — an
+    // import, or a career moving employers, carries a real arrangement that should not be flattened.
     if (!string.IsNullOrWhiteSpace(req.Code))
     {
-        var stars = Carriers.StandingFor(req.Code).HomeTime;
-        var (homeKeys, _) = Carriers.HomeTimeOffer(stars);
-        if (!string.IsNullOrWhiteSpace(a.HomeTimePreference)
-            && !homeKeys.Contains(a.HomeTimePreference, StringComparer.OrdinalIgnoreCase))
+        var (homeKeys, _) = Carriers.HomeTimeOffer(Carriers.StandingFor(req.Code).HomeTime);
+        if (string.IsNullOrWhiteSpace(a.HomeTimePreference)
+            || !homeKeys.Contains(a.HomeTimePreference, StringComparer.OrdinalIgnoreCase))
         {
-            var asked = HomeTime.LabelFor(a.HomeTimePreference);
-            var given = homeKeys.FirstOrDefault() ?? "biweekly";
-            a.HomeTimePreference = given;
-            s.Driver.HomeTimeIntervalDays = HomeTime.DaysFor(given);
-            store.Log(s, "career",
-                $"You asked for {asked.ToLowerInvariant()}; {s.Company.Name} runs to " +
-                $"{HomeTime.LabelFor(given).ToLowerInvariant()} and that is what is on your file. It was on " +
-                "their card before you signed.");
+            a.HomeTimePreference = homeKeys.FirstOrDefault() ?? "biweekly";
+            s.Driver.HomeTimeIntervalDays = HomeTime.DaysFor(a.HomeTimePreference);
         }
 
-        var (lengthKeys, _) = Carriers.TripLengthOffer(
+        var (lengthKeys, _, lengthDefault) = Carriers.TripLengthOffer(
             Carriers.SizeOf(req.Code), Carriers.CreditedExperienceFor(s), true);
-        if (!string.IsNullOrWhiteSpace(a.PreferredTripLength)
-            && !lengthKeys.Contains(a.PreferredTripLength, StringComparer.OrdinalIgnoreCase))
-        {
-            var was = a.PreferredTripLength;
-            a.PreferredTripLength = lengthKeys.FirstOrDefault() ?? "medium";
-            store.Log(s, "career",
-                $"You asked for {was} runs. {s.Company.Name} is putting you on {a.PreferredTripLength} — " +
-                "their card said so, and it changes as you put time in.");
-        }
+        if (string.IsNullOrWhiteSpace(a.PreferredTripLength)
+            || !lengthKeys.Contains(a.PreferredTripLength, StringComparer.OrdinalIgnoreCase))
+            a.PreferredTripLength = lengthDefault;
+
+        // LabelFor already starts with "Home every…", so do not prefix another one.
+        store.Log(s, "career",
+            $"{s.Company.Name} runs you {a.PreferredTripLength} and gets you " +
+            $"{HomeTime.LabelFor(a.HomeTimePreference).ToLowerInvariant()}. Both are theirs to set — they " +
+            "were on the card when you applied, and they move as you put time in.");
     }
 
     var (truck, trailer) = Seed.AssignEquipment(s, a);
@@ -2113,6 +2110,19 @@ app.MapPost("/api/career/trip-length", (TripLengthRequest req) => Results.Ok(sto
     var pref = (req.Preference ?? "").Trim().ToLowerInvariant();
     if (pref is not ("short" or "medium" or "long" or "otr"))
         throw new InvalidOperationException("Trip length is short, medium, long or otr.");
+
+    // Your employer decides what you run, the same as they did at hire — see the home-time endpoint for
+    // why this is a refusal rather than a quiet substitution. A regional carrier has no long board to
+    // put you on, and a big one holds its regional seats for drivers who have earned them, so this
+    // opens up on its own as the years go in rather than by asking again.
+    if (Carriers.Exists(s.Company.Code))
+    {
+        var (offered, note, _) = Carriers.TripLengthOffer(
+            Carriers.SizeOf(s.Company.Code), Carriers.CreditedExperienceFor(s), true);
+        if (offered.Count > 0 && !offered.Contains(pref, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"{s.Company.Name} does not run you {pref}. {note}");
+    }
 
     s.Application ??= new DriverApplication();
     s.Application.PreferredTripLength = pref;

@@ -82,21 +82,34 @@ public static class Carriers
     /// </summary>
     public const double RegionalSeatYears = 2.0;
 
-    public static (List<string> Keys, string Note) TripLengthOffer(string size, double creditedYears,
-                                                                   bool takesRookies)
+    /// <summary>
+    /// What they will put this driver on, and which of those is the job they are actually hiring for.
+    ///
+    /// <para><c>Default</c> matters because the application no longer asks. Trip length was a dropdown
+    /// the applicant filled in and the carrier then overrode, which is the app offering a choice it is
+    /// about to take back — so it is the carrier's call now, stated on their card, and chosen by
+    /// choosing them.</para>
+    /// </summary>
+    public static (List<string> Keys, string Note, string Default) TripLengthOffer(
+        string size, double creditedYears, bool takesRookies)
     {
         if (string.Equals(size, "Regional", StringComparison.OrdinalIgnoreCase))
             return (new List<string> { "short", "medium" },
                 "Regional carrier — short and medium runs. They do not run the long stuff, so do not " +
-                "take this one expecting to see the whole map.");
+                "take this one expecting to see the whole map.",
+                // Medium rather than short: a regional carrier's bread and butter is the day's run out
+                // and back, not town work.
+                "medium");
 
         if (creditedYears < RegionalSeatYears)
             return (new List<string> { "long", "otr" },
                 $"Over-the-road to start. The regional boards go to drivers with {RegionalSeatYears:0} " +
-                "years on them; until then you run long and you stay out.");
+                "years on them; until then you run long and you stay out.",
+                "otr");
 
         return (new List<string> { "short", "medium", "long", "otr" },
-            $"Anything you want — you have the {RegionalSeatYears:0} years their regional seats ask for.");
+            $"Anything you want — you have the {RegionalSeatYears:0} years their regional seats ask for.",
+            "medium");
     }
 
     /// <summary>
