@@ -72,6 +72,7 @@ public static class Migrations
         PutProbationaryDriversBackOnTheProbationaryScale(s);
         GiveEveryCareerTheUnitedStates(s);
         BringHomeBoxesLeftAtAYardTheCompanyMoved(s);
+        RelearnTheDrivingSpeed(s);
         // Not stamped: a box can leave the fleet at any time, and closing an order already closed is a
         // no-op. This is a standing tidy-up rather than a one-off correction.
         CloseOrdersForTrailersAlreadyGone(s);
@@ -134,6 +135,54 @@ public static class Migrations
                       + string.Join(", ", moved)
                       + ". They were recorded at a yard this company moved away from before you ran "
                       + "anything, so they never actually went there.",
+        });
+    }
+
+    /// <summary>
+    /// Throws away a learned driving speed and measures it again from scratch.
+    ///
+    /// <para>A run whose rest was never logged as a trip event had the whole sleep counted as driving,
+    /// so a 630-mile Tulsa to Peoria run came out as "24:55 of driving" at 25 mph. The believable band
+    /// did not catch it — the floor is 0.35 of a 65 mph governor, which is 22.75 — so it was folded
+    /// straight into the planning speed. Reported from play: "it said I only went 22 MPH lol".</para>
+    ///
+    /// <para><b>Every learned figure goes, not just the obviously wrong ones.</b> The factor is a running
+    /// average with no history behind it, so there is no way to tell a contaminated one from a sound one
+    /// or to unpick the bad sample from the good. SpeedLearning's own rule is that a measurement which
+    /// might be wrong is not folded in and hedged, it is not folded in; the same applies to one already
+    /// stored. It re-measures over the next few runs, and until then it uses the shipped assumption,
+    /// which is what a fresh career uses.</para>
+    ///
+    /// <para>A hand-set factor is left exactly alone. That is the driver saying what their own game does,
+    /// and no bug of ours is a reason to overwrite it.</para>
+    /// </summary>
+    private static void RelearnTheDrivingSpeed(AppState s)
+    {
+        if (s.SchemaVersion >= 28) return;
+        s.SchemaVersion = 28;
+
+        if (s.Settings.SpeedFactorManual) return;
+        if (s.Settings.SpeedFactorSamples <= 0) return;
+
+        var was = s.Settings.SpeedFactor;
+        var samples = s.Settings.SpeedFactorSamples;
+        var shipped = new AppSettings().SpeedFactor;
+
+        s.Settings.SpeedFactor = shipped;
+        s.Settings.SpeedFactorSamples = 0;
+
+        var governed = s.Settings.GovernedMph > 0 ? s.Settings.GovernedMph : 65;
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "system",
+            GameTime = s.Status.GameTime,
+            Message =
+                $"Planning speed reset to the starting assumption of {shipped * governed:0.#} mph. It was "
+                + $"{was * governed:0.#} mph off {samples} run(s), and any run whose rest was not logged "
+                + "as a trip event had that sleep counted as driving — which taught it the map was far "
+                + "slower than it is. There is no way to tell which of those runs were sound, so all of "
+                + "them go. It measures itself again over your next few deliveries, and a run with hours "
+                + "missing from the log is now thrown out instead of averaged in.",
         });
     }
 

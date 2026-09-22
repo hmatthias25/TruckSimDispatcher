@@ -55,7 +55,15 @@ async function ontoDropHook() {
  * One delivered run at a chosen real speed. Pull out, arrive `miles / mph` later, close out.
  * Returns the close-out audit.
  */
-async function run(miles, realMph, { logBreak = false } = {}) {
+/**
+ * @param logBreak log the thirty as a trip event
+ * @param logRest  log a ten-hour reset as a trip event, for a run that spans more than one driving day
+ *
+ * The event endpoint is /event, singular. This posted to /events and swallowed the 404 with a bare
+ * catch, so no break was ever logged and the section that checks logged stops come off was asserting
+ * on a run that had none.
+ */
+async function run(miles, realMph, { logBreak = false, logRest = false } = {}) {
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
   await api('/board/clear', 'POST', {});
   const board = await api('/board/add', 'POST', {
@@ -75,9 +83,14 @@ async function run(miles, realMph, { logBreak = false } = {}) {
 
   let hours = miles / realMph;
   if (logBreak) {
-    await api(`/trips/${trip.id}/events`, 'POST',
-      { kind: 'Break', gameTime: at(day, '09:00'), detail: 'thirty' }).catch(() => {});
+    await api(`/trips/${trip.id}/event`, 'POST',
+      { kind: 'Break', gameTime: at(day, '09:00'), detail: 'thirty' });
     hours += 0.5;                       // the break is real time on top of the driving
+  }
+  if (logRest) {
+    await api(`/trips/${trip.id}/event`, 'POST',
+      { kind: 'Rest', gameTime: at(day, '17:00'), detail: 'ten off' });
+    hours += 10;                        // the reset is real time on top of the driving
   }
 
   const arriveDay = day + Math.floor((6 + hours) / 24);
@@ -243,7 +256,53 @@ async function run(miles, realMph, { logBreak = false } = {}) {
   ok('and it did not quietly use the delivered time instead',
     (await settings()).speedFactorSamples === 8, `${(await settings()).speedFactorSamples} sample(s)`);
 
-  head('8. Setting it by hand stops it moving');
+  head('8. A sleep nobody logged is not twenty-five hours of driving');
+  // Reported from play: "I got that I ran 630 Miles in 24:55 of driving, but that INCLUDED a rest, as
+  // the trip was only from Tulsa to Peoria. Actual driving was around 12:55 or so" — and then: "it said
+  // I only went 22 MPH lol".
+  //
+  // NonDrivingHours can only subtract stops that are on the trip log, so a ten-hour reset that was never
+  // entered as an event counted as driving. The believable band did not catch it either: 630 mi in 24:55
+  // is 25 mph and the floor is 0.35 of a 65 mph governor, which is 22.75 — so this was inside the band
+  // and would have been folded into the planning speed, which is what every feasibility answer divides
+  // by. A whole fortnight of perfectly good freight would have started reading as undeliverable.
+  //
+  // The hours of service settle it: eleven hours is a driving day, so the most driving that can sit
+  // between the stops on record is eleven for the day it pulled out plus eleven more per logged rest.
+  // 24:55 with nothing logged is not a slow run, it is a run with a sleep missing from it.
+  const beforeSleep = await settings();
+  const sleepy = await run(630, 25.3);            // Tulsa to Peoria, the reset never entered
+  const afterSleep = await settings();
+  const toldSleep = (sleepy.serviceFindings || []).find((x) => /driving speed/i.test(x)) || '';
+  console.log(`  ..    ${beforeSleep.speedFactor} → ${afterSleep.speedFactor}, ` +
+              `${beforeSleep.speedFactorSamples} → ${afterSleep.speedFactorSamples} sample(s)`);
+  console.log(`  ..    ${toldSleep.slice(0, 190) || '(silent)'}`);
+  ok('the run teaches the planner nothing',
+    afterSleep.speedFactorSamples === beforeSleep.speedFactorSamples,
+    `${beforeSleep.speedFactorSamples} → ${afterSleep.speedFactorSamples}`);
+  ok('so the planning speed does not move',
+    Math.abs(afterSleep.speedFactor - beforeSleep.speedFactor) < 0.0001,
+    `${beforeSleep.speedFactor} → ${afterSleep.speedFactor}`);
+  ok('and it says the hours are missing rather than calling it a slow run',
+    /the log does not show/i.test(toldSleep), toldSleep.slice(0, 90) || '(silent)');
+  ok('naming the rest as the likely thing that went unlogged',
+    /rest/i.test(toldSleep), 'named');
+
+  head('9. The same run with the rest logged is a perfectly good sample');
+  // The guard has to let a real multi-day run through, or it just moves the problem: a driver who logs
+  // their reset properly should still be teaching the planner. 630 miles is more than eleven hours of
+  // driving whatever speed you do it at, so this run NEEDS a reset in it — the difference from section 8
+  // is only whether the reset is on the log.
+  const beforeLogged = await settings();
+  await run(630, 55, { logRest: true });
+  const afterLogged = await settings();
+  console.log(`  ..    with the stop on the log: ${beforeLogged.speedFactorSamples} → ` +
+              `${afterLogged.speedFactorSamples} sample(s)`);
+  ok('a run whose stops are on the log still counts',
+    afterLogged.speedFactorSamples > beforeLogged.speedFactorSamples,
+    `${beforeLogged.speedFactorSamples} → ${afterLogged.speedFactorSamples}`);
+
+  head('10. Setting it by hand stops it moving');
   let st = await api('/export');
   st.settings.speedFactor = 0.9;
   await api('/settings', 'POST', st.settings);
@@ -253,6 +312,56 @@ async function run(miles, realMph, { logBreak = false } = {}) {
   await run(500, 46);
   cfg = await settings();
   ok('a later run does not move it', Math.abs(cfg.speedFactor - 0.9) < 0.0001, `${cfg.speedFactor}`);
+
+  head('11. A career that learned under the old fault measures itself again');
+  // The factor is a running average with no history behind it, so a contaminated one cannot be told
+  // from a sound one and the bad sample cannot be unpicked from the good. SpeedLearning's own rule is
+  // that a measurement which might be wrong is not folded in and hedged — it is not folded in — and the
+  // same applies to one already stored. Every LEARNED figure goes back to the shipped assumption.
+  {
+    const old = await api('/export');
+    old.settings.speedFactor = 0.35;          // what an unlogged sleep teaches
+    old.settings.speedFactorSamples = 6;
+    old.settings.speedFactorManual = false;
+    old.schemaVersion = 27;                   // before the reset
+    const back = un(await api('/import', 'POST', old));
+    const now = await settings();
+    const told = (back.events || []).find((e) => /Planning speed reset/i.test(e.message || ''));
+    console.log(`  ..    0.35 over 6 run(s) → ${now.speedFactor} over ${now.speedFactorSamples}`);
+    console.log(`  ..    ${told ? told.message.slice(0, 165) : '(silent)'}`);
+    ok('the learned figure is thrown away', Math.abs(now.speedFactor - 0.86) < 0.0001,
+      `${now.speedFactor}`);
+    ok('and the runs behind it go with it', now.speedFactorSamples === 0, `${now.speedFactorSamples}`);
+    ok('the driver is told, with what it was and why', !!told);
+    ok('and told it will measure itself again', /measures itself again/i.test(told?.message || ''),
+      'said');
+  }
+
+  head('12. A figure the driver set by hand is left alone');
+  // No bug of ours is a reason to overwrite somebody telling us what their own game does.
+  {
+    const mine = await api('/export');
+    mine.settings.speedFactor = 0.71;
+    mine.settings.speedFactorSamples = 4;
+    mine.settings.speedFactorManual = true;
+    mine.schemaVersion = 27;
+    // Counted, not searched: section 11's notice is still on the log in the state being re-imported, so
+    // asking whether one exists at all answers about that one and says nothing about this career.
+    const noticesBefore = (mine.events || [])
+      .filter((e) => /Planning speed reset/i.test(e.message || '')).length;
+    const back = un(await api('/import', 'POST', mine));
+    const noticesAfter = (back.events || [])
+      .filter((e) => /Planning speed reset/i.test(e.message || '')).length;
+    const now = await settings();
+    console.log(`  ..    hand-set 0.71 → ${now.speedFactor}, manual ${now.speedFactorManual}`);
+    ok('a hand-set factor survives the reset', Math.abs(now.speedFactor - 0.71) < 0.0001,
+      `${now.speedFactor}`);
+    ok('and it is still marked as theirs', now.speedFactorManual === true, `${now.speedFactorManual}`);
+    ok('and the runs behind it are left alone too', now.speedFactorSamples === 4,
+      `${now.speedFactorSamples}`);
+    ok('with nothing new said about resetting it', noticesAfter === noticesBefore,
+      `${noticesBefore} → ${noticesAfter}`);
+  }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

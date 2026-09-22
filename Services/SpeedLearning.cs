@@ -118,6 +118,36 @@ public static class SpeedLearning
             return r;
         }
 
+        // Nobody drives 24:55.
+        //
+        // The hours of service are the whole point of this app, and they cap a driving day at the drive
+        // limit. A run can of course span several days — but only across a rest, and a rest that happened
+        // is a rest the log should show. So the most driving that can sit between the stops on record is
+        // the drive limit for the day it pulled out, plus one more for every rest or restart logged
+        // inside the window.
+        //
+        // Past that it is not a slow run, it is a run with hours in it nobody wrote down, and the speed
+        // it implies is arithmetic on a gap. Reported from play on a 630-mile Tulsa to Peoria run that
+        // came back as "24:55 of driving": the ten-hour reset in the middle was never logged as a trip
+        // event, so NonDrivingHours could not see it and the whole sleep counted as driving.
+        //
+        // The believable band below would have let that through — 630 mi in 24:55 is 25 mph, and the
+        // floor is 0.35 of a 65 mph governor, which is 22.75. Planning speed is what every feasibility
+        // answer is built on, so a sample like this does not merely look silly on the card; it makes the
+        // next fortnight of freight read as undeliverable.
+        var sleeps = trip.Events.Count(e =>
+            (e.Kind == "Rest" || e.Kind == "Restart")
+            && GameClock.TryParse(e.GameTime) is { } at && at >= out_.Value && at <= arrived.Value);
+        var mostThatCouldBeDriving = Math.Max(0, s.Settings.Hos.DriveLimit) * (sleeps + 1);
+        if (mostThatCouldBeDriving > 0 && r.DriveHours > mostThatCouldBeDriving)
+        {
+            r.Why = $"{Hhmm.Of(r.DriveHours)} between the stops on record, and with "
+                    + $"{(sleeps == 0 ? "no rest" : $"{sleeps} rest(s)")} logged the rules allow at most "
+                    + $"{Hhmm.Of(mostThatCouldBeDriving)} of driving in that span — there are hours in "
+                    + "this run the log does not show, most likely a rest that never got entered";
+            return r;
+        }
+
         r.Mph = miles / r.DriveHours;
         var governed = truck?.GovernedMph > 0 ? truck.GovernedMph : s.Settings.GovernedMph;
         if (governed <= 0) governed = 65;
