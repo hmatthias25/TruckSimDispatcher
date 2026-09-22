@@ -71,9 +71,70 @@ public static class Migrations
         PutAirBetweenWatchAndShop(s);
         PutProbationaryDriversBackOnTheProbationaryScale(s);
         GiveEveryCareerTheUnitedStates(s);
+        BringHomeBoxesLeftAtAYardTheCompanyMoved(s);
         // Not stamped: a box can leave the fleet at any time, and closing an order already closed is a
         // no-op. This is a standing tidy-up rather than a one-off correction.
         CloseOrdersForTrailersAlreadyGone(s);
+    }
+
+    /// <summary>
+    /// Moves a box that was left behind in a city the company no longer has a yard in.
+    ///
+    /// <para>Choosing a home terminal at hire moves the single yard rather than opening a second one, and
+    /// a trailer records where it is as free text rather than by yard id. So the yard moved to Phoenix
+    /// and T501 stayed in Green Bay — on the fleet report, in a city with no garage, on day one, having
+    /// never turned a wheel. Reported from play: "showing my trailer in Green Bay, a garage we don't
+    /// have". The move itself now takes the boxes with it; this is for the careers made before it did.</para>
+    ///
+    /// <para><b>Only a box that has demonstrably never moved.</b> A trailer sitting somewhere that is not
+    /// a company yard is ordinary — it was dropped at a customer, or it is mid-swap — and rewriting that
+    /// would be the app inventing a position for equipment it has no report about. So this repairs only
+    /// where no trip has ever referenced the unit, which is the one case where the location can only have
+    /// come from the seeding.</para>
+    /// </summary>
+    private static void BringHomeBoxesLeftAtAYardTheCompanyMoved(AppState s)
+    {
+        if (s.SchemaVersion >= 27) return;
+        s.SchemaVersion = 27;
+
+        var moved = new List<string>();
+        foreach (var tr in s.Trailers)
+        {
+            var where = (tr.CurrentLocation ?? "").Trim();
+            if (where.Length == 0) continue;
+
+            var yard = s.Company.Terminals.FirstOrDefault(t => t.Id == tr.HomeTerminalId);
+            if (yard == null) continue;
+
+            var belongs = $"{yard.City}, {yard.State}";
+            if (where.Equals(belongs, StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Somewhere the company actually has a yard is a real position, not a leftover.
+            var parts = where.Split(',', StringSplitOptions.TrimEntries);
+            var city = parts.Length > 0 ? parts[0] : where;
+            if (s.Company.Terminals.Any(t => t.City.Equals(city, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            // The guard that makes this safe: a box that has been on a trip has been somewhere, and
+            // where it ended up is not this migration's business.
+            if (s.Trips.Any(t => t.TrailerUnit.Equals(tr.Unit, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            tr.CurrentLocation = belongs;
+            tr.HomeTerminal = belongs;
+            moved.Add($"{tr.Ref} ({where} → {belongs})");
+        }
+
+        if (moved.Count == 0) return;
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "fleet",
+            GameTime = s.Status.GameTime,
+            Message = $"Corrected where {moved.Count} trailer(s) were filed as sitting: "
+                      + string.Join(", ", moved)
+                      + ". They were recorded at a yard this company moved away from before you ran "
+                      + "anything, so they never actually went there.",
+        });
     }
 
     /// <summary>

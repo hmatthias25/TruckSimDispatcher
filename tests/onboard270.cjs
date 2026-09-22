@@ -183,6 +183,18 @@ const market = async (a) => (await api('/onboarding/market', 'POST', a)).market
   ok('so it is not offered as a garage to open either',
     !offers.includes(hqBefore), offers.join(', ') || 'nothing offered');
 
+  // And the boxes come too. A trailer records where it is as free text rather than by yard id, so
+  // mutating the terminal left T501 filed in the city the company no longer has a garage in — the
+  // driver in one place and their trailer in another, on day one, having driven nowhere. Reported from
+  // play off the fleet report: "showing my trailer in Green Bay, a garage we don't have".
+  const stranded = (S.trailers || []).filter((t) => (t.currentLocation || '').includes(hqBefore));
+  console.log(`  ..    trailers: ${(S.trailers || []).map((t) => `${t.unit}@${t.currentLocation || '—'}`).join(', ')}`);
+  ok('no box is left filed at the yard the company moved off',
+    stranded.length === 0, stranded.map((t) => `${t.unit} @ ${t.currentLocation}`).join(', ') || 'none');
+  ok('and they are filed at the yard that actually exists',
+    (S.trailers || []).every((t) => !t.currentLocation || t.currentLocation.includes(pick.c)),
+    (S.trailers || []).map((t) => t.currentLocation || '—').join(' | '));
+
   head('8. Somewhere they do not run is refused');
   threw = '';
   try { await api('/career/domicile', 'POST', { city: 'Nowhere', state: 'ZZ' }); } catch (e) { threw = e.message; }
