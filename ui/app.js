@@ -3433,17 +3433,36 @@ function networkLine() {
 
   const open = net.filter((c) => !has(c) && been(c));
   const later = net.filter((c) => !has(c) && !been(c));
-  if (!open.length && !later.length) return '';
+
+  // A yard the COMPANY has asked for off its own figures is somewhere still to open too, and it is not
+  // on the carrier's published network — that is the whole point of it. Reported from play alongside
+  // the wording fault below.
+  const req = FLEETOPS?.yardRequest;
+  const asked = req && req.kind === 'Open' && req.city && !has({ city: req.city, st: req.state })
+    ? [{ city: req.city, st: req.state }] : [];
+
+  // Nothing outstanding, nothing to say. The company runs five cities and you hold five yards: a
+  // paragraph explaining what you could still open is noise on a panel that is already complete.
+  if (!open.length && !later.length && !asked.length) return '';
 
   const name = (c) => `${c.city}, ${c.st}`;
+  // ONLY the ones not held. This listed the entire network — every city the carrier runs, including the
+  // ones the player already had a yard in — under a sentence saying they held none of them. Reported
+  // from play: "it says 'you do not hold a yard in those cities yet', I do (except for Pittston PA)."
+  const outstanding = [...open, ...later];
   return `<p class="hint" style="margin:8px 0 0">
-    <b>${esc(S.company.name)} also runs ${net.map(name).map(esc).join(' · ')}.</b>
-    You do not hold a yard in those yet — a yard in a city you have not driven to would sit empty,
-    because ATS generates no freight for a city you have not reached.
+    ${outstanding.length ? `<b>${esc(S.company.name)} also runs
+      ${outstanding.map(name).map(esc).join(' · ')}.</b>
+      You do not hold a yard in ${outstanding.length > 1 ? 'those' : 'that one'} yet — a yard in a city
+      you have not driven to would sit empty, because ATS generates no freight for a city you have not
+      reached.` : ''}
     ${open.length ? `You have been to <b>${open.map(name).map(esc).join(', ')}</b>, so
       <b>Open a yard</b> will take ${open.length > 1 ? 'those' : 'that one'} now.` : ''}
     ${later.length ? `${esc(later.map(name).join(', '))} open up once you deliver there.` : ''}
-    To grow the yard you already have, use <b>Edit</b> on it and pick a bigger level.</p>`;
+    ${asked.length ? `Operations has also asked for a yard at
+      <b>${esc(name(asked[0]))}</b> off the company's own figures — that one is on the Fleet tab, where
+      you tell it what the garage cost.` : ''}
+    To grow a yard you already have, use <b>Edit</b> on it and pick a bigger level.</p>`;
 }
 
 /* ---- probation: fortnightly reviews at the yard, not a silent threshold ---- */

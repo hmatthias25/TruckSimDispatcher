@@ -242,12 +242,31 @@ public static class CompanyHealth
                 && t.State.Equals(c.State, StringComparison.OrdinalIgnoreCase)))
             // A yard is worth having where the freight is.
             .Where(c => c.Tier <= 2)
+            // And somewhere the truck has actually been.
+            //
+            // Everywhere else in the app a garage is discovery-gated, because ATS generates no cargo for
+            // a city that was revealed rather than driven to — a yard there is a yard with nothing coming
+            // out of it. This one place was not, so the company could ask for a garage in a city the
+            // player had never seen and could not sensibly go and buy. Reported from play on Bellingham,
+            // which is also the city named in the note below about the previous fault here.
+            .Where(c => DiscoveryService.IsDiscovered(s, c.City, c.State))
             .ToList();
 
         if (candidates.Count == 0)
         {
-            v.Actions.Add("The company would open another yard on these figures, but it already has one " +
-                          "everywhere it runs.");
+            // Two different reasons, and telling the player the wrong one sends them looking in the wrong
+            // place. "We already have one everywhere" is only true if there is nowhere left they have been.
+            var anywhereLeft = Markets.BuiltIn.Any(c =>
+                c.Source.Equals("Official", StringComparison.OrdinalIgnoreCase) && c.HasGarage && c.Tier <= 2
+                && !s.Company.Terminals.Any(t => t.City.Equals(c.City, StringComparison.OrdinalIgnoreCase)
+                                                 && t.State.Equals(c.State, StringComparison.OrdinalIgnoreCase)));
+            v.Actions.Add(anywhereLeft
+                ? "The company would open another yard on these figures, but every city we could use is " +
+                  "one you have not driven to yet. A garage somewhere you have not been sees no freight — " +
+                  "ATS only generates cargo for cities you have actually reached. Get out there and this " +
+                  "comes back on its own."
+                : "The company would open another yard on these figures, but it already has one " +
+                  "everywhere it runs.");
             return;
         }
 
