@@ -387,9 +387,16 @@ public static class DriverRank
     /// </summary>
     public static int RecentPreventables(AppState s, HiredDriver d)
     {
+        // FleetReports is newest-first — reports go in with Insert(0, ...) — so the window is the FIRST
+        // twelve, not the last. This read `.Reverse().Take(12)`, which is the twelve OLDEST reports in
+        // the career: on a fleet that had filed more than twelve, a preventable from the first fortnight
+        // counted against a driver forever while last month's did not count at all. Settle promises the
+        // rung "comes back the moment the preventables age off", and nothing ever aged off.
+        //
+        // Invisible for the first twelve reports, because then the two are the same set — which is why
+        // it survived, and why the suite that covers this never saw it.
         var recent = s.FleetReports
             .Select(r => r.Number)
-            .Reverse()
             .Take(PreventableWindowReports)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 

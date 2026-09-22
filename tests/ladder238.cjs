@@ -126,14 +126,29 @@ let S, yardId;
     serviceMiles: 300_000, lastServiceMiles: 295_000, serviceIntervalMiles: 25_000,
     damagePct: 2, inGameGarage: true, homeTerminalId: yardId,
   });
-  const vid = (await api('/fleetops/drivers', 'POST', {
+  const created = (await api('/fleetops/drivers', 'POST', {
     name: 'T. Vargas', status: 'Active', assignedTruckUnit: 'P-1', skill: 'Experienced',
     homeTerminalId: yardId, hiredGameDate: iso(2), level: 12, lifetimeMiles: 45_000,
   })).driver.id;
+
+  // A fixed id, because a driver can QUIT on the report this suite depends on.
+  //
+  // Resignation is rolled per driver per report as Hash("<id>|quit|<report number>") % 1000 against a
+  // chance that is clamped to at most 200 — never certain, never impossible. The id is a fresh GUID at
+  // hire, so that roll came out differently every run: roughly one run in six, T. Vargas handed their
+  // notice in on the second report, SettleGrades skips anybody who is not Active, and the grade this
+  // suite is about was simply never recalculated. It read as "conduct does not pull the grade down",
+  // which is not what had happened at all.
+  //
+  // This id rolls 876 and 733 for the two reports the suite files, both far above the 200 ceiling, so
+  // the roll cannot fire whatever the chance is tuned to. Section 5 also asserts they are still on the
+  // books, so if that ever stops holding the failure says so instead of blaming the ladder.
+  const vid = 'vargas-fixture-0007';
   // Settled as a Senior under the old numbers — the tenure is there, the mileage no longer is. Set on
   // the record rather than at hire, because every hire starts probationary whatever they walked in as.
   st = await api('/export');
-  const vargas = st.hiredDrivers.find((x) => x.id === vid);
+  const vargas = st.hiredDrivers.find((x) => x.id === created);
+  vargas.id = vid;
   vargas.grade = 2;
   vargas.wageShare = 0.31;
   await api('/import', 'POST', st);
@@ -178,6 +193,10 @@ let S, yardId;
   });
   fo = await api('/fleetops');
   v = doss(fo, 'T. Vargas');
+  // Before the grade: a driver who has quit is not settled at all, so a resignation here would fail the
+  // next assertion for a reason that has nothing to do with conduct. Named, so it cannot be mistaken.
+  ok('they are still on the books to be graded', v.d.status === 'Active',
+    `status ${v.d.status}`);
   ok('conduct does pull the grade back down', v.d.grade < 2, `grade ${v.d.grade} — ${v.z.rank}`);
 
   head('6. The two ladders ask the same mileage of both sides of the desk');
@@ -192,6 +211,45 @@ let S, yardId;
   await api('/import', 'POST', st);
   rev = await api('/career');
   ok('the player needs 110,000 for Senior too', num(miles()?.required) === 110_000, miles()?.required);
+
+  head('7. A preventable ages off, which only shows past the twelfth report');
+  // The window is "the last twelve reports". FleetReports is newest-first, so that is the FIRST twelve
+  // of the list — and this read `.Reverse().Take(12)`, which is the twelve OLDEST reports in the career.
+  // On a fleet that had filed more than twelve, a preventable from the first fortnight counted against a
+  // driver for ever while last month's did not count at all. Settle promises the rung "comes back the
+  // moment the preventables age off", and nothing ever aged off.
+  //
+  // Invisible below thirteen reports, because there the two sets are the same — which is why the rest of
+  // this suite never saw it.
+  st = await api('/export');
+  const old = { id: 'w1', number: 'SFL-FR-9001', periodStartGame: iso(10), periodEndGame: iso(24),
+    lines: [], findings: [], instructions: [], personnel: [],
+    conduct: [{ driverId: 'ages-off', driverName: 'A. Ager', severity: 'Serious',
+                outcome: 'At fault', truckUnit: 'P-9', damagePct: 20,
+                reportNumber: 'SFL-FR-9001', gameTime: iso(12) }] };
+  // Newest first, so the offending report goes on the END: it is the oldest thing on the books.
+  const filler = [];
+  for (let i = 0; i < 14; i++) {
+    filler.push({ id: `w${i + 2}`, number: `SFL-FR-95${String(i).padStart(2, '0')}`,
+      periodStartGame: iso(100 + i * 14), periodEndGame: iso(114 + i * 14),
+      lines: [], findings: [], instructions: [], personnel: [], conduct: [] });
+  }
+  st.fleetReports = [...filler.reverse(), old];
+  st.hiredDrivers = [{
+    id: 'ages-off', name: 'A. Ager', status: 'Active', assignedTruckUnit: 'P-9',
+    homeTerminalId: st.company.terminals[0].id, hiredGameDate: iso(2),
+    level: 12, lifetimeMiles: 300_000, grade: 2, wageShare: 0.31, reportsFiled: 15,
+  }];
+  await api('/import', 'POST', st);
+  const ager = doss(await api('/fleetops'), 'A. Ager');
+  console.log(`  ..    ${st.fleetReports.length} reports on file, offence in the oldest one` +
+              ` — recent ${ager.z?.recentPreventables}, lifetime ${ager.z?.preventables}`);
+  ok('the fleet has filed more than the window holds', st.fleetReports.length > 12,
+    `${st.fleetReports.length} reports`);
+  ok('the offence is still on their record for ever', (ager.z?.preventables ?? 0) >= 1,
+    `${ager.z?.preventables} lifetime`);
+  ok('but one older than the window no longer counts against the rung',
+    ager.z?.recentPreventables === 0, `${ager.z?.recentPreventables} in the window`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
