@@ -71,37 +71,77 @@ public static class TrailerSpec
         + "on the turning-radius rule, and you will not find out until a load takes you there. Anything "
         + "48' or shorter is fine whatever the axles are doing. One trailer: no doubles or triples.";
 
-    public static string LengthAdvice(string? type)
+    /// <summary>
+    /// The length this trailer type is issued in. <b>One source, because the advice quotes it.</b>
+    ///
+    /// This table lived inside <see cref="ForCarrier"/> while <see cref="LengthAdvice"/> wrote the same
+    /// lengths out again in prose — two places holding the same fact, free to drift.
+    /// </summary>
+    public static string LengthFor(string? type)
     {
         var t = (type ?? "").Trim();
-        if (IsTanker(t)) return "Tanks come one length. Take the single, not a set.";
+        if (DropHook.Is(t)) return "—";
+        return t switch
+        {
+            "Flatbed" or "Step Deck" => "48'",
+            "Container" => "53' chassis",
+            "Lowboy" => "48' RGN",
+            "Tanker" => "42'",
+            "Log" or "Dump" or "Hopper" => "40'",
+            _ => "53'",
+        };
+    }
+
+    /// <summary>
+    /// What to go and buy, for the trailer the company has put this driver on.
+    ///
+    /// <para><b>The length is assigned, not offered.</b> This used to end "48' and 45' are also sold if
+    /// you would rather have something shorter for city work", which is an owner-operator's decision
+    /// being handed to a company driver — the same mistake as letting them pick the trailer at all.
+    /// Reported from play in those words. The app issues a unit at a length; the shopping list says what
+    /// that unit is, and every "you could also take" is gone.</para>
+    ///
+    /// <para>What stays is anything that stops the driver buying the WRONG trailer: the reefer that is
+    /// not an insulated box, the drop deck that is not a flatbed, the axle configuration California
+    /// turns away. Those are not choices, they are ways to get it wrong.</para>
+    /// </summary>
+    /// <param name="assignedLength">
+    /// The length on the unit the driver has actually been issued, where there is one. The advice is
+    /// "go and buy the matching trailer", so it quotes the record rather than the table — otherwise a
+    /// unit edited on the Equipment tab is a shopping list for a different trailer.
+    /// </param>
+    public static string LengthAdvice(string? type, string? assignedLength = null)
+    {
+        var t = (type ?? "").Trim();
+        var len = string.IsNullOrWhiteSpace(assignedLength) ? LengthFor(t) : assignedLength.Trim();
+        if (IsTanker(t)) return $"At the trailer dealer that is the {len} tank. One tank, not a set.";
         return t switch
         {
             "Dry Van" or "Van" =>
-                "At the trailer dealer that is the 53' dry van — the standard box, and the widest range of "
-                + "freight fits it. 48' and 45' are also sold if you would rather have something shorter "
-                + "for city work.",
+                $"At the trailer dealer that is the {len} dry van. That is the box you are issued — the "
+                + "shorter ones are a different unit and not what you are on.",
             "Reefer" or "Refrigerated" =>
-                "At the trailer dealer that is the 53' refrigerated van. The insulated box is a different "
-                + "trailer and will not take freight that needs the unit running.",
+                $"At the trailer dealer that is the {len} refrigerated van. The insulated box is a "
+                + "different trailer and will not take freight that needs the unit running.",
             "Flatbed" =>
-                "At the trailer dealer that is the 48' flatbed — most open-deck freight loads on it and it "
-                + "is easier to place than the 53'. A drop deck is a separate trailer, in 48' or 53'.",
+                $"At the trailer dealer that is the {len} flatbed. A drop deck is a different trailer, "
+                + "not a longer flatbed — do not come back with one.",
             "Step Deck" =>
-                "At the trailer dealer that is the 48' drop deck. The 53' is sold as well and is only worth "
-                + "it for long loads.",
-            "Lowboy" => "At the trailer dealer that is the lowboy — one configuration, for heavy haul.",
-            "Log" => "At the trailer dealer that is the log trailer. Logs only; nothing else loads on it.",
-            "Livestock" => "At the trailer dealer that is the livestock trailer. Livestock only.",
-            "Hopper" or "Dump" => "At the trailer dealer that is the dumper. Bulk only.",
+                $"At the trailer dealer that is the {len} drop deck. Not the flatbed, and not the 53' "
+                + "drop deck.",
+            "Lowboy" => $"At the trailer dealer that is the {len} lowboy, for heavy haul.",
+            "Log" => $"At the trailer dealer that is the {len} log trailer. Logs only; nothing else "
+                     + "loads on it.",
+            "Livestock" => $"At the trailer dealer that is the {len} livestock trailer. Livestock only.",
+            "Hopper" or "Dump" => $"At the trailer dealer that is the {len} dumper. Bulk only.",
             // Intermodal rides a chassis, not a box. This division used to hand out a 53' dry van, which
             // is simply a different trailer — reported from play looking at a unit labelled "Intermodal"
             // and typed "53' Dry Van". ATS sells a container carrier and has since ownable trailers
             // arrived, so there is no reason to approximate it.
             "Container" =>
-                "At the trailer dealer that is the container carrier — a chassis, not a box. Take the 53' "
-                + "one; it also carries the 20' and 40' containers with the locks moved. Note the "
-                + "triple-axle 53' is one of the configurations California refuses.",
+                $"At the trailer dealer that is the {len} container carrier — a chassis, not a box. It "
+                + "carries the 20' and 40' containers as well, with the locks moved. Take the tandem: "
+                + "the triple-axle version is one of the configurations California refuses.",
             _ => "",
         };
     }
@@ -180,20 +220,7 @@ public static class TrailerSpec
         // than writing "Tanker" and leaving the driver at the dealer guessing.
         if (IsTanker(type)) subtype = LikelyFor(s).Key;
 
-        var length = type switch
-        {
-            "Reefer" => "53'",
-            "Flatbed" => "48'",
-            "Step Deck" => "48'",
-            "Container" => "53' chassis",
-            "Lowboy" => "48' RGN",
-            "Tanker" => "42'",
-            "Livestock" => "53'",
-            "Log" => "40'",
-            "Dump" or "Hopper" => "40'",
-            _ => DropHook.Is(type) ? "—" : "53'",
-        };
-        return (type, subtype, length);
+        return (type, subtype, LengthFor(type));
     }
 
     /// <summary>Which division a trailer type belongs to. The inverse of <see cref="ForDivision"/>.</summary>

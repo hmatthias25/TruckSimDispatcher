@@ -1515,12 +1515,16 @@ public static class Carriers
                          + (TrailerSpec.IsTanker(trailer.Type)
                              ? $"That is {TrailerSpec.BuyingAdvice(s, trailer.Type, trailer.Subtype)}\n\n"
                              : "")
-                         + (TrailerSpec.LengthAdvice(trailer.Type) is { Length: > 0 } which
+                         + (TrailerSpec.LengthAdvice(trailer.Type, trailer.Length) is { Length: > 0 } which
                              ? which + "\n\n" + TrailerSpec.CaliforniaRule
                              : TrailerSpec.CaliforniaRule)
-                         + "\n\nIf you would rather not own one yet, you can take the trailer that comes with "
-                         + "each job instead and leave this as paperwork. Dispatch does not care which — it "
-                         + "only needs to know the TYPE you are pulling, so it can gate freight correctly.",
+                         // Not "if you would rather own one" — that is the owner-operator framing this
+                         // step was rewritten to get rid of. What is assigned is the type and the
+                         // length; whether the company has bought the box yet is bookkeeping, and the
+                         // driver pulls the job's trailer until it has.
+                         + "\n\nUntil you have bought it, pull the trailer that comes with each job and leave "
+                         + "this unit as paperwork — nothing is held up by that. Dispatch works off the TYPE "
+                         + "you are on, which is how it gates freight.",
                 Why = "Freight requiring a trailer you cannot pull is hard-rejected at dispatch."
             });
 

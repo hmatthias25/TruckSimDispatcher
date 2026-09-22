@@ -199,6 +199,24 @@ const market = async (a) => (await api('/onboarding/market', 'POST', a)).market
     ok('it reads as an assignment, not a choice', !/^Decide/i.test(trailerStep.title || ''),
       trailerStep.title);
     ok('and says the company put them on it', /has put you on this one/i.test(trailerStep.detail || ''));
+
+    // The LENGTH is assigned too. This ended "48' and 45' are also sold if you would rather have
+    // something shorter for city work" — an owner-operator's decision handed to a company driver, and
+    // the same mistake as letting them pick the trailer. Reported from play: "this should NOT be an
+    // option, the app needs to assign lengths not let the player decide".
+    // Scoped to LENGTH alternatives. A blanket search for "would rather" also catches the note about
+    // not having bought the box yet, which is bookkeeping rather than a choice of trailer.
+    ok('the length is stated, not offered',
+      !/(also sold|is sold as well|are also|rather have something shorter|or shorter if)/i
+        .test(trailerStep.detail || ''),
+      (trailerStep.detail || '').match(/[^.]*(also sold|are also)[^.]*/)?.[0] || 'no alternatives');
+    // And the length it names is the one on the unit, not a second copy of the same fact that is free
+    // to drift from it.
+    const assigned = (S.trailers || []).find((x) => trailerStep.title.includes(x.unit))
+      || (S.trailers || [])[0];
+    ok('and it is the length of the unit they were issued',
+      !assigned || (trailerStep.detail || '').includes(assigned.length),
+      `${assigned?.length} in "${(trailerStep.detail || '').match(/that is the [^.]*/)?.[0] || ''}"`);
   } else { ok('no trailer step in this career', true, 'skipped'); }
 
   head('10. Nothing in the checklist reaches the player as markup');

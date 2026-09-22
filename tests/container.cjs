@@ -74,6 +74,11 @@ async function place(city, state, day, hm = '07:00') {
     (step.detail || '').match(/[^.]*not a box[^.]*/)?.[0] || '(not said)');
   ok('the California rule rides along, the same as every other trailer',
     /California/i.test(step.detail || ''), 'warned');
+  ok('the length is assigned, not offered as a choice',
+    !/(also sold|is sold as well|are also|rather have something shorter)/i.test(step.detail || ''),
+    'no alternatives');
+  ok('and the chassis named is the one on the unit',
+    (step.detail || '').includes(trailer.length), `${trailer.length}`);
   ok('no doubles here either', /no doubles/i.test(step.detail || ''), 'said');
   ok('nothing in it reaches the player as markup',
     !/<\/?(b|i|em|strong|p|br|div|span|ul|li|a)\b[^>]*>/i.test(JSON.stringify(setup)), 'clean');

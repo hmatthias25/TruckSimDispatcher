@@ -1173,7 +1173,7 @@ app.MapPost("/api/fleet/stock", (StockRequest req) => Results.Ok(store.Mutate<ob
     {
         unit = t.Ref,
         what = $"{t.Length} {TrailerSpec.Describe(t.Type, t.Subtype)}",
-        advice = TrailerSpec.LengthAdvice(t.Type),
+        advice = TrailerSpec.LengthAdvice(t.Type, t.Length),
     }).ToList();
 
     return new
