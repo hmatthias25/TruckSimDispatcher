@@ -37,6 +37,42 @@ public static class DiscoveryService
     public static bool IsDiscovered(AppState s, string? city, string? state) => Find(s, city, state) != null;
 
     /// <summary>
+    /// Takes a city back off the discovered list, but only where nothing in the career says the truck
+    /// was ever there.
+    ///
+    /// <para>There is exactly one way to be discovered by mistake: the career seeds the employer's
+    /// headquarters as reached at hire, because normally that is the yard you are standing in. Then the
+    /// driver picks a different yard to be based at and the HQ was never visited at all. Reported from
+    /// play at a Schneider career domiciled in Phoenix: "we've never been to Green Bay (we don't even
+    /// run C2C right now)" — offered as a yard to open, dated the morning of day one.</para>
+    ///
+    /// <para>Evidence is anything <see cref="Backfill"/> would rebuild the entry from: a yard we hold, a
+    /// trip that touched it, a work order, a trailer parked there, or the truck standing in it. If any
+    /// of that exists the city stays, because then it is not a seeding artefact — it is history.</para>
+    /// </summary>
+    public static bool Forget(AppState s, string? city, string? state)
+    {
+        var entry = Find(s, city, state);
+        if (entry == null) return false;
+
+        bool Here(string? c, string? st) =>
+            Same(c, entry.City) && (string.IsNullOrWhiteSpace(entry.State) || Same(st, entry.State));
+
+        if (s.Company.Terminals.Any(t => Here(t.City, t.State))) return false;
+        if (Here(s.Status.LocationCity, s.Status.LocationState)) return false;
+        if (s.Trips.Any(t => Here(t.OriginCity, t.OriginState) || Here(t.DestCity, t.DestState))) return false;
+        if (s.WorkOrders.Any(w => Here(w.LocationCity, w.LocationState))) return false;
+        if (s.Trailers.Any(tr =>
+        {
+            var parts = (tr.CurrentLocation ?? "").Split(',', StringSplitOptions.TrimEntries);
+            return parts.Length >= 2 && Here(parts[0], parts[1]);
+        })) return false;
+
+        s.Discovered.Remove(entry);
+        return true;
+    }
+
+    /// <summary>
     /// Records that the truck is in a city. Returns a notice only the first time, and only when there
     /// is something for the driver to act on — reaching a city we already know about is not news.
     /// </summary>

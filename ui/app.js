@@ -2207,7 +2207,10 @@ function discoveryHtml(n) {
     <h4>${esc(n.headline)}</h4>
     ${n.detail && n.detail.length ? `<ul>${n.detail.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${n.garageAvailable ? `<div class="row-actions">
-      <button class="btn" data-act="tab" data-tab="equipment">Open a yard here</button>
+      ${/* Straight into the yard form for THIS city. It used to switch to the Equipment tab and leave
+            the player to find the button and type the city in again, having just been told which. */ ''}
+      <button class="btn" data-act="open-yard-here"
+        data-city="${esc(n.city)}" data-state="${esc(n.state)}">Open a yard here</button>
       <button class="btn ghost" data-act="decline-garage"
         data-city="${esc(n.city)}" data-state="${esc(n.state)}">Not interested</button>
     </div>` : ''}
@@ -2234,8 +2237,11 @@ function garageOpportunitiesHtml() {
         <td><b>${esc(c.city)}</b>${c.state ? ', ' + esc(c.state) : ''}</td>
         <td>${c.discoveredGameTime ? gt(c.discoveredGameTime) : '—'}</td>
         <td>${c.tier ? `Tier ${c.tier}${c.resetFriendly ? ' · reset-friendly' : ''}` : '—'}</td>
-        <td><button class="btn tiny ghost" data-act="decline-garage"
-          data-city="${esc(c.city)}" data-state="${esc(c.state)}">Dismiss</button></td></tr>`).join('')}
+        <td class="row-actions" style="justify-content:flex-end">
+          <button class="btn tiny primary" data-act="open-yard-here"
+            data-city="${esc(c.city)}" data-state="${esc(c.state)}">Open a yard</button>
+          <button class="btn tiny ghost" data-act="decline-garage"
+            data-city="${esc(c.city)}" data-state="${esc(c.state)}">Dismiss</button></td></tr>`).join('')}
     </tbody></table></div>
   </div>`;
 }
@@ -3601,18 +3607,20 @@ function domicilePrefsHtml() {
           a dropdown with a single option is a question with one answer. */ ''}
     <h3 class="sect">What ${esc(S.company.name)} runs you</h3>
     <p class="hint">Your employer decides this, not you — it was on their card when you applied.
-      Dispatch weighs the board on it: on <b>medium</b> a load over 700 miles scores a fifth of what a
-      mid-length one does. Multi-day runs are planned properly either way, with breaks, ten-hour resets
-      and 34-hour restarts worked into the plan.</p>
+      It is <b>how far from your yard they will let the truck end up</b>, not how long any one load is:
+      three 300-mile runs in a row are three regional loads that leave you nine hundred miles out, and
+      dispatch scores against the one that does that. Multi-day runs are planned properly either way,
+      with breaks, ten-hour resets and 34-hour restarts worked into the plan.</p>
     ${S.terms?.tripLengthNote ? `<div class="callout info" style="margin-bottom:8px">
       <p style="margin:0">${esc(S.terms.tripLengthNote)}</p></div>` : ''}
     ${(S.terms?.tripLengthsOffered || []).length > 1 ? `<div class="grid3">
       <label>Trip length
         <select id="tl-pref">
-          ${[['short', 'Short — day cabs and regional, under 250 mi'],
-             ['medium', 'Medium — 200 to 700 mi'],
-             ['long', 'Long — 600 mi and up'],
-             ['otr', 'OTR — 800 mi and up, out for weeks']]
+          ${/* A radius from the yard, not a load length — see DispatchEngine.OperatingRadiusMiles. */ ''}
+          ${[['short', 'Short — within about 150 mi of the yard'],
+             ['medium', 'Medium — within about 300 mi of the yard'],
+             ['long', 'Long — within about 600 mi of the yard'],
+             ['otr', 'OTR — no radius, out for weeks']]
             .filter(([k]) => (S.terms.tripLengthsOffered || []).includes(k))
             .map(([k, label]) => `<option value="${k}" ${(S.application && S.application.preferredTripLength === k) ? 'selected' : ''}>${esc(label)}</option>`).join('')}
         </select></label>
@@ -4541,8 +4549,7 @@ function editHireModal(id) {
     ${isNew ? `<div class="callout info">
       <p style="margin:0">Every hire starts as a <b>Probationary Company Driver</b> and serves ninety
         days, whatever level they come in at. The level says how much driving they have done; the grade
-        is what they earn here. Leave the wage share alone and the company pays the rung &mdash; type a
-        figure and it is yours and stays put.</p></div>`
+        is what they earn here, and the grade is what they are paid on.</p></div>`
       : `<div class="callout info"><p style="margin:0">${esc(dossier(d.id).summary)}</p></div>`}
     <div class="grid2">
       <label>Driver name<input id="hd-name" value="${esc(d.name)}"></label>
@@ -4551,11 +4558,15 @@ function editHireModal(id) {
           ${avail.map((t) => `<option value="${esc(t.unit)}" ${t.unit === d.assignedTruckUnit ? 'selected' : ''}>
             ${esc(t.unit)} — ${t.year} ${esc(t.make)} ${esc(t.model)}</option>`).join('')}
         </select></label>
-      <label>Trailer
-        <select id="hd-trailer"><option value="">(market trailers)</option>
-          ${S.trailers.map((t) => `<option value="${esc(t.unit)}" ${t.unit === d.assignedTrailerUnit ? 'selected' : ''}>
-            ${esc(t.unit)} — ${esc(t.length)} ${esc(t.type)}</option>`).join('')}
-        </select></label>
+      ${/* No trailer picker. Which box a hired driver is nominally holding is not something the player
+            decides at hire — it is dispatch's, it changes every load, and AI drivers drop and hook on
+            their own between runs. The fleet REPORT already stopped asking for the same reason: nothing
+            reads it, and maintaining it made the fleet permanently wrong about where boxes were.
+            AssignedTrailerUnit stays on the model, because the trip and changeover paths do set it.
+
+            No wage share either. The grade is what a driver is paid on and the company pays the rung;
+            offering a box to type a different number was the app inviting the player to override a
+            figure it had already worked out. WageShareSetByHand likewise stays for stored careers. */ ''}
       ${/* Level is on the ATS hiring screen in front of you, and the company tells you what
             level to go and hire at — so there has to be somewhere to write down what you came back with.
             Without these a veteran was added at level 0 and read as "not placed" for a fortnight.
@@ -4568,11 +4579,15 @@ function editHireModal(id) {
       <label>Status
         <select id="hd-status">${['Active', 'OnLeave', 'Resigned', 'Terminated'].map((x) =>
           `<option ${d.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-      <label>Wage share of revenue (0–0.9)<input id="hd-wage" type="number" step="0.01" min="0" max="0.9" value="${d.wageShare}"></label>
+      ${/* A real yard, not a blank standing in for one. "(headquarters)" posted "" and left the driver
+            based at whatever the HQ happened to be, which reads as unanswered and looks like a driver
+            nobody has placed. Every yard is listed and the HQ is simply the one selected to begin with,
+            so the field always names somewhere. */ ''}
       <label>Home terminal
-        <select id="hd-terminal"><option value="">(headquarters)</option>
-          ${(S.company.terminals || []).map((t) => `<option value="${esc(t.id)}" ${t.id === d.homeTerminalId ? 'selected' : ''}>
-            ${esc(t.city)}, ${esc(t.state)}</option>`).join('')}
+        <select id="hd-terminal">
+          ${(S.company.terminals || []).map((t) => `<option value="${esc(t.id)}" ${
+            t.id === d.homeTerminalId || (!d.homeTerminalId && t.isHeadquarters) ? 'selected' : ''
+          }>${esc(t.city)}, ${esc(t.state)}${t.isHeadquarters ? ' — HQ' : ''}</option>`).join('')}
         </select></label>
     </div>
     <label>Notes<input id="hd-notes" value="${esc(d.notes || '')}"></label>
@@ -4584,16 +4599,27 @@ function editHireModal(id) {
     </div>`);
 }
 
-function editTerminalModal(id) {
+/**
+ * @param city,state Prefill for a yard being opened somewhere specific — the discovery notice and the
+ *   opportunity list both know which city they are offering, and "Open a yard here" used to throw that
+ *   away and drop the player on the Equipment tab to type it in again. Reported from play.
+ */
+function editTerminalModal(id, city, state) {
   const isNew = !id;
   const t = isNew
-    ? { id: '', name: '', city: '', state: '', level: 'Small', truckCapacity: 1, isHeadquarters: false,
+    ? { id: '', name: '', city: city || '', state: state || '', level: 'Small', truckCapacity: 1,
+        isHeadquarters: false,
         hasFuel: true, hasShop: false, hasParking: true, hasTrailerDrop: true, hasDriverFacilities: false,
         fuelPricePerGal: 6.01, shopLabourDiscount: 0, monthlyCost: 1150, notes: '' }
     : (S.company.terminals || []).find((x) => x.id === id);
   if (!t) return;
-  modal(`<div class="panel-head"><h2>${isNew ? 'Open a yard' : esc(t.city) + ', ' + esc(t.state)}</h2>
+  modal(`<div class="panel-head"><h2>${isNew
+        ? 'Open a yard' + (t.city ? ' in ' + esc(t.city) + (t.state ? ', ' + esc(t.state) : '') : '')
+        : esc(t.city) + ', ' + esc(t.state)}</h2>
       <div class="spacer"></div><button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+    ${isNew && t.city ? `<p class="hint">Buy the garage in ATS first, then put what it actually cost you
+      in <b>What the garage cost</b> below — garage prices vary by city and by whatever economy mod you
+      are running, so the app does not guess at it.</p>` : ''}
     <div class="grid2">
       <label>City<input id="tm-city" value="${esc(t.city)}"></label>
       <label>State<input id="tm-state" class="up" maxlength="2" value="${esc(t.state)}"></label>
@@ -6586,6 +6612,8 @@ async function handleAction(act, d, ev) {
       { preference: sv('ht-pref') })), 'Home-time arrangement updated.');
 
     /* ---- city discovery */
+    case 'open-yard-here': return editTerminalModal('', d.city, d.state);
+
     case 'decline-garage': return run(async () => {
       absorb(await api('/discovery/decline', 'POST', { city: d.city, state: d.state }));
       DISCOVERY = null;
@@ -7197,10 +7225,13 @@ async function handleAction(act, d, ev) {
       const base = isNew ? {} : (FLEETOPS?.drivers || []).find((x) => x.id === d.id) || {};
       return run(async () => {
         absorb(await api('/fleetops/drivers', 'POST', {
+          // Trailer and wage share are not posted from here any more — there are no controls for them.
+          // The spread keeps whatever an existing driver already has, so editing somebody does not
+          // quietly reset the box they are on or a share set before the control went.
           ...base, id: d.id || '', name: sv('hd-name'),
-          assignedTruckUnit: sv('hd-truck'), assignedTrailerUnit: sv('hd-trailer'),
+          assignedTruckUnit: sv('hd-truck'),
           level: Math.max(0, Math.round(fv('hd-level') || 0)),
-          status: sv('hd-status'), wageShare: fv('hd-wage'),
+          status: sv('hd-status'),
           homeTerminalId: sv('hd-terminal'), notes: sv('hd-notes'),
         }));
         FLEETOPS = await api('/fleetops');

@@ -20,9 +20,18 @@ let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? ' -- ' + d : ''}`); } else { fail++; console.log(`  FAIL  ${l}${d ? ' -- ' + d : ''}`); } };
 const head = (t) => console.log(`\n=== ${t} ===`);
 
-/** The body of one top-level view function, so each half can be checked for what it should NOT hold. */
+/**
+ * The body of one top-level function, so each half can be checked for what it should NOT hold.
+ *
+ * Matches `function name(` rather than `function name() {`: this took the zero-argument form only, so
+ * asking for a function that takes a parameter returned the empty string — and every "this must not be
+ * in there" assertion against it then passed on nothing. Found exactly that way, with three checks
+ * against editHireModal(id) all green while the file was never looked at.
+ *
+ * Callers should assert the result is non-empty before testing absence of anything in it.
+ */
 function body(js, name) {
-  const start = js.indexOf(`function ${name}() {`);
+  const start = js.indexOf(`function ${name}(`);
   if (start < 0) return '';
   const next = js.slice(start + 10).search(/\nfunction [A-Za-z]/);
   return next < 0 ? js.slice(start) : js.slice(start, start + 10 + next);
@@ -79,7 +88,11 @@ function body(js, name) {
   // It pointed at data-tab="terminals", which is not in the view map, so it silently fell through to
   // Dispatch — a button that took you to the wrong tab and said nothing.
   ok('no dead terminals tab target', !/data-tab="terminals"/.test(js), 'gone');
-  ok('it points at Equipment', /data-act="tab" data-tab="equipment">Open a yard here/.test(js), 'wired');
+  // It went from a dead tab, to the right tab, to the yard form for the city it just named. Section 14
+  // has the current behaviour; what stays here is that it never goes back to being a bare tab switch,
+  // which was a button that made the player find the form and retype the city they had been told.
+  ok('and it is no longer just a tab switch',
+    !/data-act="tab" data-tab="equipment">Open a yard here/.test(js), 'opens the form');
   const tabs = [...js.matchAll(/data-tab="([a-z]+)"/g)].map((m) => m[1]);
   const known = [...js.matchAll(/\['([a-z]+)', '[^']+'\]/g)].map((m) => m[1]);
   const dead = [...new Set(tabs)].filter((t) => !known.includes(t));
@@ -150,6 +163,39 @@ function body(js, name) {
     /not used|second-hand/i.test(rec), rec.slice(0, 150));
   ok('the old "or-newer" wording is gone', !/or-newer/i.test(rec), 'no used invitation');
 
+  head('13. Hiring a driver asks only what the player actually knows');
+  // Three controls came off this form, all for the same reason: they invited the player to decide
+  // something that is not theirs to decide, or to answer a question with a blank.
+  const hire = body(js, 'editHireModal');
+  // First, because everything below it is an absence check and an empty string has no trailer picker.
+  ok('the hire form was found to look at', hire.length > 0, `${hire.length} chars`);
+  // The trailer a hired driver is nominally on changes every load, dispatch sets it, and AI drivers
+  // drop and hook between runs. The fleet REPORT stopped asking for exactly this reason.
+  ok('no trailer picker on the hire form', !/id="hd-trailer"/.test(hire), 'gone');
+  // The grade is what a driver is paid on and the company pays the rung. A box to type a different
+  // number was the app inviting an override of a figure it had already worked out.
+  ok('no wage-share box either', !/id="hd-wage"/.test(hire), 'gone');
+  ok('and nothing still posts them', !/hd-trailer|hd-wage/.test(js), 'no stale reads');
+  // "(headquarters)" posted an empty string and read as an unanswered field on a driver nobody had
+  // placed. Every yard is listed; the HQ is simply the one selected first.
+  const term = hire.match(/id="hd-terminal"[\s\S]{0,420}/)?.[0] || '';
+  ok('the home terminal names a real yard rather than a blank',
+    !/<option value=""[^>]*>\(headquarters\)/.test(term), 'no blank option');
+  ok('with the headquarters selected to begin with', /isHeadquarters/.test(term), 'defaulted');
+
+  head('14. "Open a yard here" opens the yard, in that city');
+  // It was a tab switch: the app named the city, then dropped the player on Equipment to find the
+  // button and type the city back in. The yard form is also where the ATS garage price is asked, which
+  // is the thing worth capturing at the moment you decide to buy one.
+  ok('the discovery notice has its own action', /data-act="open-yard-here"/.test(js), 'wired');
+  ok('and it carries the city with it',
+    /data-act="open-yard-here"[\s\S]{0,120}data-city=/.test(js), 'city passed');
+  ok('the handler opens the yard form prefilled',
+    /case 'open-yard-here':[\s\S]{0,120}editTerminalModal\(''\s*,\s*d\.city\s*,\s*d\.state\)/.test(js),
+    'prefilled');
+  ok('the yard form takes a city to start from', /function editTerminalModal\(id, city, state\)/.test(js),
+    'accepts a city');
+  ok('and it still asks what the garage cost', /id="tm-price"/.test(js), 'asked');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

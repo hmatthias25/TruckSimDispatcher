@@ -327,6 +327,8 @@ async function cityBoard(rows) {
   }
   const city = await api('/board/evaluate');
   const won = (city.evaluations || []).find((e) => e.load.id === city.authorizedLoadId);
+  console.log('  ..    ' + (city.evaluations || [])
+    .map((e) => `${e.load.destCity} ${e.score?.toFixed?.(2)}`).join(' | '));
   ok('a wider board is not held again', city.wantCityBoard !== true, `${city.wantCityBoard}`);
   ok('and the yard run is the one taken, deadhead and all', won?.load.destCity === 'Springfield',
     `${won?.load.destCity || 'none'} (${won?.load.deadheadMiles || 0} mi deadhead)`);

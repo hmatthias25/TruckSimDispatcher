@@ -69,9 +69,12 @@ const day = (n, hhmm = '06:00') => `2000-01-${String(n).padStart(2, '0')}T${hhmm
   check('Seattle pays better per mile', sea.load.gameRevenue > den.load.gameRevenue);
   check('home load still wins the board', dec.authorizedLoadId === den.load.id,
     `picked ${dec.evaluations.find((e) => e.load.id === dec.authorizedLoadId)?.load.destCity}`);
-  check('home reason in the scoring detail', den.scoreDetail.some((x) => /home radius|toward/i.test(x)),
+  // "Finishes AT <yard>" is the wording for a load that ends at the terminal itself, which is scored
+  // above one that merely lands inside the home radius — being home is not the same as being near home.
+  check('home reason in the scoring detail',
+    den.scoreDetail.some((x) => /home radius|toward|finishes at/i.test(x)),
     den.scoreDetail.find((x) => /home/i.test(x)) || '(none)');
-  check('pro says it gets you home', den.pros.some((p) => /gets you home/i.test(p)),
+  check('pro says it gets you home', den.pros.some((p) => /gets you home|takes you home/i.test(p)),
     den.pros.find((p) => /home/i.test(p)) || '(none)');
   check('con warns the other one runs away', sea.cons.some((c) => /further from/i.test(c)),
     sea.cons.find((c) => /further/i.test(c)) || '(none)');

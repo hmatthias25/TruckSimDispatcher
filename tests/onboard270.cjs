@@ -154,6 +154,7 @@ const market = async (a) => (await api('/onboarding/market', 'POST', a)).market
   console.log(`  ..    ${S.company.name} runs ${net.join(' | ')}`);
   ok('the carrier has a network to choose from', net.length > 1, `${net.length}`);
 
+  const hqBefore = S.company.terminalCity;
   const pick = net.map((n) => n.split(',')).map(([c, st]) => ({ c: c.trim(), st: st.trim() }))
     .find((x) => x.c !== S.company.terminalCity);
   const moved = await api('/career/domicile', 'POST', { city: pick.c, state: pick.st });
@@ -168,6 +169,19 @@ const market = async (a) => (await api('/onboarding/market', 'POST', a)).market
     moved.level);
   ok('and it says what to go and buy in the game', /buy a garage/i.test(moved.buyThis || ''),
     (moved.buyThis || '').slice(0, 90));
+
+  // The carrier's HQ is marked reached at hire, because normally that is the yard you are standing in.
+  // Pick a different one and you were never in the HQ at all — but it stayed on the discovered list and
+  // came back as a yard to open, dated the morning of day one. Reported from play: "we've never been to
+  // Green Bay", on a Schneider career domiciled in Phoenix.
+  const reached = (S.views.reached || []).map((r) => r.city);
+  const offers = (S.views.garageOpportunities || []).map((o) => o.city);
+  console.log(`  ..    reached: ${reached.join(', ') || '(none)'} | offered: ${offers.join(', ') || '(none)'}`);
+  ok('the yard actually chosen counts as reached', reached.includes(pick.c), pick.c);
+  ok('and the headquarters nobody drove to does not',
+    !reached.includes(hqBefore), `${hqBefore} ${reached.includes(hqBefore) ? 'still listed' : 'gone'}`);
+  ok('so it is not offered as a garage to open either',
+    !offers.includes(hqBefore), offers.join(', ') || 'nothing offered');
 
   head('8. Somewhere they do not run is refused');
   threw = '';

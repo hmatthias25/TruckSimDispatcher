@@ -101,8 +101,9 @@ public static class Carriers
     {
         if (string.Equals(size, "Regional", StringComparison.OrdinalIgnoreCase))
             return (new List<string> { "short", "medium" },
-                "Regional carrier — short and medium runs. They do not run the long stuff, so do not " +
-                "take this one expecting to see the whole map.",
+                "Regional carrier — you work a box around your home yard, about 300 miles out on " +
+                "medium and 150 on short. It is not a limit on how long any one load is; it is where " +
+                "they will let the truck end up. Do not take this one expecting to see the whole map.",
                 // Medium rather than short: a regional carrier's bread and butter is the day's run out
                 // and back, not town work.
                 "medium");

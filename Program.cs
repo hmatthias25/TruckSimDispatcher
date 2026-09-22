@@ -1760,6 +1760,16 @@ app.MapPost("/api/career/domicile", (DomicileRequest req) => Results.Ok(store.Mu
     var home = s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters) ?? s.Company.Terminals.FirstOrDefault();
     if (home == null) throw new InvalidOperationException("No yard on the books to move.");
 
+    // The city we are moving OFF was marked reached at hire, because being hired at a carrier normally
+    // means standing in their headquarters. Choosing a different yard says you never were: the truck
+    // starts where you are based. Leaving it behind offered a garage in a city the driver had not
+    // driven to and dated it the morning of day one — reported from play at a Schneider career
+    // domiciled in Phoenix, being told it could open a yard in Green Bay.
+    //
+    // Forget refuses where anything else evidences the city, so this only ever clears the seeding.
+    var leaving = (home.City ?? "").Trim();
+    var leavingState = (home.State ?? "").Trim();
+
     var level = Carriers.HqLevelFor(Carriers.SizeOf(s.Company.Code));
     home.City = city;
     home.State = state;
@@ -1772,11 +1782,26 @@ app.MapPost("/api/career/domicile", (DomicileRequest req) => Results.Ok(store.Mu
 
     // You are standing in it, so it counts as reached — same rule as being hired at the HQ.
     DiscoveryService.Note(s, city, state, s.Status.GameTime);
-    DiscoveryService.SyncOwnership(s);
     s.Status.LocationCity = city;
     s.Status.LocationState = state;
     s.Status.LocationKind = "Terminal";
     s.Status.LocationDetail = $"{s.Company.Name} yard";
+
+    // The boxes based at that yard move with it. A trailer records where it is as text rather than by
+    // yard id, so mutating the terminal left T501 sitting in the city the company no longer has a yard
+    // in — the driver in one place and their trailer in another, on day one, having driven nowhere.
+    if (!leaving.Equals(city, StringComparison.OrdinalIgnoreCase))
+    {
+        foreach (var tr in s.Trailers.Where(t =>
+                     (t.CurrentLocation ?? "").Trim()
+                         .Equals($"{leaving}, {leavingState}", StringComparison.OrdinalIgnoreCase)))
+            tr.CurrentLocation = $"{city}, {state}";
+
+        // Only once nothing is left there: the yard, the truck and the boxes have all moved, so
+        // anything Forget still finds is real history and the city stays.
+        DiscoveryService.Forget(s, leaving, leavingState);
+    }
+    DiscoveryService.SyncOwnership(s);
 
     store.Log(s, "career", $"Domiciled at {city}, {state} — a {level.ToLowerInvariant()} yard.");
     return new

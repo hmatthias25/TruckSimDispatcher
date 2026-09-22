@@ -826,13 +826,30 @@ public static class HomeTime
 
         var deadBand = DeadBandMiles(st);
 
+        // Finishing AT the yard is not the same as finishing near it.
+        //
+        // The reward inside the radius was flat, which is the argument made against a flat PENALTY in the
+        // branch below — only that one got fixed. A load that ends at your own gate is your home time
+        // taken: you park, you are home, there is nothing else to run. A load that ends 180 miles away is
+        // a good position and still another 180 miles. Scoring them identically is how a yard run came to
+        // lose by four hundredths to freight that paid better and left the driver a day short of home.
+        //
+        // Additive rather than a taper: nothing that was close to home scores lower than it did, the
+        // load that is actually home just stops being lumped in with them.
         if (destMiles.Value <= radius)
         {
-            var pts = 1.0 * w * urgency;
+            var atYard = destMiles.Value <= AtYardMiles;
+            var pts = (atYard ? 1.35 : 1.0) * w * urgency;
             return (pts,
-                $"Finishes {destMiles.Value:N0} mi from {st.TerminalLabel}, inside our {radius:N0} mi home radius" +
-                $" and home time is {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}: {pts:+0.00;-0.00}",
-                $"Gets you home — {destMiles.Value:N0} mi from {st.TerminalLabel}.", null);
+                atYard
+                    ? $"Finishes AT {st.TerminalLabel} with home time " +
+                      $"{(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")} — that is your home " +
+                      $"time taken, not a short run from it: {pts:+0.00;-0.00}"
+                    : $"Finishes {destMiles.Value:N0} mi from {st.TerminalLabel}, inside our {radius:N0} mi home radius" +
+                      $" and home time is {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}: {pts:+0.00;-0.00}",
+                atYard
+                    ? $"Takes you home — this one finishes at {st.TerminalLabel} itself."
+                    : $"Gets you home — {destMiles.Value:N0} mi from {st.TerminalLabel}.", null);
         }
 
         if (closes > deadBand)

@@ -1641,9 +1641,36 @@ public static class DispatchEngine
         score += fitPts;
         if (fit > 0) detail.Add($"{division} matches your division preference: {fitPts:+0.00;-0.00}");
 
-        var utilPts = TripLengthFit(app?.PreferredTripLength, load.LoadedMiles) * w.UtilizationFit;
+        // Where the load LEAVES you, against the box this carrier runs you in — not how long the load
+        // is. See TripLengthFit: three regional-length runs in a row can finish a thousand miles out.
+        var runKey = app?.PreferredTripLength ?? "medium";
+        var runRadius = OperatingRadiusMiles(runKey);
+        var yard = HomeTime.HomeTerminal(s);
+        var destFromHome = yard == null
+            ? null
+            : Geo.MilesBetween(load.DestCity, load.DestState, yard.City, yard.State);
+
+        var utilPts = TripLengthFit(runKey, destFromHome, load.LoadedMiles) * w.UtilizationFit;
         score += utilPts;
-        detail.Add($"{load.LoadedMiles:0} loaded miles vs your {app?.PreferredTripLength ?? "medium"} length preference: {utilPts:+0.00;-0.00}");
+        if (runRadius > 0 && destFromHome is { } outMiles)
+        {
+            detail.Add($"Finishes {outMiles:0} mi from {Place(yard!.City, yard.State)} against the "
+                       + $"{runRadius:0} mi {runKey} box they run you in: {utilPts:+0.00;-0.00}");
+            if (outMiles > runRadius * 1.25)
+                e.Cons.Add($"This finishes {outMiles:0} miles from your yard. {s.Company.Name} runs you "
+                           + $"{runKey} — about {runRadius:0} miles out — so taking it puts you somewhere "
+                           + "they do not normally have freight to bring you back from.");
+        }
+        else if (runRadius > 0)
+        {
+            detail.Add($"{Place(load.DestCity, load.DestState)} is not in our geography table, so I "
+                       + $"cannot tell whether it stays inside your {runKey} box: {utilPts:+0.00;-0.00}");
+        }
+        else
+        {
+            detail.Add($"{load.LoadedMiles:0} loaded miles against over-the-road work, which has no "
+                       + $"radius: {utilPts:+0.00;-0.00}");
+        }
 
         // Home time. Silent until it is close, then it starts outweighing a better rate the wrong way.
         var homeStatus = HomeTime.Status(s);
@@ -1986,14 +2013,66 @@ public static class DispatchEngine
         var t => t
     };
 
-    private static double TripLengthFit(string? pref, double loadedMiles) => (pref ?? "medium") switch
+    /// <summary>
+    /// How far from the home terminal this run length lets you operate. 0 means no limit.
+    ///
+    /// <para><b>A run length is a radius, not a load length.</b> This was scored on the miles of the
+    /// load in front of you, which measures the wrong thing entirely: three consecutive 300-mile loads
+    /// are three perfectly regional runs that finish nine hundred miles from your yard. Reported from
+    /// play in exactly that shape — "I drove 400 miles to Wichita and now will drive 400 more miles to
+    /// California" — and then: "so regional is truly 'only 300 miles from home'". Yes. That is what the
+    /// word means, and it is the promise the carrier made about where you sleep.</para>
+    /// </summary>
+    public static double OperatingRadiusMiles(string? pref) => (pref ?? "medium") switch
     {
-        "short" => loadedMiles <= 250 ? 1 : loadedMiles <= 500 ? 0.3 : -0.6,
-        "medium" => loadedMiles is > 200 and <= 700 ? 1 : loadedMiles <= 200 ? 0.1 : 0.2,
-        "long" => loadedMiles > 600 ? 1 : loadedMiles > 350 ? 0.4 : -0.3,
-        "otr" => loadedMiles > 800 ? 1 : loadedMiles > 500 ? 0.6 : -0.2,
-        _ => 0
+        "short" => 150,
+        "medium" => 300,
+        "long" => 600,
+        _ => 0,
     };
+
+    /// <summary>
+    /// Whether finishing this load leaves the truck inside the box the carrier runs you in.
+    ///
+    /// <para>Measured on the DESTINATION's distance from the home terminal. The load's own length still
+    /// counts for something at the over-the-road end, where a string of short hops is bad use of a
+    /// driver who is out for weeks — but it is not what decides a regional seat.</para>
+    ///
+    /// <para>Scored rather than refused. A driver who is already out of position needs to be able to
+    /// take the load that brings them back, and a hard gate on the radius would strand exactly the
+    /// person it was meant to protect. The penalty is sharp enough to lose to anything sensible, and
+    /// the reason is said on the card.</para>
+    /// </summary>
+    private static double TripLengthFit(string? pref, double? destMilesFromHome, double loadedMiles)
+    {
+        var key = pref ?? "medium";
+
+        // Over-the-road has no box. What it has is a floor: being sent 60 miles down the road is not
+        // the job, and it was not what the driver signed for.
+        if (OperatingRadiusMiles(key) <= 0)
+            return loadedMiles > 800 ? 1 : loadedMiles > 500 ? 0.6 : -0.2;
+
+        // Nothing in the geography table to measure against. Absence of data is not evidence that the
+        // load is fine, but it is not evidence that it is wrong either — so it scores neutral and the
+        // rate and the clocks decide, rather than the app inventing a distance.
+        if (destMilesFromHome is not { } miles) return 0;
+
+        var radius = OperatingRadiusMiles(key);
+
+        // Inside the box, but graded, and continuous with the bands below it.
+        //
+        // A flat "inside is inside" plateau says a load finishing at your own terminal and one finishing
+        // 260 miles out are equally good positions. They are not: your yard is where the freight, the
+        // fuel, the shop and your bed are, and the edge of the box is the boundary of where this carrier
+        // will let the truck be — from there, half of what comes up next is somewhere they will not send
+        // you. So it runs from 1.0 at the yard down to 0.25 at the edge, landing just above the 0.2 for
+        // being slightly outside it rather than dropping through it.
+        if (miles <= radius) return 1.0 - 0.75 * (miles / radius);
+
+        // Just outside is a stretch, not a breach: yards sit near the edge of their own market.
+        if (miles <= radius * 1.25) return 0.2;
+        return miles <= radius * 2 ? -0.8 : -1.5;
+    }
 
     private static string BuildRationale(AppState s, LoadEvaluation pick, LoadEvaluation? runnerUp, bool resetWatch)
     {
