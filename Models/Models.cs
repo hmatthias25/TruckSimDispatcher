@@ -57,6 +57,16 @@ public class AppState
     public const int Current = 26;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
+
+    /// <summary>
+    /// What the player calls this career, where they have called it anything.
+    ///
+    /// Blank on every career that existed before there was more than one, and blank is fine — the list
+    /// falls back to the company and the driver, which is what somebody would have called it anyway.
+    /// Only filled in when a career is created with a name or renamed.
+    /// </summary>
+    public string CareerName { get; set; } = "";
+
     public bool Onboarded { get; set; }
     public string CreatedUtc { get; set; } = DateTime.UtcNow.ToString("o");
 

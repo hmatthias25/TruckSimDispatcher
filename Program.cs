@@ -2186,6 +2186,48 @@ app.MapPost("/api/data/adopt", (AdoptRequest r) =>
     store.AdoptFile(r.Path);
     return Results.Ok(Snapshot());
 });
+
+// ---------------------------------------------------------------- careers
+//
+// More than one career, switched from inside the app. The one being played stays at career.json and the
+// idle ones sit in data/careers, so nothing here changes where a live career lives — see StateStore.
+//
+// Every one of these returns a full snapshot, because switching career changes literally every screen
+// and a partial answer would leave the browser showing one career's numbers under another's name.
+
+app.MapGet("/api/careers", () => Results.Ok(new { careers = store.ListCareers() }));
+
+// Switch first, then list. An anonymous object initialises its members in source order, so listing on
+// the same line as the switch listed the careers as they were BEFORE it — the browser got the new
+// career's numbers under the old career's name, which is the one thing a switcher must never do.
+app.MapPost("/api/careers/switch", (CareerSwitchRequest r) =>
+{
+    var switched = Snapshot(store.SwitchTo(r.Slug));
+    return Results.Ok(new { careers = store.ListCareers(), snapshot = switched });
+});
+
+// Same ordering trap as the switch above: create, then list.
+app.MapPost("/api/careers/new", (CareerNewRequest r) =>
+{
+    var created = Snapshot(store.CreateCareer(r.Name, r.InheritSettings ?? true));
+    return Results.Ok(new { careers = store.ListCareers(), snapshot = created });
+});
+
+app.MapPost("/api/careers/rename", (CareerRenameRequest r) =>
+{
+    store.RenameCareer(r.Slug, r.Name);
+    return Results.Ok(new { careers = store.ListCareers(), snapshot = Snapshot() });
+});
+
+// Typed confirmation, like the reset. This is the only button in the app that throws a career away, and
+// a mis-click on a list of similar-looking names is exactly how somebody loses the wrong one.
+app.MapPost("/api/careers/delete", (CareerDeleteRequest r) =>
+{
+    if (r.Confirm != "DELETE")
+        return Results.BadRequest(new { error = "Type DELETE to confirm. A copy is kept in backups either way." });
+    var kept = store.DeleteCareer(r.Slug);
+    return Results.Ok(new { keptAt = kept, careers = store.ListCareers(), snapshot = Snapshot() });
+});
 app.MapPost("/api/backups/snapshot", (NoteRequest r) => Results.Ok(new { path = store.Snapshot(r.Notes ?? "manual") }));
 app.MapPost("/api/backups/restore", (RestoreRequest r) => { store.RestoreBackup(r.File); return Results.Ok(Snapshot()); });
 app.MapGet("/api/export", () => Results.Text(store.ExportJson(), "application/json"));
@@ -2244,6 +2286,11 @@ object Snapshot(AppState? given = null)
         version = Build.Version,
         versionDisplay = Build.Display,
         onboarded = s.Onboarded,
+        // What this career is called, for the header. The snapshot is a shaped object rather than the
+        // raw state, so a new field on AppState does not reach the browser until it is named here —
+        // which is how the switcher came to show the carrier's name over a career the player had
+        // called something else.
+        careerName = s.CareerName,
         // Diagnostic: the shape this career file is in. 2 means day numbers match the game.
         schemaVersion = s.SchemaVersion,
         company = s.Company,
@@ -2714,6 +2761,12 @@ record DedicatedRequest(bool OnDedicated, string? Account);
 record FacilityTimeRequest(string TrailerType, double LoadingHours, double UnloadingHours, bool Manual);
 record StockRequest(string TerminalId, int Count, bool AlreadyBought, bool AddTrailers);
 record AdoptRequest(string Path);
+record CareerSwitchRequest(string Slug);
+/// <summary>InheritSettings defaults to true where it is not sent — see StateStore.CreateCareer.</summary>
+record CareerNewRequest(string? Name, bool? InheritSettings);
+/// <summary>A blank slug is the career being played; anything else names one sitting idle.</summary>
+record CareerRenameRequest(string? Slug, string Name);
+record CareerDeleteRequest(string Slug, string Confirm);
 record HomeTimeArrangementRequest(string Preference);
 record TripLengthRequest(string? Preference);
 record TrueUpRequest(decimal? AtsBalance);

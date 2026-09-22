@@ -406,6 +406,56 @@ function copyText(text, label = 'Copied to clipboard.') {
   }
 }
 
+/* ---- careers.
+   The list is fetched rather than carried on every snapshot: describing the idle ones means reading
+   their files, and doing that on every mutation would be a disk read per button press for a list that
+   changes about twice a career. */
+let CAREERS = [];
+
+/** What to call a career, matching StateStore.LabelFor so the two never disagree on screen. */
+function careerLabel(s) {
+  return (s.careerName || '').trim() || (s.company?.name || '').trim()
+    || (s.driver?.name || '').trim() || (s.onboarded ? 'Unnamed career' : 'New career');
+}
+
+async function loadCareers() {
+  try { CAREERS = (await api('/careers')).careers || []; }
+  catch { CAREERS = []; }          // never let this stop the app rendering
+  return CAREERS;
+}
+
+/** The switcher. Current first, then the idle ones, then the two things you can do. */
+function careersModal() {
+  const row = (c) => `
+    <div class="careerrow${c.current ? ' is-current' : ''}">
+      <div>
+        <div><b>${esc(c.label)}</b>${c.current ? ' <span class="badge ok">playing</span>' : ''}</div>
+        <div class="sub">${c.onboarded
+          ? `${esc(c.company || 'no carrier')}${c.driver ? ' · ' + esc(c.driver) : ''} · day ${num(c.day)} · ${num(c.trips)} load(s) delivered`
+          : 'not started — no carrier yet'}</div>
+      </div>
+      <div class="row-actions">
+        ${c.current ? '' : `<button class="btn tiny" data-act="career-switch" data-slug="${esc(c.slug)}">Switch to this</button>`}
+        <button class="btn tiny ghost" data-act="career-rename" data-slug="${esc(c.slug)}" data-label="${esc(c.label)}">Rename</button>
+        ${c.current ? '' : `<button class="btn tiny danger" data-act="career-delete" data-slug="${esc(c.slug)}" data-label="${esc(c.label)}">Delete</button>`}
+      </div>
+    </div>`;
+
+  modal(`<div class="panel-head"><h2>Careers</h2>
+      <span class="sub">${CAREERS.length} on file</span>
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+    <div class="careerlist">${CAREERS.map(row).join('')}</div>
+    <p class="hint">Switching saves the career you are on first and loads the other one straight away —
+      no restart. The one you are playing stays in <code>career.json</code> exactly where it has always
+      been; the rest sit in <code>data/careers</code>.</p>
+    <div class="row-actions">
+      <button class="btn" data-act="career-new">Start another career</button>
+    </div>
+    <p class="hint">A new career keeps your settings — HOS rules, fuel and economy, the regions you run,
+      your API key. Those describe your game, not the career that just ended.</p>`);
+}
+
 function modal(html) { $('modal-body').innerHTML = html; $('modal').classList.remove('hidden'); }
 function closeModal() { $('modal').classList.add('hidden'); $('modal-body').innerHTML = ''; }
 
@@ -414,6 +464,8 @@ function closeModal() { $('modal').classList.add('hidden'); $('modal-body').inne
   try {
     const data = await api('/bootstrap');
     S = data;
+    // Before the first render, because the header decides whether to show the switcher off this.
+    await loadCareers();
     $('boot').classList.add('hidden');
     if (!S.onboarded) {
       $('onboarding').classList.remove('hidden');
@@ -673,6 +725,8 @@ document.addEventListener('click', async (ev) => {
   const t = ev.target.closest('[id],[data-act]');
   if (!t) return;
 
+  if (t.id === 'tb-careers') { await loadCareers(); return careersModal(); }
+
   if (t.id === 'btn-market') {
     const app = readApplication();
     if (!app.driverName) return toast('Put a name on the application first.', 'bad');
@@ -853,7 +907,10 @@ function render() {
   PRIV = v.privileges || { summary: '' };
 
   $('tb-code').textContent = S.company.code || 'CO';
-  $('tb-company').textContent = S.company.name || 'Carrier';
+  $('tb-company').textContent = CAREERS.length > 1 ? careerLabel(S) : (S.company.name || 'Carrier');
+  // Only worth a control when there is something to switch to. One career and the chevron would be a
+  // question with one answer.
+  $('tb-careers').classList.toggle('hidden', CAREERS.length < 2);
   $('tb-terminal').textContent = `${S.company.terminalCity}, ${S.company.terminalState} · ${S.driver.rankTitle}`;
 
   // Name the tab after the carrier and the current view — a browser tab parked on a second
@@ -6024,11 +6081,17 @@ function viewSettings() {
   <div class="panel">
     <div class="panel-head"><h2>Data</h2><span class="sub">Everything lives in one JSON file next to the exe.</span></div>
     <div class="row-actions">
+      <button class="btn" data-act="careers">Careers…</button>
       <button class="btn" data-act="snapshot">Take a snapshot</button>
       <button class="btn" data-act="export">Download career file</button>
       <button class="btn" data-act="list-backups">List backups</button>
-      <button class="btn danger" data-act="reset">Start a new career</button>
+      ${/* This said "Start a new career", which is now the name of the thing that does NOT destroy
+            anything — two buttons, opposite consequences, one label. Called what it does. */ ''}
+      <button class="btn danger" data-act="reset">Wipe this career and start over</button>
     </div>
+    <p class="hint"><b>Careers…</b> keeps what you have: it parks this career and picks up another, and
+      you can switch back whenever. <b>Wipe this career</b> is the other thing — it empties the one you
+      are on. Both snapshot first.</p>
     <div id="backup-list"></div>
   </div>`;
 }
@@ -7503,6 +7566,60 @@ async function handleAction(act, d, ev) {
     // Ticks boxes only. Nothing is saved until Save is pressed, the same as every other field on this
     // screen — a preset that wrote straight through would be the one control here that cannot be
     // reconsidered before it takes effect.
+    /* ---- careers */
+    case 'careers': return run(async () => { await loadCareers(); careersModal(); });
+
+    case 'career-switch': return run(async () => {
+      const r = await api('/careers/switch', 'POST', { slug: d.slug });
+      CAREERS = r.careers || CAREERS;
+      absorb(r);
+      closeModal();
+      // Anything held from the career we just left is about somebody else's truck.
+      DECISION = null;
+      TAB = 'dispatch';
+      location.hash = TAB;
+    }, 'Switched career.');
+
+    case 'career-new': {
+      const name = prompt('Name for the new career (the carrier gets picked when you apply):', '');
+      if (name === null) return;
+      return run(async () => {
+        const r = await api('/careers/new', 'POST', { name, inheritSettings: true });
+        CAREERS = r.careers || CAREERS;
+        absorb(r);
+        closeModal();
+        DECISION = null;
+        // A fresh career has nobody in it, so the only sensible next screen is the application.
+        location.reload();
+      });
+    }
+
+    case 'career-rename': {
+      const name = prompt('What should this career be called?', d.label || '');
+      if (name === null || !name.trim()) return;
+      return run(async () => {
+        const r = await api('/careers/rename', 'POST', { slug: d.slug, name });
+        CAREERS = r.careers || CAREERS;
+        absorb(r);
+        careersModal();
+      }, 'Renamed.');
+    }
+
+    case 'career-delete': {
+      // Typed confirmation, like the reset. This is the one button here that throws a career away, and a
+      // list of similar names is exactly how somebody deletes the wrong one.
+      const typed = prompt(`Delete "${d.label}"? A copy is kept in backups either way.\n\n`
+        + 'Type DELETE to confirm:', '');
+      if (typed === null) return;
+      return run(async () => {
+        const r = await api('/careers/delete', 'POST', { slug: d.slug, confirm: typed.trim().toUpperCase() });
+        CAREERS = r.careers || CAREERS;
+        absorb(r);
+        careersModal();
+        toast(`Deleted — a copy is at ${String(r.keptAt).split(/[\\/]/).pop()}`, 'ok');
+      });
+    }
+
     case 'mc-preset': {
       const us = new Set((S.views.mapCoverage || {}).usDefault || []);
       for (const box of document.querySelectorAll('input[data-mc]')) {

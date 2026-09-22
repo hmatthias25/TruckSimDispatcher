@@ -148,7 +148,14 @@
     <div class="brand">
       <div class="mark" id="tb-code">SFL</div>
       <div>
-        <div class="brand-name" id="tb-company">Carrier</div>
+        <!-- The career switcher lives on the company name because that is where you already look to see
+             who you drive for, and with two careers open the thing you most need at a glance is which
+             one is loaded. Hidden entirely until there is more than one, so a single-career player never
+             meets a control they have no use for. -->
+        <div class="brand-name">
+          <span id="tb-company">Carrier</span>
+          <button class="careerpick hidden" id="tb-careers" title="Switch career">▾</button>
+        </div>
         <div class="brand-sub" id="tb-terminal">terminal</div>
       </div>
     </div>

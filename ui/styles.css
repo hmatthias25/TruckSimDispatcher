@@ -154,6 +154,18 @@ legend{padding:0 6px;font:700 9.5px/1 var(--mono);letter-spacing:.14em;text-tran
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:0 12px}
 .span2{grid-column:1/-1}
 .hint{margin:2px 0 9px;font:11.5px/1.5 inherit;color:var(--ink3)}
+/* The career switcher on the company name, and the list it opens. */
+.careerpick{
+  margin-left:6px;padding:0 5px;border:1px solid var(--line);border-radius:4px;
+  background:transparent;color:var(--ink3);font:11px/1.5 var(--mono);cursor:pointer;vertical-align:middle;
+}
+.careerpick:hover{color:var(--ink);border-color:var(--amber)}
+.careerlist{display:flex;flex-direction:column;gap:8px;margin:4px 0 12px}
+.careerrow{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  border:1px solid var(--line);border-radius:6px;padding:9px 11px;
+}
+.careerrow.is-current{border-color:var(--amber)}
 /* Ninety-odd regions have to be scannable, so: fixed columns that fit an abbreviation and a name, and
    nothing that reflows into a single tall list until the screen genuinely cannot hold two. */
 .mapgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:1px 14px}

@@ -18,6 +18,20 @@ public class StateStore
     private readonly List<string> _searched;
     private AppState _state;
 
+    /// <summary>
+    /// Where careers that are not the one being played are kept.
+    ///
+    /// <para><b>The career being played stays at career.json.</b> That is deliberate and it is what keeps
+    /// this backward compatible: the resolver finds it, an older build finds it, and a player who copies
+    /// the folder to another machine still has their live career exactly where it has always been. Only
+    /// the ones sitting idle move into here.</para>
+    ///
+    /// <para>So there is no pointer file and nothing to keep in step. Whatever is in career.json is the
+    /// current career, by definition, and a slot file exists for a career precisely when it is not the
+    /// one loaded.</para>
+    /// </summary>
+    private string CareersDir => Path.Combine(_dataDir, "careers");
+
     public static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
@@ -134,6 +148,227 @@ public class StateStore
         var full = Path.GetFullPath(path);
         if (!File.Exists(full)) throw new FileNotFoundException("No career file at that path.", full);
         return ImportJson(File.ReadAllText(full));
+    }
+
+    // ---------------------------------------------------------------- careers
+
+    /// <summary>What to call a career that has never been given a name.</summary>
+    public static string LabelFor(AppState s)
+    {
+        if (!string.IsNullOrWhiteSpace(s.CareerName)) return s.CareerName.Trim();
+        if (!string.IsNullOrWhiteSpace(s.Company.Name)) return s.Company.Name.Trim();
+        if (!string.IsNullOrWhiteSpace(s.Driver.Name)) return s.Driver.Name.Trim();
+        return s.Onboarded ? "Unnamed career" : "New career";
+    }
+
+    /// <summary>
+    /// A filename for a career, derived from its name.
+    ///
+    /// Derived rather than stored because a slug that has drifted from the name it came from is a thing
+    /// nobody can debug from a directory listing. Uniqueness is settled by the caller against what is
+    /// already on disk.
+    /// </summary>
+    public static string SlugFor(string? label)
+    {
+        var cleaned = new string((label ?? "").Trim().ToLowerInvariant()
+            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray());
+        var parts = cleaned.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        var slug = string.Join("-", parts);
+        if (slug.Length > 48) slug = slug[..48].TrimEnd('-');
+        return slug.Length > 0 ? slug : "career";
+    }
+
+    private string SlotPath(string slug) =>
+        Path.Combine(CareersDir, Path.GetFileName(slug) + ".json");
+
+    private string FreeSlug(string label)
+    {
+        var baseSlug = SlugFor(label);
+        var slug = baseSlug;
+        for (var n = 2; File.Exists(SlotPath(slug)); n++) slug = $"{baseSlug}-{n}";
+        return slug;
+    }
+
+    /// <summary>One line about a career, read off its file without loading it as the live state.</summary>
+    public record CareerInfo(string Slug, string Label, bool Current, string Company, string Driver,
+                             string GameTime, int Day, int Trips, bool Onboarded, string SavedUtc);
+
+    private static CareerInfo Describe(AppState s, string slug, bool current, DateTime savedUtc) =>
+        new(slug, LabelFor(s), current, s.Company.Name ?? "", s.Driver.Name ?? "",
+            s.Status.GameTime ?? "", GameClock.DayOf(s.Status.GameTime) ?? 0,
+            s.Trips.Count(t => t.Status == "Delivered"), s.Onboarded,
+            savedUtc.ToString("o", CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// Every career on file, the live one first.
+    ///
+    /// Reads each idle slot to describe it, which is a handful of files and only when the list is asked
+    /// for. A slot that will not parse is skipped rather than thrown over: one unreadable career must not
+    /// make the others unreachable.
+    /// </summary>
+    public List<CareerInfo> ListCareers()
+    {
+        lock (_gate)
+        {
+            var all = new List<CareerInfo>
+            {
+                Describe(_state, "", true,
+                    File.Exists(_file) ? File.GetLastWriteTimeUtc(_file) : DateTime.UtcNow),
+            };
+
+            if (!Directory.Exists(CareersDir)) return all;
+
+            foreach (var f in new DirectoryInfo(CareersDir).GetFiles("*.json")
+                         .OrderByDescending(f => f.LastWriteTimeUtc))
+            {
+                try
+                {
+                    var loaded = JsonSerializer.Deserialize<AppState>(File.ReadAllText(f.FullName), Json);
+                    if (loaded == null) continue;
+                    all.Add(Describe(loaded, Path.GetFileNameWithoutExtension(f.Name), false, f.LastWriteTimeUtc));
+                }
+                catch
+                {
+                    // Unreadable, and saying so here would be noise on a list. It stays on disk and the
+                    // player can still see the file; what matters is that it cannot hide the others.
+                }
+            }
+
+            return all;
+        }
+    }
+
+    /// <summary>
+    /// Park the career being played and pick up another one.
+    ///
+    /// <para>Ordered so that no step can lose a career if the next one fails: the current career is
+    /// written to its slot and confirmed on disk BEFORE the incoming one is read, and the incoming slot
+    /// file is only removed once career.json holds it. A crash anywhere in the middle leaves both
+    /// careers on disk — worst case one of them appears twice, which the player can see and sort out,
+    /// rather than neither appearing at all.</para>
+    /// </summary>
+    public AppState SwitchTo(string slug)
+    {
+        lock (_gate)
+        {
+            var target = SlotPath(slug);
+            if (!File.Exists(target)) throw new FileNotFoundException("No career by that name.", slug);
+
+            var incomingText = File.ReadAllText(target);
+            var incoming = JsonSerializer.Deserialize<AppState>(incomingText, Json)
+                           ?? throw new InvalidOperationException(
+                               "That career file could not be read, so I am not going to swap it in.");
+
+            Park(_state);
+
+            Migrations.Apply(incoming);
+            _state = incoming;
+            Save();
+
+            // Only now, with the new career written where the app looks for it.
+            try { File.Delete(target); } catch { /* it will show as a duplicate; nothing is lost */ }
+            return _state;
+        }
+    }
+
+    /// <summary>
+    /// Start a fresh career, keeping the settings that describe the machine rather than the career.
+    ///
+    /// <para>HOS rules, the speed factor, fuel prices, the economy, the map you run and the API key are
+    /// all facts about this player's game install, and retyping them per career would be busywork with a
+    /// wrong answer waiting at the end of it. Same reasoning as Start over, which has always kept
+    /// them.</para>
+    /// </summary>
+    public AppState CreateCareer(string? name, bool inheritSettings = true)
+    {
+        lock (_gate)
+        {
+            var fresh = Fresh();
+            if (inheritSettings)
+            {
+                // Round-tripped rather than assigned, so the new career cannot end up sharing objects
+                // with the old one and writing through to it.
+                var carried = JsonSerializer.Deserialize<AppSettings>(
+                    JsonSerializer.Serialize(_state.Settings, Json), Json);
+                if (carried != null) fresh.Settings = carried;
+            }
+            fresh.CareerName = (name ?? "").Trim();
+
+            Park(_state);
+            _state = fresh;
+            Save();
+            return _state;
+        }
+    }
+
+    /// <summary>Rename a career — the live one when the slug is blank, otherwise one sitting idle.</summary>
+    public void RenameCareer(string? slug, string name)
+    {
+        var wanted = (name ?? "").Trim();
+        if (wanted.Length == 0) throw new InvalidOperationException("A career needs a name.");
+
+        lock (_gate)
+        {
+            if (string.IsNullOrWhiteSpace(slug))
+            {
+                _state.CareerName = wanted;
+                Save();
+                return;
+            }
+
+            var path = SlotPath(slug);
+            if (!File.Exists(path)) throw new FileNotFoundException("No career by that name.", slug);
+            var loaded = JsonSerializer.Deserialize<AppState>(File.ReadAllText(path), Json)
+                         ?? throw new InvalidOperationException("That career file could not be read.");
+            loaded.CareerName = wanted;
+
+            // Renamed in place. Moving the file to match the new name would break nothing, and would
+            // also mean a rename can fail halfway with the career under a filename nobody expects.
+            WriteAtomic(path, JsonSerializer.Serialize(loaded, Json));
+        }
+    }
+
+    /// <summary>
+    /// Delete an idle career. The live one is not deletable — Start over is that, and it says so.
+    ///
+    /// Snapshotted first, under its own name, because this is the one action here that is meant to
+    /// destroy something and "meant to" is not the same as "and I definitely picked the right one".
+    /// </summary>
+    public string DeleteCareer(string slug)
+    {
+        lock (_gate)
+        {
+            if (string.IsNullOrWhiteSpace(slug))
+                throw new InvalidOperationException(
+                    "That is the career you are playing. Switch to another one first, or use Start over.");
+
+            var path = SlotPath(slug);
+            if (!File.Exists(path)) throw new FileNotFoundException("No career by that name.", slug);
+
+            Directory.CreateDirectory(_backupDir);
+            var kept = Path.Combine(_backupDir,
+                $"deleted-career-{DateTime.Now:yyyyMMdd-HHmmss}-{Path.GetFileName(slug)}.json");
+            File.Copy(path, kept, true);
+            File.Delete(path);
+            return kept;
+        }
+    }
+
+    /// <summary>Write the given career out to a slot of its own. Caller holds the lock.</summary>
+    private void Park(AppState s)
+    {
+        Directory.CreateDirectory(CareersDir);
+        s.AppVersion = Build.Version;
+        var slug = FreeSlug(LabelFor(s));
+        WriteAtomic(SlotPath(slug), JsonSerializer.Serialize(s, Json));
+    }
+
+    private static void WriteAtomic(string path, string text)
+    {
+        var tmp = path + ".tmp";
+        File.WriteAllText(tmp, text);
+        if (File.Exists(path)) ReplaceWithRetry(tmp, path);
+        else File.Move(tmp, path);
     }
 
     private static bool IsWritable(string dir)

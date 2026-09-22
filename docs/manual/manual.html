@@ -137,7 +137,7 @@
 
 <!-- ============================================================ COVER -->
 <div class="page cover">
-  <div class="kicker">User manual &middot; v0.63 alpha</div>
+  <div class="kicker">User manual &middot; v0.64 alpha</div>
   <h1>TruckSim<br>Dispatcher</h1>
   <div class="rulebar"></div>
   <div class="sub">A dispatch office for American&nbsp;Truck&nbsp;Simulator.<br>
@@ -148,13 +148,13 @@
     <div><span>Runs on</span> Windows &middot; one portable .exe &middot; no install</div>
     <div><span>Needs</span> Nothing. No internet, no account, no runtime</div>
     <div><span>Your game</span> ATS, any DLC, mods welcome</div>
-    <div><span>This manual</span> Covers v0.63 alpha &middot; the build is shown in the app header</div>
+    <div><span>This manual</span> Covers v0.64 alpha &middot; the build is shown in the app header</div>
   </div>
 
   <div class="alphabox">
     <div class="ab-tag">Alpha</div>
     <div>
-      <b>This is v0.63 alpha and is not ready for release.</b>
+      <b>This is v0.64 alpha and is not ready for release.</b>
       It is being play-tested. Expect rough edges, expect things to change, and expect the occasional
       bug. Keep backups of your career file — Settings → Data will take one for you.
       Please report anything that looks wrong.
@@ -347,6 +347,16 @@
   <p>If the folder beside the exe is not writable — dropped into Program Files, a read-only share — it
     falls back to <code>%LOCALAPPDATA%\TruckSimDispatcher\data</code>. The console prints which file it
     opened every time it starts, so you are never guessing.</p>
+
+  <div class="rule">
+    <h4>More than one career</h4>
+    <p>Run as many as you like. The one you are playing stays in <code>career.json</code>; the others
+      sit in <code>data\careers</code>. Switch between them from the arrow beside the carrier name in
+      the header, or under <b>Settings &rarr; Data &rarr; Careers</b> — it parks the one you are on and
+      loads the other straight away, with no restart.</p>
+    <p>A new career keeps your settings: HOS rules, fuel and economy, the regions you run, your API key.
+      Those describe your game install rather than the career that just ended.</p>
+  </div>
 
   <div class="note">
     <h4>Every save is safe</h4>
@@ -3310,8 +3320,11 @@
   </div>
 
   <h3>Data</h3>
-  <p>Settings → Data will snapshot the career, download the file, list and restore backups, or start
-    over. Every save writes atomically and rotates a backup first.</p>
+  <p>Settings → Data snapshots the career, downloads it, lists and restores backups, manages your
+    careers, or wipes the one you are on. Every save is atomic and rotates a backup first.</p>
+
+  <p><b>Careers…</b> lists, switches, renames and deletes — you can always switch back (Section 2).
+    <b>Wipe this career and start over</b> empties the one you are playing. Both snapshot first.</p>
 
   <div class="rule">
     <h4>Starting over keeps your settings</h4>
@@ -3320,7 +3333,7 @@
       if that is genuinely what you want.</p>
   </div>
 
-  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.63 alpha</b>.</p>
+  <p>The build number is top-right of the header and in the footer; <b>Settings &rarr; Data</b> also names the build that last wrote your career file. This manual covers <b>v0.64 alpha</b>.</p>
 
   <h3>Updating without losing your career</h3>
   <p>Replace <code>TruckSimDispatcher.exe</code> in the folder you are already using and leave the
@@ -3328,11 +3341,9 @@
 
   <p>If you move the exe somewhere new, it looks for an existing career before opening a blank one:
     <code>TSD_DATA_DIR</code> if set, then beside the exe, then
-    <code>%LOCALAPPDATA%\TruckSimDispatcher\data</code>. A career found in any of those beats an empty
-    folder, and the console prints which file it opened.</p>
-
-  <p>Any career it finds elsewhere on the machine is listed under <b>Settings → Data → List backups</b>
-    with a button to load it — so an update never silently looks like a lost save.</p>
+    <code>%LOCALAPPDATA%\TruckSimDispatcher\data</code>. First one holding a career wins, and anything
+    found elsewhere is listed under <b>List backups</b> with a button to load it — so an update never
+    looks like a lost save.</p>
 
   <div class="pfoot"><span>22 &middot; Settings and data</span><span>60</span></div>
 </div>
