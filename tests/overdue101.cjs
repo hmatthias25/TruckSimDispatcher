@@ -354,6 +354,17 @@ const miles = async (a, b, c, d) =>
   // Every distance in the home-time file used to be an absolute tuned against a fortnight. So a weekly
   // driver seven days late — a driver who has blown their entire arrangement — got exactly the treatment
   // of a six-week driver seven days late, who has blown a sixth of it.
+  // Set on the file rather than asked for at hire. Carriers now cap the arrangement they will sign —
+  // Prime is a three-star home-time outfit and will not put anybody on weekly — and this section is
+  // about the ARITHMETIC scaling with the interval, not about who offers what. Hiring somewhere that
+  // does offer weekly would move the home terminal and change every distance being compared.
+  const setArrangement = async (key, days) => {
+    const st = await api('/export');
+    st.application.homeTimePreference = key;
+    st.driver.homeTimeIntervalDays = days;
+    return un(await api('/import', 'POST', st));
+  };
+
   const shape = {};
   for (const [key, interval] of [['weekly', 7], ['biweekly', 14], ['sixweeks', 42]]) {
     await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
@@ -361,6 +372,7 @@ const miles = async (a, b, c, d) =>
     await api('/onboarding/market', 'POST', a);
     S = un(await api('/onboarding/hire', 'POST', { application: a, force: true, gameTime: iso(1), code: 'PRI' }));
     await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+    await setArrangement(key, interval);
 
     // Three days late, whatever the arrangement.
     await place('Tulsa', 'OK', 1 + interval + 3);
@@ -372,6 +384,7 @@ const miles = async (a, b, c, d) =>
     await api('/onboarding/market', 'POST', a);
     S = un(await api('/onboarding/hire', 'POST', { application: a, force: true, gameTime: iso(1), code: 'PRI' }));
     await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+    await setArrangement(key, interval);
     // Well inside the due-soon window, not on its edge: at 0.78 a weekly driver lands just SHORT of
     // the 0.75 threshold once the day is rounded, and the ceiling comes back null.
     await place('Tulsa', 'OK', Math.round(1 + interval * 0.85));

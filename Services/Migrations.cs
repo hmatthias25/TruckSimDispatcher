@@ -2257,6 +2257,14 @@ public static class Migrations
         });
     }
 
+    /// <summary>Tractor slots a yard tier holds, without having to build one to find out.</summary>
+    public static int CapacityOf(string level) => level switch
+    {
+        "Large" => 5,
+        "Medium" => 3,
+        _ => 1,
+    };
+
     public static void ApplyLevel(Terminal t, string level)
     {
         t.Level = level;

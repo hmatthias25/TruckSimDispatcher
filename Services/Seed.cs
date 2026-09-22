@@ -182,30 +182,46 @@ public static class Seed
     private record TruckSpec(string Make, string Model, int Year, string Engine, int Hp,
         string Trans, string TransType, string Cab, int Governed, double Fuel, double Mpg, int Tier);
 
+    // ---- everything below is spec-ed off what ATS ACTUALLY SELLS.
+    //
+    // It was not. The list named a Freightliner Coronado, a Columbia, a Kenworth W900L, a T800 and an
+    // International ProStar — none of which are in the game — and engines and gearboxes to match:
+    // "Volvo D13TC", "MaxxForce 13", "Eaton Fuller 18-spd manual". A player told to go and buy one found
+    // nothing like it at the dealer. Reported from play in those words.
+    //
+    // So: seven brands, twenty-odd models, and engine and transmission strings copied from the dealer
+    // rather than from a real-world brochure. ATS sells Eaton UltraShift and Allison and the factory
+    // AMTs; it does not sell anything called an Eaton Fuller manual, whatever you then drive it as. The
+    // "manual" list below is the long-nose classics with the big-stack gearboxes, which is what somebody
+    // asking for a manual wants — the transmission NAME is still the one on the dealer screen.
+    //
+    // Model years follow the game's own variants: Cascadia 2019 and 2024, T680 2014 and 2022, VNL 2014,
+    // 2018 and 2025. Where a year here is between those, it is the same dealer truck bought used.
+
     private static readonly TruckSpec[] AmtSpecs =
     {
-        new("Volvo",        "VNL 860",      2023, "Volvo D13TC",  500, "Volvo I-Shift 12-spd AMT", "automatic", "Sleeper", 68, 250, 7.3, 5),
-        new("Freightliner", "Cascadia 126", 2022, "Detroit DD15", 505, "Detroit DT12 12-spd AMT", "automatic", "Sleeper", 65, 240, 7.1, 4),
-        new("Kenworth",     "T680",         2021, "PACCAR MX-13", 510, "PACCAR TX-12 12-spd AMT", "automatic", "Sleeper", 65, 240, 6.9, 4),
-        new("Mack",         "Anthem",       2021, "Mack MP8",     505, "Mack mDRIVE 12-spd AMT", "automatic", "Sleeper", 65, 240, 6.7, 3),
-        new("International","LT625",        2020, "Cummins X15",  500, "Eaton Endurant 12-spd AMT", "automatic", "Sleeper", 65, 230, 6.8, 3),
-        new("Freightliner", "Cascadia 125", 2017, "Detroit DD15", 455, "Detroit DT12 12-spd AMT", "automatic", "Sleeper", 63, 230, 6.4, 2),
-        new("International","ProStar",      2016, "Cummins ISX15",450, "Eaton UltraShift 10-spd AMT", "automatic", "Sleeper", 62, 200, 6.1, 2),
-        new("Freightliner", "Cascadia",     2013, "Detroit DD13", 410, "Eaton UltraShift 10-spd AMT", "automatic", "Sleeper", 62, 180, 5.8, 1),
-        new("International","ProStar",      2012, "MaxxForce 13", 430, "Eaton UltraShift 10-spd AMT", "automatic", "Day Cab", 62, 150, 5.5, 1)
+        new("Volvo",        "VNL",      2023, "Volvo D13 500",       500, "I-Shift ATO2612G 12-spd", "automatic", "Sleeper", 68, 250, 7.3, 5),
+        new("Freightliner", "Cascadia", 2022, "Detroit DD15 505",    505, "Detroit DT12-OA 12-spd", "automatic", "Sleeper", 65, 240, 7.1, 4),
+        new("Kenworth",     "T680",     2022, "Paccar MX-13 510",    510, "PACCAR TX-12 12-spd", "automatic", "Sleeper", 65, 240, 6.9, 4),
+        new("Mack",         "Anthem",   2021, "Mack MP8 505C",       505, "mDRIVE ATO2612F 12-spd", "automatic", "Sleeper", 65, 240, 6.7, 3),
+        new("International","LT",       2020, "Cummins X15 500",     500, "Eaton Endurant 12-spd", "automatic", "Sleeper", 65, 230, 6.8, 3),
+        new("Freightliner", "Cascadia", 2019, "Detroit DD15 455",    455, "Detroit DT12-DA 12-spd", "automatic", "Sleeper", 63, 230, 6.4, 2),
+        new("International","LT",       2018, "International A26 450", 450, "Eaton Advantage 10-spd", "automatic", "Sleeper", 62, 200, 6.1, 2),
+        new("Volvo",        "VNL",      2016, "Volvo D13 425",       425, "I-Shift AT2612G 12-spd", "automatic", "Sleeper", 62, 180, 5.8, 1),
+        new("Kenworth",     "T680",     2014, "Paccar MX-13 455",    455, "Eaton UltraShift FM-15E310B-LAS 10-spd", "automatic", "Day Cab", 62, 150, 5.5, 1)
     };
 
     private static readonly TruckSpec[] ManualSpecs =
     {
-        new("Peterbilt", "389",         2023, "Cummins X15",   605, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 70, 300, 5.9, 5),
-        new("Peterbilt", "579",         2021, "Cummins X15",   500, "Eaton Fuller 13-spd manual", "manual", "Sleeper", 65, 240, 6.6, 4),
-        new("Western Star", "49X",      2022, "Detroit DD16",  600, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 65, 280, 5.6, 4),
-        new("Kenworth",  "W900L",       2019, "Cummins X15",   565, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 68, 300, 5.9, 3),
-        new("Peterbilt", "389",         2018, "Cummins X15",   605, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 70, 300, 5.6, 3),
-        new("Freightliner", "Coronado", 2017, "Detroit DD15",  505, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 65, 250, 6.0, 2),
-        new("Kenworth",  "T800",        2015, "Cummins ISX15", 485, "Eaton Fuller 13-spd manual", "manual", "Sleeper", 63, 240, 5.5, 2),
-        new("Freightliner", "Columbia", 2012, "Detroit DD15",  455, "Eaton Fuller 10-spd manual", "manual", "Sleeper", 62, 200, 5.3, 1),
-        new("International","9900i",    2011, "Cummins ISX",   430, "Eaton Fuller 10-spd manual", "manual", "Day Cab", 62, 180, 5.1, 1)
+        new("Peterbilt", "389",        2023, "Cummins ISX15 600",   600, "Eaton UltraShift FO-22E318B-VXP 18-spd", "manual", "Sleeper", 70, 300, 5.9, 5),
+        new("Peterbilt", "579",        2021, "Cummins ISX15 550",   550, "Eaton UltraShift FO-20E313A-MHP 13-spd", "manual", "Sleeper", 65, 240, 6.6, 4),
+        new("Western Star", "49X",     2022, "Detroit DD16 600",    600, "Eaton UltraShift FO-22E318B-VXP 18-spd", "manual", "Sleeper", 65, 280, 5.6, 4),
+        new("Kenworth",  "W900",       2019, "Cummins ISX15 550",   550, "Eaton UltraShift FO-22E318B-VXP 18-spd", "manual", "Sleeper", 68, 300, 5.9, 3),
+        new("Peterbilt", "389",        2018, "Caterpillar C15 550", 550, "Eaton UltraShift FO-22E318B-VXP 18-spd", "manual", "Sleeper", 70, 300, 5.6, 3),
+        new("Western Star", "5700XE",  2017, "Detroit DD15 505",    505, "Eaton UltraShift FO-20E313A-MHP 13-spd", "manual", "Sleeper", 65, 250, 6.0, 2),
+        new("Kenworth",  "W900",       2015, "Paccar MX-13 510",    510, "Eaton UltraShift FO-20E313A-MHP 13-spd", "manual", "Sleeper", 63, 240, 5.5, 2),
+        new("Mack",      "Pinnacle",   2014, "Mack MP8 445C",       445, "Eaton UltraShift FM-15E310B-LAS 10-spd", "manual", "Sleeper", 62, 200, 5.3, 1),
+        new("International","9900i",   2012, "Cummins ISX15 450",   450, "Eaton UltraShift FM-15E310B-LAS 10-spd", "manual", "Day Cab", 62, 180, 5.1, 1)
     };
 
     /// <summary>
@@ -221,16 +237,18 @@ public static class Seed
     private static readonly TruckSpec[] ShowcaseSpecs =
     {
         // The long noses. Nothing else on this list turns a head in a truck stop.
-        new("Peterbilt",    "389 Pride & Class", 2024, "Cummins X15",   605, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 70, 300, 5.7, 5),
-        new("Kenworth",     "W900L Studio",      2024, "Cummins X15",   605, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 70, 300, 5.7, 5),
-        new("Western Star", "49X",               2024, "Detroit DD16",  600, "Eaton Fuller 18-spd manual", "manual", "Sleeper", 68, 300, 5.8, 5),
+        // Trim names are gone: ATS sells a "389", not a "389 Pride & Class", and being sent to the
+        // dealer for a truck that is not on the screen is the whole fault this list had.
+        new("Peterbilt",    "389",    2024, "Caterpillar C15 625 King of the Hill", 625, "Eaton UltraShift FO-22E318B-VXP 18-spd", "manual", "Sleeper", 70, 300, 5.7, 5),
+        new("Kenworth",     "W990",   2024, "Cummins ISX15 600",  600, "Eaton UltraShift FO-22E318B-VXP 18-spd", "manual", "Sleeper", 70, 300, 5.7, 5),
+        new("Western Star", "57X",    2024, "Detroit DD16 600",   600, "Eaton UltraShift FO-22E318B-VXP 18-spd", "manual", "Sleeper", 68, 300, 5.8, 5),
 
         // The modern flagships, for somebody who would rather have the quiet cab and the fuel.
-        new("Volvo",        "VNL 860 Globetrotter", 2024, "Volvo D13TC", 500, "Volvo I-Shift 14-spd AMT", "automatic", "Sleeper", 70, 300, 7.6, 5),
-        new("Mack",         "Anthem 70in Stand-Up", 2024, "Mack MP8HE",  505, "Mack mDRIVE HD 14-spd AMT", "automatic", "Sleeper", 70, 280, 7.2, 5),
-        new("Peterbilt",    "579 UltraLoft",        2024, "PACCAR MX-13", 510, "PACCAR TX-12 Pro 12-spd AMT", "automatic", "Sleeper", 70, 280, 7.4, 5),
-        new("Kenworth",     "T680 Next Gen",        2024, "PACCAR MX-13", 510, "PACCAR TX-12 Pro 12-spd AMT", "automatic", "Sleeper", 70, 280, 7.4, 5),
-        new("Freightliner", "Cascadia 126 Raised",  2024, "Detroit DD16", 600, "Detroit DT12-O 12-spd AMT", "automatic", "Sleeper", 70, 300, 7.0, 5),
+        new("Volvo",        "VNL",      2025, "Volvo D13 500",    500, "I-Shift ATO2612G 12-spd", "automatic", "Sleeper", 70, 300, 7.6, 5),
+        new("Mack",         "Anthem",   2024, "Mack MP8 505C",    505, "mDRIVE ATO2612F 12-spd", "automatic", "Sleeper", 70, 280, 7.2, 5),
+        new("Peterbilt",    "579",      2024, "Paccar MX-13 510", 510, "PACCAR TX-12 12-spd", "automatic", "Sleeper", 70, 280, 7.4, 5),
+        new("Kenworth",     "T680",     2024, "Paccar MX-13 510", 510, "PACCAR TX-12 12-spd", "automatic", "Sleeper", 70, 280, 7.4, 5),
+        new("Freightliner", "Cascadia", 2024, "Detroit DD16 600", 600, "Detroit DT12-OA 12-spd", "automatic", "Sleeper", 70, 300, 7.0, 5),
     };
 
     /// <summary>

@@ -131,7 +131,7 @@ async function place(day, damage = 3) {
   ok('and the seat is empty until the new unit is reported',
     !(await api('/bootstrap')).driver.assignedTruckUnit, 'no truck assigned');
   head('#117 A default career can come back from its first wreck');
-  // Every new company starts with a Small yard: one tractor slot, one tractor. Wreck it and the recovery
+  // A one-slot yard with one tractor in it. Wreck it and the recovery
   // the app prints was impossible to follow — the wreck held the only slot, so the replacement could not
   // be added; and writing the wreck off first did not give the slot back either, because a Retired
   // tractor still counted against capacity. Both orders dead-ended with no truck and no dispatch.
@@ -144,8 +144,14 @@ async function place(day, damage = 3) {
     { application: wApp, force: true, gameTime: iso(2), code: 'PRI' }));
   await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
 
-  const wYard = W.company.terminals[0];
-  ok('a new career starts with one tractor slot', wYard.truckCapacity === 1, `${wYard.truckCapacity}`);
+  // Forced to Small rather than assumed. A hire's HQ now takes its tier from the carrier, so Prime — a
+  // large outfit — starts on a Large yard with five slots and cannot reach this dead-end at all. The
+  // dead-end is still real on a one-slot yard, which is what a small carrier gives you and what anybody
+  // who has not expanded yet is sitting on, so the fixture builds one.
+  let wYard = W.company.terminals[0];
+  W = un(await api(`/terminals/${wYard.id}/level`, 'POST', { level: 'Small' }));
+  wYard = W.company.terminals[0];
+  ok('the yard under test holds exactly one tractor', wYard.truckCapacity === 1, `${wYard.truckCapacity}`);
   ok('and one tractor in it', W.trucks.length === 1, `${W.trucks.length}`);
 
   // Past the write-off line.

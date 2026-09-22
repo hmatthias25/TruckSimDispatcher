@@ -339,7 +339,9 @@ function dayTimeInput(idPrefix, iso, label) {
   const day = iso ? dayOf(iso) : (S ? dayOf(S.status.gameTime) : 1);
   return `<label>${esc(label)}
     <span style="display:flex;gap:6px;align-items:center">
-      <input id="${idPrefix}-day" type="number" min="0" step="1" style="flex:0 0 92px"
+      ${/* .spin keeps the arrows here. A game day is the one number in the app that is genuinely
+            stepped by one, repeatedly — see styles.css. */ ''}
+      <input id="${idPrefix}-day" type="number" min="0" step="1" class="spin" style="flex:0 0 92px"
         data-dow="${idPrefix}-dow" value="${day}" title="Game day">
       <span id="${idPrefix}-dow" class="badge info" style="flex:0 0 auto"
         title="Day 0 is a Monday. Check this against the game before you file.">${dowForDay(day)}</span>
@@ -499,8 +501,11 @@ function readApplication() {
     freightExperience: ticked('ap-freight'),
     preferredTripLength: sv('ap-length'),
     homeTimePreference: sv('ap-hometime'),
-    homeCity: sv('ap-city'),
-    homeState: sv('ap-state').toUpperCase(),
+    // No home city here any more. Where you are domiciled is picked from your employer's own yards
+    // once they have taken you on — see the terminal choice after hiring. Sent blank rather than
+    // dropped so the shape of the application is unchanged for anything reading it.
+    homeCity: '',
+    homeState: '',
     willNotHaul: ticked('ap-nohaul'),
     acceptsProbation: bv('ap-probation'),
     hazmatClasses: ticked('ap-hazclasses'),
@@ -509,6 +514,39 @@ function readApplication() {
 }
 
 const stars = (n) => '★'.repeat(n) + '<span style="color:var(--line3)">' + '★'.repeat(5 - n) + '</span>';
+
+/* Which of your new employer's yards you run out of.
+ *
+ * Asked HERE, after the offer, because that is the order it happens in. The application used to ask for
+ * a home city before you had an employer — you do not pick where you live and then hunt for a carrier
+ * to match, you take a job and then pick which of their terminals you are domiciled at. Reported in
+ * those words.
+ *
+ * Their network only. A company driver is not domiciled somewhere their employer has no yard, and the
+ * app already keeps that list — it is what yard offers are checked against. */
+function domicilePickerHtml(company) {
+  const net = (company.networkCities || []).map((c) => {
+    const [city, st] = String(c).split(',').map((x) => (x || '').trim());
+    return { city, st };
+  }).filter((c) => c.city && c.st);
+  if (net.length < 2) return '';
+
+  const here = `${company.terminalCity}, ${company.terminalState}`;
+  return `<h3 class="sect">Where are you domiciled?</h3>
+    <p class="hint">Pick the ${esc(company.name)} yard you run out of. This is your home terminal — where
+      home time is taken, where the shop is, and where the empty run in ends. You hold one garage; this is
+      which city it is in, not an extra one.</p>
+    <div class="row-actions">${net.map((c) => `
+      <button class="btn${`${c.city}, ${c.st}` === here ? ' primary' : ''}" data-act="set-domicile"
+        data-city="${esc(c.city)}" data-state="${esc(c.st)}">${esc(c.city)}, ${esc(c.st)}</button>`).join('')}</div>
+    <div id="domicile-said"></div>`;
+}
+
+/** The shortest home time a carrier signs, in the words the arrangement picker uses. */
+const homeTimeShort = (days) => days <= 7 ? 'every week'
+  : days <= 14 ? 'every other week'
+    : days <= 21 ? 'every three weeks'
+      : 'about once a month';
 
 /* What you would actually earn there, against what you earn now.
  *
@@ -589,6 +627,22 @@ function renderMarket(market, { onboarding }) {
       <div class="kv">
         <span>scale <b>$${(+c.loadedCpm).toFixed(3)}</b> &rarr; <b>$${(+c.topLoadedCpm).toFixed(3)}</b>/loaded mi</span>
         <span>tops out at <b>${esc(c.ceilingTitle)}</b></span>
+      </div>
+      ${/* The terms, beside the rate.
+            Six doors open to a rookie and the only figure that differed was the cents per mile, so
+            nobody took the one paying $0.51 over the one paying $0.60. The counterweights existed in
+            the data and two of the three did nothing — so they now bite, and they are stated here,
+            before signing. A cost you cannot see when you choose is not a trade-off, it is a trap. */ ''}
+      <div class="terms">
+        <div><span class="tl">Home time</span>
+          <b>${esc(homeTimeShort(c.minHomeTimeDays))}</b>
+          <span class="sub">${esc(c.homeTimeNote || '')}</span></div>
+        <div><span class="tl">Runs</span>
+          <b>${esc((c.tripLengthsOffered || []).join(' · ') || '—')}</b>
+          <span class="sub">${esc(c.tripLengthNote || '')}</span></div>
+        <div><span class="tl">Probation</span>
+          <b>${c.probationDays ? c.probationDays + ' days' : '—'}</b>
+          <span class="sub">${esc(c.probationNote || '')}</span></div>
       </div>
       <p class="hint" style="margin-bottom:6px"><b>Their bar:</b> ${esc(c.standardsNote)}</p>
       ${c.divisionNote ? `<p class="hint" style="margin-bottom:6px"><b>On their freight:</b> ${esc(c.divisionNote)}</p>` : ''}
@@ -757,10 +811,29 @@ document.addEventListener('click', async (ev) => {
           <dt>Truck</dt><dd>${t2 ? `Unit ${esc(t2.unit)} — ${t2.year} ${esc(t2.make)} ${esc(t2.model)}, ${esc(t2.transmission)}` : '—'}</dd>
           <dt>Trailer</dt><dd>${tr ? `${esc(tr.unit)} — ${esc(tr.length)} ${esc(tr.type)}` : '—'}</dd>
         </dl>
+        ${domicilePickerHtml(r.company)}
         ${setupChecklistHtml(r.setup)}
         <div class="row-actions"><button class="btn primary" data-act="enter-app">Go to the dispatch board</button></div>`);
       toast(`Hired at ${r.company.name}.`, 'ok');
     });
+  }
+
+  if (t.dataset.act === 'set-domicile') {
+    const { city, state } = t.dataset;
+    return run(async () => {
+      const r = await api('/career/domicile', 'POST', { city, state });
+      S = r.snapshot;
+      const box = $('domicile-said');
+      if (box) {
+        box.innerHTML = `<div class="callout go" style="margin-top:8px">
+          <h4>Domiciled at ${esc(city)}, ${esc(state)} — a ${esc(String(r.level).toLowerCase())} yard</h4>
+          <p style="margin:0">${esc(r.setUp)}</p></div>`;
+      }
+      // The buttons carry which one is picked, so redraw them rather than leaving the old one primary.
+      document.querySelectorAll('[data-act="set-domicile"]').forEach((b) => {
+        b.classList.toggle('primary', b.dataset.city === city && b.dataset.state === state);
+      });
+    }, `Home terminal set to ${city}, ${state}.`);
   }
 
   if (t.dataset.act === 'enter-app') {
@@ -796,6 +869,17 @@ document.addEventListener('input', (ev) => {
    next unrelated modal would be followed by something the driver waved off ten minutes ago. Nothing is
    lost that matters: an unannounced payday is held on the server and comes back on the next render. */
 document.addEventListener('click', (ev) => { if (ev.target.id === 'modal') { PENDING = []; closeModal(); } });
+
+/* A wheel over a focused number field changes the number instead of scrolling the page.
+ *
+ * The arrows are gone in CSS; this is the half CSS cannot reach. Scrolling down a long form with a
+ * field still focused from a moment ago will quietly rewrite it — an odometer, a damage percentage, a
+ * clock — and the driver finds out at close-out. Blur rather than preventDefault, so the page scrolls
+ * normally rather than the wheel doing nothing over part of the screen. */
+document.addEventListener('wheel', (ev) => {
+  const el = document.activeElement;
+  if (el && el === ev.target && el.tagName === 'INPUT' && el.type === 'number') el.blur();
+}, { passive: true });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { PENDING = []; closeModal(); } });
 
 /* ---- screenshot capture: paste, drop, browse ---------------------------- */
@@ -3306,8 +3390,45 @@ function terminalsHtml() {
           <td><button class="btn tiny ghost" data-act="edit-terminal" data-id="${esc(t.id)}">Edit</button></td>
         </tr>`;
       }).join('')}</tbody></table></div>
-
+    ${networkLine()}
   </div>`;
+}
+
+/* Where the rest of your employer's network is, and why you do not have a yard in it yet.
+ *
+ * The carrier profile lists several terminals and the driver holds one, and nothing on this screen
+ * joined those two facts — so it read as yards having gone missing. Reported in exactly those terms:
+ * "the company profile lists several yards... I don't see a place to expand or even populate the yard."
+ *
+ * They are not missing. A yard in a city the driver has not driven to would never see cargo, because
+ * ATS generates none for an undiscovered city — so the network opens a yard at a time, as the truck
+ * gets there. That is worth one line where the list is, rather than a page in the manual nobody is
+ * reading at the moment they wonder. */
+function networkLine() {
+  const net = (S.company.networkCities || []).map((c) => {
+    const [city, st] = String(c).split(',').map((x) => (x || '').trim());
+    return { city, st };
+  }).filter((c) => c.city);
+  if (!net.length) return '';
+
+  const has = (c) => (S.company.terminals || []).some((t) =>
+    t.city.toLowerCase() === c.city.toLowerCase() && (t.state || '').toUpperCase() === (c.st || '').toUpperCase());
+  const been = (c) => (S.discovered || []).some((d) =>
+    (d.city || '').toLowerCase() === c.city.toLowerCase() && (d.state || '').toUpperCase() === (c.st || '').toUpperCase());
+
+  const open = net.filter((c) => !has(c) && been(c));
+  const later = net.filter((c) => !has(c) && !been(c));
+  if (!open.length && !later.length) return '';
+
+  const name = (c) => `${c.city}, ${c.st}`;
+  return `<p class="hint" style="margin:8px 0 0">
+    <b>${esc(S.company.name)} also runs ${net.map(name).map(esc).join(' · ')}.</b>
+    You do not hold a yard in those yet — a yard in a city you have not driven to would sit empty,
+    because ATS generates no freight for a city you have not reached.
+    ${open.length ? `You have been to <b>${open.map(name).map(esc).join(', ')}</b>, so
+      <b>Open a yard</b> will take ${open.length > 1 ? 'those' : 'that one'} now.` : ''}
+    ${later.length ? `${esc(later.map(name).join(', '))} open up once you deliver there.` : ''}
+    To grow the yard you already have, use <b>Edit</b> on it and pick a bigger level.</p>`;
 }
 
 /* ---- probation: fortnightly reviews at the yard, not a silent threshold ---- */

@@ -416,6 +416,42 @@ app.MapPost("/api/onboarding/hire", (HireRequest req) => Results.Ok(store.Mutate
             $"{s.Driver.Name} starts as a Company Driver rather than on probation: the skill levels are " +
             "already there for the freight they run.");
     }
+    // The terms the carrier actually signs, which are not always the ones asked for.
+    //
+    // A driver ticks "home every week" and a two-star home-time outfit is not going to do that, and a
+    // rookie ticks "short runs" at a big over-the-road carrier that gives its regional seats to people
+    // who have earned them. Both were silently accepted and then quietly not honoured. The card now
+    // states each of these before signing; this is the half that makes the card true.
+    if (!string.IsNullOrWhiteSpace(req.Code))
+    {
+        var stars = Carriers.StandingFor(req.Code).HomeTime;
+        var (homeKeys, _) = Carriers.HomeTimeOffer(stars);
+        if (!string.IsNullOrWhiteSpace(a.HomeTimePreference)
+            && !homeKeys.Contains(a.HomeTimePreference, StringComparer.OrdinalIgnoreCase))
+        {
+            var asked = HomeTime.LabelFor(a.HomeTimePreference);
+            var given = homeKeys.FirstOrDefault() ?? "biweekly";
+            a.HomeTimePreference = given;
+            s.Driver.HomeTimeIntervalDays = HomeTime.DaysFor(given);
+            store.Log(s, "career",
+                $"You asked for {asked.ToLowerInvariant()}; {s.Company.Name} runs to " +
+                $"{HomeTime.LabelFor(given).ToLowerInvariant()} and that is what is on your file. It was on " +
+                "their card before you signed.");
+        }
+
+        var (lengthKeys, _) = Carriers.TripLengthOffer(
+            Carriers.SizeOf(req.Code), Carriers.CreditedExperienceFor(s), true);
+        if (!string.IsNullOrWhiteSpace(a.PreferredTripLength)
+            && !lengthKeys.Contains(a.PreferredTripLength, StringComparer.OrdinalIgnoreCase))
+        {
+            var was = a.PreferredTripLength;
+            a.PreferredTripLength = lengthKeys.FirstOrDefault() ?? "medium";
+            store.Log(s, "career",
+                $"You asked for {was} runs. {s.Company.Name} is putting you on {a.PreferredTripLength} — " +
+                "their card said so, and it changes as you put time in.");
+        }
+    }
+
     var (truck, trailer) = Seed.AssignEquipment(s, a);
 
     s.Status.LocationCity = s.Company.TerminalCity;
@@ -1659,6 +1695,67 @@ app.MapDelete("/api/terminals/{id}", (string id) => Results.Ok(store.Mutate(s =>
     return Snapshot(s);
 })));
 
+/// Pick which of the employer's yards you are domiciled at, and get told what to buy in ATS.
+///
+/// The application used to ask for a home city BEFORE you had an employer, which is the wrong question
+/// in the wrong order — you do not choose where to live and then find a carrier to match, you take a job
+/// and then pick which of THEIR yards you run out of. Reported in those terms.
+///
+/// Only their network. A company driver does not get domiciled somewhere their employer has no terminal,
+/// and the app has always had the list — it is what the yard offers are checked against.
+app.MapPost("/api/career/domicile", (DomicileRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var city = (req.City ?? "").Trim();
+    var state = (req.State ?? "").Trim().ToUpperInvariant();
+    if (city.Length == 0) throw new InvalidOperationException("Which yard?");
+
+    var inNetwork = s.Company.NetworkCities.Any(n =>
+    {
+        var p = n.Split(',');
+        return p.Length >= 2 && p[0].Trim().Equals(city, StringComparison.OrdinalIgnoreCase)
+               && p[1].Trim().Equals(state, StringComparison.OrdinalIgnoreCase);
+    });
+    if (!inNetwork)
+        throw new InvalidOperationException(
+            $"{s.Company.Name} does not run a terminal at {city}, {state}. You can only be domiciled where " +
+            "your employer has a yard.");
+
+    // The yard moves rather than a second one appearing. You hold one garage; this is which city it is
+    // in, not an extra purchase — the rest of the network still opens a yard at a time as you reach it.
+    var home = s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters) ?? s.Company.Terminals.FirstOrDefault();
+    if (home == null) throw new InvalidOperationException("No yard on the books to move.");
+
+    var level = Carriers.HqLevelFor(Carriers.SizeOf(s.Company.Code));
+    home.City = city;
+    home.State = state;
+    home.Name = $"{s.Company.Name} — {city} (HQ)";
+    Migrations.ApplyLevel(home, level);
+    s.Company.TerminalCity = city;
+    s.Company.TerminalState = state;
+    s.Driver.HomeTerminalId = home.Id;
+    Migrations.SyncHeadquarters(s);
+
+    // You are standing in it, so it counts as reached — same rule as being hired at the HQ.
+    DiscoveryService.Note(s, city, state, s.Status.GameTime);
+    DiscoveryService.SyncOwnership(s);
+    s.Status.LocationCity = city;
+    s.Status.LocationState = state;
+    s.Status.LocationKind = "Terminal";
+    s.Status.LocationDetail = $"{s.Company.Name} yard";
+
+    store.Log(s, "career", $"Domiciled at {city}, {state} — a {level.ToLowerInvariant()} yard.");
+    return new
+    {
+        level,
+        // What to go and do in the game, because the app cannot buy a garage for you.
+        setUp = $"In ATS, buy a garage at {city}, {state} and take it to {level.ToLowerInvariant()} " +
+                $"({Migrations.CapacityOf(level)} truck slot{(Migrations.CapacityOf(level) == 1 ? "" : "s")}). " +
+                "That is the one garage you own for now — the rest of their network opens up a yard at a " +
+                "time as you actually deliver to those cities.",
+        snapshot = Snapshot(s),
+    };
+})));
+
 app.MapPost("/api/terminals/{id}/level", (string id, LevelRequest req) => Results.Ok(store.Mutate(s =>
 {
     var t = s.Company.Terminals.FirstOrDefault(x => x.Id == id)
@@ -2036,6 +2133,30 @@ app.MapPost("/api/career/home-time", (HomeTimeArrangementRequest req) => Results
     var days = HomeTime.DaysFor(req.Preference);
     if (days <= 0 && !string.Equals(req.Preference, "none", StringComparison.OrdinalIgnoreCase))
         throw new InvalidOperationException("That is not a home-time arrangement I recognise.");
+
+    // Your employer has to agree to it, the same as they did at hire.
+    //
+    // Refused rather than quietly downgraded, because this one is a deliberate act: the driver is on
+    // this screen changing their arrangement, and silently giving them something other than what they
+    // pressed is worse than saying no. The hire path downgrades instead, because there the driver is
+    // choosing a CARRIER and the arrangement is a preference attached to the application.
+    //
+    // Without this the gate at hire is decoration — take the job that will not sign weekly, then set
+    // weekly from the career tab a minute later.
+    //
+    // Only a carrier we actually have a spec for. StandingFor returns zeroes for a code it does not
+    // recognise — which is every generated carrier — and zero stars reads as "monthly at best", so an
+    // invented outfit was refusing every arrangement shorter than a month. A carrier with no published
+    // standing has nothing to hold the driver to.
+    if (Carriers.Exists(s.Company.Code))
+    {
+        var (offered, note) = Carriers.HomeTimeOffer(Carriers.StandingFor(s.Company.Code).HomeTime);
+        if (offered.Count > 0
+            && !offered.Contains(req.Preference ?? "", StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"{s.Company.Name} will not sign that. {note} It was on their card when you took the job — " +
+                "a carrier that runs you home more often is a different job, not a different setting.");
+    }
 
     s.Application ??= new DriverApplication();
     s.Application.HomeTimePreference = req.Preference;
@@ -2761,6 +2882,7 @@ record DedicatedRequest(bool OnDedicated, string? Account);
 record FacilityTimeRequest(string TrailerType, double LoadingHours, double UnloadingHours, bool Manual);
 record StockRequest(string TerminalId, int Count, bool AlreadyBought, bool AddTrailers);
 record AdoptRequest(string Path);
+record DomicileRequest(string City, string State);
 record CareerSwitchRequest(string Slug);
 /// <summary>InheritSettings defaults to true where it is not sent — see StateStore.CreateCareer.</summary>
 record CareerNewRequest(string? Name, bool? InheritSettings);

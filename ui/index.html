@@ -21,7 +21,12 @@
       <div class="panel-head"><h2>Application</h2></div>
       <div class="grid2">
         <label>Driver name<input id="ap-name" placeholder="e.g. Heath Matthias"></label>
-        <label>Years of verifiable experience<input id="ap-exp" type="number" min="0" max="50" step="0.5" value="3"></label>
+        <!-- Zero, because that is what most people starting a career actually are. It defaulted to 3,
+             which quietly put every new player past the bar at carriers that would have turned a rookie
+             away, and hid the whole rookie half of the job market from them. -->
+        <label>Years of verifiable experience<input id="ap-exp" type="number" min="0" max="50" step="0.5" value="0">
+          <span class="hint">Leave it at 0 if you are straight out of CDL school — plenty of carriers
+            hire rookies, and the ones that will are marked on the job list.</span></label>
 
         <label>Preferred freight division
           <select id="ap-div1">
@@ -47,8 +52,10 @@
           </select>
         </label>
 
-        <label>Home city<input id="ap-city" placeholder="e.g. Denver"></label>
-        <label>Home state<input id="ap-state" placeholder="CO" maxlength="2" class="up"></label>
+        <!-- Home city and state used to be asked for here and it was the wrong question at the wrong
+             time. You do not pick where you live and then find an employer to match; you pick an
+             employer and then pick which of THEIR yards you are domiciled at. Asked after the offer is
+             accepted instead, from the carrier's own network. -->
 
         <label class="span2">How often do you want to be home?
           <select id="ap-hometime">
@@ -123,7 +130,7 @@
 
         <label>Current in-game day &amp; time
           <span style="display:flex;gap:6px">
-            <input id="ap-gameday" type="number" min="1" step="1" value="1" style="flex:0 0 92px" title="Game day">
+            <input id="ap-gameday" type="number" min="1" step="1" class="spin" value="1" style="flex:0 0 92px" title="Game day">
             <input id="ap-gametod" type="time" step="60" value="06:00" style="flex:1" title="Time of day">
           </span>
           <span class="hint">ATS has no calendar — just count days from wherever your profile is now.

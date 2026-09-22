@@ -147,6 +147,21 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--amber);outline-o
 input[readonly]{color:var(--ink3);background:var(--panel2)}
 textarea{min-height:74px;resize:vertical;font-family:inherit}
 select{cursor:pointer}
+/* No spinners on number fields, with one exception.
+   They add a pair of arrows nobody uses, and the wheel handler behind them is worse than useless: a
+   scroll that happens to pass over a focused field changes the number instead of moving the page, so a
+   driver scrolling a long form can silently rewrite an odometer on the way past. The arrows go here and
+   the wheel is unhooked in app.js, because CSS cannot reach the second half of it.
+
+   GAME DAY keeps its arrows. Stepping a day at a time is the one place the control does real work —
+   that field genuinely is incremented by one, over and over, and clicking beats retyping. It opts back
+   in with .spin, and the wheel stays unhooked there too: nudging a day deliberately is a click. */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield;appearance:textfield}
+input[type=number].spin::-webkit-outer-spin-button,
+input[type=number].spin::-webkit-inner-spin-button{-webkit-appearance:auto;margin:0}
+input[type=number].spin{-moz-appearance:auto;appearance:auto}
 fieldset{border:1px solid var(--line);border-radius:6px;padding:11px 13px 4px;margin:0 0 11px}
 legend{padding:0 6px;font:700 9.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
@@ -160,6 +175,15 @@ legend{padding:0 6px;font:700 9.5px/1 var(--mono);letter-spacing:.14em;text-tran
   background:transparent;color:var(--ink3);font:11px/1.5 var(--mono);cursor:pointer;vertical-align:middle;
 }
 .careerpick:hover{color:var(--ink);border-color:var(--amber)}
+/* The terms of a job, beside its rate: home time, run lengths, probation. Three columns on a wide card
+   and stacked on a narrow one, because all three have to be readable at a glance or the trade-off they
+   exist to show is not a trade-off. */
+.terms{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 14px;margin:8px 0}
+.terms > div{border-left:2px solid var(--line3);padding:2px 0 2px 9px}
+.terms .tl{display:block;font:700 9.5px/1.6 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+.terms b{display:block;font-size:12.5px}
+.terms .sub{display:block;font-size:11px;line-height:1.45;margin-top:2px}
+
 .careerlist{display:flex;flex-direction:column;gap:8px;margin:4px 0 12px}
 .careerrow{
   display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;

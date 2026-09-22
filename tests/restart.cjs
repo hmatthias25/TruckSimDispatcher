@@ -125,7 +125,15 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
     (after.evaluations[0].hardFails || []).join(' | ') || '(clear)');
 
   head('9. Home beats the road when home time is close');
-  await api('/career/home-time', 'POST', { preference: 'weekly' });
+  // Put on the file rather than requested. Carriers now cap the arrangement they will sign and SFL is a
+  // three-star home-time outfit, so it refuses weekly outright — see onboard270. This section is about
+  // a restart landing next to a due home time, and a week is simply the quickest way to make one due.
+  {
+    const st = await api('/export');
+    st.application.homeTimePreference = 'weekly';
+    st.driver.homeTimeIntervalDays = 7;
+    await api('/import', 'POST', st);
+  }
   // Near home, not AT it â€” standing at the yard counts as taking home time, so it would no longer
   // be due and there would be nothing for the restart to combine with.
   S = un(await api('/status', 'POST', {

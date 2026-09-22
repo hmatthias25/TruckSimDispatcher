@@ -48,6 +48,52 @@ public static class TrailerSpec
     /// What to tell a driver to buy. Where the subtype is known, name it; where it genuinely is not,
     /// name the options rather than saying "tanker" and leaving them to guess.
     /// </summary>
+    /// <summary>
+    /// What to actually buy at the ATS trailer dealer, in the words on the dealer screen.
+    ///
+    /// <para><b>Length and axles, not just a type.</b> Telling somebody to "buy a dry van" leaves them at
+    /// a dealer with three lengths and half a dozen axle setups, some of which cannot legally enter
+    /// California — and finding that out is a refused delivery a thousand miles later.</para>
+    ///
+    /// <para>California bans a 53-footer with a <b>spread axle</b>, or with the <b>sliding tandems racked
+    /// all the way back</b>: the game models the turning-radius rule. Anything shorter than 53 is fine
+    /// whatever the axles do, and a 53 on standard or forward tandems is fine. Sliding tandems are not
+    /// the problem — where they are slid TO is.</para>
+    ///
+    /// <para><b>Singles only.</b> Doubles and triples are a different licence and a different job, and
+    /// nothing in this app models running a set. One box behind the truck.</para>
+    /// </summary>
+    public const string CaliforniaRule =
+        "53' is fine in California on standard or forward tandems. Do NOT buy the spread-axle version, " +
+        "and do not rack the sliders all the way back — California refuses those on the turning-radius " +
+        "rule, and you will not find out until a load takes you there. Anything 48' or shorter is fine " +
+        "whatever the axles are doing. Buy a single: no doubles or triples.";
+
+    public static string LengthAdvice(string? type)
+    {
+        var t = (type ?? "").Trim();
+        if (IsTanker(t)) return "Food-grade and fuel tanks are one length — take the single, not a set.";
+        return t switch
+        {
+            "Dry Van" or "Van" =>
+                "Buy the <b>53' dry van</b>. It is the standard box and the widest range of freight fits " +
+                "it. 48' and 45' are also sold and are worth having if you run tight city work.",
+            "Reefer" or "Refrigerated" =>
+                "Buy the <b>53' refrigerated</b> van. The insulated (non-refrigerated) box is a separate " +
+                "trailer and will not take freight that needs the unit running.",
+            "Flatbed" =>
+                "Buy the <b>48' flatbed</b>. Most open-deck freight loads on it, and it is easier to place " +
+                "than the 53'. A drop deck is a separate purchase, in 48' or 53'.",
+            "Step Deck" =>
+                "Buy the <b>48' drop deck</b>. The 53' is sold as well and is only worth it for long loads.",
+            "Lowboy" => "Buy the <b>lowboy</b> — one configuration, for heavy haul.",
+            "Log" => "Buy the <b>log trailer</b>. Logs only; it will not take anything else.",
+            "Livestock" => "Buy the <b>livestock trailer</b>. Livestock only.",
+            "Hopper" or "Dump" => "Buy the <b>dumper</b>. Bulk only.",
+            _ => "",
+        };
+    }
+
     public static string BuyingAdvice(AppState s, string? type, string? subtype)
     {
         if (!IsTanker(type)) return "";

@@ -10,6 +10,96 @@ namespace TruckSimDispatcher.Services;
 public static class Carriers
 {
     /// <summary>
+    /// The yard tier a carrier of this size runs its home terminal at.
+    ///
+    /// <para>Only the headquarters. The rest of the network stays discovery-gated and still opens one
+    /// yard at a time — a big carrier having big yards does not mean the driver has driven to them, and
+    /// a yard in a city ATS has generated no cargo for is a yard with nothing to haul.</para>
+    /// </summary>
+    public static string HqLevelFor(string? size) => (size ?? "").Trim() switch
+    {
+        "Large" => "Large",
+        "Regional" => "Medium",
+        _ => "Small",
+    };
+
+    // ---------------------------------------------------------------- terms
+    //
+    // What a job actually is, beyond the rate.
+    //
+    // The job market listed six doors open to a rookie and the only figure that differed by anything a
+    // player could weigh was the cents per mile — KLLM at $0.603 against Knight-Swift at $0.510, so
+    // nobody sane took Knight-Swift. The star ratings were supposed to be the counterweight and two of
+    // the three did nothing: HomeTimeStars was stored, printed and never once consulted, and
+    // EquipmentStars only decided what tractor turned up on a re-rig.
+    //
+    // So the trade-off is made real here, and — just as importantly — stated on the card before the
+    // driver commits. A cost the player cannot see before choosing is not a trade-off, it is a trap.
+
+    /// <summary>
+    /// The shortest home-time interval a carrier will actually agree to, in days.
+    ///
+    /// Home time is the thing drivers pick jobs on in real life and the thing this app already scores
+    /// hardest, so it is the honest counterweight to a rate. A four-star outfit will get you home every
+    /// week; a two-star one will not pretend to.
+    /// </summary>
+    public static int MinHomeDaysFor(int homeTimeStars) => homeTimeStars switch
+    {
+        >= 4 => 7,     // weekly, if you ask for it
+        3 => 14,       // every other week, and no better
+        2 => 21,
+        _ => 30,
+    };
+
+    /// <summary>
+    /// The home-time arrangements this carrier will sign, best first, and how to say it on the card.
+    /// </summary>
+    public static (List<string> Keys, string Note) HomeTimeOffer(int homeTimeStars)
+    {
+        var min = MinHomeDaysFor(homeTimeStars);
+        var keys = HomeTime.Options
+            .Where(o => o.Days == 0 || o.Days >= min)
+            .Select(o => o.Key).ToList();
+        var best = HomeTime.Options.FirstOrDefault(o => o.Days == min);
+        return (keys, min <= 7
+            ? "Home every week if you want it — they run the lanes for it."
+            : $"Shortest they will sign is {best.Label.ToLowerInvariant()}. Ask for anything tighter and " +
+              "they will put you on this instead.");
+    }
+
+    /// <summary>
+    /// The trip lengths a carrier will put this driver on.
+    ///
+    /// <para>Two different gates, and they come from opposite directions. A <b>regional</b> carrier does
+    /// not run coast to coast, so the long end is simply not on offer however much you want it. A big
+    /// <b>over-the-road</b> carrier runs everything — but it does not hand a rookie the regional board,
+    /// because those seats go to drivers who have earned them. You run OTR until you have the time
+    /// in.</para>
+    ///
+    /// <para>Which is the whole point: the carrier paying the most is often the one that will run you
+    /// hardest and keep you out longest, and that should be visible before you sign rather than
+    /// discovered in week three.</para>
+    /// </summary>
+    public const double RegionalSeatYears = 2.0;
+
+    public static (List<string> Keys, string Note) TripLengthOffer(string size, double creditedYears,
+                                                                   bool takesRookies)
+    {
+        if (string.Equals(size, "Regional", StringComparison.OrdinalIgnoreCase))
+            return (new List<string> { "short", "medium" },
+                "Regional carrier — short and medium runs. They do not run the long stuff, so do not " +
+                "take this one expecting to see the whole map.");
+
+        if (creditedYears < RegionalSeatYears)
+            return (new List<string> { "long", "otr" },
+                $"Over-the-road to start. The regional boards go to drivers with {RegionalSeatYears:0} " +
+                "years on them; until then you run long and you stay out.");
+
+        return (new List<string> { "short", "medium", "long", "otr" },
+            $"Anything you want — you have the {RegionalSeatYears:0} years their regional seats ask for.");
+    }
+
+    /// <summary>
     /// The cities a carrier actually runs terminals in: headquarters plus its published yards, as
     /// "City,ST". This is the network a company driver works within — the app offers a yard here and
     /// nowhere else, because a driver does not decide where their employer opens terminals.
@@ -644,6 +734,19 @@ public static class Carriers
                 LoadsToQualify = LoadsStillNeeded(s, spec),
                 DaysToQualify = DaysStillNeeded(s, spec),
                 Condition = cond,
+                // The terms, so the card can say what the job IS and not just what it pays.
+                MinHomeTimeDays = MinHomeDaysFor(spec.HomeTimeStars),
+                HomeTimeOffered = HomeTimeOffer(spec.HomeTimeStars).Keys,
+                HomeTimeNote = HomeTimeOffer(spec.HomeTimeStars).Note,
+                TripLengthsOffered = TripLengthOffer(spec.Size,
+                    CreditedExperience(s, s.Application?.ExperienceYears ?? 0), spec.TakesRookies).Keys,
+                TripLengthNote = TripLengthOffer(spec.Size,
+                    CreditedExperience(s, s.Application?.ExperienceYears ?? 0), spec.TakesRookies).Note,
+                // Probation varies by record and by carrier, and it was decided silently at hire. It is
+                // a term of the job — one carrier holding you ninety days while another holds you sixty
+                // is worth as much as a cent a mile — so it is worked out and shown before signing.
+                ProbationDays = ProbationPlanner.PreviewDays(s, spec.Code),
+                ProbationNote = ProbationPlanner.PreviewNote(s, spec.Code),
             });
         }
         return list.OrderByDescending(c => c.WouldHire).ThenByDescending(c => c.LoadedCpm).ToList();
@@ -1059,6 +1162,11 @@ public static class Carriers
     }
 
     /// <summary>Declared years plus time served, which is what every bar is actually measured against.</summary>
+    /// <summary>Whether a carrier is Large, Regional or small, without being employed by them.</summary>
+    public static string SizeOf(string? code) =>
+        AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
+            ?.Size ?? "";
+
     public static double CreditedExperienceFor(AppState s) =>
         CreditedExperience(s, s.Application?.ExperienceYears ?? 0);
 
@@ -1145,6 +1253,12 @@ public static class Carriers
         // Yards the driver already owns stay theirs — they bought those garages in ATS and switching
         // employer does not repossess them. Only the headquarters moves.
         //
+        // The HQ tier follows the carrier. This was a flat "Small" for everybody, which put a driver
+        // hired by a megacarrier in a yard that holds one tractor and has no shop — and disagreed with
+        // the migration path, which has always built an HQ as Large. Reported from play by somebody
+        // comparing a fresh Knight-Swift hire against an older Prime career that had come through the
+        // migration: same app, two answers, and the difference was which code path seeded the career.
+        //
         // The carrier's other yards are deliberately NOT created: a yard in a city the driver has not
         // driven to would never see cargo, because ATS does not generate freight for undiscovered
         // cities. They appear as the driver reaches them. See DiscoveryService.
@@ -1156,7 +1270,7 @@ public static class Carriers
             t.City.Equals(spec.HqCity, StringComparison.OrdinalIgnoreCase));
         if (hq == null)
         {
-            hq = Migrations.BuildTerminal(s, spec.HqCity, spec.HqState, isHq: true, "Small");
+            hq = Migrations.BuildTerminal(s, spec.HqCity, spec.HqState, isHq: true, HqLevelFor(spec.Size));
             s.Company.Terminals.Add(hq);
         }
         foreach (var t in s.Company.Terminals) t.IsHeadquarters = t == hq;
@@ -1309,11 +1423,18 @@ public static class Carriers
         if (truck != null)
             steps.Add(new SetupStep
             {
+                // Named the way the ATS dealer names them, because this is a shopping list. It used to
+                // read off a real-world brochure — a Freightliner Coronado, an "Eaton Fuller 18-spd
+                // manual" — and sent people looking for trucks and gearboxes the game does not sell.
                 Title = $"Buy a tractor — {truck.Year} {truck.Make} {truck.Model}",
-                Detail = $"Spec it with a {truck.Transmission} and governed around {truck.GovernedMph} mph if you can. " +
+                Detail = $"At the {truck.Make} dealer, ask for the <b>{truck.Model}</b>. Spec it with the " +
+                         $"<b>{truck.Engine}</b> engine and the <b>{truck.Transmission}</b> gearbox, and set the " +
+                         $"speed limiter to about {truck.GovernedMph} mph.\n\n" +
+                         "Every one of those is a line on the ATS dealer screen — if you cannot see it, you are " +
+                         "at the wrong dealer or that variant is not unlocked in your game yet.\n\n" +
                          "Exact match is not required: buy what you can afford, then open Fleet → " +
-                         $"unit {truck.Ref} → Edit and change the make, model, transmission and governed speed " +
-                         "to what you actually bought. The planner uses those numbers for drive time.",
+                         $"unit {truck.Ref} → Edit and change the make, model, engine, transmission and governed " +
+                         "speed to what you actually bought. The planner uses those numbers for drive time.",
                 Why = "Governed speed and fuel capacity drive every feasibility calculation."
             });
 
@@ -1322,13 +1443,19 @@ public static class Carriers
             {
                 Title = $"Decide on trailers — you are assigned {trailer.Ref}, a {trailer.Length} " +
                         $"{TrailerSpec.Describe(trailer.Type, trailer.Subtype)}",
+                // Which one, how long, and which axle setup — because "buy a dry van" leaves somebody at
+                // a dealer with three lengths and half a dozen axle options, two of which cannot enter
+                // California. That is a refused delivery a thousand miles later.
                 Detail = $"{s.Company.Name} runs {string.Join(", ", s.Company.Divisions)}. You can either buy your own " +
                          (TrailerSpec.IsTanker(trailer.Type)
                             ? $"in ATS — {TrailerSpec.BuyingAdvice(s, trailer.Type, trailer.Subtype)} — and run company trailers, "
                             : $"{trailer.Type.ToLowerInvariant()} in ATS and run company trailers, ") +
                          "or just take market trailers with each job and treat the company trailer as paperwork. " +
                          "Either works — the app only needs to know which trailer type you are pulling so it can gate " +
-                         "freight correctly.",
+                         "freight correctly.\n\n" +
+                         (TrailerSpec.LengthAdvice(trailer.Type) is { Length: > 0 } which
+                             ? which + "\n\n" + TrailerSpec.CaliforniaRule
+                             : TrailerSpec.CaliforniaRule),
                 Why = "Freight requiring a trailer you cannot pull is hard-rejected at dispatch."
             });
 
@@ -1456,6 +1583,22 @@ public class CarrierListing
 
     /// <summary>Days of service still needed to clear their experience bar. 0 when years are not the problem.</summary>
     public int DaysToQualify { get; set; }
+
+    // ---- the terms of the job, beyond the rate. See Carriers "terms" for why these exist.
+
+    /// <summary>Shortest home-time interval they will sign, in days.</summary>
+    public int MinHomeTimeDays { get; set; }
+    /// <summary>Home-time arrangement keys they will agree to.</summary>
+    public List<string> HomeTimeOffered { get; set; } = new();
+    public string HomeTimeNote { get; set; } = "";
+
+    /// <summary>Trip-length keys they will put THIS driver on, given the experience declared.</summary>
+    public List<string> TripLengthsOffered { get; set; } = new();
+    public string TripLengthNote { get; set; } = "";
+
+    /// <summary>How long their probation would run for this driver, worked out before signing.</summary>
+    public int ProbationDays { get; set; }
+    public string ProbationNote { get; set; } = "";
 
     /// <summary>Skill levels this carrier asks for, in words. Empty when they ask for none.</summary>
     public List<string> SkillsWanted { get; set; } = new();

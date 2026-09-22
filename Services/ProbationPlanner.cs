@@ -209,6 +209,21 @@ public static class ProbationPlanner
     /// the longest look. <b>Comparable</b> is the ordinary move. <b>Established</b> is a driver whose
     /// record clears the new bar with real room, which includes stepping down.
     /// </summary>
+    /// <summary>
+    /// What this carrier's probation would be, worked out before signing anything.
+    ///
+    /// <para>Runs the real decision rather than a copy of it, so the figure on the job card is the figure
+    /// the driver gets. Probation length was decided silently at hire and only shown afterwards — and it
+    /// varies by carrier and by record, which makes it a term of the job worth as much as a cent a mile.
+    /// A specialised outfit holding somebody sixty days when a van carrier would have taken thirty is a
+    /// real cost, and it belongs on the card beside the rate.</para>
+    ///
+    /// <para>Nothing is written: For() builds a plan object and does not touch state.</para>
+    /// </summary>
+    public static int PreviewDays(AppState s, string code) => For(s, code, s.Status.GameTime).DurationDays;
+
+    public static string PreviewNote(AppState s, string code) => For(s, code, s.Status.GameTime).Notes ?? "";
+
     public static ProbationPlan For(AppState s, string code, string startedGameDate)
     {
         var stats = s.Onboarded ? CareerService.Compute(s) : new CareerStats();
