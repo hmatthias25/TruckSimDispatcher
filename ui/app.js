@@ -4600,26 +4600,27 @@ function editHireModal(id) {
 }
 
 /**
- * @param city,state Prefill for a yard being opened somewhere specific — the discovery notice and the
- *   opportunity list both know which city they are offering, and "Open a yard here" used to throw that
- *   away and drop the player on the Equipment tab to type it in again. Reported from play.
+ * The form for a yard the PLAYER is opening — somewhere their employer does not already run one.
+ *
+ * A yard on the employer's own network never comes through here: there is nothing to ask, because the
+ * company already holds it at a size the company decides. That goes straight to
+ * /api/terminals/open-network. See the open-yard-here action.
  */
-function editTerminalModal(id, city, state) {
+function editTerminalModal(id) {
   const isNew = !id;
   const t = isNew
-    ? { id: '', name: '', city: city || '', state: state || '', level: 'Small', truckCapacity: 1,
+    ? { id: '', name: '', city: '', state: '', level: 'Small', truckCapacity: 1,
         isHeadquarters: false,
         hasFuel: true, hasShop: false, hasParking: true, hasTrailerDrop: true, hasDriverFacilities: false,
         fuelPricePerGal: 6.01, shopLabourDiscount: 0, monthlyCost: 1150, notes: '' }
     : (S.company.terminals || []).find((x) => x.id === id);
   if (!t) return;
-  modal(`<div class="panel-head"><h2>${isNew
-        ? 'Open a yard' + (t.city ? ' in ' + esc(t.city) + (t.state ? ', ' + esc(t.state) : '') : '')
-        : esc(t.city) + ', ' + esc(t.state)}</h2>
+  modal(`<div class="panel-head"><h2>${isNew ? 'Open a yard' : esc(t.city) + ', ' + esc(t.state)}</h2>
       <div class="spacer"></div><button class="btn tiny ghost" data-act="close-modal">Close</button></div>
-    ${isNew && t.city ? `<p class="hint">Buy the garage in ATS first, then put what it actually cost you
-      in <b>What the garage cost</b> below — garage prices vary by city and by whatever economy mod you
-      are running, so the app does not guess at it.</p>` : ''}
+    ${isNew ? `<p class="hint">A yard of your own, somewhere ${esc(S.company.name || 'your employer')} does
+      not already run one. Buy the garage in ATS first, then put what it actually cost you in
+      <b>What the garage cost</b> below — prices vary by city and by whatever economy mod you are
+      running, so the app does not guess at it.</p>` : ''}
     <div class="grid2">
       <label>City<input id="tm-city" value="${esc(t.city)}"></label>
       <label>State<input id="tm-state" class="up" maxlength="2" value="${esc(t.state)}"></label>
@@ -6612,7 +6613,16 @@ async function handleAction(act, d, ev) {
       { preference: sv('ht-pref') })), 'Home-time arrangement updated.');
 
     /* ---- city discovery */
-    case 'open-yard-here': return editTerminalModal('', d.city, d.state);
+    // The employer's own yard, at the size the employer runs it. Nothing to fill in: this is not the
+    // player buying property, it is a terminal the company already has appearing in the app now there
+    // is a reason for it to. Reported from play looking at the full form for Green Bay — "it needs to
+    // open EXACTLY what the company has (this is a large yard why is it asking me what size it is!)".
+    // Somewhere the employer does NOT run is a purchase, and still goes through the form.
+    case 'open-yard-here': return run(async () => {
+      const r = absorb(await api('/terminals/open-network', 'POST', { city: d.city, state: d.state }));
+      DISCOVERY = null;
+      toast(r.message, 'ok');
+    });
 
     case 'decline-garage': return run(async () => {
       absorb(await api('/discovery/decline', 'POST', { city: d.city, state: d.state }));
@@ -7431,7 +7441,17 @@ async function handleAction(act, d, ev) {
         // Re-tiering resets services to that tier's defaults, which is the point of a tier.
         if (levelChanged || isNew) {
           const id = d.id || (S.company.terminals.find((x) => x.city === sv('tm-city'))?.id);
-          if (id && levelChanged) absorb(await api(`/terminals/${id}/level`, 'POST', { level: sv('tm-level') }));
+          if (id && levelChanged) {
+            // Expanding a yard is money spent in ATS, so it is asked for and booked against Property.
+            // Opening one the employer already runs costs nothing and never reaches this branch.
+            const paid = prompt(
+              `Taking ${sv('tm-city')} from ${base.level} to ${sv('tm-level')}.\n\n`
+              + 'What did the upgrade cost you in ATS? It goes on the books as a Property expense.\n'
+              + 'Leave blank if you would rather not record it.', '');
+            const cost = paid === null ? 0 : Math.max(0, parseFloat(String(paid).replace(/[^0-9.]/g, '')) || 0);
+            absorb(await api(`/terminals/${id}/level`, 'POST',
+              { level: sv('tm-level'), costPaid: cost > 0 ? cost : null }));
+          }
         }
         closeModal();
         // A yard in a city the driver has not driven to will not see cargo — say so, but allow it.

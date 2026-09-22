@@ -183,19 +183,26 @@ function body(js, name) {
     !/<option value=""[^>]*>\(headquarters\)/.test(term), 'no blank option');
   ok('with the headquarters selected to begin with', /isHeadquarters/.test(term), 'defaulted');
 
-  head('14. "Open a yard here" opens the yard, in that city');
-  // It was a tab switch: the app named the city, then dropped the player on Equipment to find the
-  // button and type the city back in. The yard form is also where the ATS garage price is asked, which
-  // is the thing worth capturing at the moment you decide to buy one.
+  head('14. "Open a yard here" opens the employer\'s yard, without asking anything');
+  // Three versions of this button. A dead tab target, then the right tab, then the full yard form for
+  // that city — and the form was still wrong, because a yard the company already runs has nothing to
+  // fill in. Reported from play looking at it for Green Bay: "it needs to open EXACTLY what the company
+  // has (this is a large yard why is it asking me what size it is!)".
   ok('the discovery notice has its own action', /data-act="open-yard-here"/.test(js), 'wired');
   ok('and it carries the city with it',
     /data-act="open-yard-here"[\s\S]{0,120}data-city=/.test(js), 'city passed');
-  ok('the handler opens the yard form prefilled',
-    /case 'open-yard-here':[\s\S]{0,120}editTerminalModal\(''\s*,\s*d\.city\s*,\s*d\.state\)/.test(js),
-    'prefilled');
-  ok('the yard form takes a city to start from', /function editTerminalModal\(id, city, state\)/.test(js),
-    'accepts a city');
+  ok('it opens the yard rather than a form about the yard',
+    /case 'open-yard-here':[\s\S]{0,260}\/terminals\/open-network/.test(js), 'posts it');
+  ok('nothing routes a network city through the yard form any more',
+    !/open-yard-here':[\s\S]{0,200}editTerminalModal/.test(js), 'no form');
+  // The form stays for a yard the player opens themselves, which is a purchase and does cost money.
+  ok('the yard form is still there for one you buy yourself',
+    /function editTerminalModal\(id\)/.test(js), 'kept');
   ok('and it still asks what the garage cost', /id="tm-price"/.test(js), 'asked');
+  // Expanding a yard IS money spent in ATS, so it is asked for and booked.
+  ok('re-tiering asks what the upgrade cost',
+    /levelChanged[\s\S]{0,400}prompt\(/.test(js), 'asked');
+  ok('and posts it to be booked', /costPaid:/.test(js), 'posted');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

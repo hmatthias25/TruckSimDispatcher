@@ -23,6 +23,44 @@ public static class Carriers
         _ => "Small",
     };
 
+    /// <summary>
+    /// The tier a carrier runs a given yard at — its headquarters, or one of its other terminals.
+    ///
+    /// <para>Empty where the city is not on this carrier's network, which is the caller's signal that
+    /// there is nothing to open: a yard somewhere the employer does not run is the player adding one
+    /// themselves, and that is a different thing with a different form.</para>
+    ///
+    /// <para>The headquarters is the big one and the rest of the network sits a tier under it, which is
+    /// what a driver sees — reported from play looking at a real Schneider network: "the HQ was large and
+    /// the other garages were medium or small". Read off the carrier's OWN headquarters city, not off
+    /// whichever yard the driver happens to be domiciled at: choosing Phoenix as your base does not make
+    /// Green Bay a small yard.</para>
+    /// </summary>
+    public static string NetworkYardLevelFor(string? code, string? city, string? state)
+    {
+        var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals((code ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        if (spec == null) return "";
+
+        var c = (city ?? "").Trim();
+        var st = (state ?? "").Trim();
+        if (c.Length == 0) return "";
+
+        var hqLevel = HqLevelFor(spec.Size);
+        if (c.Equals(spec.HqCity, StringComparison.OrdinalIgnoreCase)
+            && (st.Length == 0 || st.Equals(spec.HqState, StringComparison.OrdinalIgnoreCase)))
+            return hqLevel;
+
+        var onNetwork = spec.OtherYards.Any(y =>
+        {
+            var p = y.Split(',', StringSplitOptions.TrimEntries);
+            return p.Length >= 2 && p[0].Equals(c, StringComparison.OrdinalIgnoreCase)
+                   && (st.Length == 0 || p[1].Equals(st, StringComparison.OrdinalIgnoreCase));
+        });
+        if (!onNetwork) return "";
+
+        return hqLevel switch { "Large" => "Medium", "Medium" => "Small", _ => "Small" };
+    }
+
     // ---------------------------------------------------------------- terms
     //
     // What a job actually is, beyond the rate.

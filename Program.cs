@@ -1820,12 +1820,83 @@ app.MapPost("/api/career/domicile", (DomicileRequest req) => Results.Ok(store.Mu
     };
 })));
 
+/// <summary>
+/// Opens one of the employer's own yards, at the size the employer runs it.
+///
+/// <para>Nothing is asked. This is not the player buying property — it is a terminal the company
+/// already has, in a city the driver has now reached, appearing in the app because there is finally a
+/// reason for it to. Reported from play looking at the full yard form for Green Bay: "I click on open
+/// yard it needs to open EXACTLY what the company has (this is a large yard why is it asking me what
+/// size it is!)". The tier, the capacity, the fuel price and the services all follow from the carrier.
+/// Nothing happens at the yard until it is stocked, which is its own button.</para>
+///
+/// <para>A city the employer does NOT run is a different thing — that is the player opening a yard of
+/// their own, it costs money in ATS, and it goes through POST /api/terminals with a price.</para>
+/// </summary>
+app.MapPost("/api/terminals/open-network", (OpenNetworkYardRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var city = (req.City ?? "").Trim();
+    var state = (req.State ?? "").Trim().ToUpperInvariant();
+    if (city.Length == 0) throw new InvalidOperationException("Which city?");
+
+    if (s.Company.Terminals.Any(t => t.City.Equals(city, StringComparison.OrdinalIgnoreCase)))
+        throw new InvalidOperationException($"{s.Company.Name} already has a yard at {city}.");
+
+    var level = Carriers.NetworkYardLevelFor(s.Company.Code, city, state);
+    if (string.IsNullOrWhiteSpace(level))
+        throw new InvalidOperationException(
+            $"{s.Company.Name} does not run a terminal at {DispatchEngine.Place(city, state)}. " +
+            "Opening a yard of your own somewhere they do not run is a purchase — add it on the " +
+            "Equipment tab and put what it cost you in ATS against it.");
+
+    // Driven to, not revealed. ATS generates no cargo for a city opened in a save editor, so a yard
+    // there is a yard with nothing coming out of it.
+    if (!DiscoveryService.IsDiscovered(s, city, state))
+        throw new InvalidOperationException(
+            $"You have not been to {DispatchEngine.Place(city, state)} yet. Drive there and report in, " +
+            "then the yard is worth opening — ATS will not generate freight for a city you have not " +
+            "actually reached.");
+
+    var t = Migrations.BuildTerminal(s, city, state, isHq: false, level);
+    s.Company.Terminals.Add(t);
+    Migrations.SyncHeadquarters(s);
+    DiscoveryService.SyncOwnership(s);
+
+    store.Log(s, "system",
+        $"{city}, {state} yard opened — {level.ToLowerInvariant()}, {t.TruckCapacity} tractor slot(s). " +
+        $"{s.Company.Name} already holds this one, so it cost you nothing; it is on the books now " +
+        "because you have been there. Stock it when you want trucks based out of it.");
+
+    return new
+    {
+        snapshot = Snapshot(s),
+        terminal = t,
+        level,
+        message = $"{city}, {state} is on the books — a {level.ToLowerInvariant()} yard with "
+                  + $"{t.TruckCapacity} tractor slot(s). Nothing is based there until you stock it.",
+    };
+})));
+
 app.MapPost("/api/terminals/{id}/level", (string id, LevelRequest req) => Results.Ok(store.Mutate(s =>
 {
     var t = s.Company.Terminals.FirstOrDefault(x => x.Id == id)
             ?? throw new InvalidOperationException("No such terminal.");
+    var was = t.Level;
     Migrations.ApplyLevel(t, req.Level);
-    store.Log(s, "system", $"{t.City} yard re-tiered to {t.Level} ({t.TruckCapacity} tractors).");
+
+    // Expanding a yard is a purchase in ATS and the company should feel it. Opening one the employer
+    // already runs costs nothing; taking it up a tier is money the player actually spent, so it is
+    // asked for and booked. Reported from play: "for any added/expanded yards the app should ask how
+    // much it cost IN GAME and this should go down in finance as an expense."
+    if (req.CostPaid is > 0 && !string.Equals(was, t.Level, StringComparison.OrdinalIgnoreCase))
+    {
+        t.PurchasePrice += req.CostPaid.Value;
+        LedgerService.Post(s, LedgerService.Operating, -req.CostPaid.Value, "Property",
+            $"{DispatchEngine.Place(t.City, t.State)} garage expanded {was.ToLowerInvariant()} → {t.Level.ToLowerInvariant()}");
+    }
+
+    store.Log(s, "system", $"{t.City} yard re-tiered to {t.Level} ({t.TruckCapacity} tractors)."
+                           + (req.CostPaid is > 0 ? $" Cost ${req.CostPaid.Value:N0}, booked to Property." : ""));
     return Snapshot(s);
 })));
 
@@ -2926,7 +2997,14 @@ record HireRequest(DriverApplication Application, bool Force, string? GameTime, 
 record AuthorizeRequest(string LoadId, string? Rationale, bool OverrideTight);
 record RejectRequest(string Reason);
 record AlternateRequest(string LoadId, string Reason);
-record LevelRequest(string Level);
+/// <param name="CostPaid">
+/// What the expansion cost in ATS, where the tier actually changed. Booked to Property. Null or zero
+/// means it was not asked or the yard did not move, and nothing is posted.
+/// </param>
+record LevelRequest(string Level, decimal? CostPaid = null);
+
+/// <summary>A yard the employer already runs, in a city the driver has now reached.</summary>
+record OpenNetworkYardRequest(string? City, string? State);
 record TransferReq(string TerminalId, string Reason);
 record CarrierApplication(string Code, string? Reason);
 record SwapRequest(string TrailerUnit, bool Force);
