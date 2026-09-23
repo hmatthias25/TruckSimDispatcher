@@ -73,6 +73,7 @@ public static class Migrations
         GiveEveryCareerTheUnitedStates(s);
         BringHomeBoxesLeftAtAYardTheCompanyMoved(s);
         RelearnTheDrivingSpeed(s);
+        TakeTheContradictionOutOfAStandingTrailerPromise(s);
         // Not stamped: a box can leave the fleet at any time, and closing an order already closed is a
         // no-op. This is a standing tidy-up rather than a one-off correction.
         CloseOrdersForTrailersAlreadyGone(s);
@@ -135,6 +136,60 @@ public static class Migrations
                       + string.Join(", ", moved)
                       + ". They were recorded at a yard this company moved away from before you ran "
                       + "anything, so they never actually went there.",
+        });
+    }
+
+    /// <summary>
+    /// Takes the contradiction out of a trailer promise already sitting on a driver's file.
+    ///
+    /// <para>The per-trailer assessment used to end on a verdict — "Worth it", or "More than I would
+    /// spend on a trailer. I will find you another one." — judged against a flat two-day rule, without
+    /// the one fact that decides it: how long the driver is staying. TrailerChangeover then appended the
+    /// real verdict off the days off, and the two were stitched into one stored note. Reported from play
+    /// on a box 2.6 days out with three days booked: the same paragraph said it was not worth having and
+    /// that it cost nothing, and told the driver to go and mark it as their own.</para>
+    ///
+    /// <para><b>The sentence is removed, not the promise.</b> Re-deciding would be the obvious thing and
+    /// the wrong one: this driver may already have gone into ATS and marked that box as private on the
+    /// strength of it, and naming a different trailer now would be worse than the muddle. So the stale
+    /// clause is cut out and everything else — which box, what it costs, what to do before pulling out —
+    /// stands exactly as it was.</para>
+    /// </summary>
+    private static void TakeTheContradictionOutOfAStandingTrailerPromise(AppState s)
+    {
+        if (s.SchemaVersion >= 29) return;
+        s.SchemaVersion = 29;
+
+        var note = s.Driver.ChangeoverNote ?? "";
+        if (note.Length == 0) return;
+
+        // The exact sentences Whereabouts used to append. Nothing else in the note is touched.
+        var stale = new[]
+        {
+            " Worth it: those days come off your home time rather than your hours.",
+            " More than I would spend on a trailer. I will find you another one.",
+            " Not worth that; I will re-rig you another way.",
+            " Worth it if your home time covers it.",
+            " and not worth it — I will sort the trailer another way.",
+        };
+
+        var fixedUp = note;
+        foreach (var clause in stale) fixedUp = fixedUp.Replace(clause, "");
+        // The outbound one runs into the sentence before it, so it leaves a dangling fragment behind.
+        fixedUp = fixedUp.Replace("off them. .", "off them.").Replace("  ", " ").Trim();
+
+        if (fixedUp == note) return;
+
+        s.Driver.ChangeoverNote = fixedUp;
+        s.Events.Insert(0, new LogEvent
+        {
+            Channel = "fleet",
+            GameTime = s.Status.GameTime,
+            Message = "Tidied the wording on your standing trailer note. It carried two verdicts at once — "
+                      + "one judged on a flat rule and one on the days off you actually booked — so it read "
+                      + "as saying the box was not worth having and that it cost you nothing, in the same "
+                      + "breath. The box and what it costs are unchanged; only the sentence that "
+                      + "contradicted them is gone.",
         });
     }
 

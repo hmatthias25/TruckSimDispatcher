@@ -255,12 +255,15 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
   const heldBox = held.assignedTrailerUnit || 'T900';
   let est = (await api('/fleetops/whereabouts', 'POST',
     { trailerUnit: heldBox, direction: 'Outbound', city: 'Seattle', state: 'WA' })).estimate;
+  // Priced in days, not judged: whether the days are worth paying depends on how long the driver is
+  // staying, which this does not know. The old worthWaiting flag was read nowhere and decided only the
+  // verdict sentence in the text — which then contradicted the one TrailerChangeover appended.
   ok('an outbound trailer is days away', est.days >= 2, `${est.days} day(s)`);
-  ok('and not worth waiting on', est.worthWaiting === false, `${est.worthWaiting}`);
+  ok('and says why it costs that', /turn round|other way/i.test(est.text), est.text.slice(0, 80));
 
   est = (await api('/fleetops/whereabouts', 'POST',
     { trailerUnit: heldBox, direction: 'Inbound', city: 'Springfield', state: 'MO' })).estimate;
-  ok('an inbound one close in is', est.worthWaiting === true, `${est.days} day(s)`);
+  ok('an inbound one close in is cheaper', est.days < 2, `${est.days} day(s)`);
   ok('and no due-back date is stored anywhere',
     !('trailerDueBackGameTime' in (await api('/fleetops')).drivers.find((d) => d.name === 'M. Torres')),
     'field is gone');

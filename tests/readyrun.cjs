@@ -225,6 +225,66 @@ async function comeHome(day) {
       (dec.changeoverNote || '').length > 0, dec.changeoverNote?.slice(0, 90) || '(silent)');
   }
 
+  head('6c. One verdict per message, and it is the one that knows the days off');
+  // Reported from play, on a box 2.6 days out with 3 days off booked: the message said "More than I
+  // would spend on a trailer. I will find you another one." and then, in the same paragraph, "so it
+  // costs you nothing — mark it as your own before you pull out". Both at once.
+  //
+  // Whereabouts.Assess was ending its text on a verdict judged against a flat two-day rule, without the
+  // one fact that decides it — how long the driver is staying. TrailerChangeover then appended the real
+  // verdict, which took the box. Facts in the assessment; the verdict where the days are known.
+  {
+    const st = await api('/export');
+    st.status.gameTime = iso(140);
+    st.driver.homeDaysPlanned = 3;
+    st.trailers.push({
+      unit: 'T-800', type: 'Flatbed', division: 'Flatbed', year: 2021, length: "48'",
+      status: 'InService', inGameGarage: true, homeTerminalId: yard.id,
+      whereabouts: 'Inbound', whereaboutsCity: 'Phoenix', whereaboutsState: 'AZ',
+      whereaboutsGameTime: iso(140),
+    });
+    await api('/import', 'POST', st);
+
+    const filed = await api('/fleetops/whereabouts', 'POST', {
+      trailerUnit: 'T-800', direction: 'Inbound', city: 'Phoenix', state: 'AZ',
+    });
+    const text = filed.estimate?.text || '';
+    console.log(`  ..    ${text}`);
+    ok('the assessment says where it is and what it costs to take',
+      /day\(s\) to take it/i.test(text), text.slice(0, 80));
+    ok('and passes no judgement on whether that is worth it',
+      !/worth it|more than i would spend|find you another/i.test(text), 'facts only');
+    ok('so it cannot contradict the decision that follows',
+      !/costs you nothing/i.test(text) || !/not worth/i.test(text), 'one voice');
+  }
+
+  head('6d. A promise already carrying both verdicts is tidied, not re-decided');
+  // A career that ran under the fault has the stitched note stored on the driver's file, so it keeps
+  // showing it. The stale clause is cut out and the box left exactly as promised: this driver may have
+  // already gone into ATS and marked that trailer private on the strength of it, and naming a different
+  // one now would be worse than the muddle.
+  {
+    const st = await api('/export');
+    st.schemaVersion = 28;
+    st.driver.changeoverUnit = 'T-800';
+    st.driver.changeoverNote =
+      'Operations wants you on flatbed for the tour after this home time, so you are changing trailers '
+      + 'when you get in — onto 48K 9KU. 48K 9KU is heading in, last seen making for Phoenix, AZ — about '
+      + '1,305 mi from the yard, so the game will likely charge about 2.6 day(s) to take it.'
+      + ' More than I would spend on a trailer. I will find you another one.'
+      + ' You are home 3 day(s) and it is 2.6 out, so it costs you nothing — mark 48K 9KU as your own.';
+    const back = un(await api('/import', 'POST', st));
+    const now = back.driver.changeoverNote || '';
+    console.log(`  ..    ${now.slice(-150)}`);
+    ok('the contradicting sentence is gone',
+      !/More than I would spend/i.test(now), 'removed');
+    ok('the box it promised is untouched', /48K 9KU/.test(now) && back.driver.changeoverUnit === 'T-800',
+      back.driver.changeoverUnit);
+    ok('and what it actually costs still stands', /costs you nothing/i.test(now), 'kept');
+    ok('the driver is told it was tidied',
+      (back.events || []).some((e) => /two verdicts at once/i.test(e.message || '')), 'logged');
+  }
+
   head('7. And the trailer verdict is beside the button, not only at the top');
   // When no swap is due the app DOES say so — into the dispatch notes, several screens above the
   // run-home button. Pressing the button and seeing only a job appear reads as the question being
@@ -239,6 +299,10 @@ async function comeHome(day) {
     /else if \(homeRun\) runHomeSettledModal\(verdict\)/.test(js), 'confirmed');
   ok('and that confirmation names the trailer either way',
     /function runHomeSettledModal[\s\S]{0,900}Nothing is changing this home time/.test(js), 'names it');
+  // "costs you" read "days off home time" for any wait above zero, so the same box that the prose said
+  // cost nothing was billed as costing days in the line underneath it.
+  ok('what it costs is measured against the days actually being taken',
+    /dec\.waitDays <= \(dec\.homeDays \|\| 0\)/.test(js), 'nets them off');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

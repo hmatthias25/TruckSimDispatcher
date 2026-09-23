@@ -104,24 +104,30 @@ const goHome = async (day) => { await report('Amarillo', 'TX', day - 1); return 
     !(await api('/export')).trailers.find((t) => t.unit === 'U100')?.whereabouts,
     'U100 position still unknown');
 
-  head('63d. An inbound trailer nearby is worth waiting for');
+  head('63d. An inbound trailer nearby is priced in days, and judged nowhere');
+  // The estimate used to end on a verdict — "worth it", or "more than I would spend on a trailer, I
+  // will find you another one" — reached against a flat two-day rule, without the one fact that decides
+  // it: how long the driver is staying. TrailerChangeover then appended the REAL verdict off the days
+  // off, and a box 2.6 days out with three days booked produced one message saying both things at once.
+  // Reported from play. Facts here; the verdict where the days are known.
   let est = (await api('/fleetops/whereabouts', 'POST',
     { trailerUnit: 'U100', direction: 'Inbound', city: 'Colorado Springs', state: 'CO' })).estimate;
   ok('the estimate is known now', est.known === true, `${est.known}`);
   ok('it is measured in days', est.days > 0, `${est.days} day(s)`);
-  ok('close in means worth waiting', est.worthWaiting === true, `${est.worthWaiting}`);
-  ok('and it says so plainly', /worth it|come off your home time/i.test(est.text), est.text.slice(0, 150));
+  ok('and it says where the box is', /heading in/i.test(est.text), est.text.slice(0, 90));
+  ok('without ruling on whether that is worth paying',
+    !/worth it|more than i would spend|find you another/i.test(est.text), 'facts only');
   ok('#108 it is priced as the game\'s time skip, not as a wait',
     /charge about|day\(s\) to take it/i.test(est.text), est.text.slice(0, 120));
 
-  head('63e. An outbound one is not');
+  head('63e. An outbound one costs more, and still does not rule on it');
   est = (await api('/fleetops/whereabouts', 'POST',
     { trailerUnit: 'U100', direction: 'Outbound', city: 'Seattle', state: 'WA' })).estimate;
   ok('still known', est.known === true, `${est.known}`);
   ok('but days away', est.days >= 2, `${est.days} day(s)`);
-  ok('and not worth waiting', est.worthWaiting === false, `${est.worthWaiting}`);
-  ok('it says it will sort the trailer another way',
-    /not worth|another way|re-rig you/i.test(est.text), est.text.slice(0, 160));
+  ok('it says which way it is going and why that costs', /other way|turn round/i.test(est.text),
+    est.text.slice(0, 120));
+  ok('and still passes no judgement', !/not worth|another way|re-rig you/i.test(est.text), 'facts only');
 
   head('63e2. #102 A parked trailer is an answer in its own right');
   // There was no way to say a box was sitting doing nothing. Inbound, outbound and no idea were the

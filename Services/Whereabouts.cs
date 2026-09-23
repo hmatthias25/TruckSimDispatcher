@@ -47,7 +47,12 @@ public static class Whereabouts
         public bool Known { get; set; }
         public string Direction { get; set; } = "";
         public double? Days { get; set; }
-        public bool WorthWaiting { get; set; }
+
+        // WorthWaiting was here, judged against the flat WorthWaitingDays. It was set in four places and
+        // read in none — its only effect was to put a verdict in the text below, and that verdict was
+        // reached without the one fact it depends on: how long the driver is staying. A box 2.6 days out
+        // is free to somebody home for three and dear to somebody home for two, and only
+        // TrailerChangeover knows which. See Assess.
         public string Text { get; set; } = "";
     }
 
@@ -100,7 +105,6 @@ public static class Whereabouts
             // no skip. That is the whole value of the answer.
             e.Known = true;
             e.Days = 0;
-            e.WorthWaiting = true;
 
             e.Text = miles is { } pmi
                 ? $"{label} is parked at {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} with nobody " +
@@ -115,28 +119,28 @@ public static class Whereabouts
         {
             e.Known = true;
             e.Days = miles is { } m ? Math.Max(0.5, Math.Round(m / milesPerDay, 1)) : 1.5;
-            e.WorthWaiting = e.Days <= WorthWaitingDays;
+            // Facts only. Whether that wait is worth paying depends on how long the driver is staying,
+            // which is not known here — and the sentence this used to end on said "More than I would
+            // spend on a trailer, I will find you another one" against a flat two-day rule, while the
+            // decision that followed took the box anyway because the driver was home for three. Reported
+            // from play as one message saying both things at once.
             e.Text = miles is { } mi
                 ? $"{label} is heading in, last seen making for {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} " +
-                  $"— about {mi:N0} mi from the yard, so the game will likely charge about {e.Days:0.#} day(s) to take it. " +
-                  (e.WorthWaiting
-                      ? "Worth it: those days come off your home time rather than your hours."
-                      : "More than I would spend on a trailer. I will find you another one.")
-                : $"{label} is heading in, but I do not know where from — call it a day or two off your home time. " +
-                  "Worth it if your home time covers it.";
+                  $"— about {mi:N0} mi from the yard, so the game will likely charge about {e.Days:0.#} day(s) to take it."
+                : $"{label} is heading in, but I do not know where from — call it a day or two of skipped " +
+                  "time to take it.";
             return e;
         }
 
         // Outbound: going the wrong way, and has to turn round before any of it helps.
         e.Known = true;
         e.Days = miles is { } om ? Math.Max(2, Math.Round(om / milesPerDay * 2, 1)) : 4;
-        e.WorthWaiting = false;
         e.Text = miles is { } omi
             ? $"{label} is running the other way, out toward {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} " +
               $"— {omi:N0} mi from the yard and still going. Reckon the game charges {e.Days:0.#} day(s) to take it " +
-              "off them. Not worth that; I will re-rig you another way."
-            : $"{label} is heading away from the yard. Days rather than hours off your home time, and not worth " +
-              "it — I will sort the trailer another way.";
+              "off them, since it has to turn round first."
+            : $"{label} is heading away from the yard, so it has to turn round before any of it helps — days " +
+              "rather than hours of skipped time to take it.";
         return e;
     }
 

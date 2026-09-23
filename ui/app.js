@@ -6990,8 +6990,14 @@ async function handleAction(act, d, ev) {
            <span>home <b>${dec.homeDays} day${dec.homeDays === 1 ? '' : 's'}</b></span>
            <span>wait <b>${dec.idle ? 'none — it is parked'
              : dec.waitDays == null ? 'not known' : `${num(dec.waitDays, 1)} day(s)`}</b></span>
-           <span>costs you <b>${dec.idle || (dec.waitDays != null && dec.waitDays <= 0)
-             ? 'nothing' : 'days off home time'}</b></span>
+           ${/* Against the days they are actually taking, which is the whole reason the question is
+                 asked. This read "days off home time" for any wait above zero — so a box 2.6 days out
+                 taken by somebody home for three was billed as costing them days in the same box that
+                 said it cost nothing. Reported from play. */ ''}
+           <span>costs you <b>${dec.idle
+             || (dec.waitDays != null && dec.waitDays <= (dec.homeDays || 0))
+             ? 'nothing' : dec.waitDays == null ? 'not known'
+               : `${num(dec.waitDays - (dec.homeDays || 0), 1)} day(s) off home time`}</b></span>
          </div>` : ''}
          ${dec.reserve ? `<div class="callout stop" style="margin-top:10px">
            <h4>Do this before you pull out</h4>
