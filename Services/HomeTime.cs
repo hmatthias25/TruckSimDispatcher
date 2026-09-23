@@ -1241,6 +1241,20 @@ public static class HomeTime
         public bool NothingToDo { get; set; }
 
         /// <summary>
+        /// When to be back on the truck, off the days the driver said they were taking.
+        ///
+        /// <para>They are asked how long they are home so the changeover can price a trailer that is out
+        /// — and then the answer was never said back to them. Reported from play: tell the player "based
+        /// on your time off entered you need to be ready to run on day &lt;when time off is over&gt; at
+        /// 7AM". Seven, because that is when a driver rolls, not because the app knows better.</para>
+        ///
+        /// <para>Pushed out where a trailer they are waiting on lands later than that: being ready to run
+        /// before the box turns up is not being ready to run.</para>
+        /// </summary>
+        public string ReadyToRunGameTime { get; set; } = "";
+        public string ReadyToRunNote { get; set; } = "";
+
+        /// <summary>
         /// A better tractor is sitting here and can be asked for. The brief used to say "ask operations"
         /// with nothing behind it; these let the UI put the ask in front of the driver.
         /// </summary>
@@ -1315,6 +1329,37 @@ public static class HomeTime
         if (s.Hos.CycleRemaining < s.Settings.Hos.CycleLimit * 0.5)
             b.Parking.Add($"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Sit a {restart:0.#}-hour restart while you " +
                           "are stopped and you go back out with a full 70.");
+
+        // ---- and when to be back on it
+        //
+        // The driver is asked how many days they are taking so the changeover can price a box that is
+        // out. That answer was then used for the trailer decision and never said back to them, which
+        // leaves them holding a number the app is planning around and they are not. Reported from play.
+        var off = Math.Max(0, s.Driver.HomeDaysPlanned);
+        if (off > 0 && GameClock.TryParse(s.Status.GameTime) is { } parked)
+        {
+            var ready = parked.Date.AddDays(off).AddHours(7);
+
+            // A trailer being waited on beats the calendar: ready to run without the box is not ready.
+            if (s.Driver.ChangeoverWaitDays is { } w && w > 0)
+            {
+                var afterBox = parked.Date.AddDays(Math.Ceiling(w)).AddHours(7);
+                if (afterBox > ready)
+                {
+                    ready = afterBox;
+                    var box = s.Trailers.FirstOrDefault(t => t.Unit == s.Driver.ChangeoverUnit)?.Ref
+                              ?? s.Driver.ChangeoverUnit;
+                    b.ReadyToRunNote =
+                        $"That is past your {off} day(s) off — {box} is out and does not land until then. " +
+                        "Nothing is dispatched against you before it does.";
+                }
+            }
+
+            b.ReadyToRunGameTime = GameClock.Format(ready);
+            if (b.ReadyToRunNote.Length == 0)
+                b.ReadyToRunNote = $"You said {off} day(s) off, so that is when the truck wants you back.";
+            b.Parking.Add($"Be ready to run {GameClock.Pretty(b.ReadyToRunGameTime)}. {b.ReadyToRunNote}");
+        }
 
         // ---- the shop, unit by unit. Only equipment ATS actually knows about.
         var m = s.Settings.Maintenance;

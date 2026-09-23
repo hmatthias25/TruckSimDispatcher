@@ -327,6 +327,7 @@ public static class TrailerChangeover
         {
             s.Driver.ChangeoverUnit = "";
             s.Driver.ChangeoverReserve = false;
+            s.Driver.ChangeoverWaitDays = null;
             return;
         }
 
@@ -337,6 +338,8 @@ public static class TrailerChangeover
         s.Driver.ChangeoverType = plan.Trailer.Type;
         s.Driver.ChangeoverReserve = plan.Reserve;
         s.Driver.ChangeoverGameTime = s.Status.GameTime;
+        // Read by the arrival brief to work out when to be back on the truck.
+        s.Driver.ChangeoverWaitDays = plan.Idle ? 0 : plan.WaitDays;
     }
 
     /// <summary>Clear the promise once it has been kept, or once it can no longer be.</summary>
@@ -347,6 +350,7 @@ public static class TrailerChangeover
         s.Driver.ChangeoverReserve = false;
         s.Driver.ChangeoverGameTime = "";
         s.Driver.ChangeoverNote = "";
+        s.Driver.ChangeoverWaitDays = null;
     }
 
     /// <summary>

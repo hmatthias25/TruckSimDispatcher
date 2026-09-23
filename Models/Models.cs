@@ -518,6 +518,16 @@ public class Driver
     public string ChangeoverGameTime { get; set; } = "";
 
     /// <summary>
+    /// Days ATS is expected to skip before the promised box is actually handed over. Null where nothing
+    /// is known, which is not the same as none.
+    ///
+    /// <para>Kept because the arrival brief has to say when to be back on the truck, and a box that does
+    /// not land until after the days off is what decides that — being ready to run before the trailer
+    /// turns up is not being ready to run.</para>
+    /// </summary>
+    public double? ChangeoverWaitDays { get; set; }
+
+    /// <summary>
     /// What the driver was told when the change was settled, kept word for word.
     ///
     /// <para>The Home time panel used to re-derive this on every render by calling

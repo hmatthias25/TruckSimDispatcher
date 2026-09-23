@@ -1772,6 +1772,7 @@ function decisionHtml() {
       ${S.views.repositionOffers.map((o) => `<div class="row-actions" style="margin:6px 0">
         <button class="btn ${o.isHomeRun ? 'primary' : ''}" data-act="reposition"
           data-city="${esc(o.city)}" data-state="${esc(o.state)}" data-miles="${o.miles}"
+          data-home="${o.isHomeRun ? '1' : ''}"
           data-reason="${esc(o.reason)}">
           ${o.isHomeRun ? 'Run home empty' : 'Reposition'} to ${esc(o.city)}, ${esc(o.state)} — ${num(o.miles)} mi</button>
         <span class="hint" style="margin:0">${esc(o.reason)}</span>
@@ -2887,6 +2888,26 @@ function whereaboutsHtml(b) {
   </div>`;
 }
 
+/**
+ * The trailer question, on its own, at the moment the run home is ordered.
+ *
+ * Reported from play: the reposition was raised correctly but the form never appeared, because it lived
+ * on the decision panel and ordering the move cleared the panel. It is a popup now — the same form, at
+ * the same moment, where clearing the board behind it cannot take it away.
+ */
+function whereaboutsModal(ask) {
+  if (!ask || !ask.length) return;
+  modal(`<div class="panel-head"><h2>Before you pull out</h2>
+      ${badge('warn', 'two answers needed')}
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Later</button></div>
+    <p class="hint" style="margin-top:0">The empty move is authorized — this is about what you pick up
+      when you get there, not where you are going. Answer it now rather than at the yard: if the box worth
+      having is parked I will tell you to go and mark it as your own <b>before</b> you set off, and at the
+      yard that is too late to be worth saying.</p>
+    ${whereaboutsHtml({ askWhereabouts: ask })}`);
+}
+
 function homeBriefModal(b) {
   const sec = (title, items, cls) => items && items.length
     ? `<div class="callout ${cls}"><h4>${title}</h4>
@@ -2907,6 +2928,12 @@ function homeBriefModal(b) {
       <p style="margin:0">Equipment is inside every threshold and there is no paperwork outstanding.
         Park it and take your days.</p></div>` : ''}
 
+    ${/* Said back, in its own box. They were asked how many days they were taking so the changeover
+          could price a box that was out, and the answer then went into that decision and nowhere the
+          driver could see it. Reported from play: tell them when to be ready to run. */ ''}
+    ${b.readyToRunGameTime ? `<div class="callout warn">
+      <h4>Be ready to run ${gt(b.readyToRunGameTime)}</h4>
+      <p style="margin:0">${esc(b.readyToRunNote || '')}</p></div>` : ''}
     ${sec('Parking and your reset', b.parking, 'info')}
     ${sec('The shop', b.shop, 'warn')}
     ${sec('Equipment', b.equipment, 'info')}
@@ -7090,14 +7117,27 @@ async function handleAction(act, d, ev) {
 
     /* ---- moves */
     case 'show-move': return moveModal();
-    case 'reposition': return run(async () => {
-      // One press. The distance came from the app, so the empty pay is right without anyone typing it.
-      absorb(await api('/moves', 'POST', {
-        kind: 'EmptyMove', destCity: d.city, destState: d.state,
-        miles: parseFloat(d.miles) || 0, reason: d.reason || 'Repositioning',
-      }));
-      DECISION = null;
-    }, 'Empty move authorized — close it out when you get there.');
+    case 'reposition': {
+      // Ordering the run home clears the decision panel, and the trailer question was ON that panel —
+      // so the driver authorized the move and the form went with it. Reported from play: the reposition
+      // was created correctly "but I did not get the trailer position and how much time I'd take off".
+      //
+      // Held before the panel goes, and put back in front of them as a modal. It has to be asked now
+      // rather than at the yard: the whole value of the answer is that a parked box can be marked as
+      // your own in ATS BEFORE you pull out, and at the yard that is too late to be worth saying.
+      const ask = d.home === '1' ? (DECISION?.askWhereabouts || []) : [];
+      return run(async () => {
+        // One press. The distance came from the app, so the empty pay is right without anyone typing it.
+        absorb(await api('/moves', 'POST', {
+          kind: 'EmptyMove', destCity: d.city, destState: d.state,
+          miles: parseFloat(d.miles) || 0, reason: d.reason || 'Repositioning',
+        }));
+        DECISION = null;
+        if (ask.length) whereaboutsModal(ask);
+      }, ask.length
+        ? 'Empty move authorized — now tell me where the trailers are.'
+        : 'Empty move authorized — close it out when you get there.');
+    }
 
     case 'create-move': {
       if (!sv('mv-city')) return toast('Where am I going?', 'bad');
