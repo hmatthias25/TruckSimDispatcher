@@ -719,9 +719,33 @@ public static class HomeTime
         var note = s.Driver.ChangeoverNote;
         if (string.IsNullOrWhiteSpace(note)) return null;
 
+        // The note is a sentence that was true when it was written. Whether the promise behind it still
+        // STANDS is a different question, and TrailerChangeover.Promised is the one that answers it —
+        // it refuses a box that has left the fleet, been retired, or has since become the one already
+        // hooked to the truck. This panel replayed the sentence without asking, so a driver could be
+        // told a switch to flatbed was coming on one screen while every screen that checks the promise
+        // said there was no swap. Reported from play, asking which to believe.
+        //
+        // Named a box and the promise has lapsed: say that, rather than repeating a promise the rest of
+        // the app will not honour.
+        var named = !string.IsNullOrWhiteSpace(s.Driver.ChangeoverUnit);
+        var standing = TrailerChangeover.Promised(s);
+        if (named && standing == null)
+        {
+            var box = s.Trailers.FirstOrDefault(t =>
+                t.Unit.Equals(s.Driver.ChangeoverUnit, StringComparison.OrdinalIgnoreCase));
+            var onIt = box != null
+                       && box.Unit.Equals(s.Driver.AssignedTrailerUnit, StringComparison.OrdinalIgnoreCase);
+            return onIt
+                ? $"You are already on {box!.Ref} ({box.Type.ToLowerInvariant()}) — that change is done, " +
+                  "nothing is outstanding."
+                : $"There is no trailer change standing any more. {(box == null
+                    ? "The box that was named is no longer on the fleet."
+                    : $"{box.Ref} is not available to swap onto.")} Nothing is waiting for you at the yard.";
+        }
+
         var current = DispatchEngine.AssignedTrailer(s);
-        var swapping = !string.IsNullOrWhiteSpace(s.Driver.ChangeoverUnit);
-        return current != null && swapping
+        return current != null && standing != null
             ? $"{note} You come off {current.Ref} ({current.Type}) at the same time."
             : note;
     }

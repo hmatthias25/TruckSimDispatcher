@@ -285,6 +285,52 @@ async function comeHome(day) {
       (back.events || []).some((e) => /two verdicts at once/i.test(e.message || '')), 'logged');
   }
 
+  head('6e. The home panel cannot promise a swap the rest of the app will not honour');
+  // Reported from play: one screen said a switch to flatbed was coming, another said there was no
+  // trailer swap, and the driver had to guess which to believe. The panel was replaying the stored
+  // sentence; everything else asks TrailerChangeover.Promised, which refuses a box that has left the
+  // fleet, been retired, or has since become the one already hooked to the truck. The sentence was true
+  // when it was written — whether it still stands is a different question, and it was not being asked.
+  {
+    // The promised box is already the one on the back: the change has happened, so nothing is standing.
+    // Away from the yard: the notice is for saying on the way IN, and is deliberately blank once parked.
+    let st = await api('/export');
+    st.status.locationCity = 'Wichita';
+    st.status.locationState = 'KS';
+    st.status.locationKind = 'TruckStop';
+    st.driver.changeoverUnit = 'T-700';
+    st.driver.changeoverType = 'Flatbed';
+    st.driver.changeoverNote = 'Operations wants you on flatbed — onto T-700 when you get in.';
+    st.driver.assignedTrailerUnit = 'T-700';
+    st.trailers.push({
+      unit: 'T-700', type: 'Flatbed', division: 'Flatbed', year: 2021, length: "48'",
+      status: 'InService', inGameGarage: true, homeTerminalId: yard.id,
+    });
+    let back = un(await api('/import', 'POST', st));
+    let said = back.views?.homeTime?.reassignmentNotice || '';
+    ok('the notice is actually being read', said.length > 0, said ? 'present' : 'EMPTY — check the field');
+    console.log(`  ..    already on it: ${said || '(silent)'}`);
+    ok('it does not still promise the swap',
+      !/wants you on flatbed/i.test(said), said.slice(0, 80) || 'silent');
+    ok('and says the change is done', /already on|that change is done/i.test(said),
+      said.slice(0, 80) || 'silent');
+
+    // A promise naming a box that is not on the fleet is dropped outright when the career loads, rather
+    // than being left to be explained — so the stale sentence cannot survive to be shown at all. Worth
+    // pinning, because it is the other half of the same guarantee: nothing promises what will not happen.
+    st = await api('/export');
+    st.driver.assignedTrailerUnit = 'T501';
+    st.driver.changeoverUnit = 'T-GONE';
+    st.driver.changeoverNote = 'Operations wants you on flatbed — onto T-GONE when you get in.';
+    back = un(await api('/import', 'POST', st));
+    said = back.views?.homeTime?.reassignmentNotice || '';
+    console.log(`  ..    box gone:      unit='${back.driver.changeoverUnit}' notice='${said || '(silent)'}'`);
+    ok('a promise to a box that is not on the fleet is dropped on load',
+      !back.driver.changeoverUnit, `unit='${back.driver.changeoverUnit}'`);
+    ok('so nothing is left promising it', !/wants you on flatbed/i.test(said),
+      said.slice(0, 80) || 'silent');
+  }
+
   head('7. And the trailer verdict is beside the button, not only at the top');
   // When no swap is due the app DOES say so — into the dispatch notes, several screens above the
   // run-home button. Pressing the button and seeing only a job appear reads as the question being
