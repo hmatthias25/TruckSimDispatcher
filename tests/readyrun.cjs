@@ -149,7 +149,7 @@ async function comeHome(day) {
 
   head('5. Ordering the run home raises the trailer question where it cannot be cleared');
   const js = fs.readFileSync(path.join(__dirname, '..', 'ui', 'app.js'), 'utf8');
-  const rep = js.slice(js.indexOf("case 'reposition':"), js.indexOf("case 'reposition':") + 1400);
+  const rep = js.slice(js.indexOf("case 'reposition':"), js.indexOf("case 'reposition':") + 2600);
   // The form was on the decision panel and `DECISION = null` took it away the instant the move was
   // authorized. Held first, then raised as a modal.
   ok('the run-home button says it is the run home', /data-home="\$\{o\.isHomeRun/.test(js), 'flagged');
@@ -160,10 +160,35 @@ async function comeHome(day) {
   ok('only on the run home, not on a reposition to another market',
     /d\.home === '1'/.test(rep), 'gated');
   ok('and the popup carries the same form as the panel did',
-    /function whereaboutsModal[\s\S]{0,700}whereaboutsHtml\(\{ askWhereabouts: ask \}\)/.test(js),
+    /function whereaboutsModal[\s\S]{0,1600}whereaboutsHtml\(\{ askWhereabouts: rows, askHomeDays: true \}\)/.test(js),
     'same form');
   ok('the brief puts the ready time in front of the driver',
     /readyToRunGameTime \? `<div class="callout warn">/.test(js), 'shown');
+
+  head('6. The days-off question does not depend on a trailer changing hands');
+  // What actually went wrong on the reported run. AskWhereabouts is only populated when a swap is DUE —
+  // whether one is due is a seeded company roll, settled before any of this — and the days off were a
+  // field inside that form. So a home time with no change coming asked nothing at all, and the arrival
+  // brief had no figure to work from. The days are wanted on every run to the yard.
+  ok('the decision says to ask for the days on its own', /AskHomeDays/.test(
+    fs.readFileSync(path.join(__dirname, '..', 'Models', 'Models.cs'), 'utf8')), 'on the decision');
+  const eng = fs.readFileSync(path.join(__dirname, '..', 'Services', 'DispatchEngine.cs'), 'utf8');
+  const method = eng.slice(eng.indexOf('void AskAboutTrailersHome'), eng.indexOf('void AskAboutTrailersHome') + 2600);
+  ok('and it is set before any of the trailer reasoning can return early',
+    method.indexOf('AskHomeDays = true') < method.indexOf('ComingType(s) is not'), 'set first');
+  ok('the form renders the days block with no trailer rows',
+    /if \(!ask\.length\) return homeDaysHtml\(\[\]\);/.test(js), 'renders alone');
+  ok('the panel offers it when there is nothing to look up',
+    /\(\(d\.askWhereabouts \|\| \[\]\)\.length \|\| d\.askHomeDays\)/.test(js), 'offered');
+  ok('and the popup is raised on the run home either way',
+    /askDays = homeRun && \(ask\.length > 0 \|\| DECISION\?\.askHomeDays === true\)/.test(js), 'raised');
+
+  head('7. And the trailer verdict is beside the button, not only at the top');
+  // When no swap is due the app DOES say so — into the dispatch notes, several screens above the
+  // run-home button. Pressing the button and seeing only a job appear reads as the question being
+  // skipped, which is what was reported.
+  ok('the run-home block carries the changeover verdict',
+    /d\.changeoverNote \? `<p class="hint"[\s\S]{0,140}Your trailer:/.test(js), 'shown beside it');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

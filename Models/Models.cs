@@ -3881,6 +3881,17 @@ public class BoardDecision
     /// </summary>
     public List<object> AskWhereabouts { get; set; } = new();
 
+    /// <summary>
+    /// Ask how many days they are taking, because this run ends at the yard.
+    ///
+    /// <para>Separate from <see cref="AskWhereabouts"/>, which is only populated when a trailer change is
+    /// actually due. The days off were a field inside that form, so a home time with no swap coming asked
+    /// nothing at all — and the figure is wanted either way, because it is what the arrival brief uses to
+    /// say when to be back on the truck. Reported from play running home out of Junction City with no
+    /// change due: "didn't get a trailer position form, just created the reposition job".</para>
+    /// </summary>
+    public bool AskHomeDays { get; set; }
+
     /// <summary>What the company settled on for the trailer, once those answers are in.</summary>
     public string ChangeoverNote { get; set; } = "";
     /// <summary>

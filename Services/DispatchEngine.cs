@@ -579,6 +579,11 @@ public static class DispatchEngine
     /// </summary>
     private static void AskAboutTrailersHome(AppState s, BoardDecision d)
     {
+        // Every path out of this method is a run that ends at the yard, so every one of them wants to
+        // know how long the driver is staying — before any of the trailer reasoning, which returns early
+        // on most careers most of the time. It used to be a field inside the trailer form, so a home time
+        // with no swap due asked nothing at all and the arrival brief had no days to work from.
+        d.AskHomeDays = true;
         // Said on the board AND kept on the driver's file. The Home time panel reports what was settled
         // rather than deriving its own answer on the way to the screen — see Driver.ChangeoverNote — so a
         // verdict that only ever reached the board decision left that panel silent about a run home the

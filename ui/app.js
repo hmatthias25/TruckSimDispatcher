@@ -1777,6 +1777,12 @@ function decisionHtml() {
           ${o.isHomeRun ? 'Run home empty' : 'Reposition'} to ${esc(o.city)}, ${esc(o.state)} — ${num(o.miles)} mi</button>
         <span class="hint" style="margin:0">${esc(o.reason)}</span>
       </div>`).join('')}
+      ${/* The trailer verdict, HERE, beside the button that triggers it. It only ever went into the
+            dispatch notes at the top of the decision — several screens above the thing it is about —
+            so a driver who pressed the run-home button saw the job appear and nothing else, and read
+            that as the app having skipped the trailer question. Reported from play exactly that way. */ ''}
+      ${d.changeoverNote ? `<p class="hint" style="margin:10px 0 0;padding-top:8px;
+        border-top:1px solid var(--line)"><b>Your trailer:</b> ${esc(d.changeoverNote)}</p>` : ''}
     </div>` : ''}
     ${/* Asked HERE, at the moment the run home is ordered — not at the yard, which is too late to act
           on. The whole value of the answer is that a parked box can be marked as your own in ATS BEFORE
@@ -1785,16 +1791,18 @@ function decisionHtml() {
           print on an instruction that was already several paragraphs, and the driver could not tell what
           they were being told to DO from what they were being asked to ANSWER. Reported from play as the
           run-home direction feeling confusing, with the swap form as the part that cluttered it. */ ''}
-    ${(d.askWhereabouts || []).length ? `<div class="panel" style="margin-top:14px">
-      <div class="panel-head"><h2>Then: your trailer for this home time</h2>
-        ${badge('warn', 'two answers needed')}
+    ${((d.askWhereabouts || []).length || d.askHomeDays) ? `<div class="panel" style="margin-top:14px">
+      <div class="panel-head"><h2>${(d.askWhereabouts || []).length
+        ? 'Then: your trailer for this home time' : 'Then: how long are you home?'}</h2>
+        ${badge('warn', (d.askWhereabouts || []).length ? 'two answers needed' : 'one answer needed')}
         <div class="spacer"></div>
         <span class="sub">separate from the run above — nothing here changes where you are going</span></div>
-      <p class="hint" style="margin-top:0">Do the run first; this is about what you pick up when you get
-        there. Answer it now rather than at the yard, because if the box worth having is parked I will
-        tell you to go and mark it as your own <b>before</b> you pull out, and at the yard that is too
-        late to be worth saying.</p>
-      ${whereaboutsHtml({ askWhereabouts: d.askWhereabouts })}
+      <p class="hint" style="margin-top:0">${(d.askWhereabouts || []).length
+        ? `Do the run first; this is about what you pick up when you get there. Answer it now rather than
+           at the yard, because if the box worth having is parked I will tell you to go and mark it as
+           your own <b>before</b> you pull out, and at the yard that is too late to be worth saying.`
+        : `Do the run first. This only decides when I want you back on the truck once you have parked.`}</p>
+      ${whereaboutsHtml({ askWhereabouts: d.askWhereabouts, askHomeDays: d.askHomeDays })}
     </div>` : ''}
     ${d.wantCityBoard ? `<div class="callout warn">
       <h4>Pull the city board before I commit this</h4>
@@ -2834,9 +2842,18 @@ function reviewHtml(b) {
  * hand a trailer over, and whether that is worth paying. A direction is all anybody can honestly give,
  * so a direction is all it asks for; the city is optional and only sharpens the estimate.
  */
+/**
+ * @param b.askWhereabouts trailer rows, where a swap is actually pending — often none
+ * @param b.askHomeDays    ask how long they are home, which is wanted on every run to the yard
+ *
+ * The days off used to live inside this form and only render alongside trailer rows, so a home time with
+ * no swap due asked nothing — and the arrival brief then had no figure to say when to be back on the
+ * truck. Reported from play running home out of Junction City with no change coming.
+ */
 function whereaboutsHtml(b) {
   const ask = b.askWhereabouts || [];
-  if (!ask.length) return '';
+  if (!ask.length && !b.askHomeDays) return '';
+  if (!ask.length) return homeDaysHtml([]);
   const opts = [
     ['Unknown', 'No idea'],
     ['Inbound', 'Rolling toward a yard'],
@@ -2861,9 +2878,20 @@ function whereaboutsHtml(b) {
           value="${esc(a.state || '')}" placeholder="CO"></label>
       </div>
     </div>`).join('')}
-    ${/* How long they are staying, which is what decides whether a box being out costs anything.
-          Marking a trailer private in ATS makes the AI driver on it finish their load and switch off —
-          so three days out is free to somebody taking five and dear to somebody taking two. */ ''}
+    ${homeDaysBlock(ask)}
+  </div>`;
+}
+
+/**
+ * How long they are staying, and the button that files everything.
+ *
+ * Two jobs, which is why it is on its own: it prices a box that is out — mark a trailer private in ATS
+ * and whoever has it finishes their load and drops it, so three days out is free to somebody taking five
+ * and dear to somebody taking two — and it is what the arrival brief uses to say when to be ready to run.
+ * The second is wanted on every run home, including the ones where no trailer is changing hands.
+ */
+function homeDaysBlock(ask) {
+  return `
     <div class="grid3" style="margin-top:10px">
       <label>How long are you home?
         <select id="wa-homedays">
@@ -2872,8 +2900,12 @@ function whereaboutsHtml(b) {
             n} day${n === 1 ? '' : 's'}${n === 2 ? ' — just the 34' : ''}</option>`).join('')}
         </select></label>
       <div style="grid-column:span 2;align-self:end">
-        <p class="hint" style="margin:0">Mark a box private in ATS and whoever has it finishes their load
-          and drops it. So a trailer a few days out costs you nothing if you are home longer than that.</p>
+        <p class="hint" style="margin:0">${ask.length
+          ? `Mark a box private in ATS and whoever has it finishes their load and drops it. So a trailer a
+             few days out costs you nothing if you are home longer than that. It also sets when I want you
+             back on the truck.`
+          : `This is what I use to tell you when to be ready to run once you park. Nothing is dispatched
+             against you before then.`}</p>
       </div>
     </div>
 
@@ -2883,8 +2915,19 @@ function whereaboutsHtml(b) {
     <div class="row-actions" style="margin-top:10px">
       <button class="btn primary" data-act="whereabouts-all"
         data-units="${esc(ask.map((a) => a.unit).join(','))}">Tell dispatch</button>
-      <span class="sub">fill them all in, then one button &mdash; I decide once I have the lot</span>
-    </div>
+      <span class="sub">${ask.length
+        ? 'fill them all in, then one button &mdash; I decide once I have the lot'
+        : 'no trailer is changing hands this time, so this is the only answer I need'}</span>
+    </div>`;
+}
+
+/** The days-off question alone, where there are no trailers to ask about. */
+function homeDaysHtml(ask) {
+  return `<div class="callout info">
+    <h4>How long are you home?</h4>
+    <p>No trailer is changing hands this home time, so there is nothing to look up — but tell me how long
+      you are taking and I will tell you when to be back on the truck when you park.</p>
+    ${homeDaysBlock(ask)}
   </div>`;
 }
 
@@ -2896,16 +2939,19 @@ function whereaboutsHtml(b) {
  * the same moment, where clearing the board behind it cannot take it away.
  */
 function whereaboutsModal(ask) {
-  if (!ask || !ask.length) return;
+  const rows = ask || [];
   modal(`<div class="panel-head"><h2>Before you pull out</h2>
-      ${badge('warn', 'two answers needed')}
+      ${badge('warn', rows.length ? 'two answers needed' : 'one answer needed')}
       <div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Later</button></div>
-    <p class="hint" style="margin-top:0">The empty move is authorized — this is about what you pick up
-      when you get there, not where you are going. Answer it now rather than at the yard: if the box worth
-      having is parked I will tell you to go and mark it as your own <b>before</b> you set off, and at the
-      yard that is too late to be worth saying.</p>
-    ${whereaboutsHtml({ askWhereabouts: ask })}`);
+    <p class="hint" style="margin-top:0">${rows.length
+      ? `The empty move is authorized — this is about what you pick up when you get there, not where you
+         are going. Answer it now rather than at the yard: if the box worth having is parked I will tell
+         you to go and mark it as your own <b>before</b> you set off, and at the yard that is too late to
+         be worth saying.`
+      : `The empty move is authorized. Nothing is changing about your trailer this time, so all I want is
+         how long you are taking — that is what tells you when to be back on the truck.`}</p>
+    ${whereaboutsHtml({ askWhereabouts: rows, askHomeDays: true })}`);
 }
 
 function homeBriefModal(b) {
@@ -6927,7 +6973,15 @@ async function handleAction(act, d, ev) {
              are running in. Leave it and you may arrive to find it gone.</p></div>` : ''}
          <p class="hint">This is settled. You will see it again next to your home time, and the order is
            waiting at the yard when you get there.</p>`)]);
-      else toast(`${(r.filed || []).length} position(s) noted.`, 'ok');
+      // No swap to report, which is the ordinary case — but the days off were still the answer to a
+      // question that was asked, so say what they bought rather than a bare "noted".
+      else {
+        closeModal();
+        const days = parseInt(sv('wa-homedays'), 10) || S.driver.homeDaysPlanned || 0;
+        toast(units.length
+          ? `${(r.filed || []).length} position(s) noted — ${days} day(s) off.`
+          : `${days} day(s) off noted. I will tell you when to be ready to run once you park.`, 'ok');
+      }
     });
 
     case 'whereabouts': return run(async () => {
@@ -7125,7 +7179,12 @@ async function handleAction(act, d, ev) {
       // Held before the panel goes, and put back in front of them as a modal. It has to be asked now
       // rather than at the yard: the whole value of the answer is that a parked box can be marked as
       // your own in ATS BEFORE you pull out, and at the yard that is too late to be worth saying.
-      const ask = d.home === '1' ? (DECISION?.askWhereabouts || []) : [];
+      const homeRun = d.home === '1';
+      const ask = homeRun ? (DECISION?.askWhereabouts || []) : [];
+      // Asked on every run to the yard, not only the ones with a trailer changing hands. Most home times
+      // have no swap due, and the days off are still what the arrival brief needs to say when to be back
+      // on the truck — bundling the question inside the trailer form meant those asked nothing at all.
+      const askDays = homeRun && (ask.length > 0 || DECISION?.askHomeDays === true);
       return run(async () => {
         // One press. The distance came from the app, so the empty pay is right without anyone typing it.
         absorb(await api('/moves', 'POST', {
@@ -7133,10 +7192,11 @@ async function handleAction(act, d, ev) {
           miles: parseFloat(d.miles) || 0, reason: d.reason || 'Repositioning',
         }));
         DECISION = null;
-        if (ask.length) whereaboutsModal(ask);
-      }, ask.length
-        ? 'Empty move authorized — now tell me where the trailers are.'
-        : 'Empty move authorized — close it out when you get there.');
+        if (askDays) whereaboutsModal(ask);
+      }, !askDays ? 'Empty move authorized — close it out when you get there.'
+        : ask.length
+          ? 'Empty move authorized — now tell me where the trailers are.'
+          : 'Empty move authorized — now tell me how long you are home.');
     }
 
     case 'create-move': {
