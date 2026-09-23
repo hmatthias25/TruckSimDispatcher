@@ -185,7 +185,8 @@ public static class TripService
     /// correcting one says what they should have typed then.
     /// </summary>
     public static (TripEvent? Event, string Message, bool Rebuilt) AmendEvent(
-        AppState s, string tripId, string eventId, string? gameTime, string? detail, bool remove)
+        AppState s, string tripId, string eventId, string? gameTime, string? detail, bool remove,
+        string? endGameTime = null)
     {
         var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
                    ?? throw new InvalidOperationException("Trip not found.");
@@ -210,8 +211,33 @@ public static class TripService
             }
             if (detail != null) ev.Detail = detail;
 
+            // When they rolled again. The one thing the app cannot see for itself, and the thing that
+            // decides whether the run can be used to measure driving speed at all — so it is amendable
+            // after the fact, which is usually when the driver realises it was wanted.
+            var endWas = ev.EndGameTime;
+            if (endGameTime != null)
+            {
+                var wanted = endGameTime.Trim();
+                if (wanted.Length == 0) ev.EndGameTime = "";
+                else
+                {
+                    if (GameClock.TryParse(wanted) is not { } ends)
+                        throw new InvalidOperationException("That is not a game time I can read.");
+                    if (GameClock.TryParse(ev.GameTime) is { } starts && ends <= starts)
+                        throw new InvalidOperationException(
+                            $"A {Readable(ev.Kind).ToLowerInvariant()} cannot end before it started — "
+                            + $"{GameClock.Pretty(wanted)} is not after {GameClock.Pretty(ev.GameTime)}.");
+                    ev.EndGameTime = wanted;
+                }
+            }
+
             message = string.Equals(was, ev.GameTime, StringComparison.Ordinal)
-                ? $"Updated the {Readable(ev.Kind)}."
+                ? string.Equals(endWas, ev.EndGameTime, StringComparison.Ordinal)
+                    ? $"Updated the {Readable(ev.Kind)}."
+                    : string.IsNullOrWhiteSpace(ev.EndGameTime)
+                        ? $"{Readable(ev.Kind)} no longer says when it ended."
+                        : $"{Readable(ev.Kind)} ran to {GameClock.Pretty(ev.EndGameTime)} — "
+                          + $"{Hhmm.Of((GameClock.TryParse(ev.EndGameTime)!.Value - GameClock.TryParse(ev.GameTime)!.Value).TotalHours)} in all."
                 : $"{Readable(ev.Kind)} moved from {GameClock.Pretty(was)} to {GameClock.Pretty(ev.GameTime)}.";
         }
 

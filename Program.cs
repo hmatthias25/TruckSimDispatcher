@@ -917,7 +917,7 @@ app.MapPost("/api/trips/{id}/event/{eventId}", (string id, string eventId, Amend
     Results.Ok(store.Mutate<object>(s =>
 {
     var (ev, message, rebuilt) = TripService.AmendEvent(
-        s, id, eventId, req.GameTime, req.Detail, req.Remove == true);
+        s, id, eventId, req.GameTime, req.Detail, req.Remove == true, req.EndGameTime);
     store.Log(s, "dispatch", message);
     return new { message, ev, rebuilt, snapshot = Snapshot(s) };
 })));
@@ -3170,7 +3170,7 @@ record TripLengthRequest(string? Preference);
 record TrueUpRequest(decimal? AtsBalance);
 record ClockCheckRequest(bool? Uncap, bool? StopAsking);
 record ChangeoverRequest(string? StepId);
-record AmendEventRequest(string? GameTime, string? Detail, bool? Remove);
+record AmendEventRequest(string? GameTime, string? Detail, bool? Remove, string? EndGameTime = null);
 record AssignAccountRequest(string? Company, string? AsTheGameCallsIt, string? RenamesCompanies);
 record ModReadRequest(string? Path);
 record ShowcaseRequest(int? Index);

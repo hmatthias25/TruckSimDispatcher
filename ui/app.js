@@ -232,6 +232,17 @@ function amendEventModal(tripId, evId) {
       <button class="btn tiny ghost" data-act="close-modal">Cancel</button></div>
     <p>Logged at <b>${gt(ev.gameTime)}</b>. Put in what it should have said.</p>
     ${dayTimeInput('ae-time', ev.gameTime, 'Game day and time')}
+    ${/* A stop is a span. Adding the end after the fact is usually when the driver finds out it was
+          wanted — the close-out tells them the run taught nothing without it. */ ''}
+    ${['Rest', 'Restart', 'Break', 'Delay', 'Breakdown'].includes(ev.kind) ? `
+      ${dayTimeInput('ae-end', ev.endGameTime || ev.gameTime, 'Rolled again at')}
+      ${ev.endGameTime
+        ? `<p class="hint">Ran ${hhmm(gapHours(ev.gameTime, ev.endGameTime))}. Set it back to the start
+             time to say you do not know.</p>`
+        : `<div class="callout warn"><p style="margin:0">No end time on this one, so the app has no idea
+             how long you were actually stopped — and everything you sat beyond the minimum counts as
+             driving when it works out your speed. Put the time you rolled again and this run measures
+             properly.</p></div>`}` : ''}
     <label>Note<input id="ae-detail" value="${esc(ev.detail || '')}" placeholder="optional"></label>
     ${closed ? `<div class="callout info"><p>${esc(trip.number)} is closed out, so I will work its
       loading and unloading out again from the corrected log &mdash; and derive the learned dock averages
@@ -2022,6 +2033,23 @@ function viewActive() {
             ['Delay', 'Delay'], ['Breakdown', 'Breakdown'], ['Note', 'Note'],
           ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       </div>
+      ${/* A stop is a SPAN, and the app only ever knew where it started. Reported from play: "you know
+            when I start rest (I can log a rest time) but not when it ends. So if I rest more than 10 (ex
+            waiting for a shipper to open) then you don't know this. Just assuming a rest is 10 hours is
+            incorrect." Everything sat beyond the minimum used to land in the divisor as driving. */ ''}
+      <div class="grid2">
+        ${dayTimeInput('ev-end', S.status.gameTime, 'Rolled again at — for a rest, break or delay')}
+        <div><p class="hint" style="margin-top:22px">Leave it on the same time as above if this is not a
+          stop, or if you would rather not say.</p></div>
+      </div>
+      <div class="callout info">
+        <p style="margin:0"><b>On a rest, put the time you rolled again.</b> It is the one thing the app
+          cannot see: it knows when you stopped because you told it, but a ten-hour reset and a sixteen-hour
+          wait for a shipper to open look identical from here. Without it those extra hours count as
+          <b>driving</b>, and the run teaches the planner that the map is far slower than it is — which is
+          what every feasibility answer divides your miles by. With it, the run is a proper measurement.
+          A rest with no end time is thrown out rather than guessed at, and the close-out says so.</p>
+      </div>
       <label>Detail <span class="sub">— optional</span>
         <input id="ev-detail" placeholder="only if there is something worth noting"></label>
       <p class="hint">The event type and time are the record. Leave this blank unless something happened
@@ -2046,7 +2074,12 @@ function viewActive() {
       </fieldset>
       <div class="row-actions"><button class="btn primary" data-act="log-event" data-id="${t.id}">Add to log</button></div>
       ${t.events.length ? `<div class="log" style="margin-top:12px">${t.events.slice().reverse().map((e) =>
-        `<div><span class="ch">${esc(e.kind)}</span><span>${gt(e.gameTime)} — ${esc(e.detail)}${
+        `<div><span class="ch">${esc(e.kind)}</span><span>${gt(e.gameTime)}${
+          // A stop shows its span, and one that never got an end says so where it can be seen and fixed.
+          e.endGameTime ? ` → ${gt(e.endGameTime)} <b>(${hhmm(gapHours(e.gameTime, e.endGameTime))})</b>`
+            : (e.kind === 'Rest' || e.kind === 'Restart')
+              ? ` <span class="badge warn">no end time</span>` : ''
+        } — ${esc(e.detail)}${
           e.gallons ? ` <b>${num(e.gallons, 1)} gal</b>${e.pricePerGal ? ` @ $${num(e.pricePerGal, 3)}` : ''}` : ''
         } <button class="btn tiny ghost" data-act="amend-event" data-trip="${esc(t.id)}"
             data-ev="${esc(e.id)}" title="Correct or drop this entry">fix</button></span></div>`).join('')}</div>
@@ -6741,9 +6774,14 @@ async function handleAction(act, d, ev) {
     });
     case 'amend-event': return amendEventModal(d.trip, d.ev);
     case 'amend-event-save': return run(async () => {
+      // Only sent when the form actually had the field — otherwise null, which leaves it alone. Set
+      // back to the start time it means "I do not know", which is a blank rather than a zero-length stop.
+      const began = readDayTime('ae-time');
+      const rolled = $('ae-end-tod') ? readDayTime('ae-end') : null;
       const r = absorb(await api(`/trips/${d.trip}/event/${d.ev}`, 'POST', {
-        gameTime: d.remove === '1' ? null : readDayTime('ae-time'),
+        gameTime: d.remove === '1' ? null : began,
         detail: d.remove === '1' ? null : sv('ae-detail'),
+        endGameTime: d.remove === '1' || rolled === null ? null : (rolled > began ? rolled : ''),
         remove: d.remove === '1',
       }));
       closeModal();
@@ -7076,15 +7114,24 @@ async function handleAction(act, d, ev) {
     case 'log-event': {
       const gal = fv('ev-gal'), price = fv('ev-price');
       return run(async () => {
+        // Blank unless it is genuinely later than the start: the field defaults to the current clock,
+        // so "left alone" has to mean "not stated" rather than "a zero-length rest".
+        const began = readDayTime('ev-time');
+        const rolled = readDayTime('ev-end');
         const r = absorb(await api(`/trips/${d.id}/event`, 'POST', {
-          gameTime: readDayTime('ev-time'), kind: sv('ev-kind'),
+          gameTime: began, kind: sv('ev-kind'),
+          endGameTime: rolled && rolled > began ? rolled : '',
           // The event type and time are the record; a detail is only worth having when there is one.
           detail: sv('ev-detail') || (gal > 0 ? `Fuelled ${num(gal, 1)} gal` : sv('ev-kind')),
           city: sv('ev-city'), state: sv('ev-state'),
           gallons: gal, pricePerGal: price, cost: 0,
         }));
+        const isRest = sv('ev-kind') === 'Rest' || sv('ev-kind') === 'Restart';
         toast(gal > 0 && sv('ev-kind') === 'Fuel'
-          ? `Logged — ${gal} gal added to the close-out.` : 'Logged.', 'ok');
+          ? `Logged — ${gal} gal added to the close-out.`
+          : isRest && !(rolled && rolled > began)
+            ? 'Logged — but with no end time on it, this run will not teach the planner your driving speed.'
+            : 'Logged.', isRest && !(rolled && rolled > began) ? 'warn' : 'ok');
         return r;
       });
     }

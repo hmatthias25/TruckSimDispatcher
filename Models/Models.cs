@@ -1616,6 +1616,22 @@ public class TripEvent
     /// read correctly â€” they are not offered for new entries.
     /// </summary>
     public string Kind { get; set; } = "Note";
+
+    /// <summary>
+    /// When a stop ENDED, for the kinds that take time: Rest, Break, Delay, Breakdown.
+    ///
+    /// <para>An event is a stamp, not a span, and for most kinds that is enough. For a stop it is not:
+    /// costing every rest at the ten-hour minimum is only right when the driver took exactly the
+    /// minimum. Reported from play — "you know when I start rest (I can log a rest time) but not when it
+    /// ends. So if I rest more than 10 (ex waiting for a shipper to open) then you don't know this. Just
+    /// assuming a rest is 10 hours is incorrect."</para>
+    ///
+    /// <para>Exactly right, and the hours that go missing are counted as DRIVING, which is how a run
+    /// with a long sleep in it teaches the planner the map is slower than it is. Blank means unknown —
+    /// not ten, not zero — and anything measuring driving time refuses the run rather than guessing.</para>
+    /// </summary>
+    public string EndGameTime { get; set; } = "";
+
     public string Detail { get; set; } = "";
     /// <summary>City the event happened in, when it is worth recording (fuel stops, breakdowns).</summary>
     public string City { get; set; } = "";

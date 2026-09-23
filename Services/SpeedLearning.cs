@@ -110,11 +110,25 @@ public static class SpeedLearning
             return r;
         }
 
-        r.LoggedStops = NonDrivingHours(s, trip, out_.Value, arrived.Value);
+        var (stops, unknownStops) = NonDrivingHours(s, trip, out_.Value, arrived.Value);
+        r.LoggedStops = stops;
         r.DriveHours = elapsed - r.LoggedStops;
         if (r.DriveHours <= 0.1)
         {
             r.Why = "the log accounts for nearly all of it as stopped";
+            return r;
+        }
+
+        // A sleep with no end stamp is an unknown, not a ten. See NonDrivingHours: whatever the driver
+        // actually sat beyond the minimum is hours that land in the divisor as though they were driving,
+        // and there is no way to tell from here how many. So the run does not teach — and the driver is
+        // told what to add so that it can, rather than being left with a sample silently thrown away.
+        if (unknownStops > 0)
+        {
+            r.Why = $"{unknownStops} rest(s) on this run have no end time, so there is no telling how long "
+                    + "they actually ran — anything sat beyond the minimum would count as driving here. "
+                    + "Put the time you rolled again on the rest in the trip log and this run will teach "
+                    + "the planner properly";
             return r;
         }
 
@@ -229,37 +243,73 @@ public static class SpeedLearning
     /// Only events inside the window count. A break logged at the receiver after arrival is part of the
     /// delivery, not part of the run, and subtracting it would make the driving look quicker than it was.
     /// </summary>
-    private static double NonDrivingHours(AppState s, Trip trip, DateTime from, DateTime to)
+    /// <summary>
+    /// How much of the span between two stamps was not driving, and whether the log actually knows.
+    ///
+    /// <para><b>A sleep is measured, not assumed.</b> This costed every rest at the ten-hour minimum,
+    /// which is only right when the driver took exactly the minimum. Reported from play: "you know when
+    /// I start rest (I can log a rest time) but not when it ends. So if I rest more than 10 (ex waiting
+    /// for a shipper to open) then you don't know this. Just assuming a rest is 10 hours is
+    /// incorrect."</para>
+    ///
+    /// <para>Right, and the hours that go missing are counted as DRIVING — sit fourteen against a ten
+    /// hour assumption and four hours of sleep land in the divisor. A 630-mile run comes out at 39 mph
+    /// instead of 52 and teaches the planner the map is slower than it is. The HOS ceiling above does not
+    /// catch that one either: it is comfortably under the limit, just wrong.</para>
+    ///
+    /// <para>So a stop that records when it ended is measured off its own stamps. One that does not is
+    /// reported as <c>Unknown</c>, and the caller refuses the run rather than dividing by a guess. Breaks
+    /// keep the minimum where no end is given: thirty minutes is small enough that the believable band
+    /// absorbs it, and demanding an end time for every half-hour would cost more typing than it is
+    /// worth.</para>
+    /// </summary>
+    private static (double Hours, int Unknown) NonDrivingHours(AppState s, Trip trip, DateTime from, DateTime to)
     {
-        // A trip event is a stamp, not a span — it records that a break happened, not how long it ran.
-        // So each kind is costed at what the rule set says it takes, and the layover and breakdown days
-        // come off the close-out where the driver stated them outright.
-        //
-        // That is an approximation, and it is the right one to make here rather than asking for more
-        // typing: a driver who sat longer than the minimum comes out looking slower than they drove, and
-        // the believable band below throws that sample away rather than letting it teach anything. A
-        // measurement that might be wrong is not folded in and hedged; it is not folded in.
         var rules = s.Settings.Hos;
         var total = 0.0;
+        var unknown = 0;
 
         foreach (var e in trip.Events)
         {
             if (GameClock.TryParse(e.GameTime) is not { } at) continue;
             if (at < from || at > to) continue;
-            total += e.Kind switch
+
+            // Measured, where the driver said when they rolled again.
+            var measured = GameClock.TryParse(e.EndGameTime) is { } done && done > at
+                ? (done - at).TotalHours
+                : (double?)null;
+
+            switch (e.Kind)
             {
-                "Break" => Math.Max(0, rules.BreakLength),
-                "Rest" => Math.Max(0, rules.OffDutyReset),
-                "Restart" => Math.Max(0, rules.CycleRestartHours),
-                "Fuel" => Math.Max(0, s.Settings.FuelStopHours),
-                _ => 0,
-            };
+                case "Rest":
+                case "Restart":
+                    // The two with big minimums, and so the two where guessing is worth a whole sample.
+                    if (measured is { } m) total += m;
+                    else
+                    {
+                        total += Math.Max(0, e.Kind == "Rest" ? rules.OffDutyReset : rules.CycleRestartHours);
+                        unknown++;
+                    }
+                    break;
+                case "Break":
+                    total += measured ?? Math.Max(0, rules.BreakLength);
+                    break;
+                case "Delay":
+                case "Breakdown":
+                    // Costed at nothing unless the driver said how long, because there is no minimum for
+                    // these to fall back on. The close-out's layover and breakdown days cover the rest.
+                    total += measured ?? 0;
+                    break;
+                case "Fuel":
+                    total += measured ?? Math.Max(0, s.Settings.FuelStopHours);
+                    break;
+            }
         }
 
         total += Math.Max(0, trip.LayoverDays) * 24;
         total += Math.Max(0, trip.BreakdownDays) * 24;
 
-        return Math.Min(total, (to - from).TotalHours);
+        return (Math.Min(total, (to - from).TotalHours), unknown);
     }
 
     /// <summary>

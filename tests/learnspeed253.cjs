@@ -63,7 +63,8 @@ async function ontoDropHook() {
  * catch, so no break was ever logged and the section that checks logged stops come off was asserting
  * on a run that had none.
  */
-async function run(miles, realMph, { logBreak = false, logRest = false } = {}) {
+async function run(miles, realMph,
+                   { logBreak = false, logRest = false, restHours = 10, restEnd = true } = {}) {
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
   await api('/board/clear', 'POST', {});
   const board = await api('/board/add', 'POST', {
@@ -88,9 +89,16 @@ async function run(miles, realMph, { logBreak = false, logRest = false } = {}) {
     hours += 0.5;                       // the break is real time on top of the driving
   }
   if (logRest) {
-    await api(`/trips/${trip.id}/event`, 'POST',
-      { kind: 'Rest', gameTime: at(day, '17:00'), detail: 'ten off' });
-    hours += 10;                        // the reset is real time on top of the driving
+    // restHours is what the driver ACTUALLY sat, which is not always the ten-hour minimum — the whole
+    // point of recording when they rolled again.
+    const ends = 17 + restHours;
+    const endDay = day + Math.floor(ends / 24);
+    const endHm = `${String(Math.floor(ends % 24)).padStart(2, '0')}:${String(Math.round((ends % 1) * 60)).padStart(2, '0')}`;
+    await api(`/trips/${trip.id}/event`, 'POST', {
+      kind: 'Rest', gameTime: at(day, '17:00'), detail: `${restHours} off`,
+      endGameTime: restEnd === false ? '' : at(endDay, endHm),
+    });
+    hours += restHours;                 // the reset is real time on top of the driving
   }
 
   const arriveDay = day + Math.floor((6 + hours) / 24);
@@ -301,6 +309,74 @@ async function run(miles, realMph, { logBreak = false, logRest = false } = {}) {
   ok('a run whose stops are on the log still counts',
     afterLogged.speedFactorSamples > beforeLogged.speedFactorSamples,
     `${beforeLogged.speedFactorSamples} → ${afterLogged.speedFactorSamples}`);
+
+  head('9b. A rest is measured off its own stamps, not assumed to be the minimum');
+  // Reported from play: "the problem I see with figuring rest on timing is you know when I start rest
+  // (I can log a rest time) but not when it ends. So if I rest more than 10 (ex waiting for a shipper to
+  // open) then you don't know this. Just assuming a rest is 10 hours is incorrect."
+  //
+  // Right, and the hours that go missing are counted as DRIVING. A 630-mile run driven at 55 with a
+  // SIXTEEN hour wait for a shipper, costed at the ten-hour minimum, puts six hours of sleep in the
+  // divisor: 11:27 of driving reads as 17:27 and the run teaches 36 mph instead of 55. The HOS ceiling
+  // does not catch it either — it is comfortably under the limit, just wrong.
+  {
+    const was = await settings();
+    await run(630, 55, { logRest: true, restHours: 16 });
+    const now = await settings();
+    console.log(`  ..    a 16-hour rest, stamped: ${was.speedFactor} → ${now.speedFactor} over ` +
+                `${now.speedFactorSamples} run(s)`);
+    ok('a long rest with an end time still teaches', now.speedFactorSamples > was.speedFactorSamples,
+      `${was.speedFactorSamples} → ${now.speedFactorSamples}`);
+    // The measurement has to be the SPEED, not the speed minus somebody's assumption about sleeping.
+    const said = ((await api('/export')).events || [])
+      .find((e) => /mi in .* of driving/i.test(e.message || ''))?.message || '';
+    console.log(`  ..    ${said.slice(0, 120)}`);
+    ok('and it measured the driving, not the sitting', /5[0-9](\.[0-9])? mph/.test(said),
+      said.match(/[\d.]+ mph/)?.[0] || '(not said)');
+  }
+
+  head('9c. The same rest with no end time teaches nothing, and says what to add');
+  {
+    const was = await settings();
+    const done = await run(630, 55, { logRest: true, restHours: 16, restEnd: false });
+    const now = await settings();
+    const told = (done.serviceFindings || []).find((x) => /driving speed/i.test(x)) || '';
+    console.log(`  ..    unstamped: ${was.speedFactorSamples} → ${now.speedFactorSamples} sample(s)`);
+    console.log(`  ..    ${told.slice(0, 175)}`);
+    ok('a rest with no end is not guessed at',
+      now.speedFactorSamples === was.speedFactorSamples,
+      `${was.speedFactorSamples} → ${now.speedFactorSamples}`);
+    ok('the planning speed does not move on it',
+      Math.abs(now.speedFactor - was.speedFactor) < 0.0001, `${was.speedFactor} → ${now.speedFactor}`);
+    ok('and the driver is told which stamp is missing', /no end time/i.test(told), 'named');
+    ok('and what adding it would buy them', /teach the planner/i.test(told), 'said');
+  }
+
+  head('9d. Adding the end time afterwards is possible, and checked');
+  {
+    const raw = await api('/export');
+    const withRest = (raw.trips || []).find((t) => (t.events || []).some((e) => e.kind === 'Rest'));
+    const rest = (withRest.events || []).find((e) => e.kind === 'Rest' && !e.endGameTime);
+    ok('there is a rest on file with no end', !!rest, rest ? rest.gameTime : '(none)');
+    if (rest) {
+      let threw = '';
+      try {
+        await api(`/trips/${withRest.id}/event/${rest.id}`, 'POST',
+          { endGameTime: at(1, '00:00') });
+      } catch (e) { threw = e.message; }
+      console.log(`  ..    ${threw.slice(0, 110) || '(accepted)'}`);
+      ok('an end before the start is refused', /cannot end before it started/i.test(threw),
+        threw.slice(0, 70));
+
+      // A day after the stamp, whatever day that was — read off the stamp rather than tracked separately.
+      const restDay = Math.round((Date.parse(rest.gameTime + ':00Z') - Date.UTC(2000, 0, 1)) / 86400000);
+      const fixed = await api(`/trips/${withRest.id}/event/${rest.id}`, 'POST',
+        { endGameTime: at(restDay + 1, '09:00') });
+      console.log(`  ..    ${fixed.message}`);
+      ok('a sensible one is taken', /ran to/i.test(fixed.message || ''), fixed.message?.slice(0, 80));
+      ok('and it says how long the stop actually was', /in all/i.test(fixed.message || ''), 'stated');
+    }
+  }
 
   head('10. Setting it by hand stops it moving');
   let st = await api('/export');
