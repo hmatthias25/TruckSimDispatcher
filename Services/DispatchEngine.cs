@@ -478,6 +478,19 @@ public static class DispatchEngine
 
         // Nothing clean. Reject the board, but name the closest thing to a runnable load.
         decision.RejectAll = true;
+
+        // And settle the trailer for the home time, IF this rejection is one that offers a run home.
+        //
+        // The other rejection paths call this; the ordinary "nothing on this board is worth the truck"
+        // one never did — and it is by far the commonest way a driver is pointed at the yard. So on the
+        // exact board that offers the yellow run-home button, the trailer question was never asked, the
+        // days off were never asked, and the verdict was never settled. Reported from play twice: first
+        // as the form not appearing, then as nothing at all being said about the trailer.
+        //
+        // Gated on a run home actually being on offer. A board rejected mid-tour with no yard run in it
+        // has nothing to settle, and asking there is the noise the retired drop-side ask was removed for.
+        if (HomeTime.RepositionOffers(s).Any(o => o.IsHomeRun))
+            AskAboutTrailersHome(s, decision);
         var tight = decision.Evaluations.FirstOrDefault(
             e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0 && e.Feasibility.Verdict == "Tight");
 

@@ -156,7 +156,7 @@ async function comeHome(day) {
   ok('the question is captured before the panel is cleared',
     rep.indexOf('askWhereabouts') < rep.indexOf('DECISION = null'), 'held first');
   ok('and raised as a popup after the move is authorized',
-    /whereaboutsModal\(ask\)/.test(rep), 'raised');
+    /whereaboutsModal\(ask, verdict\)/.test(rep), 'raised');
   ok('only on the run home, not on a reposition to another market',
     /d\.home === '1'/.test(rep), 'gated');
   ok('and the popup carries the same form as the panel did',
@@ -183,12 +183,62 @@ async function comeHome(day) {
   ok('and the popup is raised on the run home either way',
     /askDays = homeRun && \(ask\.length > 0 \|\| DECISION\?\.askHomeDays === true\)/.test(js), 'raised');
 
+  head('6b. THE PATH IT ACTUALLY HAPPENS ON: a board rejected with a run home offered');
+  // The bug under the two reported ones. AskAboutTrailersHome is called from the shop-run-home path, the
+  // load-finishes-at-the-yard path and the overdue path — but NOT from the ordinary "nothing on this
+  // board is worth the truck" rejection, which is by far the commonest way a driver is pointed at the
+  // yard and the one that renders the yellow button. So on that exact board nothing was asked and nothing
+  // was settled, and both earlier fixes sat downstream of a call that never happened.
+  //
+  // Asserted against the decision itself rather than the source, which is how it got past twice.
+  {
+    const st = await api('/export');
+    st.status.gameTime = iso(120);
+    st.status.locationCity = 'Junction City';
+    st.status.locationState = 'KS';
+    st.status.locationKind = 'Receiver';
+    st.driver.lastHomeGameTime = iso(107);       // home time a day out on a fortnightly arrangement
+    st.driver.homeDaysPlanned = 4;
+    await api('/import', 'POST', st);
+    await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 55 });
+
+    // A board of freight that runs the wrong way — rejected, and the yard offered instead.
+    await api('/board/clear', 'POST', {});
+    for (const [c, stt, mi] of [['Amarillo', 'TX', 430], ['Lubbock', 'TX', 520]]) {
+      await api('/board/add', 'POST', {
+        cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
+        originCity: 'Junction City', originState: 'KS', destCity: c, destState: stt,
+        loadedMiles: mi, deadheadMiles: 0, gameRevenue: Math.round(mi * 1.4),
+        deadlineHours: 40, weightLbs: 30000,
+      });
+    }
+    const dec = await api('/board/evaluate');
+    const offers = (un(await api('/bootstrap')).views.repositionOffers || []);
+    const homeOffer = offers.find((o) => o.isHomeRun);
+    console.log(`  ..    rejectAll=${dec.rejectAll}, run home offered=${!!homeOffer}` +
+                `, askHomeDays=${dec.askHomeDays}`);
+    console.log(`  ..    verdict: ${dec.changeoverNote || '(silent)'}`);
+    ok('the board is rejected and the yard is offered', dec.rejectAll === true && !!homeOffer,
+      `rejectAll=${dec.rejectAll}, home offer=${!!homeOffer}`);
+    ok('the days off are asked for on this path too', dec.askHomeDays === true, `${dec.askHomeDays}`);
+    ok('and the trailer is settled rather than left silent',
+      (dec.changeoverNote || '').length > 0, dec.changeoverNote?.slice(0, 90) || '(silent)');
+  }
+
   head('7. And the trailer verdict is beside the button, not only at the top');
   // When no swap is due the app DOES say so — into the dispatch notes, several screens above the
   // run-home button. Pressing the button and seeing only a job appear reads as the question being
   // skipped, which is what was reported.
   ok('the run-home block carries the changeover verdict',
     /d\.changeoverNote \? `<p class="hint"[\s\S]{0,140}Your trailer:/.test(js), 'shown beside it');
+  // And after the press, because authorizing the move clears the panel the note was on. Reported from
+  // play: "it would be nice to have SOME indication to the player even if nothing will change."
+  ok('the verdict is held before the panel is cleared',
+    /const verdict = homeRun \? \(DECISION\?\.changeoverNote/.test(js), 'held');
+  ok('a run home with nothing to ask still says something',
+    /else if \(homeRun\) runHomeSettledModal\(verdict\)/.test(js), 'confirmed');
+  ok('and that confirmation names the trailer either way',
+    /function runHomeSettledModal[\s\S]{0,900}Nothing is changing this home time/.test(js), 'names it');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

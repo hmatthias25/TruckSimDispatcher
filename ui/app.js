@@ -2938,12 +2938,39 @@ function homeDaysHtml(ask) {
  * on the decision panel and ordering the move cleared the panel. It is a popup now — the same form, at
  * the same moment, where clearing the board behind it cannot take it away.
  */
-function whereaboutsModal(ask) {
+/**
+ * Ordering a run home when there is nothing at all to ask.
+ *
+ * Reported from play: pressing the button produced a reposition job and silence, which reads exactly
+ * like the app having skipped the trailer question rather than having answered it. The verdict is
+ * already worked out by this point — it just had nowhere to be seen, because the panel carrying it is
+ * cleared by the same press.
+ */
+function runHomeSettledModal(verdict) {
+  modal(`<div class="panel-head"><h2>Running home empty</h2>
+      ${badge('ok', 'authorized')}
+      <div class="spacer"></div>
+      <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+    <div class="callout go"><p style="margin:0">The empty move is on the books and the mileage goes on
+      your pay. Close it out when you get there.</p></div>
+    <div class="callout ${verdict ? 'info' : 'mute'}" style="margin-top:10px">
+      <h4>Your trailer</h4>
+      <p style="margin:0">${verdict
+        ? esc(verdict)
+        : `Nothing is changing this home time — you keep what you are pulling. There is nothing to look
+           up and nothing to reserve before you set off.`}</p></div>`);
+}
+
+function whereaboutsModal(ask, verdict) {
   const rows = ask || [];
   modal(`<div class="panel-head"><h2>Before you pull out</h2>
       ${badge('warn', rows.length ? 'two answers needed' : 'one answer needed')}
       <div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Later</button></div>
+    ${/* What was already settled, said before what is being asked — so the driver can tell the two
+          apart. Silence here is what made the whole thing read as skipped. */ ''}
+    ${verdict ? `<div class="callout info" style="margin-top:0">
+      <h4>Your trailer</h4><p style="margin:0">${esc(verdict)}</p></div>` : ''}
     <p class="hint" style="margin-top:0">${rows.length
       ? `The empty move is authorized — this is about what you pick up when you get there, not where you
          are going. Answer it now rather than at the yard: if the box worth having is parked I will tell
@@ -7185,6 +7212,8 @@ async function handleAction(act, d, ev) {
       // have no swap due, and the days off are still what the arrival brief needs to say when to be back
       // on the truck — bundling the question inside the trailer form meant those asked nothing at all.
       const askDays = homeRun && (ask.length > 0 || DECISION?.askHomeDays === true);
+      // Held, because authorizing the move clears the panel the note was on.
+      const verdict = homeRun ? (DECISION?.changeoverNote || '') : '';
       return run(async () => {
         // One press. The distance came from the app, so the empty pay is right without anyone typing it.
         absorb(await api('/moves', 'POST', {
@@ -7192,11 +7221,16 @@ async function handleAction(act, d, ev) {
           miles: parseFloat(d.miles) || 0, reason: d.reason || 'Repositioning',
         }));
         DECISION = null;
-        if (askDays) whereaboutsModal(ask);
-      }, !askDays ? 'Empty move authorized — close it out when you get there.'
+        // Something is always said on a run home, even when the answer is that nothing changes. The
+        // panel goes when the move is authorized, so a driver who pressed the button and got only a job
+        // had no way to tell whether the trailer question had been considered or skipped. Reported from
+        // play: "it would be nice to have SOME indication to the player even if nothing will change."
+        if (askDays) whereaboutsModal(ask, verdict);
+        else if (homeRun) runHomeSettledModal(verdict);
+      }, !homeRun ? 'Empty move authorized — close it out when you get there.'
         : ask.length
           ? 'Empty move authorized — now tell me where the trailers are.'
-          : 'Empty move authorized — now tell me how long you are home.');
+          : 'Empty move authorized — one answer and you are set.');
     }
 
     case 'create-move': {
