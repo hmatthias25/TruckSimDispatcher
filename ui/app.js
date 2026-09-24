@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /* ============================================================ state */
 let S = null;              // latest snapshot from the server
@@ -122,11 +122,16 @@ const pct = (n, d = 1) => (+n || 0).toFixed(d) + '%';
 const EPOCH = Date.UTC(2000, 0, 1);
 const DAY_MS = 86400000;
 
-// Whole days since the epoch, nothing added — the game's numbering. This mirrors GameClock.DayOf on
-// the server, and the two have to agree exactly or a day typed in comes back as a different one.
+// The epoch is DAY ONE, which is what makes day 1 a Monday and paydays land on Fridays. Mirrors
+// GameClock.DayOf on the server, and it has to mirror it exactly: the UI reads day numbers out of
+// stamps the server wrote and writes them back into stamps the server reads. An off-by-one here does
+// not surface as a wrong date on screen — both directions stay self-consistent, so the header looks
+// right. It surfaces as the SERVER disagreeing about the weekday, which is how a load due that night
+// came back due a week on Tuesday: the screen said Mon Day 1, the server held Tue Day 2, and the
+// window's "Mon 11:14 pm" went to the FOLLOWING Monday.
 const dayOf = (iso) => {
   const t = Date.parse(isoUtc(iso));
-  return isNaN(t) ? 0 : Math.floor((t - EPOCH) / DAY_MS);
+  return isNaN(t) ? 0 : Math.floor((t - EPOCH) / DAY_MS) + 1;
 };
 const timeOf = (iso) => {
   const t = Date.parse(isoUtc(iso));
@@ -148,9 +153,10 @@ function isoUtc(iso) {
 /** Day number + HH:MM back into the wire format. */
 function toIso(day, hhmm) {
   const raw = parseInt(day, 10);
-  const d = Math.max(0, isNaN(raw) ? 0 : raw);
+  // Day 1 is the epoch, so there is no day 0 to fall back to — GameClock.FromDay clamps the same way.
+  const d = Math.max(1, isNaN(raw) ? 1 : raw);
   const [h, m] = String(hhmm || '00:00').split(':').map((x) => parseInt(x, 10) || 0);
-  const t = new Date(EPOCH + d * DAY_MS + h * 3600000 + m * 60000);
+  const t = new Date(EPOCH + (d - 1) * DAY_MS + h * 3600000 + m * 60000);
   return t.toISOString().slice(0, 16);
 }
 
@@ -344,7 +350,7 @@ function fixBoardStage() {
  */
 function dowForDay(day) {
   const n = Number(day);
-  return Number.isFinite(n) && n >= 0 ? DOW[((Math.floor(n) % 7) + 7) % 7] : '—';
+  return Number.isFinite(n) && n >= 1 ? DOW[((Math.floor(n) % 7) + 7) % 7] : '—';
 }
 
 function dayTimeInput(idPrefix, iso, label) {
@@ -353,7 +359,7 @@ function dayTimeInput(idPrefix, iso, label) {
     <span style="display:flex;gap:6px;align-items:center">
       ${/* .spin keeps the arrows here. A game day is the one number in the app that is genuinely
             stepped by one, repeatedly — see styles.css. */ ''}
-      <input id="${idPrefix}-day" type="number" min="0" step="1" class="spin" style="flex:0 0 92px"
+      <input id="${idPrefix}-day" type="number" min="1" step="1" class="spin" style="flex:0 0 92px"
         data-dow="${idPrefix}-dow" value="${day}" title="Game day">
       <span id="${idPrefix}-dow" class="badge info" style="flex:0 0 auto"
         title="Day 1 is a Monday. Check this against the game before you file.">${dowForDay(day)}</span>
