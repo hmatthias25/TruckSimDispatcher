@@ -229,6 +229,12 @@ public static class DeliveryWindow
     /// from the caller, which was the truck's clock while the window is the receiver's — harmless while
     /// there was only one clock, and a two-hour error the moment there were two.
     /// </remarks>
+    /// <summary>
+    /// The most a bare window is moved to agree with a stated countdown. Two days: a listing and its
+    /// own countdown can disagree about which day, never about which week.
+    /// </summary>
+    public const int MaxRollDays = 2;
+
     public static Parsed RollToDeadline(Parsed win, double typedHours)
     {
         var now = win.Now;
@@ -253,6 +259,19 @@ public static class DeliveryWindow
 
         var days = (int)Math.Round(gap / 24.0, MidpointRounding.AwayFromZero);
         if (days <= 0) return win;
+
+        // And not by a week.
+        //
+        // This reconciles a bare clock range with a countdown printed beside it, and both come off one
+        // listing — so the gap between them is a day, occasionally two. A gap of six days is not a
+        // listing disagreeing with itself; it is a figure that did not come off the screen at all.
+        //
+        // Reported from play: a reader that dropped the weekdays out of "Mon 11:14 pm - Tue 5:54 am"
+        // AND sent 162 hours moved a window due that night to the far side of the following weekend.
+        // The text read as tonight, which was right; the roll is what carried it. Where the countdown
+        // is that far from the window, the window is the better evidence — it is the thing actually
+        // transcribed — and Implausible still puts the disagreement in front of the driver.
+        if (days > MaxRollDays) return win;
 
         var due = win.DueAt.AddDays(days);
         var opens = win.OpensAt?.AddDays(days);

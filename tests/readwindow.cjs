@@ -77,7 +77,10 @@ async function interpret(row) {
   // The case the guard was written for: no day in the text, so the reader's figure is the only thing
   // that says which day was meant.
   const bare = await interpret({ deliverByText: '5:54 am', deadlineHours: 42.4 });
-  ok('a bare time keeps the reader’s number', Math.abs(bare.deadlineHours - 42.4) < 0.01,
+  // Placed on the day the countdown points at, and then taken FROM THE WINDOW rather than from the
+  // figure — 05:54 on that day, not 42.4 hours from now. The reader says which day; the listing says
+  // the time.
+  ok('a bare time is placed by the reader’s number', Math.abs(bare.deadlineHours - 42.25) < 0.5,
     `${bare.deadlineHours}h`);
 
   head('5. A remaining-duration listing is untouched');
@@ -85,6 +88,46 @@ async function interpret(row) {
   const duration = await interpret({ deliverByText: '', deadlineHours: 30 });
   ok('no window text means the countdown stands', Math.abs(duration.deadlineHours - 30) < 0.01,
     `${duration.deadlineHours}h`);
+
+  head('6. The reader stripping the weekday is what actually happened');
+  // Found by running the parser over every plausible transcription of the two cards and matching the
+  // result against the screen. The reader was not sending the day at all:
+  //
+  //   "Tue 2:47 pm - Tue 9:27 pm"  ->  deliver 33:48   (right: tomorrow)
+  //   "2:47 pm - 9:27 pm"          ->  deliver  9:48   (what the screen showed)
+  //
+  // The prompt's only example was a bare range, so that is what it patterned on. Both rows on that
+  // board were wrong; only one was wrong LOUDLY.
+  const stripped = await interpret({ deliverByText: '2:47 pm - 9:27 pm', deadlineHours: 9.8 });
+  ok('a bare range still reads as today, which is all it can mean',
+    Math.abs(stripped.deadlineHours - 9.8) < 0.6, `${stripped.deadlineHours}h`);
+
+  const kept = await interpret({ deliverByText: 'Tue 2:47 pm - Tue 9:27 pm', deadlineHours: 9.8 });
+  ok('and keeping the day moves it to the day it belongs on',
+    kept.deadlineHours > 30 && kept.deadlineHours < 36, `${kept.deadlineHours}h`);
+  ok('which is the whole difference the transcription makes',
+    kept.deadlineHours - stripped.deadlineHours > 20,
+    `${stripped.deadlineHours}h -> ${kept.deadlineHours}h`);
+
+  head('7. A bare window is never rolled by a week');
+  // The reported row. Weekday stripped AND a 162-hour figure sent, which used to carry a load due that
+  // night to the far side of the following weekend. The text is the thing actually transcribed, so
+  // where the countdown is days away from it the text wins and the disagreement is flagged instead.
+  const wild = await interpret({ deliverByText: '11:14 pm - 5:54 am', deadlineHours: 162.15 });
+  ok('the six-day roll does not happen', wild.deadlineHours < 24,
+    `162.15 -> ${wild.deadlineHours}h`);
+  // And nothing is flagged, because there is no longer anything wrong to flag: the window is the
+  // transcription, placed where the transcription says. The warning was only ever the symptom.
+  ok('and nothing is left for the driver to correct', !(wild.windowWarning || '').length,
+    (wild.windowWarning || '(clean)').slice(0, 80));
+  ok('the opening agrees with the deadline rather than sitting days apart',
+    wild.appointmentOpensHours > 0 && wild.deadlineHours - wild.appointmentOpensHours < 12,
+    `opens ${wild.appointmentOpensHours}h, due ${wild.deadlineHours}h`);
+
+  head('8. A roll of a day or two still works, because listings really do disagree by one');
+  const nudged = await interpret({ deliverByText: '5:54 am', deadlineHours: 42 });
+  ok('a one-day gap is still reconciled', Math.abs(nudged.deadlineHours - 42.25) < 2,
+    `${nudged.deadlineHours}h`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

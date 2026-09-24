@@ -1679,6 +1679,7 @@ function extractHtml() {
       <thead><tr><th></th><th>Cargo</th><th>Origin</th><th>ST</th><th>Destination</th><th>ST</th>
         <th class="num">Loaded mi</th><th class="num">Revenue</th><th class="num">Deliver in</th>
         <th class="num" title="When the receiver will take it, worked out from the window on the listing. Blank means the listing showed no opening time.">Opens in</th>
+        <th title="The window exactly as the reader transcribed it off the listing. Deliver in and Opens in are worked out from THIS, against the game clock — so if those two look wrong, this is the field to check. Correct it and they follow.">Window read</th>
         <th class="num">Weight lb</th><th>Trailer</th><th>Read</th></tr></thead>
       <tbody>${rows.map((l, i) => {
         const missing = (l.unreadable || []);
@@ -1695,6 +1696,7 @@ function extractHtml() {
           <td><span${bad('gameRevenue')}>${cell(i, 'rev', l.gameRevenue || '', '82px')}</span></td>
           <td><span${bad('deadlineHours')}>${cell(i, 'dl', l.deadlineHours ? hhmm(l.deadlineHours) : '', '72px')}</span></td>
           <td>${cell(i, 'op', l.appointmentOpensHours ? hhmm(l.appointmentOpensHours) : '', '72px')}</td>
+          <td><span${l.windowWarning ? ' style="outline:1px solid var(--red)"' : ''}>${cell(i, 'wtext', l.deliverByText || '', '150px')}</span></td>
           <td>${cell(i, 'wt', l.weightLbs || '', '82px')}</td>
           <td>${cell(i, 'trailer', l.trailerType, '92px')}</td>
           <td>${conf(l.confidence)}${missing.length ? '<br>' + badge('bad', 'gaps') : ''}</td>
@@ -1704,6 +1706,11 @@ function extractHtml() {
     <p class="hint">Rows read with low confidence start unticked. Fields the reader could not make out
       are outlined in red and left blank — loaded miles, revenue and the delivery window are all
       required before a load can be evaluated.</p>
+    <p class="hint"><b>Window read</b> is what the reader transcribed off the listing, and
+      <b>Deliver in</b> and <b>Opens in</b> are worked out from it against the game clock. If those two
+      look wrong, check that one first: the reader has no clock of its own, so a window it transcribed
+      as a day number rather than as the weekday on the card is the usual reason a load lands a week
+      out. Correcting it is enough &mdash; the two figures are re-derived from it.</p>
     <div class="row-actions">
       <button class="btn go" data-act="extract-commit">Add ticked rows to the board</button>
       <button class="btn ghost" data-act="extract-cancel">Discard</button>
@@ -7168,6 +7175,10 @@ async function handleAction(act, d, ev) {
           // The opening the reader found, so the plan waits for the gate rather than arriving early
           // and calling the wait slack.
           appointmentOpensHours: hvn(`x-op-${i}`) ?? (l.appointmentOpensHours || 0),
+          // The transcription itself, so a window the reader got wrong can be corrected HERE and the
+          // two figures above re-derived from it server-side against the game clock. Where it names a
+          // day the text wins; blank it and the hours typed on the row stand instead.
+          windowText: sv(`x-wtext-${i}`),
           hazmatClass: l.hazmatClass || '',
           trailerType: sv(`x-trailer-${i}`),
           shipper: l.shipper || '', receiver: l.receiver || '',

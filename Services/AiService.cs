@@ -223,11 +223,20 @@ public static class AiService
         - loadedMiles: the trip distance in miles, as a plain number.
         - gameRevenue: the payout in dollars, as a plain number with no currency symbol,
           commas or decimals.
-        - The delivery window. ATS usually shows this as a TIME RANGE, for example
-          "6:15 AM - 12:55 PM" — the receiver opens at the first time and the load is due by the
-          second. Report what you see verbatim and DO NOT convert it to a number of hours:
+        - The delivery window. ATS usually shows this as a TIME RANGE, and it usually names the DAY
+          each end falls on — for example "Mon 11:14 pm - Tue 5:54 am" or "Expected Tue 2:47 pm -
+          Tue 9:27 pm CDT". The receiver opens at the first time and the load is due by the second.
+          Report what you see verbatim and DO NOT convert it to a number of hours:
           * Put the window text, exactly as shown, in deliverByText — the whole range, both times,
-            with any AM/PM and any day or date shown alongside it. Leave deadlineHours at 0.
+            AND THE WEEKDAY OR DATE IN FRONT OF EACH ONE. Leave deadlineHours at 0.
+          * THE WEEKDAY IS THE MOST IMPORTANT PART OF THAT STRING AND MUST NEVER BE DROPPED.
+            "Mon 11:14 pm - Tue 5:54 am" and "11:14 pm - 5:54 am" are completely different windows:
+            the first says which night, the second does not, and the app can only read the second as
+            tonight. A window transcribed without its days is how a load due Tuesday gets an
+            appointment on Monday — early, quietly, and judged against.
+            Copy "Mon 11:14 pm - Tue 5:54 am". Do NOT copy "11:14 pm - 5:54 am".
+          * Keep "Expected", a time zone such as CDT, and anything else printed in the same field.
+            Extra words are harmless; a missing day is not.
           * Only use deadlineHours when the row shows a REMAINING TIME instead of a range or a clock
             time ("8h 30m" is 8.5, "2 days 4h" is 52).
           * If you cannot read the window at all, leave BOTH empty and add "deadlineHours" to
@@ -301,7 +310,8 @@ public static class AiService
                   "expiresInHours":{ "type": "number" },
                   "weightLbs":    { "type": "number" },
                   "hazmatClass":  { "type": "string" },
-                  "deliverByText":{ "type": "string" },
+                  "deliverByText":{ "type": "string",
+                                    "description": "The delivery window copied verbatim off the listing, INCLUDING the weekday or date in front of each time — e.g. \"Mon 11:14 pm - Tue 5:54 am\". Never strip the day; without it the window cannot be placed on a date." },
                   "trailerType":  { "type": "string" },
                   "isUrgent":     { "type": "boolean" },
                   "isFragile":    { "type": "boolean" },
@@ -548,23 +558,23 @@ public static class AiService
         if (!string.IsNullOrWhiteSpace(l.DeliverByText)
             && DeliveryWindow.Read(state, l.DeliverByText, l.DestState) is { } win)
         {
-            // <b>Where the text named its day, the app's conversion wins outright.</b>
+            // The app converts the text; the reader's own figure is only ever used to say WHICH DAY a
+            // bare clock range meant. That is exactly what RollToDeadline decides, so it decides it
+            // here too rather than this path growing a second, slightly different rule — which is how
+            // the two came to disagree in the first place.
             //
-            // The reader is told to transcribe the window and leave deadlineHours at 0, because only the
-            // app has the game clock. It does not always obey, and this deferred to whatever number it
-            // volunteered — so a listing reading "Mon 11:14 pm - Tue 5:54 am" on a Monday morning came in
-            // as 162 hours, a week out, while the app's own correct conversion of the very same text was
-            // computed and thrown away. Reported from play with the game card beside it.
+            //   named its day      -> no roll, the text stands
+            //   bare, within 2 days -> rolled to agree with the countdown
+            //   bare, further out   -> no roll; the transcription is the better evidence
             //
-            // A BARE time is the one case the model's number is still worth having: "5:54 am" alone does
-            // not say which day, the app can only resolve it to the soonest future occurrence, and a
-            // stated time-to-deliver is the only evidence of the day meant. That is the same distinction
-            // DeliveryWindow.RollToDeadline draws, and for the same reason.
-            if (win.Anchored || l.DeadlineHours <= 0)
-            {
-                l.DeadlineHours = Math.Round(win.HoursUntilDue, 2);
-                l.Unreadable.RemoveAll(u => u.Equals("deadlineHours", StringComparison.OrdinalIgnoreCase));
-            }
+            // Reported from play: a reader that dropped the weekdays out of "Mon 11:14 pm - Tue 5:54
+            // am" AND sent 162 hours. The text read as tonight, which was right, and the figure
+            // carried it to the far side of the following weekend.
+            win = DeliveryWindow.RollToDeadline(win, l.DeadlineHours);
+
+            l.DeadlineHours = Math.Round(win.HoursUntilDue, 2);
+            l.Unreadable.RemoveAll(u => u.Equals("deadlineHours", StringComparison.OrdinalIgnoreCase));
+
             // Off the window rather than subtracted here: both of its times are the receiver's clock,
             // and the status clock is the truck's.
             if (win.OpensAt != null) l.AppointmentOpensHours = win.HoursUntilOpens;
