@@ -28,7 +28,13 @@ public static class DeliveryWindow
     /// which is how a run into a later zone came to look two hours easier than it was.</para>
     /// </summary>
     /// <param name="Now">The moment of reading, on the receiver's clock.</param>
-    public record Parsed(DateTime? OpensAt, DateTime DueAt, double HoursUntilDue, bool HadRange, DateTime Now)
+    /// <param name="Anchored">
+    /// Whether the text said WHICH day — a day number, or a weekday name. A window that did is fixed to
+    /// a date and must never be rolled to agree with a countdown; one that did not is a bare clock range
+    /// and has to be placed by something. See <see cref="RollToDeadline"/>.
+    /// </param>
+    public record Parsed(DateTime? OpensAt, DateTime DueAt, double HoursUntilDue, bool HadRange, DateTime Now,
+                         bool Anchored = false)
     {
         /// <summary>
         /// True hours from now until the receiver opens; 0 where the listing gave no opening. Derived
@@ -129,7 +135,8 @@ public static class DeliveryWindow
         var hours = (due - now).TotalHours;
         if (hours <= 0) return null;
 
-        return new Parsed(opens, due, Math.Round(hours, 2), hadRange, now);
+        return new Parsed(opens, due, Math.Round(hours, 2), hadRange, now,
+                          Anchored: day != null || weekdays.Count > 0);
     }
 
     /// <summary>
@@ -226,6 +233,19 @@ public static class DeliveryWindow
     {
         var now = win.Now;
         if (typedHours <= 0) return win;
+
+        // <b>A window that named its day is already placed.</b>
+        //
+        // This exists for a bare clock range — "08:00 - 18:00" has no day in it, so it resolves to the
+        // soonest future occurrence and a stated time-to-deliver is the only thing that can say which
+        // day was meant. A window that said "Mon 11:14 pm" is not that: it named the day itself, and
+        // rolling it to agree with an hours figure is trusting the derived number over the stated one.
+        //
+        // Reported from play. A Chicago load listed "Mon 11:14 pm - Tue 5:54 am" was parsed correctly to
+        // that night, then rolled SIX DAYS forward to match a 162-hour deadline that arrived with it —
+        // giving a 144-hour wait at the dock and a delivery a week out. The wrong number won because it
+        // was the one being deferred to.
+        if (win.Anchored) return win;
 
         // Within a few hours the two agree well enough; a small gap is rounding, not a wrong day.
         var gap = typedHours - win.HoursUntilDue;

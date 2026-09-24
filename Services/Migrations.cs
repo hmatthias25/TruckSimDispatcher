@@ -82,6 +82,7 @@ public static class Migrations
         // LAST, and it has to be. It stamps the current schema version, so anything gated on a lower
         // one would read as already applied and skip itself.
         PutTheFirstDayBackOnDayOne(s);
+        ReReadWindowsThatNamedTheirDay(s);
     }
 
     /// <summary>
@@ -1435,6 +1436,44 @@ public static class Migrations
 
         // Day 0 is a legitimate day now, so only a real recorded payday moves.
         if (s.Driver.LastPaydayDay > 0) s.Driver.LastPaydayDay -= 1;
+    }
+
+    /// <summary>
+    /// Re-reads board windows that named their own day, for rows placed before the roll was fixed.
+    ///
+    /// <para><see cref="DeliveryWindow.RollToDeadline"/> exists for a BARE clock range: "08:00 - 18:00"
+    /// has no day in it, so a stated time-to-deliver is the only thing that can say which day was meant.
+    /// It was being applied to every window, including ones that named the day themselves — so a listing
+    /// reading "Mon 11:14 pm - Tue 5:54 am" parsed correctly to that night and was then rolled six days
+    /// forward to agree with a 162-hour deadline that arrived with it. Reported from play as a 144-hour
+    /// wait at the dock on a load due that evening.</para>
+    ///
+    /// <para>The text itself is kept on the load, so nothing has to be read off the game again: the
+    /// window is simply parsed a second time, now that the roll knows to leave an anchored one alone.
+    /// Only rows whose stored deadline disagrees with the text by a day or more are touched, and only
+    /// where the text named a day — anything else is left exactly as it is.</para>
+    /// </summary>
+    private static void ReReadWindowsThatNamedTheirDay(AppState s)
+    {
+        // One-shot. A board row is a countdown from the moment it was added, so re-reading the text on
+        // every load would keep rewriting rows that are merely getting old — which is a different
+        // behaviour from repairing ones that were rolled, and not one anybody asked for.
+        if (s.SchemaVersion >= 31) return;
+        s.SchemaVersion = 31;
+
+        foreach (var load in s.Board)
+        {
+            if (string.IsNullOrWhiteSpace(load.WindowText)) continue;
+            if (DeliveryWindow.Read(s, load.WindowText, load.DestState) is not { } win) continue;
+            if (!win.Anchored) continue;
+
+            // A day or more out is a rolled window. Anything smaller is the clock having moved on since
+            // the row was added, which is ordinary and not something to rewrite.
+            if (Math.Abs(load.DeadlineHours - win.HoursUntilDue) < 20) continue;
+
+            load.DeadlineHours = Math.Round(win.HoursUntilDue, 2);
+            if (win.OpensAt != null) load.AppointmentOpensHours = win.HoursUntilOpens;
+        }
     }
 
     /// <summary>
