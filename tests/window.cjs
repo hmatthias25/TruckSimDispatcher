@@ -16,7 +16,7 @@ let S;
 const hhmm = (h) => { const w = Math.floor(h + 1e-9); return `${w}:${String(Math.round((h - w) * 60)).padStart(2, '0')}`; };
 // Game day 0 is the epoch, a Monday. Day 38 is therefore a Thursday, 39 a Friday, 40 a Saturday.
 const gday = (day, hm) => {
-  const d = new Date(Date.UTC(2000, 0, 1) + day * 86400000);
+  const d = new Date(Date.UTC(2000, 0, 1) + (day - 1) * 86400000);   // day 1 is the epoch
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-`
     + `${String(d.getUTCDate()).padStart(2, '0')}T${hm}`;
 };
@@ -52,10 +52,10 @@ const gday = (day, hm) => {
   r = await api('/window/read', 'POST', { text: '14:00' });
   ok('a bare 24-hour time', /T14:00$/.test(r.dueAt || ''), r.dueAt);
   r = await api('/window/read', 'POST', { text: 'Day 3 09:30' });
-  // "Day 3" is the game's day 3, three days after the epoch: 2000-01-04. The clock here reads
-  // 2000-01-01T06:01, which is day 0, so the window is three days and change out.
-  ok('a day-qualified time lands on that day', /04T09:30$/.test(r.dueAt || ''), r.dueAt);
-  ok('and the hours span the days', r.hoursUntilDue > 60 && r.hoursUntilDue < 84, `${r.hoursUntilDue}`);
+  // "Day 3" is the game's day 3. A career starts on day 1 at the epoch, so day 3 is two days after it:
+  // 2000-01-03. The clock here reads 2000-01-01T06:01, which is day 1, so it is two days and change out.
+  ok('a day-qualified time lands on that day', /03T09:30$/.test(r.dueAt || ''), r.dueAt);
+  ok('and the hours span the days', r.hoursUntilDue > 36 && r.hoursUntilDue < 60, `${r.hoursUntilDue}`);
 
   head('5. A window already past today is tomorrow');
   r = await api('/window/read', 'POST', { text: '5:00 AM' });
@@ -311,13 +311,13 @@ const gday = (day, hm) => {
   // after it and got 9 from "9:26PM".
   await api('/status', 'POST', {
     locationCity: 'Rock Springs', locationState: 'WY', locationKind: 'Shipper',
-    gameTime: gday(38, '13:44'), fuelPct: 95, atsOdometer: 41000, dutyStatus: 'OnDuty',
+    gameTime: gday(39, '13:44'), fuelPct: 95, atsOdometer: 41000, dutyStatus: 'OnDuty',
   });
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
-  const dow = (d) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d % 7];
-  ok('day 38 is a Thursday, 39 a Friday, 40 a Saturday',
-    dow(38) === 'Thu' && dow(39) === 'Fri' && dow(40) === 'Sat',
-    `${dow(38)} ${dow(39)} ${dow(40)}`);
+  const dow = (d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d % 7];   // day 1 is a Monday — see dayone.cjs
+  ok('day 39 is a Thursday, 40 a Friday, 41 a Saturday',
+    dow(39) === 'Thu' && dow(40) === 'Fri' && dow(41) === 'Sat',
+    `${dow(39)} ${dow(40)} ${dow(41)}`);
 
   await api('/board/clear', 'POST', {});
   const wk = await api('/board/add', 'POST', {
@@ -354,7 +354,7 @@ const gday = (day, hm) => {
     cargo: 'Machinery', trailerType: 'Flatbed',
     originCity: 'Rock Springs', originState: 'WY', destCity: 'Omaha', destState: 'NE',
     loadedMiles: 200, deadheadMiles: 0, gameRevenue: 800,
-    windowText: 'Day 40 08:00 - 18:00', weightLbs: 30000,
+    windowText: 'Day 41 08:00 - 18:00', weightLbs: 30000,
   });
   ok('an explicit day number is two days out, not read off a weekday',
     Math.abs((explicit.evaluations || [])[0].load.appointmentOpensHours - 42.3) < 1.5,
@@ -393,7 +393,7 @@ const gday = (day, hm) => {
     `${sameDay.deadlineHours}h`);
 
   head('THE TULSA CASE: waiting on duty must not spend the window the dock needs');
-  // Reported off a real card. Thursday day 38, 13:44, Rock Springs with a full clock and home time
+  // Reported off a real card. Thursday day 39, 13:44, Rock Springs with a full clock and home time
   // overdue in Springfield MO. 1,004 miles to Tulsa, window Sat 02:04 - 08:44, and INFEASIBLE: the plan
   // arrived 9:01 before the doors opened, sat that out ON DUTY, then found it needed 1:49 of window it
   // no longer had — so it took a ten anyway and landed 9:20 past the close.
@@ -402,7 +402,7 @@ const gday = (day, hm) => {
   // unload on a full window, which is what the app's own blocker text was already advising.
   await api('/status', 'POST', {
     locationCity: 'Rock Springs', locationState: 'WY', locationKind: 'Shipper',
-    gameTime: gday(38, '13:44'), fuelPct: 100, atsOdometer: 52000, dutyStatus: 'OnDuty',
+    gameTime: gday(39, '13:44'), fuelPct: 100, atsOdometer: 52000, dutyStatus: 'OnDuty',
   });
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
 

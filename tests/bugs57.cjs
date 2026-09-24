@@ -18,7 +18,7 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? '
 const head = (t) => console.log(`\n=== ${t} ===`);
 const un = (r) => r.snapshot || r;
 const iso = (day, hm = '08:00') => {
-  const d = new Date(Date.UTC(2000, 0, 1) + day * 86400000);
+  const d = new Date(Date.UTC(2000, 0, 1) + (day - 1) * 86400000);   // day 1 is the epoch
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}T${hm}`;
 };
 const hhmm = (h) => (h == null ? '--' : `${Math.floor(h)}:${String(Math.round((h - Math.floor(h)) * 60)).padStart(2, '0')}`);
@@ -52,7 +52,7 @@ async function place(city, state, day, hm, cycle = 70, drive = 11, shift = 14) {
   });
   let ev = bd.evaluations[0];
   ok('the due time came off the text', /Day 20/.test(ev.feasibility.dueGameTime || '')
-    || /2000-01-21/.test(ev.feasibility.dueGameTime || ''), ev.feasibility.dueGameTime);
+    || /2000-01-20/.test(ev.feasibility.dueGameTime || ''), ev.feasibility.dueGameTime);
   ok('and the OPENING was captured too', !!ev.feasibility.appointmentOpensGameTime,
     ev.feasibility.appointmentOpensGameTime || '(none)');
   ok('the opening is before the due time',

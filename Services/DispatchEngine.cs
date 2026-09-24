@@ -1151,7 +1151,14 @@ public static class DispatchEngine
             e.Cons.Add(askThem);
 
         e.ListingHoursLeft = BoardExpiry.Remaining(s, load);
-        e.MayPass = BoardExpiry.MayPassRegardlessOfRank(s, load) || CareerService.Privileges(s).CanRefuseLoad;
+        // Asked of Rejections, which is the thing that actually rations refusals, rather than of a
+        // rank flag that knew nothing about how many had been spent this week. A driver out of refusals
+        // was still shown the button and found out at the endpoint; a company driver who had one was
+        // never shown it at all.
+        var mayRefuse = Rejections.Check(s, load);
+        e.MayPass = mayRefuse.Allowed;
+        e.PassIsFree = Rejections.IsFreeRefusal(s, load);
+        e.PassNote = mayRefuse.Reason;
 
         if (load.PassedOver)
             e.HardFails.Add(
@@ -1315,6 +1322,8 @@ public static class DispatchEngine
             LoadedMiles = load.LoadedMiles,
             LoadingHours = pickupHours,
             UnloadingHours = dock.Unloading,
+            // What is on the back decides whether the dock is duty or rest. A van waits, a flatbed works.
+            TrailerType = trailer?.Type ?? load.TrailerType ?? "",
             // How much that unload figure is worth. A seed table and ten measured deliveries are not the
             // same number and should not be trusted to the same margin.
             DockSamples = dock.Samples,
@@ -2163,7 +2172,14 @@ public static class DispatchEngine
         // Taking a load further down the board means turning down the ones above it, and refusals are
         // rationed by rank rather than switched on and off by it — see Rejections. Picking the third
         // load costs two, unless the ones skipped were expiring anyway, which are free at every rank.
-        var skipped = LoadsSkippedToReach(s, loadId);
+        // A load operations has already said yes to is dispatch's pick, not the driver going round it.
+        // Charging the refusals as well would mean a company driver could be granted a load and then
+        // told they cannot afford to take it, which is the app disagreeing with itself in the one place
+        // it just made a promise.
+        var approved = Alternates.Approved(s, loadId);
+        if (approved != null) approved.Spent = true;
+
+        var skipped = approved == null ? LoadsSkippedToReach(s, loadId) : new List<BoardLoad>();
         if (skipped.Count > 0)
         {
             var chargeable = skipped.Where(l => !Rejections.IsFreeRefusal(s, l)).ToList();
@@ -2450,9 +2466,23 @@ public static class DispatchEngine
         return trip;
     }
 
-    /// <summary>Empty repositioning move — gets its own number series so it never eats a freight number.</summary>
+    /// <summary>
+    /// Empty repositioning move — gets its own number series so it never eats a freight number.
+    ///
+    /// <para><b>Supersedes an empty move already standing.</b> This used to insert the new trip and
+    /// overwrite <c>ActiveTripId</c>, which left the old one Authorized in the file with nothing
+    /// pointing at it and no way to reach it: not the active trip, so nothing would close it, and not
+    /// closed, so anything scanning trip statuses went on counting it. Two identical repositions dated
+    /// the same minute is what that looks like from the outside, and it is what a career reported from
+    /// play actually contained.</para>
+    ///
+    /// <para>Only an unstarted empty or maintenance move is superseded. A freight trip is never touched
+    /// — a driver hooked to a load has a real obligation, and silently cancelling it to make room for a
+    /// deadhead would be the app destroying work to tidy its own bookkeeping.</para>
+    /// </summary>
     public static Trip CreateEmptyMove(AppState s, string destCity, string destState, double miles, string reason)
     {
+        SupersedeStandingEmptyMove(s, reason);
         var truck = AssignedTruck(s);
         var trailer = AssignedTrailer(s);
         var trip = new Trip
@@ -2482,6 +2512,42 @@ public static class DispatchEngine
         s.Trips.Insert(0, trip);
         s.Status.ActiveTripId = trip.Id;
         return trip;
+    }
+
+    /// <summary>
+    /// Closes the empty move that is about to lose its place, so ordering another does not orphan it.
+    ///
+    /// <para>Scoped to the trip <c>ActiveTripId</c> currently names, because that is the one the new
+    /// move is about to displace — and an empty move can only ever be closed while it is the active
+    /// trip, so a displaced one is unreachable the moment the pointer moves off it.</para>
+    ///
+    /// <para>An earlier attempt at this also required the odometer not to have moved, on the reasoning
+    /// that a move with miles on it had been run. That is the wrong test twice over: it leaves a
+    /// part-driven move orphaned in exactly the same way, and the miles are not lost by closing it —
+    /// empty distance is measured off the odometer by <see cref="Repositioning"/> and does not live on
+    /// this record. A freight trip is still never touched.</para>
+    /// </summary>
+    private static void SupersedeStandingEmptyMove(AppState s, string reason)
+    {
+        var standing = s.Trips.FirstOrDefault(t =>
+            t.Id == s.Status.ActiveTripId
+            && t.Kind is "EmptyMove" or "Maintenance"
+            && t.Status is "Authorized" or "InTransit");
+
+        if (standing == null) return;
+
+        standing.Status = "Cancelled";
+        // Nobody is at fault for a deadhead that was reordered before it was driven, and this must not
+        // read as one: a cancellation with a fault on it is a mark on somebody. It is also not run
+        // through TripService.Cancel, which renumbers into the cancellation series and posts to the
+        // ledger — there is nothing to post for miles that were never covered.
+        standing.FaultAttribution = "None";
+        standing.ServiceResult = "NotApplicable";
+        standing.CancelReason = string.IsNullOrWhiteSpace(reason)
+            ? "Superseded by another repositioning move before it was run."
+            : $"Superseded before it was run: {reason}";
+
+        if (s.Status.ActiveTripId == standing.Id) s.Status.ActiveTripId = "";
     }
 
     public static Trip CreateMaintenanceMove(AppState s, string destCity, string destState, double miles, string reason)

@@ -646,6 +646,28 @@ public static class Carriers
     public static bool IsSecondChance(string code) =>
         SecondChanceCarriers.Any(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>Whether this carrier will take somebody with nothing behind them.</summary>
+    public static bool TakesRookies(string? code) =>
+        IsSecondChance(code ?? "")
+        || AllSpecs.FirstOrDefault(c => c.Code.Equals(code ?? "", StringComparison.OrdinalIgnoreCase))
+               ?.TakesRookies == true;
+
+    /// <summary>
+    /// A fleet people BEGIN at — the bottom of the market, where the open door and the cheap seat go
+    /// together.
+    ///
+    /// Not the same question as <see cref="TakesRookies"/>, and the difference matters. Half the large
+    /// carriers run a training programme; Prime, Schneider and Knight-Swift all take new CDL holders and
+    /// none of them is a bottom-rung outfit. What makes a way-in fleet is the open door <b>and</b> the
+    /// pay that goes with it — a one- or two-star seat is one nobody with options is taking.
+    ///
+    /// Read when deciding what calibre of driver to tell the player to go and hire: a fleet staffed by
+    /// people starting out hires people starting out, and no quarter is good enough to change that,
+    /// because the experienced driver was never applying here in the first place.
+    /// </summary>
+    public static bool IsWayIn(string? code, int payStars) =>
+        IsSecondChance(code ?? "") || (TakesRookies(code) && payStars <= 2);
+
     /// <summary>Game-days that make up one business period. Conditions are re-rolled per period.</summary>
     private const int PeriodDays = 30;
 

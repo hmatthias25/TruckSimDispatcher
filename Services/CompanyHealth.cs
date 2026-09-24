@@ -117,19 +117,66 @@ public static class CompanyHealth
     /// one that sells a yard every fortnight has nothing left by the spring.
     /// </summary>
     /// <summary>
-    /// What calibre of driver this company can attract, by how it is doing.
-    ///
-    /// A carrier scraping along hires rookies because rookies are who will come; one that is making money
-    /// can pay for somebody who has done it before. Naming the level matters because ATS shows it in the
-    /// hiring screen — an instruction the player can actually follow.
+    /// What the money alone says the company can attract. <see cref="HiringBandFor"/> is the answer;
+    /// this is only half of it.
     /// </summary>
-    public static (int Min, int Max, string How) HiringBandFor(string band) => band switch
+    private static (int Min, int Max, string How) MoneyBandFor(string band) => band switch
     {
         "Thriving" => (6, 9, "somebody who has done it before — the company can pay for it now"),
         "Steady" => (3, 6, "a middling hand; nothing fancy, but not green either"),
         "Tight" => (1, 3, "a rookie. It is what the company can afford, and they will learn on our freight"),
         _ => (1, 2, "the cheapest hand who will take it — this is not the week for a wage negotiation"),
     };
+
+    /// <summary>
+    /// What calibre of driver to go and hire, as a level band ATS shows on its own hiring screen.
+    ///
+    /// Two things decide it, and the money is only one of them. A carrier scraping along hires rookies
+    /// because rookies are who will come, and one that is making money can pay for somebody who has done
+    /// it before — but <b>who the carrier IS</b> sets the range the money moves inside.
+    ///
+    /// <list type="bullet">
+    ///   <item><b>A way-in fleet caps it.</b> A second-chance outfit, or a training fleet whose seat pays
+    ///     one or two stars, is staffed by people starting out — that is what the open door plus that
+    ///     wage means — and a good fortnight does not change who walks through it. Level 0-1, whatever
+    ///     the account says. Note this is not every carrier that takes rookies: Prime and Schneider both
+    ///     train new drivers and neither is a bottom-rung seat. See <see cref="Carriers.IsWayIn"/>.</item>
+    ///   <item><b>A good seat floors it.</b> A four-star carrier, and anybody running specialised
+    ///     freight, does not put a green driver on the work however tight the quarter is. It leaves the
+    ///     seat empty instead, and that is the cost of being that kind of company.</item>
+    /// </list>
+    ///
+    /// It used to read the money and nothing else, so a rookie fleet having a good quarter told the
+    /// player to go and find a level 9 veteran, and a five-star outfit having a bad one told them to fill
+    /// the seat with the cheapest hand who would take it. Both are the app giving advice its own job
+    /// market would not recognise.
+    /// </summary>
+    public static (int Min, int Max, string How) HiringBandFor(AppState s, string band)
+    {
+        var code = s.Company.Code;
+        var (min, max, how) = MoneyBandFor(band);
+
+        // A cap, not a preference: there is no quarter good enough to put a veteran in a training
+        // fleet's seat, because the veteran was never applying here.
+        if (Carriers.IsWayIn(code, s.Company.PayStars))
+            return (0, 1, "somebody starting out. This is a fleet people BEGIN at — level 0 or 1 is who " +
+                          "comes to us, the wage is what we can carry, and the freight is forgiving " +
+                          "enough to learn on");
+
+        var specialised = Carriers.IsSpecialized(code);
+        var floor = specialised || s.Company.PayStars >= 5 ? 6
+            : s.Company.PayStars >= 4 ? 4
+            : 0;
+
+        if (floor <= 0 || min >= floor) return (min, max, how);
+
+        var why = specialised
+            ? "this is specialised freight and it does not go to somebody learning on it"
+            : $"{s.Company.Name} is a {s.Company.PayStars}-star seat and the work expects it";
+        return (floor, Math.Max(max, floor + 3),
+                $"somebody who has done it before — {why}. Under level {floor}, leave the seat standing " +
+                "rather than fill it cheap; a driver who cannot do the work costs more than an empty truck");
+    }
 
     /// <summary>
     /// Seats standing empty. A tractor with nobody in it earns nothing and still costs to keep.
@@ -149,7 +196,7 @@ public static class CompanyHealth
 
         if (empty.Count == 0) return;
 
-        var (min, max, how) = HiringBandFor(v.Band);
+        var (min, max, how) = HiringBandFor(s, v.Band);
         var units = string.Join(", ", empty.Take(3).Select(t => t.Ref));
         var more = empty.Count > 3 ? $" and {empty.Count - 3} more" : "";
 

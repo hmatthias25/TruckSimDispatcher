@@ -26,6 +26,13 @@ public class AppState
     public List<LoadRefusal> LoadRefusals { get; set; } = new();
 
     /// <summary>
+    /// Times the driver has asked operations for a different load. See <see cref="Services.Alternates"/>.
+    ///
+    /// Kept whether the ask was granted or refused, because it is the ASKING operations remembers.
+    /// </summary>
+    public List<AlternateAsk> AlternateAsks { get; set; } = new();
+
+    /// <summary>
     /// Set when the truck was recovered on a hook rather than driven in.
     ///
     /// It changes what can be ordered, not what the damage means. A towed truck is not running home at
@@ -54,7 +61,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 29;
+    public const int Current = 30;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
 
@@ -115,6 +122,9 @@ public class AppState
     public List<PeriodicReviewRecord> PeriodicReviews { get; set; } = new();
     /// <summary>Trailer types the driver has asked to be re-rigged onto.</summary>
     public List<TrailerTypeRequest> TrailerTypeRequests { get; set; } = new();
+
+    /// <summary>Asks to be put on a dedicated account. See <see cref="Services.Dedicated"/>.</summary>
+    public List<DedicatedAccountRequest> DedicatedAccountRequests { get; set; } = new();
 
     /// <summary>W-2s issued at the close of each career year. Newest first.</summary>
     public List<W2Form> W2s { get; set; } = new();
@@ -1658,6 +1668,36 @@ public class TripEvent
 /// a run that fuels three times at three prices produces three lines and an honest blended cost.
 /// </summary>
 /// <summary>A load the driver turned down, and whether it cost them one of their weekly refusals.</summary>
+/// <summary>
+/// One request for a different load, and what operations said.
+/// </summary>
+public class AlternateAsk
+{
+    public string GameTime { get; set; } = "";
+    public string LoadId { get; set; } = "";
+    public string Cargo { get; set; } = "";
+    public string Lane { get; set; } = "";
+    public string Reason { get; set; } = "";
+    /// <summary>Where the load sat on the board when it was asked for. One-based.</summary>
+    public int Position { get; set; }
+
+    /// <summary>
+    /// How much goodwill this ask burned, from how far down the board it reached.
+    ///
+    /// Stored rather than recomputed, because the board it was asked against does not survive the next
+    /// status report. Zero on an ask filed before depth was weighed; <see cref="Services.Alternates"/>
+    /// reads that as one.
+    /// </summary>
+    public double Weight { get; set; } = 1;
+
+    /// <summary>What operations answered. A refusal still counts against the next ask.</summary>
+    public bool Granted { get; set; }
+    /// <summary>Set once a granted ask has been used to authorize the load, so a yes is good once.</summary>
+    public bool Spent { get; set; }
+    /// <summary>The rank they held at the time, so a promotion mid-week reads honestly on the record.</summary>
+    public string RankAtTime { get; set; } = "";
+}
+
 public class LoadRefusal
 {
     public string GameTime { get; set; } = "";
@@ -2584,6 +2624,26 @@ public class HomeTimeRequest
 /// A driver asking to be re-rigged onto a different trailer type. Off probation only, and only for
 /// something the company actually has at their yard.
 /// </summary>
+/// <summary>
+/// An ask to be put on a dedicated account, and what operations said.
+///
+/// Dedicated is not a switch the driver throws. It is a customer relationship the carrier is putting
+/// its name to, so it is requested, it is answered on the record, and it can be refused.
+/// </summary>
+public class DedicatedAccountRequest
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Number { get; set; } = "";
+    public string RequestedGameTime { get; set; } = "";
+    /// <summary>Open | Granted | Refused</summary>
+    public string Status { get; set; } = "Open";
+    public string Answer { get; set; } = "";
+    public string AnsweredGameTime { get; set; } = "";
+    /// <summary>Set once a granted request has been used to go on the account, so a yes is good once.</summary>
+    public bool Spent { get; set; }
+    public string RankAtTime { get; set; } = "";
+}
+
 public class TrailerTypeRequest
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
@@ -3645,6 +3705,24 @@ public class FeasibilityResult
     public double TotalMiles { get; set; }
     public double DriveHours { get; set; }
     public double OnDutyHours { get; set; }
+
+    /// <summary>
+    /// What to do at the dock and what it costs, in the terms the driver has to act on IN THE GAME.
+    ///
+    /// Not a warning — nothing here is going wrong. It is the plan saying out loud which duty status it
+    /// assumed, because behind a reefer the arithmetic is only true if the driver actually goes into the
+    /// sleeper. Empty where there is no dock time worth talking about.
+    /// </summary>
+    public string DockAdvice { get; set; } = "";
+
+    /// <summary>
+    /// Dock hours the driver spends in the bunk rather than working, behind a van, a reefer or a box.
+    ///
+    /// Counted apart from <see cref="OnDutyHours"/> because it is the hours that do <b>not</b> come off
+    /// the seventy — the one number that makes a week of reefer work different from a week of flatbed.
+    /// Zero behind anything the driver has to strap, tarp or couple.
+    /// </summary>
+    public double DockRestHours { get; set; }
     public double ElapsedHours { get; set; }
     public string ProjectedArrivalGameTime { get; set; } = "";
     /// <summary>
@@ -3812,6 +3890,10 @@ public class LoadEvaluation
     /// Drives whether the card offers the button at all.
     /// </summary>
     public bool MayPass { get; set; }
+    /// <summary>Whether passing costs nothing because the listing is about to expire.</summary>
+    public bool PassIsFree { get; set; }
+    /// <summary>What passing costs, or why it is refused — the driver sees this before they press it.</summary>
+    public string PassNote { get; set; } = "";
 
     /// <summary>
     /// This receiver will take the load whenever it arrives. On the evaluation and not only on the

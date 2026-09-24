@@ -163,7 +163,8 @@ async function put(oc, os, dc, ds, miles, dh, rev) {
   const after = (await views()).refusals;
   ok('a new week restores it', after.remaining > before.remaining || after.remaining === after.allowance,
     `${before.remaining} -> ${after.remaining} of ${after.allowance}`);
-  ok('and the reset day is a Monday', after.resetsOnDay % 7 === 0, `day ${after.resetsOnDay}`);
+  // Mondays are 1, 8, 15, 22 — day 1 is a Monday, so the remainder to look for is 1 and not 0.
+  ok('and the reset day is a Monday', after.resetsOnDay % 7 === 1, `day ${after.resetsOnDay}`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

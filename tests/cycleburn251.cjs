@@ -14,6 +14,12 @@
  * number it is being measured against, so "you will just make it" is not something the app is entitled
  * to say.
  *
+ * NOTE ON THE TRAILER. These loads are flatbeds. Dock time only comes off the cycle where the driver
+ * is working it — straps and tarps and hoses — and behind a van or a reefer they are in the bunk and it
+ * does not (see TrailerSpec.WorksTheDock and dockduty.cjs). This suite is about the DRIVING eating the
+ * seventy, so it names a trailer where the dock hours behave as they did when these numbers were set,
+ * rather than quietly testing two things at once.
+ *
  * It is a warning and a score, not a refusal. Running the cycle down and sitting a 34 is ordinary
  * trucking, and a load that is legal and deliverable should not be refused — but between two loads that
  * both pay, the one that does not spend the rest of the week is the better load, and noticing that is
@@ -46,7 +52,7 @@ async function offer(miles, cycle, dest = 'Chicago', st = 'IL') {
   });
   await api('/board/clear', 'POST', {});
   const r = await api('/board/add', 'POST', {
-    cargo: 'Machinery', trailerType: 'Dry Van',
+    cargo: 'Machinery', trailerType: 'Flatbed',
     originCity: S.status.locationCity, originState: S.status.locationState,
     destCity: dest, destState: st, loadedMiles: miles, deadheadMiles: 0,
     gameRevenue: Math.round(miles * 2.6), deadlineHours: 96, weightLbs: 38000,
@@ -55,11 +61,23 @@ async function offer(miles, cycle, dest = 'Chicago', st = 'IL') {
 }
 
 (async () => {
-  const app = { driverName: 'D. Ivanov', preferredDivision: 'Dry Van', experienceYears: 9,
+  const app = { driverName: 'D. Ivanov', preferredDivision: 'Flatbed', experienceYears: 9,
     homeCity: 'Denver', homeState: 'CO', acceptsProbation: true, homeTimePreference: 'biweekly' };
   await api('/onboarding/market', 'POST', app);
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(2) }));
   await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+
+  // Put the driver ON a flatbed, not merely the load. What is hooked to the truck decides whether dock
+  // time is work or waiting, so changing the listing alone left them on the seeded dry van and handed
+  // the scenario three hours of cycle back it was never calibrated for.
+  {
+    const st0 = await api('/export');
+    const box = st0.trailers.find((x) => /flatbed/i.test(x.type));
+    if (box) { st0.driver.assignedTrailerUnit = box.unit; box.assignedTruckUnit = st0.driver.assignedTruckUnit; }
+    else { st0.trailers[0].type = 'Flatbed'; st0.trailers[0].division = 'Flatbed'; }
+    await api('/import', 'POST', st0);
+    S = un(await api('/bootstrap'));
+  }
   await api('/status', 'POST', {
     locationCity: 'Denver', locationState: 'CO', locationKind: 'Shipper', gameTime: iso(4),
     fuelPct: 95, atsOdometer: 50000, truckDamagePct: 2, dutyStatus: 'OnDuty',
@@ -94,12 +112,12 @@ async function offer(miles, cycle, dest = 'Chicago', st = 'IL') {
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 19.13 });
   await api('/board/clear', 'POST', {});
   await api('/board/add', 'POST', {
-    cargo: 'Long one', trailerType: 'Dry Van', originCity: 'Denver', originState: 'CO',
+    cargo: 'Long one', trailerType: 'Flatbed', originCity: 'Denver', originState: 'CO',
     destCity: 'Chicago', destState: 'IL', loadedMiles: 830, deadheadMiles: 0,
     gameRevenue: 2158, deadlineHours: 96, weightLbs: 38000,
   });
   const both = await api('/board/add', 'POST', {
-    cargo: 'Short one', trailerType: 'Dry Van', originCity: 'Denver', originState: 'CO',
+    cargo: 'Short one', trailerType: 'Flatbed', originCity: 'Denver', originState: 'CO',
     destCity: 'Salt Lake City', destState: 'UT', loadedMiles: 380, deadheadMiles: 0,
     gameRevenue: 988, deadlineHours: 96, weightLbs: 38000,
   });

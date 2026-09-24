@@ -35,6 +35,34 @@ const addLoad = (o) => api('/board/add', 'POST', {
   }));
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
 
+  // Earn the seat before testing what it does. This suite is about FILTERING — whose freight is yours
+  // once you are on an account — and it used to get there by flipping a switch. Going on an account is
+  // operations' call now: senior rank, a record worth putting in front of a customer, and a request that
+  // can be refused. See dedask.cjs for the gate itself.
+  {
+    const st = await api('/export');
+    st.driver.rank = 'senior';
+    st.driver.rankTitle = 'Senior Company Driver';
+    st.driver.probation = { ...st.driver.probation, active: false };
+    st.trips = Array.from({ length: 40 }, (_, i) => ({
+      id: 'seed' + i, number: 'SNI-L-' + i, kind: 'Freight', status: 'Delivered',
+      cargo: 'Goods', trailerType: 'Dry Van',
+      originCity: 'Denver', originState: 'CO', destCity: 'Salt Lake City', destState: 'UT',
+      dispatchedGameTime: '2000-01-01T06:00', deliveredGameTime: '2000-01-01T18:00',
+      serviceResult: 'OnTime', faultAttribution: 'None',
+      dispatchedMiles: 500, actualMiles: 500, startOdometer: 0, endOdometer: 500, events: [],
+    }));
+    await api('/import', 'POST', st);
+
+    const asked = await api('/career/dedicated/request', 'POST', {});
+    ok('the account has to be asked for and granted', asked.request?.status === 'Granted',
+      asked.request?.status + ': ' + (asked.request?.answer || '').slice(0, 60));
+    // The trips were only there to earn it; the filtering tests below count board loads, not history.
+    const clean = await api('/export');
+    clean.trips = [];
+    await api('/import', 'POST', clean);
+  }
+
   head('Going on dedicated without naming the customer');
   S = un(await api('/career/dedicated', 'POST', { onDedicated: true, account: '' }));
   ok('flagged as awaiting the account', S.views.dedicated.awaitingAccount === true);
@@ -156,6 +184,27 @@ const addLoad = (o) => api('/board/add', 'POST', {
   }));
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
   await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+
+  // Fresh career, so the seat has to be earned again before anything can be matched against an account.
+  {
+    const st = await api('/export');
+    st.driver.rank = 'senior';
+    st.driver.rankTitle = 'Senior Company Driver';
+    st.driver.probation = { ...st.driver.probation, active: false };
+    st.trips = Array.from({ length: 40 }, (_, i) => ({
+      id: 'seed' + i, number: 'SNI-L-' + i, kind: 'Freight', status: 'Delivered',
+      cargo: 'Goods', trailerType: 'Dry Van',
+      originCity: 'Denver', originState: 'CO', destCity: 'Salt Lake City', destState: 'UT',
+      dispatchedGameTime: '2000-01-01T06:00', deliveredGameTime: '2000-01-01T18:00',
+      serviceResult: 'OnTime', faultAttribution: 'None',
+      dispatchedMiles: 500, actualMiles: 500, startOdometer: 0, endOdometer: 500, events: [],
+    }));
+    await api('/import', 'POST', st);
+    await api('/career/dedicated/request', 'POST', {});
+    const clean = await api('/export');
+    clean.trips = [];
+    await api('/import', 'POST', clean);
+  }
 
   for (const [account, shipper, shouldBeOurs, why] of [
     ['Walmart', 'Walmart DC 6094',         true,  'a depot number does not stop it being Walmart'],

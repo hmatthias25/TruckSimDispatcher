@@ -79,6 +79,53 @@ public static class Dedicated
     public static bool CarrierRunsDedicated(AppState s) =>
         s.Company.Divisions.Any(d => d.Equals("Dedicated", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// The rank a plain dedicated account is open to: <b>senior and above</b>.
+    ///
+    /// <para>Steadier freight and more predictable home time, at a slightly lower rate — a seat the
+    /// company gives a driver it has come to rely on. That is a senior driver, not a first-week hire.</para>
+    ///
+    /// <para>Deliberately a rung below <see cref="DropHook.RankAllowsDedicated"/>, which holds dedicated
+    /// <i>drop and hook</i> at the top of the ladder. They are not the same seat: one is a customer to
+    /// haul for, the other is the best job in the fleet with no dock work and pay over scale.</para>
+    /// </summary>
+    public static bool RankAllowsPlain(AppState s)
+    {
+        if (Probation.IsOn(s) || s.Driver.Probation.Active) return false;
+        var mine = CareerService.RankIndex(s.Driver.Rank);
+        var senior = CareerService.RankIndex("senior");
+        return mine >= 0 && senior >= 0 && mine >= senior;
+    }
+
+    /// <summary>
+    /// Why this driver cannot go on a dedicated account, or null when they may ask.
+    ///
+    /// <para>This used to be nothing at all. <see cref="SetAccount"/> checked whether the CARRIER ran
+    /// dedicated freight and nothing else, so a probationary driver hired an hour ago at a carrier with
+    /// a dedicated division saw the panel and put themselves on an account with a button. Reported from
+    /// play on a fresh Schneider career. The rank rule existed the whole time — it just guarded the
+    /// drop-and-hook variant further down the same panel and not this one.</para>
+    ///
+    /// <para>Said as a reason rather than a missing button, the same as everywhere else: a thing worth
+    /// wanting should be visibly out of reach and visibly reachable.</para>
+    /// </summary>
+    public static string? BlockedBecause(AppState s)
+    {
+        if (!CarrierRunsDedicated(s))
+            return $"{s.Company.Name} does not run a dedicated division, so there is no account to put you on.";
+
+        if (Probation.IsOn(s) || s.Driver.Probation.Active)
+            return "Not while you are on probation. A dedicated account is us putting your name in front of " +
+                   "a customer, and we do not do that with a driver we are still assessing.";
+
+        if (!RankAllowsPlain(s))
+            return "A dedicated account goes to a driver the company has come to rely on — steady freight " +
+                   "and home time you can plan around, in exchange for a slightly lower rate. That starts " +
+                   "at Senior Company Driver. Keep the record clean and it comes.";
+
+        return null;
+    }
+
     /// <summary>On a dedicated account and we know who the customer is.</summary>
     public static bool Active(AppState s) =>
         s.Driver.OnDedicated && !string.IsNullOrWhiteSpace(s.Driver.DedicatedAccount);
@@ -201,11 +248,118 @@ public static class Dedicated
     /// Putting a driver on, or taking them off, a dedicated account. Coming off is a real career move
     /// — open board pays better per mile and sees more of the map, at the cost of the routine.
     /// </summary>
+    /// <summary>What the company asks of a driver before it puts them in front of a customer.</summary>
+    public const double RequiredOnTimePct = 95;
+    public const int RequiredLoadsHere = 25;
+    public const int AllowedFaults = 1;
+
+    /// <summary>Days before a refusal can be argued with again.</summary>
+    public const int CoolOffDays = 30;
+
+    /// <summary>An ask still waiting on an answer.</summary>
+    public static DedicatedAccountRequest? OpenRequest(AppState s) =>
+        s.DedicatedAccountRequests.FirstOrDefault(r => r.Status == "Open");
+
+    /// <summary>A yes that has not been used yet.</summary>
+    public static DedicatedAccountRequest? Approved(AppState s) =>
+        s.DedicatedAccountRequests.FirstOrDefault(r => r.Status == "Granted" && !r.Spent);
+
+    /// <summary>
+    /// Puts in for a dedicated account. Refused outright where the rank rule has not been met — there
+    /// is nothing for operations to weigh and pretending to consider it would be theatre.
+    /// </summary>
+    public static DedicatedAccountRequest Submit(AppState s)
+    {
+        if (BlockedBecause(s) is { } no) throw new InvalidOperationException(no);
+        if (Active(s) || s.Driver.OnDedicated)
+            throw new InvalidOperationException("You are already on a dedicated account.");
+        if (OpenRequest(s) != null)
+            throw new InvalidOperationException("You already have one in. One at a time.");
+        if (Approved(s) != null)
+            throw new InvalidOperationException(
+                "That is already approved — name the customer and you are on it.");
+
+        var last = s.DedicatedAccountRequests.FirstOrDefault(r => r.Status == "Refused");
+        if (last != null && GameClock.HoursBetween(last.AnsweredGameTime, s.Status.GameTime) is { } h
+                         && h < CoolOffDays * 24)
+            throw new InvalidOperationException(
+                $"I said no to that {GameClock.Pretty(last.AnsweredGameTime)}. Give it {CoolOffDays} days " +
+                "and show me something different in the meantime.");
+
+        var req = new DedicatedAccountRequest
+        {
+            Number = $"{s.Company.Code}-DQ-{s.DedicatedAccountRequests.Count + 1:0000}",
+            RequestedGameTime = s.Status.GameTime,
+            Status = "Open",
+            RankAtTime = s.Driver.Rank,
+        };
+        s.DedicatedAccountRequests.Insert(0, req);
+        return req;
+    }
+
+    /// <summary>
+    /// Operations answers, on the record and nothing else.
+    ///
+    /// <para>No roll. A dedicated account is a customer who will ring the company when a load is late,
+    /// so what decides it is whether this driver is safe to put in front of one — service, the safety
+    /// record, and enough work here to know. A driver who has earned it gets it every time, and one who
+    /// has not is told which number is in the way and can go and fix it. A dice roll on top would make
+    /// the record advisory, which is the opposite of what it is for.</para>
+    /// </summary>
+    public static DedicatedAccountRequest? Answer(AppState s)
+    {
+        var req = OpenRequest(s);
+        if (req == null) return null;
+
+        req.AnsweredGameTime = s.Status.GameTime;
+
+        var stats = CareerService.Compute(s);
+        var faults = stats.DriverFaultIncidents;
+        var shortfalls = new List<string>();
+
+        if (stats.LoadsDelivered < RequiredLoadsHere)
+            shortfalls.Add($"{stats.LoadsDelivered} load(s) with us against the {RequiredLoadsHere} I want " +
+                           "before I put somebody on an account");
+        if (stats.OnTimePct < RequiredOnTimePct)
+            shortfalls.Add($"{stats.OnTimePct:0.#}% on time against {RequiredOnTimePct:0}%");
+        if (faults > AllowedFaults)
+            shortfalls.Add($"{faults} driver-fault incident(s) on the record, and I can carry {AllowedFaults}");
+
+        if (shortfalls.Count > 0)
+        {
+            req.Status = "Refused";
+            req.Answer = "No, not yet. A dedicated customer rings us when a load is late, so the driver on " +
+                         "their account has to be somebody I am not going to hear about: " +
+                         string.Join("; ", shortfalls) + ". Fix that and ask me again — " +
+                         $"give it {CoolOffDays} days.";
+            return req;
+        }
+
+        req.Status = "Granted";
+        req.Answer = $"Granted. {stats.LoadsDelivered} loads with us at {stats.OnTimePct:0.#}% on time and " +
+                     "a clean enough record to put in front of a customer. Tell me which account as it " +
+                     "appears on your board and I will filter your freight to it. It is not a promotion " +
+                     "and you can come off it whenever you like.";
+        return req;
+    }
+
     public static string SetAccount(AppState s, bool onDedicated, string account)
     {
-        if (onDedicated && !CarrierRunsDedicated(s))
-            throw new InvalidOperationException(
-                $"{s.Company.Name} does not run a dedicated division. You are on open board here.");
+        // Going ON is operations' call and has to have been asked for. Coming OFF never is — a driver
+        // who wants back on the open board says so and that is the end of it.
+        //
+        // This checked only whether the carrier ran a dedicated division, which meant the rank rule,
+        // the request and the refusal were all bypassed by the one button that actually did the thing.
+        if (onDedicated && !s.Driver.OnDedicated)
+        {
+            if (BlockedBecause(s) is { } no) throw new InvalidOperationException(no);
+
+            var ok = Approved(s) ?? throw new InvalidOperationException(
+                OpenRequest(s) != null
+                    ? "Your request is in and I have not answered it yet."
+                    : "You do not put yourself on a dedicated account — ask for one and I will answer it.");
+            ok.Spent = true;
+        }
 
         s.Driver.OnDedicated = onDedicated;
         s.Driver.DedicatedAccount = onDedicated ? (account ?? "").Trim() : "";

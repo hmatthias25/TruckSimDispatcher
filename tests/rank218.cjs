@@ -99,8 +99,14 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
     drv(fo, 'qa-rank-1').wageShare === drv(fo, 'qa-rank-2').wageShare,
     `${drv(fo, 'qa-rank-1').wageShare}`);
   ok('the shortfall is the probation and nothing else',
-    /day\(s\) of their probation left/.test((dz(fo, 'qa-rank-1').shortfall || []).join(' ')),
+    /day\(s\) of their \d+-day probation left/.test((dz(fo, 'qa-rank-1').shortfall || []).join(' ')),
     (dz(fo, 'qa-rank-1').shortfall || [])[0]);
+  // How LONG they stand there is the one thing the level does decide. A level 1 does the full ninety;
+  // a level 12 has done the job before and does forty-five, the same way the player's own period
+  // shortens on a record that clears a new carrier's bar. See hirelevel.cjs.
+  ok('but the veteran is not standing there as long as the rookie',
+    dz(fo, 'qa-rank-2').probationDays < dz(fo, 'qa-rank-1').probationDays,
+    `L12 ${dz(fo, 'qa-rank-2').probationDays}d vs L1 ${dz(fo, 'qa-rank-1').probationDays}d`);
 
   /* File one period, running to a given day. Miles come off the odometer delta. */
   let odo = 120000;
@@ -127,12 +133,26 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
   ok('still Probationary at 56 days with the miles banked',
     early.rank === 'Probationary Company Driver' && early.tenureDays < 90,
     `${early.rank} at ${early.tenureDays}d`);
+  // And the other half of it, at the same moment: a driver who came in at level 8 has served their
+  // forty-five and is through, on exactly the same miles and the same days. The rookie is not being
+  // held back — the veteran is being credited with what they walked in with.
+  ok('while the level 8 hire is already through their shorter period',
+    dz(fo, 'qa-rank-5').servingProbation === false,
+    `L8 at ${dz(fo, 'qa-rank-5').tenureDays}d of ${dz(fo, 'qa-rank-5').probationDays}`);
 
   head('4. Ninety days served, and the rung opens');
   // Hired on day 20, so the ninetieth day is day 110 and the first report past it is day 118.
   const probationShare = drv(fo, 'qa-rank-1').wageShare;
   let promoted = null;
-  for (let i = 0; i < 3; i++) { day += 14; promoted = await period(day, 15000); }
+  // Every report filed here, not just the last one. Promotions no longer all land on the same report:
+  // an experienced hire serves a shorter period, so their rung opens on an earlier one, and asserting
+  // against the final report alone reads "nobody was promoted" when the truth is "already was".
+  const announced = [];
+  for (let i = 0; i < 3; i++) {
+    day += 14;
+    promoted = await period(day, 15000);
+    announced.push(...(promoted?.report?.findings || []));
+  }
   fo = await api('/fleetops');
   const made = dz(fo, 'qa-rank-1');
   console.log(`  ..    day ${day}: ${made.rank}, ${made.tenureDays} day(s), ${drv(fo, 'qa-rank-1').lifetimeMiles} mi`);
@@ -146,8 +166,8 @@ const drv = (fo, id) => (fo.drivers || []).find((x) => x.id === id) || {};
     made.rank === 'Company Driver' ? 'promoted' : made.shortfall.join(' '));
   ok('and off their probation', made.servingProbation === false, `${made.probationDaysLeft}d left`);
   ok('the promotion is news on the report',
-    /is now Company Driver/.test((promoted?.report?.findings || []).join(' ')),
-    (promoted?.report?.findings || []).find((x) => /is now /.test(x))?.slice(0, 80));
+    /is now Company Driver/.test(announced.join(' ')),
+    announced.find((x) => /is now /.test(x))?.slice(0, 80));
 
   head('4b. Clearing the ninety days shows as due before the report settles it');
   // The exact gap a player sits in: day 91, hired on day 0, countdown finished and the roster still

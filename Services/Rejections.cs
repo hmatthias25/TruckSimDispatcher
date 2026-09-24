@@ -38,11 +38,7 @@ public static class Rejections
     };
 
     /// <summary>The Monday on or before a game day. The week the allowance is counted against.</summary>
-    public static int WeekStart(int day)
-    {
-        var d = Math.Max(0, day);
-        return d - (d % 7);
-    }
+    public static int WeekStart(int day) => LedgerService.MondayOnOrBefore(day);
 
     /// <summary>Refusals already spent in the week containing the current game time.</summary>
     public static int SpentThisWeek(AppState s)
@@ -86,8 +82,13 @@ public static class Rejections
         var allowance = WeeklyAllowance(s.Driver.Rank);
         if (allowance == 0)
             return (false,
-                "You are on probation. You run the load you are given — the only one you may turn down is one " +
-                "that will expire before you can reach it. Clear probation and you get a say.");
+                // Named as freight selection deliberately: that is the concept the ladder is built on and
+                // the words the manual uses, and "you cannot" without it reads as an arbitrary no. There
+                // is time left on the listing, so declining it is a preference about freight rather than
+                // arithmetic about a clock — and preference is the thing probation does not carry.
+                "There is time left on that listing, so passing on it is freight selection — and that is not " +
+                "yours yet. You are on probation: you run the load you are given, and the only one you may " +
+                "turn down is one that will expire before you can reach it. Clear probation and you get a say.");
 
         var left = Remaining(s);
         if (left <= 0)

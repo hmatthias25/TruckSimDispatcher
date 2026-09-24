@@ -41,12 +41,63 @@ namespace TruckSimDispatcher.Services;
 public static class DriverRank
 {
     /// <summary>
-    /// The probationary period every new hire serves, in game days.
+    /// The probationary period a green hire serves, in game days.
     ///
-    /// Ninety, because that is what the player serves and there is no argument for a different number.
-    /// Nothing above the bottom rung opens while it is running, whatever the figures say.
+    /// Ninety, because that is what the player serves as a rookie and there is no argument for a
+    /// different number. Nothing above the bottom rung opens while it is running, whatever the figures
+    /// say. What an EXPERIENCED hire serves is <see cref="ProbationDaysFor"/>.
     /// </summary>
     public const int ProbationDays = 90;
+
+    /// <summary>Level at which a hire reads as having done the job before, and the period shortens.</summary>
+    public const int DevelopedLevel = 3;
+
+    /// <summary>Level at which they have done it long enough for the shortest period this company runs.</summary>
+    public const int ExperiencedLevel = 6;
+
+    /// <summary>
+    /// The probation THIS hire serves, in game days.
+    ///
+    /// It was ninety for everybody, which said that a level 8 driver with a career of miles behind them
+    /// has proven exactly as much as somebody who passed their test last week. The app already refuses
+    /// that argument for the player — their period shortens when their record clears the new carrier's
+    /// bar with room, and stretches to the full ninety when they are reaching above it, see
+    /// <see cref="ProbationPlanner.For"/>. A hired driver is owed the same reading.
+    ///
+    /// Level is the only record the app has of a hire's experience, so level is what it reads: it is on
+    /// the ATS hiring screen the player hired them from, and it is the one number they came in with.
+    ///
+    /// A specialised carrier still holds everybody to
+    /// <see cref="ProbationPlanner.SpecialisedFloorDays"/>, for exactly the reason it holds the player
+    /// there: the orientation is the orientation whatever the record says.
+    /// </summary>
+    public static int ProbationDaysFor(AppState s, HiredDriver d)
+    {
+        var level = Math.Max(0, d.Level);
+        var days = level >= ExperiencedLevel ? 45
+            : level >= DevelopedLevel ? 60
+            : ProbationDays;
+
+        return Carriers.IsSpecialized(s.Company.Code) && days < ProbationPlanner.SpecialisedFloorDays
+            ? ProbationPlanner.SpecialisedFloorDays
+            : days;
+    }
+
+    /// <summary>Why this hire's period is the length it is, for the driver's file.</summary>
+    public static string ProbationBasis(AppState s, HiredDriver d)
+    {
+        var days = ProbationDaysFor(s, d);
+        if (days >= ProbationDays)
+            return $"The full {ProbationDays} days — level {Math.Max(0, d.Level)} is somebody still " +
+                   "learning the job, and there is nothing on their record here to shorten it with.";
+
+        var basis = $"Shortened to {days} days: they came in at level {d.Level}, which is a driver who " +
+                    "has done this before rather than one learning it on our freight.";
+        return Carriers.IsSpecialized(s.Company.Code)
+            ? $"{basis} Held at {ProbationPlanner.SpecialisedFloorDays} rather than lower — this is " +
+              "specialised freight and the orientation is the orientation."
+            : basis;
+    }
 
     /// <summary>
     /// How far back a preventable counts against a promotion.
@@ -145,13 +196,13 @@ public static class DriverRank
         return Math.Max(0, to - from.Value);
     }
 
-    /// <summary>Whether they are still inside the ninety days every hire serves.</summary>
+    /// <summary>Whether they are still inside the period this hire serves.</summary>
     public static bool ServingProbation(AppState s, HiredDriver d) =>
-        d.Status == "Active" && TenureDays(s, d) < ProbationDays;
+        d.Status == "Active" && TenureDays(s, d) < ProbationDaysFor(s, d);
 
     /// <summary>Days left of it, or 0.</summary>
     public static int ProbationDaysLeft(AppState s, HiredDriver d) =>
-        Math.Max(0, ProbationDays - TenureDays(s, d));
+        Math.Max(0, ProbationDaysFor(s, d) - TenureDays(s, d));
 
     /// <summary>
     /// The rung their record earns them right now.
@@ -172,7 +223,12 @@ public static class DriverRank
         for (var i = Ladder.Length - 1; i >= 0; i--)
         {
             var r = Ladder[i];
-            if (days >= r.Days && d.LifetimeMiles >= r.Miles
+            // Rung 1's day gate IS the probation, and it was written as 90 back when every hire served
+            // 90. Read literally now, an experienced hire would come off probation at 45 days and still
+            // be called a Probationary Company Driver for another six weeks — the period served and the
+            // grade that says so disagreeing about the same driver.
+            var needDays = r.Index == 1 ? Math.Min(r.Days, ProbationDaysFor(s, d)) : r.Days;
+            if (days >= needDays && d.LifetimeMiles >= r.Miles
                 && d.Level >= r.Level && recent <= r.Preventables)
                 return Hold(d, r, recent);
         }
@@ -264,7 +320,7 @@ public static class DriverRank
         var gaps = new List<string>();
         if (ServingProbation(s, d))
         {
-            gaps.Add($"{ProbationDaysLeft(s, d)} day(s) of their probation left.");
+            gaps.Add($"{ProbationDaysLeft(s, d)} day(s) of their {ProbationDaysFor(s, d)}-day probation left.");
             return gaps;
         }
         if (d.OnProbation)
@@ -332,8 +388,8 @@ public static class DriverRank
         var share = $"{d.WageShare * 100:0}% of what they bring in";
 
         if (ServingProbation(s, d))
-            return $"On their ninety days — {ProbationDaysLeft(s, d)} to go. Paid {share} until they " +
-                   "are through it.";
+            return $"On their {ProbationDaysFor(s, d)}-day probation — {ProbationDaysLeft(s, d)} to go. " +
+                   $"Paid {share} until they are through it.";
 
         // Between clearing a gate and the report that settles it. Worth saying out loud: the roster
         // still shows the old rung and nothing else on screen explains why.
@@ -435,7 +491,9 @@ public static class DriverRank
             shortfall = Shortfall(s, d),
             tenureDays = TenureDays(s, d),
             servingProbation = ServingProbation(s, d),
+            probationDays = ProbationDaysFor(s, d),
             probationDaysLeft = ProbationDaysLeft(s, d),
+            probationBasis = ProbationBasis(s, d),
             incidents = conduct.Count,
             preventables = conduct.Count(x => IsPreventable(x.Line.Severity)),
             recentPreventables = RecentPreventables(s, d),

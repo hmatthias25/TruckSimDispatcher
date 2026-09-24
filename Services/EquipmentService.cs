@@ -259,7 +259,16 @@ public static class EquipmentService
         if (trailer.Status != "InService" && !force)
             throw new InvalidOperationException($"Trailer {trailer.Ref} is {trailer.Status}.");
 
-        var open = s.Trips.FirstOrDefault(t => t.Status is "Authorized" or "InTransit");
+        // The trip the driver is ACTUALLY on, which is what the message below claims to be about.
+        //
+        // This swept every trip in the file for an open status, so one stale record anywhere in the
+        // history refused the swap for ever — and said "you are hooked to freight" about a run the
+        // driver had closed out weeks before. Reported from play after an empty move was superseded and
+        // left Authorized behind: the reposition was over, the app agreed it was over everywhere else,
+        // and this one check went on citing it. DispatchEngine.Blockers has always scoped it to
+        // ActiveTripId; this is the same question and now asks it the same way.
+        var open = s.Trips.FirstOrDefault(t => t.Id == s.Status.ActiveTripId
+                                               && t.Status is "Authorized" or "InTransit");
         if (open != null)
             throw new InvalidOperationException($"{open.Number} is still open — you are hooked to freight. Close it first.");
 
@@ -380,10 +389,18 @@ public static class EquipmentService
     /// </summary>
     /// <param name="prefer">
     /// The box the driver was already told about at the drop that ended their last tour, where there was
-    /// one. It goes to the front of the queue rather than being re-picked: the app promised a specific
-    /// unit a fortnight ago, and possibly had the driver go and reserve it, so handing them a different
-    /// one on arrival makes the promise worthless. It still has to survive every check below — a promise
-    /// about a trailer that has since been sold is not one worth keeping.
+    /// one. Where it is still a candidate it is the <b>only</b> candidate: the app promised a specific
+    /// unit a fortnight ago and possibly had the driver go and reserve it in ATS, so handing them a
+    /// different one on arrival makes the promise worthless.
+    ///
+    /// <para>This used to be a sort key on a list that each branch below then re-filtered, which is not
+    /// the same thing at all. A promised box out under a hired driver failed the "free" test in the first
+    /// branch, the search fell through past it, and the driver was handed a different trailer at a
+    /// different yard — reported from play as being promised a flatbed at Springfield on the way in and
+    /// told on arrival to take one from Denver.</para>
+    ///
+    /// <para>It still has to survive the yard rule and the type check — a promise about a trailer that
+    /// has since been sold is not one worth keeping.</para>
     /// </param>
     public static EquipmentOrder? IssueTrailerReassignment(AppState s, string requiredType, string reason,
                                                            Trailer? prefer = null)
@@ -398,10 +415,26 @@ public static class EquipmentService
                        ?? s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters);
         var homeLabel = homeYard != null ? DispatchEngine.Place(homeYard.City, homeYard.State) : "the yard";
 
+        // The yard this is happening at. A re-rig is a home-time move, so it is normally the drivers own
+        // yard — but where they are STANDING is what decides which equipment they can reach, and a caller
+        // away from a terminal falls back to the home yard.
+        var atYard = s.Company.Terminals.FirstOrDefault(y =>
+                         y.City.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)
+                         && y.State.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase))
+                     ?? homeYard;
+        var atLabel = atYard != null ? DispatchEngine.Place(atYard.City, atYard.State) : homeLabel;
+
+        // <b>Only a box on the book of the yard the driver is standing at.</b>
+        //
+        // Not "a box standing on this yard": one based here and out under a hired driver is still ours to
+        // take, and ATS skips the days and brings it in when the player assigns it — that is what the
+        // second branch below is for. What the rule rules out is a yard the driver is not at. The search
+        // used to end in an unrestricted sweep of the whole company, so a driver reporting in at
+        // Springfield with nothing free on the property was told to take the Denver flatbed, in an order
+        // that named Springfield as the place to do it. You cannot hook a trailer four hundred miles away.
         var matching = s.Trailers
             .Where(t => t.Status == "InService" && TypeCovers(t.Type, requiredType))
-            .OrderByDescending(t => prefer != null
-                                    && t.Unit.Equals(prefer.Unit, StringComparison.OrdinalIgnoreCase))
+            .Where(t => atYard == null || t.HomeTerminalId == atYard.Id)
             .ToList();
 
         // A trailer one of our own drivers is pulling is NOT free, however empty its AssignedTruckUnit
@@ -410,16 +443,6 @@ public static class EquipmentService
         // else — and quietly, as a straight swap.
         bool HeldByHire(Trailer t) => s.HiredDrivers.Any(h => h.Status == "Active"
             && h.AssignedTrailerUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
-
-        // 1. Something free — nobody on it, and as close to the driver as the fleet allows.
-        //
-        // Searched from where the driver is STANDING outwards, which it was not. It looked at the home
-        // yard and then at the whole company, so a driver reporting in at Springfield was told to fetch a
-        // trailer from Salt Lake City — nine hundred miles bobtail, stated as an instruction. Reported
-        // from play, and the driver quite reasonably said no.
-        var hereYard = s.Company.Terminals.FirstOrDefault(y =>
-            y.City.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)
-            && y.State.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase));
 
         // A box the driver has TOLD us is parked is free, whatever the books say.
         //
@@ -437,13 +460,28 @@ public static class EquipmentService
         bool Free(Trailer t) =>
             ReportedParked(t) || (string.IsNullOrWhiteSpace(t.AssignedTruckUnit) && !HeldByHire(t));
 
-        var free = (hereYard != null ? matching.FirstOrDefault(t => Free(t) && t.HomeTerminalId == hereYard.Id) : null)
-                   ?? (homeYard != null ? matching.FirstOrDefault(t => Free(t) && t.HomeTerminalId == homeYard.Id) : null)
-                   ?? matching.FirstOrDefault(Free);
+        // 1. The promise binds. Where the box named a fortnight ago is still on this yards book and still
+        // the right type, it is the whole pool — the branches below decide only HOW it is handed over
+        // (standing free, or out and worth waiting on), never WHETHER it is the one.
+        var promised = prefer == null ? null
+            : matching.FirstOrDefault(t => t.Unit.Equals(prefer.Unit, StringComparison.OrdinalIgnoreCase));
+        var pool = promised != null ? new List<Trailer> { promised } : matching;
+
+        // A promised box whose books are stale — a truck number on it and no active driver behind that
+        // number — is still ours and still standing. Falling through to "the company owns none" and
+        // telling the player to go and buy a trailer they can see out of the window is the worst of the
+        // three answers, and the bookkeeping is the one thing here that is never the drivers fault.
+        bool Available(Trailer t) => Free(t) || (promised != null && !HeldByHire(t));
+
+        var free = pool.FirstOrDefault(Available);
 
         if (free != null)
         {
-            var at = !string.IsNullOrWhiteSpace(free.CurrentLocation) ? free.CurrentLocation : homeLabel;
+            // The yard, not the last position reported for the box. They are the same thing now that the
+            // pool cannot leave the yard — but CurrentLocation is a stale reading the player typed in some
+            // time ago, and printing it as the place to go was the other half of how Denver got into an
+            // order about Springfield.
+            var at = atLabel;
 
             // Where this is the box they were sent to claim a tour ago, say so. Being told to go and find
             // a trailer you already walked over and marked as your own reads as the app having forgotten,
@@ -466,8 +504,8 @@ public static class EquipmentService
                 Reason = reason,
                 FromTrailerUnit = current?.Unit ?? "",
                 ToTrailerUnit = free.Unit,
-                TerminalId = homeYard?.Id ?? "",
-                TerminalLabel = homeLabel,
+                TerminalId = atYard?.Id ?? "",
+                TerminalLabel = atLabel,
                 AvailableFromGameTime = s.Status.GameTime,
                 Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, free.Subtype)} freight. " + claimed +
                               $"Drop {(current == null ? "your trailer" : current.Unit)} and hook trailer {free.Ref} " +
@@ -479,7 +517,7 @@ public static class EquipmentService
         }
 
         // 2. Out with one of our own drivers — we wait for it.
-        var taken = matching
+        var taken = pool
             .Select(t => new { Trailer = t, Driver = s.HiredDrivers.FirstOrDefault(h => h.AssignedTrailerUnit == t.Unit && h.Status == "Active") })
             .FirstOrDefault(x => x.Driver != null);
 
@@ -500,8 +538,8 @@ public static class EquipmentService
                 Reason = reason,
                 FromTrailerUnit = current?.Unit ?? "",
                 ToTrailerUnit = taken.Trailer.Unit,
-                TerminalId = homeYard?.Id ?? "",
-                TerminalLabel = homeLabel,
+                TerminalId = atYard?.Id ?? "",
+                TerminalLabel = atLabel,
                 // No date. The game decides what the swap costs and charges it when the player accepts,
                 // so there is nothing here to be available FROM — only a forecast, which is in the text.
                 AvailableFromGameTime = "",
@@ -524,15 +562,15 @@ public static class EquipmentService
             Reason = reason,
             FromTrailerUnit = current?.Unit ?? "",
             ToTrailerUnit = "",
-            TerminalId = homeYard?.Id ?? "",
-            TerminalLabel = homeLabel,
+            TerminalId = atYard?.Id ?? "",
+            TerminalLabel = atLabel,
             MustPurchase = true,
             AvailableFromGameTime = s.Status.GameTime,
             Instruction = $"Next tour is {TrailerSpec.Describe(requiredType, null)} freight and the company has none " +
-                          $"available. While you are home, buy one in ATS at {homeLabel}: " +
+                          $"available at {atLabel}. While you are home, buy one in ATS there: " +
                           $"{(TrailerSpec.IsTanker(requiredType) ? TrailerSpec.BuyingAdvice(s, requiredType, null) : $"a {requiredType.ToLowerInvariant()}.")} " +
                           "Add it on the Equipment tab, hook it, then mark this order complete.",
-            Notes = $"No {requiredType} on the property."
+            Notes = $"No {requiredType} on the book at {atLabel}."
         });
     }
 

@@ -1156,9 +1156,16 @@ public static class TripService
     /// <summary>
     /// Carries the clocks across an unload the driver never had a chance to read past.
     ///
-    /// Unloading is on-duty-not-driving, so it eats the <b>shift</b> and the <b>cycle</b> and leaves the
-    /// <b>drive</b> clock alone. The thirty-minute break counter is driving time, so that is untouched too
-    /// — sitting at a dock is not a break and does not reset it.
+    /// <para>It always eats the <b>shift</b> and always leaves the <b>drive</b> clock alone. The
+    /// thirty-minute break counter is driving time, so that is untouched too — sitting at a dock is not
+    /// a break and does not reset it.</para>
+    ///
+    /// <para><b>The cycle depends on what is on the back.</b> Behind a flatbed or a tanker the driver
+    /// was on the straps and the hoses, so it is on-duty time and the seventy pays for it. Behind a van,
+    /// a reefer or a box there was nothing for them to do once the doors opened and they were in the
+    /// bunk — sleeper-berth time, which never counts toward the cycle. <see cref="TrailerSpec.WorksTheDock"/>
+    /// draws the line, and the planner draws it in the same place: if these two disagreed, the app would
+    /// promise a reefer run cost no cycle and then take it anyway as the load closed.</para>
     ///
     /// This is arithmetic on figures the driver reported, not a simulation, which is the only reason it is
     /// allowed to write clocks at all. It is still marked projected, because a worked-out figure is not a
@@ -1181,13 +1188,21 @@ public static class TripService
         // Nothing to carry from unless we know where the driver stood when they arrived. Without a
         // reading the figures on file are from before the drive, and taking only the dock time off them
         // would report a shift clock that never paid for the driving.
+        // Behind a van, a reefer or a box the driver sat in the bunk while the dock worked, and
+        // sleeper-berth time is not on-duty time: it runs the fourteen down but never the seventy.
+        // Behind a flatbed or a tanker they were on the straps or the hoses for all of it and both
+        // clocks pay. See TrailerSpec.WorksTheDock — the planner draws the same line, and the close-out
+        // has to agree with it or the audit is reconciling against a rule the plan did not use.
+        var workedTheDock = TrailerSpec.WorksTheDock(trip.TrailerType);
+        var dutyWord = workedTheDock ? "on-duty time" : "sleeper-berth time";
+
         if (!baselineWasFresh && !audit.ClocksReported)
         {
             // Whatever is on file is stale, not projected. Leaving the flag set from an earlier trip
             // would have the panel claim it carried these across an unload it refused to touch.
             s.Hos.Projected = false;
             audit.CarriedForward.Add(
-                $"The dock cost {Hhmm.Of(spentAtDock)} of on-duty time, but I have no reading from when you " +
+                $"The dock cost {Hhmm.Of(spentAtDock)} of {dutyWord}, but I have no reading from when you " +
                 "arrived to take it off \u2014 what I hold is from before the drive. Report your clocks and I " +
                 "will do the arithmetic; until then I am planning on stale figures.");
             return;
@@ -1196,15 +1211,28 @@ public static class TripService
         var shiftWas = s.Hos.ShiftRemaining;
         var cycleWas = s.Hos.CycleRemaining;
         s.Hos.ShiftRemaining = Math.Max(0, s.Hos.ShiftRemaining - spentAtDock);
-        s.Hos.CycleRemaining = Math.Max(0, s.Hos.CycleRemaining - spentAtDock);
+        if (workedTheDock)
+            s.Hos.CycleRemaining = Math.Max(0, s.Hos.CycleRemaining - spentAtDock);
         s.Hos.Projected = true;
         s.Hos.AsOfGameTime = s.Status.GameTime;
         s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
 
-        audit.CarriedForward.Add(
-            $"Clocks carried across the unload: shift {Hhmm.Of(shiftWas)} \u2192 {Hhmm.Of(s.Hos.ShiftRemaining)}, " +
-            $"cycle {Hhmm.Of(cycleWas)} \u2192 {Hhmm.Of(s.Hos.CycleRemaining)}. On-duty time, so your drive clock " +
-            "and break counter are untouched. Worked out, not read \u2014 check it against your display.");
+        // <b>What to set in the game.</b> The app has just worked out clocks the driver has to be able
+        // to reproduce on their own display, and behind a reefer those two figures now move by different
+        // amounts for the first time. Saying "cycle unchanged" without saying WHY reads like the app
+        // forgot to subtract something.
+        audit.CarriedForward.Add(workedTheDock
+            ? $"Clocks carried across the unload: shift {Hhmm.Of(shiftWas)} \u2192 {Hhmm.Of(s.Hos.ShiftRemaining)}, " +
+              $"cycle {Hhmm.Of(cycleWas)} \u2192 {Hhmm.Of(s.Hos.CycleRemaining)}. You were on duty for it \u2014 " +
+              $"{TrailerSpec.Describe(trip.TrailerType, null)} work is straps and hoses, not waiting \u2014 so both " +
+              "clocks paid. Your drive clock and break counter are untouched. Worked out, not read; check it " +
+              "against your display."
+            : $"Clocks carried across the unload: shift {Hhmm.Of(shiftWas)} \u2192 {Hhmm.Of(s.Hos.ShiftRemaining)}, " +
+              $"cycle {Hhmm.Of(cycleWas)} \u2192 unchanged. Nothing for you to do behind a " +
+              $"{TrailerSpec.Describe(trip.TrailerType, null)} once the doors are open, so that was " +
+              $"{Hhmm.Of(spentAtDock)} in the bunk: it comes off your fourteen but not your seventy. " +
+              "<b>In ATS, take that time in the sleeper</b> and your display will match. Worked out, not " +
+              "read \u2014 check it.");
     }
 
     /// <summary>

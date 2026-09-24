@@ -147,7 +147,12 @@ async function addLoad(extra = {}) {
   S = done.snapshot;
   let h = (await api('/bootstrap')).hos;
   ok('the shift clock lost the unload', near(h.shiftRemaining, 4), `${h.shiftRemaining} h`);
-  ok('the cycle lost it too', near(h.cycleRemaining, 58), `${h.cycleRemaining} h`);
+  // But NOT the cycle. This driver pulls a reefer: once the doors are open there is nothing for them to
+  // do and they are in the bunk, which is sleeper-berth time and never counts toward the seventy. The
+  // window still runs, because a couple of hours in the berth is not a qualifying split. Behind a
+  // flatbed both clocks would pay — see dockduty.cjs, which pins the pair against each other.
+  ok('the cycle did not, because the dock did the work', near(h.cycleRemaining, 60),
+    `${h.cycleRemaining} h`);
   ok('the DRIVE clock is untouched -- unloading is not driving', near(h.driveRemaining, 5),
     `${h.driveRemaining} h`);
   ok('and so is the break counter', near(h.breakRemaining, 4), `${h.breakRemaining} h`);
@@ -231,7 +236,8 @@ async function addLoad(extra = {}) {
     (done.audit.serviceFindings || []).join(' ')), 
     (done.audit.serviceFindings || []).find((f) => /Unloading/.test(f)) || '(none)');
   ok('the shift lost the hour and a half', near(h.shiftRemaining, 3.5), `${h.shiftRemaining} h`);
-  ok('the cycle lost it too', near(h.cycleRemaining, 28.5), `${h.cycleRemaining} h`);
+  ok('the cycle kept it — bunk time behind a reefer', near(h.cycleRemaining, 30),
+    `${h.cycleRemaining} h`);
   ok('the drive clock is untouched', near(h.driveRemaining, 4), `${h.driveRemaining} h`);
   ok('and now is the end of the unload', /T13:30/.test(S.status.gameTime), S.status.gameTime);
 
@@ -258,7 +264,8 @@ async function addLoad(extra = {}) {
   S = done.snapshot;
   h = (await api('/bootstrap')).hos;
   ok('the dock came off the arrival reading', near(h.shiftRemaining, 4), `6 -> ${h.shiftRemaining} h`);
-  ok('and off the cycle', near(h.cycleRemaining, 38), `40 -> ${h.cycleRemaining} h`);
+  // The window pays, the cycle does not — reefer, so the dock did the work. See dockduty.cjs.
+  ok('but not off the cycle', near(h.cycleRemaining, 40), `40 -> ${h.cycleRemaining} h`);
   ok('the drive clock is left as read', near(h.driveRemaining, 5), `${h.driveRemaining} h`);
   ok('the result is flagged as worked out', h.projected === true, `${h.projected}`);
   ok('and the arithmetic is shown',
@@ -325,7 +332,7 @@ async function addLoad(extra = {}) {
   ok('the dock measured two and a half hours', /2:30/.test((done.audit.carriedForward || []).join(' ')),
     (done.audit.carriedForward || []).find((x) => /at the dock/.test(x)) || '(none)');
   ok('shift went 9:00 -> 6:30', near(h.shiftRemaining, 6.5), `${h.shiftRemaining} h`);
-  ok('cycle went 52:00 -> 49:30', near(h.cycleRemaining, 49.5), `${h.cycleRemaining} h`);
+  ok('cycle held at 52:00 — bunk time, not duty', near(h.cycleRemaining, 52), `${h.cycleRemaining} h`);
   ok('drive is still the 6:00 that was read', near(h.driveRemaining, 6), `${h.driveRemaining} h`);
   ok('and now is when the board came up', /T11:30/.test(S.status.gameTime), S.status.gameTime);
   ok('the next load is judged on that', (await api('/bootstrap')).views.hos.drivableNowHours <= 6.5,

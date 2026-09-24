@@ -275,20 +275,21 @@
   <div class="kicker">From Section 7</div>
   <h2>Day numbers, and the day they were off by one</h2>
 
-  <p class="lede">The app counts days the way the game does. It did not always, and if you have a career
+  <p class="lede">A career starts on <b>day 1</b>, and day 1 is a <b>Monday</b>. If you have a career
     from an earlier build the numbers on it have moved.</p>
 
-  <p>Every time in the app is stored as a moment, and the day number is worked out from it. That
-    arithmetic used to add one &mdash; so the day the game called <b>14</b> was shown as <b>15</b>, and
-    every date you read was a day ahead of the one in front of you. The load due "Day 15" was due the day
-    the game called 14, which is exactly the sort of thing you find out by being late.</p>
+  <p>Every time in the app is stored as a moment, and the day number is worked out from it. For a while
+    that arithmetic counted from nought, on the belief that the game calls the first day of a profile
+    day 0. It does not &mdash; start a new career and the game says day 1, on a Monday &mdash; so the
+    numbering and the weekday anchor have both moved back onto one. They had to move together: payday is
+    worked out from the day number, so shifting the numbering on its own would slide every payday onto a
+    different actual Friday.</p>
 
   <table>
     <tr><th style="width:2.1in"></th><th>Before</th><th>Now</th></tr>
-    <tr><td><b>The game says</b></td><td>Day 14, a Monday</td><td>Day 14, a Monday</td></tr>
-    <tr><td><b>The app said</b></td><td>Day 15, a Monday</td><td>Day 14, a Monday</td></tr>
-    <tr><td><b>First day of a career</b></td><td>Day 1</td><td>Day 0</td></tr>
-    <tr><td><b>Paydays</b></td><td>5, 12, 19, 26</td><td>4, 11, 18, 25</td></tr>
+    <tr><td><b>First day of a career</b></td><td>Day 0</td><td>Day 1</td></tr>
+    <tr><td><b>Which day is a Monday</b></td><td>0, 7, 14, 21</td><td>1, 8, 15, 22</td></tr>
+    <tr><td><b>Paydays</b></td><td>4, 11, 18, 25</td><td>5, 12, 19, 26</td></tr>
   </table>
 
   <div class="rule">
@@ -298,9 +299,9 @@
       moment the arithmetic changed &mdash; and every <em>duration</em> between two of them is untouched,
       because the gap between two moments does not care what the days are called.</p>
     <p style="margin-top:6pt">Payday needed one extra piece of care. Payday is Friday, and Friday is
-      worked out <em>from</em> the day number &mdash; so the weekday anchor moved down with the numbering.
-      Had it not, every payday would have slid onto a Saturday. Your paydays fall on the same actual days
-      they always did; they are simply now called 4, 11 and 18.</p>
+      worked out <em>from</em> the day number &mdash; so the weekday anchor moved up with the numbering.
+      Had it not, every payday would have slid onto a Thursday. Your paydays fall on the same actual days
+      they always did; they are simply now called 5, 12 and 19.</p>
   </div>
 
   <h3>What this means for a career already running</h3>
@@ -311,17 +312,16 @@
       exactly as they were.</li>
     <li><b>The fleet review</b> is counted from the end of the last one you filed. A review you have
       already done stays done, and the next falls fifteen days after it &mdash; the same actual day, one
-      number lower.</li>
+      number higher.</li>
     <li><b>Payroll</b> keeps its history. The one day number a career file stores is the day you were
-      last paid, and it comes down by one with everything else so no payday is repeated or skipped.</li>
+      last paid, and it moves up by one with everything else so no payday is repeated or skipped.</li>
   </ul>
 
   <div class="note">
     <h4>It happens once, quietly</h4>
     <p>Career files carry the shape they were written in. An older one is brought forward the first time
-      it loads and then left alone &mdash; running it twice would take another day off and put you a day
-      behind instead of a day ahead. A career started on this build is already correct and is never
-      touched.</p>
+      it loads and then left alone &mdash; running it twice would add another day and put you a day ahead
+      instead of correct. A career started on this build is already right and is never touched.</p>
   </div>
 
   <div class="pfoot"><span>7 &middot; Hours of service</span><span>14</span></div>
@@ -902,9 +902,14 @@
 
   <div class="rule">
     <h4>The clocks are carried across the unload for you</h4>
-    <p>Unloading is on-duty-not-driving, so it comes off your <b>shift</b> and your <b>cycle</b> and
-      leaves your <b>drive</b> clock alone. Sitting at a dock is not a break either, so the thirty-minute
-      counter does not move.</p>
+    <p>It always comes off your <b>shift</b> and always leaves your <b>drive</b> clock alone. Sitting at a
+      dock is not a break either, so the thirty-minute counter does not move.</p>
+    <p style="margin-top:6pt"><b>Whether it touches your cycle depends on the trailer.</b> Straps,
+      tarps and hoses behind a flatbed, tanker, step deck or lowboy are on-duty time and the 70 pays for
+      them. Behind a dry van, reefer or container the dock does the work and you are in the bunk &mdash;
+      sleeper-berth time, which never counts toward the cycle. <b>Take it in the sleeper in ATS</b> or the
+      two will not agree; the 14-hour window runs either way. A trailer the app does not recognise counts
+      as work, because crediting you hours you did not have is the worse mistake.</p>
     <p style="margin-top:6pt">Those clocks are marked <b>worked out, not read</b>, and the panel says so.
       It is arithmetic on two times you reported, not a simulation &mdash; but a figure nobody read off
       the game is still worth a glance, and anything you type replaces it.</p>
@@ -2601,6 +2606,10 @@
     haul their freight only. Other companies' loads still appear on the board — they are simply not
     yours to take.</p>
 
+  <p><b>You do not put yourself on one.</b> It opens at <b>Senior Company Driver</b> and is a request
+    operations answers on your record &mdash; <b>25 loads</b> here, <b>95% on time</b>, at most <b>one</b>
+    driver-fault incident &mdash; and can refuse, for thirty days. Coming <i>off</i> is your own call.</p>
+
   <figure>
     <img src="img/dedicated.png" alt="Dedicated panel on the Career tab">
     <figcaption>Career tab. Only shown when your carrier actually runs dedicated freight.</figcaption>
@@ -2649,9 +2658,8 @@
     <h4>Why the match is on words and not on letters</h4>
     <p>A name matching when it should not costs more than a wrong label. If the app thinks a
       stranger&rsquo;s freight is yours then the board is not dry, the escape above never lifts, and every
-      load that genuinely <em>is</em> takeable gets refused for not being your account &mdash; pushed at the
-      wrong load and refused the right one at once. Depot numbers and punctuation are ignored; short real
-      accounts like BP or JBS match as words, never as fragments of somebody else&rsquo;s name.</p>
+      load that genuinely <em>is</em> takeable gets refused for not being your account. Depot numbers and
+      punctuation are ignored; short accounts like BP or JBS match as words, not as fragments.</p>
   </div>
 
   <div class="pfoot"><span>20 &middot; Career</span><span>76</span></div>

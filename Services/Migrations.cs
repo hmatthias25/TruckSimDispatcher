@@ -77,6 +77,11 @@ public static class Migrations
         // Not stamped: a box can leave the fleet at any time, and closing an order already closed is a
         // no-op. This is a standing tidy-up rather than a one-off correction.
         CloseOrdersForTrailersAlreadyGone(s);
+        CloseRepositionsNothingPointsAt(s);
+
+        // LAST, and it has to be. It stamps the current schema version, so anything gated on a lower
+        // one would read as already applied and skip itself.
+        PutTheFirstDayBackOnDayOne(s);
     }
 
     /// <summary>
@@ -1433,6 +1438,45 @@ public static class Migrations
     }
 
     /// <summary>
+    /// Puts a career back onto day-one numbering, where day 1 is a Monday.
+    ///
+    /// <para><see cref="MatchGameDayNumbering"/> moved every career down by one on the belief that ATS
+    /// counts the first day of a profile as day 0. It does not — a new career starts on <b>day 1, and
+    /// that day is a Monday</b>, reported from play by starting one. So the numbering and the weekday
+    /// anchor both move back, together, for the same reason they moved together before: shifting one
+    /// without the other slides every payday onto a different actual Friday.</para>
+    ///
+    /// <para>Almost nothing needs rewriting, for the reason the earlier note gives — times are stored as
+    /// moments and the day number is worked out from them, so every trip, window, home time and log entry
+    /// renumbers itself the moment <see cref="GameClock.DayOf"/> starts counting from one again. What is
+    /// left is the handful of places a day NUMBER was written down, and those are bookkeeping against a
+    /// real day: they move up with everything else or the app thinks a payday is owed twice.</para>
+    ///
+    /// <para>A file old enough to predate the original renumbering passes through both migrations and
+    /// comes out where it started, which is correct — it was written under day-one numbering in the
+    /// first place.</para>
+    /// </summary>
+    private static void PutTheFirstDayBackOnDayOne(AppState s)
+    {
+        if (s.SchemaVersion >= 30) return;
+        s.SchemaVersion = 30;
+
+        // Only a real recorded day moves. The unset sentinels are -1 and 0, and shifting those would
+        // invent a payday in the first week of every career that never had one.
+        if (s.Driver.LastPaydayDay > 0) s.Driver.LastPaydayDay += 1;
+        if (s.Driver.LastTrueUpDay > 0) s.Driver.LastTrueUpDay += 1;
+
+        foreach (var yard in s.Company.Terminals)
+            if (yard.LastUpkeepDay > 0) yard.LastUpkeepDay += 1;
+
+        foreach (var w2 in s.W2s)
+        {
+            if (w2.YearStartDay > 0) w2.YearStartDay += 1;
+            if (w2.YearEndDay > 0) w2.YearEndDay += 1;
+        }
+    }
+
+    /// <summary>
     /// Finds loads still running whose delivery window does not match the run.
     ///
     /// The screenshot reader used to be asked for hours-to-deliver while never being told the game
@@ -2354,6 +2398,40 @@ public static class Migrations
     /// against a trailer still standing is a live instruction and is left alone. If the company still
     /// wants a box it raises the ask again on the next report, priced and reasoned afresh.</para>
     /// </summary>
+    /// <summary>
+    /// Closes empty moves that were superseded and left standing.
+    ///
+    /// <para><see cref="DispatchEngine.CreateEmptyMove"/> used to insert the new trip and overwrite
+    /// <c>ActiveTripId</c> without closing whatever was already there. The old move was then
+    /// unreachable in both directions: nothing pointed at it, so no close-out could ever reach it, and
+    /// it was still Authorized, so anything scanning trip statuses went on counting it. A career
+    /// reported from play held two identical Junction City to Springfield moves dated the same minute,
+    /// and the one nobody could reach refused every trailer swap with "you are hooked to freight".</para>
+    ///
+    /// <para>The source is fixed. This is for the files already carrying one. Only a move with no miles
+    /// on it is touched, and never the active trip — a reposition the driver is actually on is theirs to
+    /// finish.</para>
+    /// </summary>
+    private static void CloseRepositionsNothingPointsAt(AppState s)
+    {
+        // Not the active trip is the whole test, and it is a sufficient one. An empty move can only be
+        // closed while ActiveTripId names it, so one still open with the pointer somewhere else cannot
+        // be reached by any route the app offers. There is no need to ask whether it was driven, and
+        // asking let a part-driven orphan through — the miles are measured off the odometer by
+        // Repositioning and are not lost by closing the record.
+        foreach (var trip in s.Trips.Where(t =>
+                     t.Kind is "EmptyMove" or "Maintenance"
+                     && t.Status is "Authorized" or "InTransit"
+                     && t.Id != s.Status.ActiveTripId))
+        {
+            trip.Status = "Cancelled";
+            trip.FaultAttribution = "None";
+            trip.ServiceResult = "NotApplicable";
+            trip.CancelReason = "Superseded by another repositioning move and left standing. Closed on " +
+                                "load — nothing pointed at it and it was never driven.";
+        }
+    }
+
     private static void CloseOrdersForTrailersAlreadyGone(AppState s)
     {
         // A box is "gone" if it is off the books entirely or retired. Both happen: the Equipment tab

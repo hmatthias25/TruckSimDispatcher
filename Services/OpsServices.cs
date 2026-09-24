@@ -756,32 +756,47 @@ public static class CareerService
     /// Takes the rank rather than the state so a promotion can ask what the driver had a moment ago and
     /// what they have now, and say what actually changed. See <see cref="RankMeaning"/>.
     /// </summary>
-    public static DriverPrivileges PrivilegesFor(string? rank) => (rank ?? "") switch
+    public static DriverPrivileges PrivilegesFor(string? rank)
+    {
+        var p = PrivilegeTable(rank);
+
+        // <b>The allowance decides whether a rank may refuse, not a second flag beside it.</b>
+        //
+        // These were two tables saying different things about the same driver. Rejections gave a company
+        // driver one refusal a week and the Career tab printed it; this one left CanRefuseLoad false for
+        // that rank, and MayPass read the flag — so the refusal was advertised on one screen and the
+        // button for it never appeared on the other. Reported from play as "I get one refuse load but
+        // do not see where or how".
+        p.CanRefuseLoad = Rejections.WeeklyAllowance(rank) > 0;
+        return p;
+    }
+
+    private static DriverPrivileges PrivilegeTable(string? rank) => (rank ?? "") switch
     {
         "company" => new DriverPrivileges
         {
             CanRequestAlternate = true,
-            Summary = "As a company driver you can ask operations for a different load, but the assignment is still dispatch's call."
+            Summary = "As a company driver you can turn one load a week down, and you can ask operations for a different one — but the assignment is still dispatch's call."
         },
         "senior" => new DriverPrivileges
         {
-            CanRequestAlternate = true, CanRefuseLoad = true,
+            CanRequestAlternate = true,
             Summary = "Senior drivers may request an alternative and may refuse an assignment with a reason on record."
         },
         "lead" => new DriverPrivileges
         {
-            CanRequestAlternate = true, CanRefuseLoad = true, CanChooseAlternateLoad = true,
+            CanRequestAlternate = true, CanChooseAlternateLoad = true,
             Summary = "Lead drivers pick from the cleared loads on the board."
         },
         "lease" => new DriverPrivileges
         {
-            CanRequestAlternate = true, CanRefuseLoad = true, CanChooseAlternateLoad = true,
+            CanRequestAlternate = true, CanChooseAlternateLoad = true,
             CanOverrideTightLoad = true,
             Summary = "Specialist Driver: trusted with the awkward freight, so you get a say in what you take and can call a tight window yourself."
         },
         "owner" => new DriverPrivileges
         {
-            CanRequestAlternate = true, CanRefuseLoad = true, CanChooseAlternateLoad = true,
+            CanRequestAlternate = true, CanChooseAlternateLoad = true,
             CanOverrideTightLoad = true,
             Summary = "Master Driver: first refusal on the freight and your judgement taken on a tight window. Still our authority and our truck — the latitude is earned, not owned."
         },
@@ -854,7 +869,14 @@ public static class CareerService
             CompanyRevenue = Math.Round(delivered.Sum(t => t.CompanyRevenue), 2),
             DriverEarnings = s.Driver.LifetimeEarnings,
             UnsettledPay = s.Driver.UnsettledPay,
-            Cancellations = s.Trips.Count(t => t.Status == "Cancelled"),
+            // FREIGHT cancellations. This counted every cancelled trip, which swept in the empty moves
+            // the app cancels on its own — a reposition superseded before it was driven, a maintenance
+            // move the shop made unnecessary — and put the total on the career tab in warning colour.
+            // A driver reading "20 cancellations" against their record deserves that to mean twenty
+            // loads that did not run, not fifteen loads and five pieces of bookkeeping they had no part
+            // in. Nothing gates a promotion on this; it is a figure the driver is shown about
+            // themselves, which is exactly why it has to be the figure they would recognise.
+            Cancellations = s.Trips.Count(t => t.Status == "Cancelled" && t.Kind == "Freight"),
             // Weighted, not counted. A light bump must not consume the same allowance as a rollover —
             // that was the review undoing everything the damage tiers had just decided.
             DriverFaultIncidents = s.Incidents

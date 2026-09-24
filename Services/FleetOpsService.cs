@@ -19,9 +19,11 @@ public static class FleetOpsService
         if (string.IsNullOrWhiteSpace(d.Id)) d.Id = Guid.NewGuid().ToString("N")[..8];
         if (string.IsNullOrWhiteSpace(d.HiredGameDate)) d.HiredGameDate = s.Status.GameTime;
 
-        // A new hire starts at the bottom of the ladder and serves their ninety days, whatever level
-        // ATS has them at. Level is how much driving they have done; the grade is what they have earned
-        // HERE, and nobody earns anything in their first quarter.
+        // A new hire starts at the bottom of the ladder whatever level ATS has them at. Level is how
+        // much driving they have done; the grade is what they have earned HERE, and nobody has earned
+        // anything on their first day. How LONG they stand there does read their level — see
+        // DriverRank.ProbationDaysFor — because a driver who has done the job before does not need the
+        // full ninety days to show they can do it.
         d.Grade = 0;
 
         // Pay the rung. A share that is not the model's own default was typed by somebody, and a typed
@@ -1089,9 +1091,18 @@ public static class FleetOpsService
         }
 
         var spendable = LedgerService.Position(s).Spendable;
+
+        // Replacing somebody is the same decision as filling an empty seat, so it gets the same answer:
+        // WHICH driver, not just whether to hire one. It used to say "hire a driver" and stop there,
+        // which left the calibre to the player at the one screen where ATS is showing them a list of
+        // levels and asking them to pick — and left the fortnightly report as the only place the company
+        // ever said what it wanted.
+        var (min, max, how) = CompanyHealth.HiringBandFor(s, CompanyHealth.Assess(s).Band);
+
         report.Instructions.Add(spendable >= 15_000m
-            ? $"**Hire a driver for unit {label}** in ATS and add them on the Fleet tab. " +
-              $"${spendable:N0} spendable; the real price is in the game. It earns nothing standing at the yard."
+            ? $"**Hire a driver for unit {label}** in ATS — look for **level {min}-{max}**: {how}. " +
+              $"Add them on the Fleet tab once you have. ${spendable:N0} spendable; the real price is " +
+              "in the game. It earns nothing standing at the yard."
             : $"Leave unit {label} standing for now — only ${spendable:N0} spendable after earmarks and " +
               "wages owed, and the company cannot carry another driver on that.");
     }
@@ -2220,6 +2231,11 @@ public static class FleetOpsService
         // go and hire for it is the app arguing with itself.
         var claimed = EquipmentService.OpenOrder(s)?.ToTruckUnit ?? "";
 
+        // The same band the fortnightly report names, said at the seat itself. The player is one click
+        // from the ATS hiring screen here, which is the moment the advice is worth anything — a level
+        // band remembered from a report two weeks ago is a level band nobody acts on.
+        var hireBand = CompanyHealth.HiringBandFor(s, CompanyHealth.Assess(s).Band);
+
         return open.Select(t =>
         {
             var yard = Migrations.TerminalOf(s, t.HomeTerminalId);
@@ -2243,8 +2259,11 @@ public static class FleetOpsService
                            && t.Unit.Equals(claimed, StringComparison.OrdinalIgnoreCase)
                     ? "Do not hire for this seat — operations has already put you in it. Report to the yard and make the swap."
                     : canAfford
-                        ? $"Spendable cash is ${position.Spendable:N0}. Hire someone in ATS and add them on this tab."
+                        ? $"Look for level {hireBand.Min}-{hireBand.Max}: {hireBand.How}. Spendable cash " +
+                          $"is ${position.Spendable:N0} — hire in ATS and add them on this tab."
                         : $"Only ${position.Spendable:N0} spendable after earmarks and wages owed — the company cannot really carry another driver yet.",
+                hireLevelMin = hireBand.Min,
+                hireLevelMax = hireBand.Max,
                 takeNote = better
                     ? $"It is a better truck than the {playerTruck!.Year} {playerTruck.Make} you are in. Taking it is a genuine upgrade."
                     : "You could take it yourself, though it is no better than what you are in.",
@@ -2299,6 +2318,24 @@ public static class FleetOpsService
         return due;
     }
 
+    /// <summary>
+    /// The calibre of driver to go and hire, for any screen that offers to add one.
+    ///
+    /// Thin wrapper over <see cref="CompanyHealth.HiringBandFor"/> so the Fleet tab and the fortnightly
+    /// report cannot drift into giving different advice about the same seat.
+    /// </summary>
+    public static HireBandView HireBand(AppState s)
+    {
+        var (min, max, how) = CompanyHealth.HiringBandFor(s, CompanyHealth.Assess(s).Band);
+        return new HireBandView
+        {
+            Min = min,
+            Max = max,
+            How = how,
+            WayIn = Carriers.IsWayIn(s.Company.Code, s.Company.PayStars),
+        };
+    }
+
     public static FleetOpsSummary Summary(AppState s)
     {
         var active = s.HiredDrivers.Where(d => d.Status == "Active").ToList();
@@ -2328,10 +2365,29 @@ public static class FleetOpsService
             // stay. Not a prediction of the roll — just the observation.
             FlightRisks = active.Select(d => FlightRisk(s, d)).Where(x => x != null).Select(x => x!).ToList(),
             EmployerStars = s.Company.EmployerStars,
+            // What to go and hire AT, available wherever the Fleet tab offers to add somebody rather
+            // than only on the fortnightly report. The hiring screen in ATS is where this is acted on.
+            HireBand = HireBand(s),
             TrailerRequest = TrailerFleet.Open(s),
             YardRequest = Yards.Open(s)
         };
     }
+}
+
+/// <summary>
+/// What to go and hire at, in the terms the ATS hiring screen uses.
+///
+/// Both ends matter. The floor is what the work needs and the ceiling is what the company can carry, so
+/// a band is an instruction — "do not fill this seat with somebody under level 4" is as much of the
+/// answer as "hire somebody".
+/// </summary>
+public class HireBandView
+{
+    public int Min { get; set; }
+    public int Max { get; set; }
+    public string How { get; set; } = "";
+    /// <summary>Whether this is a fleet people begin at, which caps the band rather than flooring it.</summary>
+    public bool WayIn { get; set; }
 }
 
 public class FleetReportDue
@@ -2375,6 +2431,8 @@ public class FleetOpsSummary
     public List<string> FlightRisks { get; set; } = new();
     /// <summary>How this carrier rates as an employer, 1-5. Retention hangs off it.</summary>
     public double EmployerStars { get; set; }
+    /// <summary>The calibre of driver to go and hire, as a level band ATS shows on its hiring screen.</summary>
+    public HireBandView? HireBand { get; set; }
     /// <summary>An outstanding request to buy a trailer, if there is one.</summary>
     public TrailerRequest? TrailerRequest { get; set; }
     /// <summary>The yard the company wants, if any. Property it does not own until the player buys it.</summary>

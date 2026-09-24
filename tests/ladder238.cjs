@@ -251,6 +251,41 @@ let S, yardId;
   ok('but one older than the window no longer counts against the rung',
     ager.z?.recentPreventables === 0, `${ager.z?.recentPreventables} in the window`);
 
+  head('8. A cancelled load is not a delivered one, and does not quietly cost miles');
+  // Asked from play: "you are counting only delivered loads right? I have lots of cancelled loads on
+  // this profile." Yes — the ladder reads delivered freight and nothing else. What is worth pinning is
+  // the other half: a load cancelled at dispatch has no miles on it, so nothing a driver actually drove
+  // is being dropped on the floor; and the cancellation COUNT shown on their own career tab is about
+  // loads, not about the empty moves the app cancels on its own behalf.
+  //
+  // That count used to sweep in every cancelled trip, so a superseded reposition — bookkeeping the
+  // driver had no part in — put another mark on a figure displayed in warning colour beside their
+  // record. Nothing gates a promotion on it, which is exactly why it has to be a figure they recognise.
+  st = await api('/export');
+  const before = await api('/career');
+  const loadsBefore = num(row(before.nextRankProgress, 'loads')?.current);
+  const milesBefore = num(row(before.nextRankProgress, 'mile')?.current);
+
+  st.trips.unshift(
+    { id: 'cx-freight', number: 'PRI-CX-900', kind: 'Freight', status: 'Cancelled',
+      cargo: 'Never ran', faultAttribution: 'Dispatcher', dispatchedMiles: 900, actualMiles: 0,
+      startOdometer: 0, endOdometer: 0, events: [] },
+    { id: 'cx-empty', number: 'PRI-CX-901', kind: 'EmptyMove', status: 'Cancelled',
+      cargo: 'Empty repositioning', faultAttribution: 'None', dispatchedMiles: 0, actualMiles: 0,
+      startOdometer: 0, endOdometer: 0, events: [] });
+  await api('/import', 'POST', st);
+
+  rev = await api('/career');
+  ok('a cancelled load does not count as delivered',
+    num(row(rev.nextRankProgress, 'loads')?.current) === loadsBefore,
+    loadsBefore + ' -> ' + num(row(rev.nextRankProgress, 'loads')?.current));
+  ok('and the miles it was planned for are not credited either',
+    num(row(rev.nextRankProgress, 'mile')?.current) === milesBefore,
+    milesBefore + ' -> ' + num(row(rev.nextRankProgress, 'mile')?.current));
+  ok('the cancellation count is loads, not the empty moves the app cancels itself',
+    rev.stats.cancellations === 1,
+    rev.stats.cancellations + ' counted of 2 cancelled trips');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); process.exit(1); });

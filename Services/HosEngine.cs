@@ -20,6 +20,17 @@ public class HosTask
     /// to do the whole job or they go and rest before they start it.
     /// </summary>
     public bool AtDock { get; set; }
+
+    /// <summary>
+    /// Dock time the driver spends in the bunk rather than working. See
+    /// <see cref="TrailerSpec.WorksTheDock"/>.
+    ///
+    /// Still occupies the fourteen — a couple of hours in the berth is not a qualifying split and an ELD
+    /// would not pause the window for it — but it does <b>not</b> run the seventy down, because the
+    /// driver is not on duty. That is the whole of the difference, and over a week of reefer work it is
+    /// a day and a half of cycle a flatbed driver would not have.
+    /// </summary>
+    public bool HandsOff { get; set; }
 }
 
 public class PlanRequest
@@ -38,6 +49,16 @@ public class PlanRequest
     public double LoadedMiles { get; set; }
     public double LoadingHours { get; set; }
     public double UnloadingHours { get; set; }
+
+    /// <summary>
+    /// What is on the back, because it decides whether dock time is duty or rest.
+    ///
+    /// Empty plans as hands-on, which is what this engine did for every trailer before the distinction
+    /// existed — so a caller that does not set it gets the old, conservative answer rather than a
+    /// silently more generous one.
+    /// </summary>
+    public string TrailerType { get; set; } = "";
+
     /// <summary>ATS navigation drive-time estimate, when the driver reports it.</summary>
     public double? NavEstimateHours { get; set; }
     public int ExtraStops { get; set; }
@@ -212,11 +233,17 @@ public static class HosEngine
                 Miles = req.DeadheadMiles
             });
 
+        // Behind a van or a reefer the dock does the work and the driver waits it out in the bunk;
+        // behind a flatbed or a tanker there are straps and hoses and the driver is on duty for all of
+        // it. Same hours either way — a different clock pays for them.
+        var handsOff = !TrailerSpec.WorksTheDock(req.TrailerType);
+
         if (req.LoadingHours > 0)
             // A hook is a few minutes and can be done on the last of a window; a live load cannot. Both
             // are dock work, and the planner refuses to split either around a reset.
-            tasks.Add(new HosTask { Label = "Hook / load", Kind = "OnDuty", Hours = req.LoadingHours,
-                                    AtDock = true });
+            tasks.Add(new HosTask { Label = handsOff ? "Loading — in the bunk" : "Hook / load",
+                                    Kind = "OnDuty", Hours = req.LoadingHours,
+                                    AtDock = true, HandsOff = handsOff });
 
         // Fuel stops planned across the loaded leg.
         var fuelStops = FuelStopsNeeded(s, totalMiles, req.UsableFuelRangeMiles);
@@ -254,8 +281,9 @@ public static class HosEngine
             tasks.Add(new HosTask { Label = $"Intermediate stop {i + 1}", Kind = "OnDuty", Hours = 0.5 });
 
         if (req.UnloadingHours > 0)
-            tasks.Add(new HosTask { Label = "Unload / drop", Kind = "OnDuty", Hours = req.UnloadingHours,
-                                    IsUnload = true, AtDock = true });
+            tasks.Add(new HosTask { Label = handsOff ? "Unloading — in the bunk" : "Unload / drop",
+                                    Kind = "OnDuty", Hours = req.UnloadingHours,
+                                    IsUnload = true, AtDock = true, HandsOff = handsOff });
 
         return tasks;
     }
@@ -768,9 +796,19 @@ public static class HosEngine
                     // sat through to get to it. Both are on-duty time on their property and the window
                     // has to cover the pair of them — measuring against the unload alone would let a
                     // driver back in with just enough for the dock and none for the four trucks ahead.
+                    // Which clock pays for this. On-duty work runs both the fourteen and the seventy;
+                    // time the driver spends in the bunk waiting on a dock runs the fourteen only,
+                    // because sleeper-berth time is not on-duty time. See TrailerSpec.WorksTheDock.
+                    var burnsCycle = !task.HandsOff;
+
                     var dockWork = task.Hours + queue;
                     var notStarted = Math.Abs(remaining - dockWork) < Eps;
-                    if (task.AtDock && notStarted && dockWork > Eps && shift + Eps < dockWork && cycle > Eps)
+                    // Resting before the dock still applies when the WINDOW will not cover the job — that
+                    // is true in the bunk as much as on the straps, because the driver has to be legal to
+                    // drive away at the end of it. What no longer forces the issue is the seventy: a
+                    // driver out of cycle can still sit in a berth while somebody else unloads them.
+                    if (task.AtDock && notStarted && dockWork > Eps && shift + Eps < dockWork
+                        && (cycle > Eps || !burnsCycle))
                     {
                         RestBeforeDock(task, queue);
                         continue;
@@ -786,20 +824,22 @@ public static class HosEngine
                     if (task.IsUnload && task.AtDock && notStarted)
                         result.ShiftRemainingAtDock = Math.Round(Math.Max(0, shift), 2);
 
-                    var cap = Min(shift, cycle, remaining);
+                    var cap = burnsCycle ? Min(shift, cycle, remaining) : Min(shift, remaining);
                     if (cap <= Eps)
                     {
-                        if (cycle <= Eps) { TakeRestart(); continue; }
+                        if (burnsCycle && cycle <= Eps) { TakeRestart(); continue; }
                         TakeReset();
                         continue;
                     }
-                    shift -= cap; cycle -= cap;
+                    shift -= cap;
+                    if (burnsCycle) cycle -= cap;
                     remaining -= cap;
                     // Standing on their property with the work done and the truck not yet moved. If the
                     // day ends here, it ends here — which is what TakeReset now says out loud.
                     if (task.AtDock && remaining <= Eps)
                         atFacility = task.IsUnload ? "the receiver" : "the shipper";
-                    Step(task.Label + (cap < dockWork - Eps ? " (segment)" : ""), "OnDuty", cap, 0);
+                    Step(task.Label + (cap < dockWork - Eps ? " (segment)" : ""),
+                         burnsCycle ? "OnDuty" : "DockRest", cap, 0);
                 }
             }
         }
@@ -819,7 +859,10 @@ public static class HosEngine
         result.BeginsWithRest = firstRest >= 0 && (firstDrive < 0 || firstRest < firstDrive);
 
         result.DriveHours = Math.Round(timeline.Where(t => t.Kind == "Drive").Sum(t => t.Hours), 2);
+        // On duty is driving plus work. Time in the bunk at a dock is neither, which is the whole point
+        // of separating it — it is reported on its own below so the driver can see what it saved them.
         result.OnDutyHours = Math.Round(timeline.Where(t => t.Kind is "Drive" or "OnDuty").Sum(t => t.Hours), 2);
+        result.DockRestHours = Math.Round(timeline.Where(t => t.Kind == "DockRest").Sum(t => t.Hours), 2);
         result.ElapsedHours = Math.Round((clock - start.Value).TotalHours, 2);
 
         // Everything above ran on the clock in the truck, because that is the clock the driver typed in
@@ -907,6 +950,27 @@ public static class HosEngine
                 : $"Recap returns {Hhmm.Of(gained)} to the cycle by {GameClock.DayLabel(last)}, which this " +
                   "plan is relying on (driver-reported projection).");
         }
+
+        // What to do at the dock, and what it does to the clocks — said before they accept, because it
+        // is an instruction the driver has to carry out in the GAME for the two to agree afterwards.
+        //
+        // The app can work out that a reefer unload costs no cycle, but only the driver can make that
+        // true: it is true because they went into the sleeper, and if they sit in the seat on duty
+        // instead then ATS will run their seventy down and the app will insist it did not. So this is
+        // not a note about a calculation, it is the calculation telling them what it assumed.
+        if (result.DockRestHours > 0.01)
+            result.DockAdvice =
+                $"{Hhmm.Of(result.DockRestHours)} of dock time on this one is waiting, not working — behind a " +
+                $"{TrailerSpec.Describe(req.TrailerType, null)} the dock does it and you are in the way. " +
+                "<b>Take it in the sleeper in ATS.</b> It comes off your 14-hour window like any other " +
+                "hours, but your 70 does not move — which is the whole reason this run costs less of your " +
+                "week than the same miles behind a flatbed would.";
+        else if (req.UnloadingHours + req.LoadingHours > 0.01 && !string.IsNullOrWhiteSpace(req.TrailerType))
+            result.DockAdvice =
+                $"{Hhmm.Of(req.LoadingHours + req.UnloadingHours)} of dock time on this one is WORK — straps, " +
+                $"tarps and chains behind a {TrailerSpec.Describe(req.TrailerType, null)}, or hoses on a tank. " +
+                "Stay on duty for it in ATS: it comes off your 70 as well as your 14, and the plan above " +
+                "has already counted it that way.";
 
         if (cycle <= 0.01)
             result.Warnings.Add("Cycle lands at zero on delivery — the truck will be parked until a restart.");

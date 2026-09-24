@@ -31,8 +31,8 @@ const day = (n, hhmm = '06:00') => {
   const p = (x) => String(x).padStart(2, '0');
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${hhmm}`;
 };
-const WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const named = (n) => `day ${n} (${WEEK[n % 7]})`;
+const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const named = (n) => `day ${n} (${WEEK[n % 7]})`;   // day 1 is a Monday — see dayone.cjs
 
 let S;
 async function at(n, city = 'Springfield', state = 'MO', kind = 'TruckStop', hhmm = '06:00') {
@@ -91,7 +91,7 @@ const views = async () => (await api('/bootstrap')).views;
     JSON.stringify((await api('/bootstrap')).views?.trueUp ?? null));
 
   head('6. #105 and #107 A payday nobody has been shown is held, not lost');
-  // Fridays are the days where day % 7 == 4 — 4, 11, 18, 25, 32, 39, 46, 53. This load loads on the
+  // Fridays are the days where day % 7 == 5 — 5, 12, 19, 26, 33, 40, 47, 54. This load loads on the
   // Thursday and delivers on the Friday, so closing it out is what crosses the payday.
   //
   // It is also #107 in miniature. The unload event logged at ten on the Friday moves the clock, finds
@@ -108,7 +108,7 @@ const views = async () => (await api('/bootstrap')).views;
   ok('with the money on it, so there is something to show',
     held.length >= 1 && held[0].gross > 0, `$${held[0]?.gross}`);
   ok('#107 it is dated to the Friday the load was actually delivered on',
-    /Day 46/i.test((r1.done.paid || [])[0]?.notes || ''),
+    /Day 47/i.test((r1.done.paid || [])[0]?.notes || ''),
     ((r1.done.paid || [])[0]?.notes || '').slice(0, 60) || '(no note)');
   ok('and the trip is settled rather than left waiting a week',
     (S.trips || []).filter((x) => x.status === 'Delivered' && !x.settlementNumber).length === 0,

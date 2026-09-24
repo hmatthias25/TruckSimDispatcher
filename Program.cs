@@ -567,26 +567,33 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
     return EvaluateBoard(s);
 })));
 
-app.MapPost("/api/board/{id}/pass", (string id) => Results.Ok(store.Mutate(s =>
+app.MapPost("/api/board/{id}/pass", (string id, PassRequest? req) => Results.Ok(store.Mutate(s =>
 {
     var load = s.Board.FirstOrDefault(b => b.Id == id)
                ?? throw new InvalidOperationException("That load is not on the current board.");
 
-    // The one thing a driver of any rank may decline. Not a refusal and not freight selection — the
-    // listing is running out and only the driver knows where they actually are. Anything else still goes
-    // through the rank gate in AuthorizeLoad, which is untouched.
-    if (!BoardExpiry.MayPassRegardlessOfRank(s, load))
-    {
-        var privileges = CareerService.Privileges(s);
-        if (!privileges.CanChooseAlternateLoad && !privileges.CanRefuseLoad)
-            throw new InvalidOperationException(
-                "There is time on that listing, so passing on it is freight selection. " + privileges.Summary);
-    }
+    // Rationed by the weekly allowance, and SPENT here.
+    //
+    // This used to ask a rank flag whether the driver could refuse at all and then charge them nothing
+    // for doing it, which made passing a way round the allowance rather than a way of using it: a
+    // passed-over load picks up a hard fail, so it drops out of LoadsSkippedToReach, so the load behind
+    // it is then dispatch's own pick and costs nothing to take. Pass the top load for free, take the
+    // second for free, and the ration never came into it.
+    //
+    // A listing about to expire is still free at every rank, including on probation — Rejections.Check
+    // says so and Record files it as free. That is arithmetic, not preference.
+    var mayRefuse = Rejections.Check(s, load);
+    if (!mayRefuse.Allowed) throw new InvalidOperationException(mayRefuse.Reason);
+
+    var spent = Rejections.Record(s, load, req?.Reason is { Length: > 0 } why
+        ? why : "Passed at the board.");
 
     load.PassedOver = true;
     var left = BoardExpiry.Countdown(s, load);
     store.Log(s, "dispatch", $"Passed on {load.Cargo} out of {DispatchEngine.Place(load.OriginCity, load.OriginState)}" +
-                             (left.Length > 0 ? $" — {left} left on the listing." : "."));
+                             (left.Length > 0 ? $" — {left} left on the listing." : ".") +
+                             (spent.Free ? " Free — the listing was going anyway."
+                                         : $" {Rejections.Remaining(s)} refusal(s) left this week."));
     return EvaluateBoard(s);
 })));
 
@@ -758,12 +765,28 @@ app.MapPost("/api/dispatch/request-alternate", (AlternateRequest req) => Results
     if (!privileges.CanRequestAlternate && !privileges.CanChooseAlternateLoad)
         throw new InvalidOperationException(privileges.Summary);
 
+    // Operations answers, rather than the app telling the driver to go and ask the app. The odds climb
+    // with how often they have asked lately and come back down while they leave it alone — see
+    // Alternates, which also explains why the answer cannot be re-rolled by asking again about a
+    // different load on the same day.
+    var (granted, chance, position, message) = Alternates.Decide(s, load);
+    Alternates.Record(s, load, req.Reason, granted, position);
+
     var lane = DispatchEngine.Place(load.DestCity, load.DestState);
     store.Log(s, "dispatch",
-        $"Driver requested {load.Cargo} to {lane} instead of the assignment. Reason: {req.Reason}");
+        $"Driver asked for {load.Cargo} to {lane}, {Alternates.PositionOf(s, load)} on the board, instead " +
+        $"of the assignment ({chance}% of a no). Operations said {(granted ? "yes" : "no")}. " +
+        $"Reason given: {req.Reason}");
+
     return new
     {
-        message = $"Request logged: {load.Cargo} to {lane}. Operations decides — raise it with dispatch and the reason is on the record.",
+        granted,
+        message,
+        position,
+        // What THIS ask faced, beside what the next one will face. The view is computed after the ask
+        // is filed, so on its own it answers a different question than the one just asked.
+        chancePct = chance,
+        alternates = Alternates.View(s),
         snapshot = Snapshot(s)
     };
 })));
@@ -2502,6 +2525,18 @@ app.MapPost("/api/career/trailer-arrangement/release", () => Results.Ok(store.Mu
     return new { message, snapshot = Snapshot(s) };
 })));
 
+/// <summary>Puts in for a dedicated account, and gets an answer on the record.</summary>
+app.MapPost("/api/career/dedicated/request", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var req = Dedicated.Submit(s);
+    // Answered on the spot. There is nothing for operations to go away and find out — the record it is
+    // judging is already in front of it, and a pause would be theatre rather than deliberation.
+    var answered = Dedicated.Answer(s) ?? req;
+    store.Log(s, "career",
+        $"{answered.Number} — asked for a dedicated account. {answered.Status}: {answered.Answer}");
+    return new { request = answered, snapshot = Snapshot(s) };
+})));
+
 app.MapPost("/api/career/dedicated", (DedicatedRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
     var message = Dedicated.SetAccount(s, req.OnDedicated, req.Account ?? "");
@@ -2762,7 +2797,18 @@ object Snapshot(AppState? given = null)
                 s.Driver.OffAccountLoads,
                 awaitingAccount = Dedicated.AwaitingAccount(s),
                 onAccountCount = Dedicated.Active(s) ? s.Board.Count(b => Dedicated.IsOnAccount(s, b)) : 0,
-                note = Dedicated.BoardNote(s)
+                note = Dedicated.BoardNote(s),
+                // Whether they may ask at all, and where their ask stands. Going on an account is
+                // operations' call — see Dedicated.BlockedBecause.
+                blocked = Dedicated.BlockedBecause(s),
+                mayAsk = Dedicated.BlockedBecause(s) == null && !s.Driver.OnDedicated
+                         && Dedicated.OpenRequest(s) == null && Dedicated.Approved(s) == null,
+                openRequest = Dedicated.OpenRequest(s),
+                approved = Dedicated.Approved(s),
+                lastAnswer = s.DedicatedAccountRequests.FirstOrDefault(r => r.Status != "Open"),
+                requiredLoads = Dedicated.RequiredLoadsHere,
+                requiredOnTimePct = Dedicated.RequiredOnTimePct,
+                allowedFaults = Dedicated.AllowedFaults,
             },
             // Which incidents still bar the driver from carriers, and how close each is to clearing.
             faultStanding = s.Incidents
@@ -2884,6 +2930,8 @@ object Snapshot(AppState? given = null)
             damageDaysOverdue = Shop.DamageDaysOverdue(s),
             // Refusals left this week, so the driver knows what a pick costs before they make it.
             refusals = Rejections.View(s),
+            // And where operations patience stands, so the odds on an ask are visible before it is made.
+            alternates = Alternates.View(s),
             // Where the driver's own tractor stands against the schedule in force. Empty off GDC.
             serviceSchedule = ServicePlan.GdcActive(s) && truck is { InGameGarage: true }
                 ? new
@@ -3099,6 +3147,7 @@ record HireRequest(DriverApplication Application, bool Force, string? GameTime, 
 record AuthorizeRequest(string LoadId, string? Rationale, bool OverrideTight);
 record RejectRequest(string Reason);
 record AlternateRequest(string LoadId, string Reason);
+record PassRequest(string? Reason);
 /// <param name="CostPaid">
 /// What the expansion cost in ATS, where the tier actually changed. Booked to Property. Null or zero
 /// means it was not asked or the yard did not move, and nothing is posted.

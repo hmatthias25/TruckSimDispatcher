@@ -45,6 +45,38 @@ public static class TrailerSpec
     public static bool IsDropHook(string? type) => DropHook.Is(type);
 
     /// <summary>
+    /// Whether the driver <b>works</b> the dock, or waits it out.
+    ///
+    /// <para>This is the difference between two hours that cost a driver their week and two hours that
+    /// cost them nothing. Behind a van or a reefer there is nothing for them to do once the doors are
+    /// open: the dock has the load, the driver is in the way, and what they actually do is go into the
+    /// bunk until somebody bangs on the door. Same with a container — you sit and wait for the crane.
+    /// That is sleeper-berth time, and sleeper-berth time is not on-duty time.</para>
+    ///
+    /// <para>Behind a flatbed or a tanker there is real work: straps, chains, corner boards, a tarp in
+    /// the rain, hoses to couple and ground, a wash-out to stand over. The driver is on duty because the
+    /// driver is working, and the seventy runs down accordingly.</para>
+    ///
+    /// <para><b>Unknown counts as work.</b> A type the app does not recognise is treated as hands-on,
+    /// because the failure modes are not symmetrical: crediting a driver hours they did not have puts
+    /// them over their cycle in the game with an app that told them they were fine.</para>
+    /// </summary>
+    public static bool WorksTheDock(string? type) =>
+        !HandsOffAtTheDock.Contains((type ?? "").Trim());
+
+    /// <summary>
+    /// The trailers where the dock does the work and the driver waits.
+    ///
+    /// Deliberately a short allow-list rather than a list of the types that ARE work: new trailer types
+    /// get added to this app regularly, and the safe default for one nobody has classified yet is that
+    /// there is something to do behind it.
+    /// </summary>
+    private static readonly HashSet<string> HandsOffAtTheDock = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Dry Van", "Van", "Reefer", "Refrigerated", "Container", "Intermodal",
+    };
+
+    /// <summary>
     /// What to tell a driver to buy. Where the subtype is known, name it; where it genuinely is not,
     /// name the options rather than saying "tanker" and leaving them to guess.
     /// </summary>

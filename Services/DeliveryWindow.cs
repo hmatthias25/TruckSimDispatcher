@@ -98,7 +98,7 @@ public static class DeliveryWindow
                 for (var ahead = 0; ahead < 7; ahead++)
                 {
                     var candidateDay = from + ahead;
-                    if (candidateDay % 7 != wd) continue;
+                    if ((int)GameClock.WeekdayOf(candidateDay) != wd) continue;
                     var at = GameClock.FromDay(candidateDay, tod.Hours, tod.Minutes);
                     if (at >= notBefore.AddMinutes(-1)) return at;
                 }
@@ -106,7 +106,8 @@ public static class DeliveryWindow
                 for (var ahead = 7; ahead < 14; ahead++)
                 {
                     var candidateDay = from + ahead;
-                    if (candidateDay % 7 == wd) return GameClock.FromDay(candidateDay, tod.Hours, tod.Minutes);
+                    if ((int)GameClock.WeekdayOf(candidateDay) == wd)
+                        return GameClock.FromDay(candidateDay, tod.Hours, tod.Minutes);
                 }
             }
 
@@ -132,16 +133,25 @@ public static class DeliveryWindow
     }
 
     /// <summary>
-    /// Weekday names as the game counts them: day 0 is a Monday, so Monday is 0 and Sunday is 6.
+    /// Weekday names, as <see cref="DayOfWeek"/> values.
     ///
-    /// Longest first, so "Sat" inside "Saturday" cannot match before the full word does.
+    /// <para>Stored as the framework's own enum and compared through <see cref="GameClock.WeekdayOf"/>
+    /// rather than as offsets from Monday. This table used to hold "days since Monday", which is a
+    /// second copy of the calendar rule — and when the anchor moved from day 0 to day 1 that copy would
+    /// have gone on resolving "Friday" to a Thursday with nothing to say it had.</para>
+    ///
+    /// <para>Longest first, so "Sat" inside "Saturday" cannot match before the full word does.</para>
     /// </summary>
     private static readonly (string Word, int Index)[] Weekdays =
     {
-        ("monday", 0), ("tuesday", 1), ("wednesday", 2), ("thursday", 3),
-        ("friday", 4), ("saturday", 5), ("sunday", 6),
-        ("mon", 0), ("tue", 1), ("tues", 1), ("wed", 2), ("thu", 3), ("thur", 3), ("thurs", 3),
-        ("fri", 4), ("sat", 5), ("sun", 6),
+        ("monday", (int)DayOfWeek.Monday), ("tuesday", (int)DayOfWeek.Tuesday),
+        ("wednesday", (int)DayOfWeek.Wednesday), ("thursday", (int)DayOfWeek.Thursday),
+        ("friday", (int)DayOfWeek.Friday), ("saturday", (int)DayOfWeek.Saturday),
+        ("sunday", (int)DayOfWeek.Sunday),
+        ("mon", (int)DayOfWeek.Monday), ("tue", (int)DayOfWeek.Tuesday), ("tues", (int)DayOfWeek.Tuesday),
+        ("wed", (int)DayOfWeek.Wednesday), ("thu", (int)DayOfWeek.Thursday),
+        ("thur", (int)DayOfWeek.Thursday), ("thurs", (int)DayOfWeek.Thursday),
+        ("fri", (int)DayOfWeek.Friday), ("sat", (int)DayOfWeek.Saturday), ("sun", (int)DayOfWeek.Sunday),
     };
 
     /// <summary>Which weekdays the text names, in the order they appear.</summary>

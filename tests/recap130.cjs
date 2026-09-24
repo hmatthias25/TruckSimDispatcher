@@ -10,6 +10,11 @@
  * answers — and the plan was built on the optimistic one.
  *
  * Issues #131 and #132 ride along at the end: they touch the same reporting surface.
+ *
+ * The loads are flatbeds on purpose. The scenario turns on a cycle too thin to cover the run, and dock
+ * time only comes off the cycle where the driver works the dock — behind a van they sit in the bunk and
+ * keep those hours, which is enough to make this run feasible and stop it testing recap at all. See
+ * TrailerSpec.WorksTheDock and dockduty.cjs.
  */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5860}/api`;
 async function api(p, m = 'GET', b) {
@@ -46,7 +51,7 @@ async function stand(city, state, day, cycle, recap) {
 async function offer(oc, os, dc, ds, miles, deadline) {
   await api('/board/clear', 'POST', {});
   const bd = await api('/board/add', 'POST', {
-    cargo: 'Palletised Goods', trailerType: S.trailers[0].type, atLocation: true,
+    cargo: 'Palletised Goods', trailerType: 'Flatbed', atLocation: true,
     originCity: oc, originState: os, destCity: dc, destState: ds,
     loadedMiles: miles, deadheadMiles: 0, gameRevenue: miles * 3, deadlineHours: deadline,
     weightLbs: 38000,
@@ -64,7 +69,11 @@ async function offer(oc, os, dc, ds, miles, deadline) {
 
   head('1. #130 Hours that are days away are not spent today');
   // The reported case. 20 hours of cycle, and every batch four days out or more.
-  await stand('Fresno', 'CA', 9, 20, [{ inDays: 4, hours: 9.5 }, { inDays: 6, hours: 8 }, { inDays: 7, hours: 10 }]);
+  // 17 rather than 20: dock time stopped coming off the cycle behind a van (see TrailerSpec.WorksTheDock
+  // and dockduty.cjs), which handed this run about three hours back and made it feasible — at which point
+  // it was no longer testing recap at all. The shape is what matters here: a cycle too thin to cover the
+  // run unless hours that are days away are wrongly credited today.
+  await stand('Fresno', 'CA', 9, 17, [{ inDays: 4, hours: 9.5 }, { inDays: 6, hours: 8 }, { inDays: 7, hours: 10 }]);
   const far = await offer('Fresno', 'CA', 'Seattle', 'WA', 960, 46);
   const ff = far.e?.feasibility || {};
   ok('the run is not called feasible', ff.verdict === 'Infeasible' || far.bd.rejectAll === true,
@@ -101,11 +110,12 @@ async function offer(oc, os, dc, ds, miles, deadline) {
   head('5. #131 A game time carries its weekday');
   // A day number cannot be checked by eye. Day 0 is a Monday, so day 11 is a Friday.
   ok('the app agrees day 11 is a Friday', new Date(Date.UTC(2000, 0, 1) + 11 * 86400000) &&
-    ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][11 % 7] === 'Fri', 'day 11 -> Fri');
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][12 % 7] === 'Fri', 'day 12 -> Fri');
   ok('and day 14 is a Monday',
-    ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][14 % 7] === 'Mon', 'day 14 -> Mon');
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][15 % 7] === 'Mon', 'day 15 -> Mon');
   const pay = (await views()).payroll || {};
-  ok('payday still lands on a Friday', pay.nextPaydayDay == null || pay.nextPaydayDay % 7 === 4,
+  // Day 1 is a Monday, so Fridays are the days where day % 7 == 5 — 5, 12, 19, 26.
+  ok('payday still lands on a Friday', pay.nextPaydayDay == null || pay.nextPaydayDay % 7 === 5,
     `day ${pay.nextPaydayDay}`);
 
   head('6. #132 A work order on a unit that is not on the fleet is refused');

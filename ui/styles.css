@@ -397,6 +397,7 @@ details.score ul{font:11px/1.65 var(--mono);color:var(--ink2);margin:8px 0 0;pad
 .tl tr.Drive td:first-child{border-left-color:var(--blue)}
 .tl tr.OnDuty td:first-child{border-left-color:var(--amber)}
 .tl tr.Break td:first-child{border-left-color:var(--violet)}
+.tl tr.DockRest td:first-child{border-left-color:var(--violet)}
 .tl tr.Rest td:first-child,.tl tr.Restart td:first-child{border-left-color:var(--green)}
 
 /* ---------------------------------------------------------------- misc */

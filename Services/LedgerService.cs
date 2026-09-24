@@ -381,8 +381,12 @@ public static class LedgerService
     public static decimal TotalCompanyCash(AppState s) =>
         Balance(s, Operating) + Balance(s, MaintenanceReserve) + Balance(s, PayrollReserve);
 
-    /// <summary>The Monday on or before this day. Day 0 is a Monday, so the arithmetic is the calendar.</summary>
-    public static int MondayOnOrBefore(int day) => Math.Max(0, day) - (Math.Max(0, day) % 7);
+    /// <summary>
+    /// The Monday on or before this day. Day 1 is a Monday, so the Mondays are 1, 8, 15, 22 — and the
+    /// arithmetic has to count from one rather than from nought.
+    /// </summary>
+    public static int MondayOnOrBefore(int day) =>
+        Math.Max(1, Math.Max(1, day) - ((Math.Max(1, day) + 6) % 7));
 
     /// <summary>
     /// There is no weekly true-up any more.

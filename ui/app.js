@@ -258,8 +258,9 @@ function amendEventModal(tripId, evId) {
 }
 
 /** Pretty game time — what the player sees everywhere. */
-// Day 0 is a Monday — the app's own calendar, and what makes payday mean something.
-const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+// Day 1 is a Monday — the app's own calendar, and what makes payday mean something. Indexed so that
+// day % 7 lands on the right name: day 1 -> Mon, day 7 -> Sun, day 8 -> Mon.
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function dowOf(v) {
   const d = dayOf(v);
   return Number.isFinite(d) ? DOW[((d % 7) + 7) % 7] : '';
@@ -355,7 +356,7 @@ function dayTimeInput(idPrefix, iso, label) {
       <input id="${idPrefix}-day" type="number" min="0" step="1" class="spin" style="flex:0 0 92px"
         data-dow="${idPrefix}-dow" value="${day}" title="Game day">
       <span id="${idPrefix}-dow" class="badge info" style="flex:0 0 auto"
-        title="Day 0 is a Monday. Check this against the game before you file.">${dowForDay(day)}</span>
+        title="Day 1 is a Monday. Check this against the game before you file.">${dowForDay(day)}</span>
       <input id="${idPrefix}-tod" type="time" step="60" style="flex:1"
         value="${iso ? timeOf(iso) : (S ? timeOf(S.status.gameTime) : '06:00')}" title="Time of day">
     </span></label>`;
@@ -999,12 +1000,14 @@ window.addEventListener('hashchange', () => {
 
 /* ============================================================ shell render */
 let PRIV = { summary: '' };   // freight-selection authority for the current rank
+let ALTERNATES = null;        // how tired of being asked operations is, for the odds on the next ask
 
 function render() {
   if (!S || !S.onboarded) return;
   fixBoardStage();
   const v = S.views;
   PRIV = v.privileges || { summary: '' };
+  ALTERNATES = v.alternates || null;
 
   $('tb-code').textContent = S.company.code || 'CO';
   $('tb-company').textContent = CAREERS.length > 1 ? careerLabel(S) : (S.company.name || 'Carrier');
@@ -1888,8 +1891,15 @@ function loadCardHtml(e, d) {
         ? `<button class="btn ghost" data-act="request-alt" data-id="${e.load.id}">Ask dispatch for this one</button>` : ''}
       ${canForce && PRIV.canOverrideTightLoad
         ? `<button class="btn danger" data-act="authorize" data-id="${e.load.id}" data-force="1">Accept as exception (sub-buffer)</button>` : ''}
+      ${!e.mayPass && !e.load.passedOver && !e.hardFails.length && e.passNote
+        ? `<span class="hint" style="align-self:center">${esc(e.passNote)}</span>` : ''}
       ${e.mayPass && !e.load.passedOver && !e.hardFails.length
-        ? `<button class="btn ghost" data-act="board-pass" data-id="${e.load.id}">Cannot make the pickup — pass</button>` : ''}
+        ? `<button class="btn ghost" data-act="board-pass" data-id="${e.load.id}"
+             title="${esc(e.passNote || '')}">${e.passIsFree
+               ? 'Cannot make the pickup — pass (free)'
+               : 'Turn this load down'}</button>` : ''}
+      ${e.mayPass && !e.load.passedOver && !e.hardFails.length && !e.passIsFree && e.passNote
+        ? `<span class="hint" style="align-self:center">${esc(e.passNote)}</span>` : ''}
     </div>
   </div>`;
 }
@@ -2013,6 +2023,10 @@ function viewActive() {
           parking. Change it under Settings &rarr; Operational assumptions.</p>` : ''}
         ${f.warnings.length ? `<ul>${f.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
       </div>
+      ${/* Which duty status the plan assumed at the dock. Deliberately outside the verdict callout: it
+            is not a problem with the load, it is an instruction for the game — and the arithmetic above
+            is only true if the driver carries it out. The bold tags come from the server. */ ''}
+      ${f.dockAdvice ? `<p class="hint" style="margin:8px 0 0">${f.dockAdvice}</p>` : ''}
       <details class="score"><summary>Full HOS timeline</summary>${timelineHtml(f)}</details>` : ''}
   </div>
 
@@ -4625,9 +4639,10 @@ function driverFileModal(id) {
       again.</p>` : ''}
 
     ${dz.servingProbation ? `<div class="callout warn">
-      <h4>Serving their ninety days &mdash; ${dz.probationDaysLeft} to go</h4>
-      <p style="margin:0">Every hire does this, whatever level they came in at. Nothing above the bottom
-        rung opens until it is behind them.</p>
+      <h4>Serving their ${dz.probationDays} days &mdash; ${dz.probationDaysLeft} to go</h4>
+      <p style="margin:0 0 4px">${esc(dz.probationBasis || '')}</p>
+      <p style="margin:0">Every hire serves one. Nothing above the bottom rung opens until it is
+        behind them.</p>
     </div>` : dz.duePromotion ? `<div class="callout go">
       <h4>Due ${esc(dz.dueRank)} at the next fleet report</h4>
       <p style="margin:0">Everything it asks for is met. A grade is settled when a report is filed, so
@@ -4715,10 +4730,14 @@ function editHireModal(id) {
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
     <p class="hint">Add them here after you have hired them in ATS and put them on a truck, so the unit
       numbers match between the game and the app.</p>
-    ${isNew ? `<div class="callout info">
-      <p style="margin:0">Every hire starts as a <b>Probationary Company Driver</b> and serves ninety
-        days, whatever level they come in at. The level says how much driving they have done; the grade
-        is what they earn here, and the grade is what they are paid on.</p></div>`
+    ${isNew ? (() => { const hb = S.views.fleetOps?.hireBand; return `<div class="callout info">
+      ${hb ? `<p style="margin:0 0 6px"><b>Hire at level ${hb.min}&ndash;${hb.max}.</b> ${esc(hb.how)}.${
+        hb.wayIn ? '' : ' Under that, leave the seat standing rather than fill it cheap.'}</p>` : ''}
+      <p style="margin:0">Every hire starts as a <b>Probationary Company Driver</b>, whatever level they
+        come in at &mdash; the level says how much driving they have done, the grade is what they earn
+        here, and the grade is what they are paid on. How <i>long</i> they serve does read the level: a
+        green hire does the full 90 days, level 3&ndash;5 does 60, level 6 and up does 45, the same way
+        your own probation shortens when your record clears a new carrier's bar.</p></div>`; })()
       : `<div class="callout info"><p style="margin:0">${esc(dossier(d.id).summary)}</p></div>`}
     <div class="grid2">
       <label>Driver name<input id="hd-name" value="${esc(d.name)}"></label>
@@ -5818,20 +5837,42 @@ function dedicatedHtml() {
       ${d.note ? `<p style="margin:0">${esc(d.note)}</p>` : ''}
     </div>
 
-    <div class="grid2" style="align-items:end">
+    ${/* Out of reach: say why, and what opens it. A missing button teaches nobody anything. */ ''}
+    ${d.blocked ? `<div class="callout mute">
+      <h4>Not yet</h4>
+      <p style="margin:0">${esc(d.blocked)}</p>
+      <p class="hint" style="margin:6px 0 0">When it does open it is a request, not a switch: operations
+        answers it on your record &mdash; ${d.requiredLoads} load(s) with this carrier,
+        ${num(d.requiredOnTimePct, 0)}% on time, no more than ${d.allowedFaults} driver-fault incident(s).</p>
+    </div>` : ''}
+
+    ${d.lastAnswer && !d.onDedicated ? `<div class="callout ${d.lastAnswer.status === 'Granted' ? 'go' : 'warn'}">
+      <h4>${esc(d.lastAnswer.number)} &mdash; ${esc(d.lastAnswer.status)}</h4>
+      <p style="margin:0">${esc(d.lastAnswer.answer)}</p>
+    </div>` : ''}
+
+    ${d.mayAsk ? `<div class="row-actions">
+      <button class="btn primary" data-act="ask-dedicated">Ask for a dedicated account</button>
+    </div>
+    <p class="hint">Operations decides. It is answered on your record here &mdash; ${d.requiredLoads} load(s),
+      ${num(d.requiredOnTimePct, 0)}% on time and a clean enough safety file &mdash; and it can be turned
+      down.</p>` : ''}
+
+    ${d.onDedicated || d.approved ? `<div class="grid2" style="align-items:end">
       <label>Customer, exactly as it appears on your ATS board
         <input id="ded-account" value="${esc(d.dedicatedAccount || '')}"
           placeholder="e.g. Walmart, Sunny Fields, Trameri"></label>
       <div class="row-actions" style="margin-top:0">
+        <button class="btn primary" data-act="set-dedicated" data-on="1">${d.onDedicated
+          ? (d.dedicatedAccount ? 'Change customer' : 'Set customer')
+          : 'Go on the account'}</button>
         ${d.onDedicated
-          ? `<button class="btn primary" data-act="set-dedicated" data-on="1">${d.dedicatedAccount ? 'Change customer' : 'Set customer'}</button>
-             <button class="btn ghost" data-act="set-dedicated" data-on="">Come off dedicated</button>`
-          : `<button class="btn primary" data-act="set-dedicated" data-on="1">Go on a dedicated account</button>`}
+          ? '<button class="btn ghost" data-act="set-dedicated" data-on="">Come off dedicated</button>' : ''}
       </div>
     </div>
-    <p class="hint">I cannot see your game, so I do not know which companies your board offers —
+    <p class="hint">I cannot see your game, so I do not know which companies your board offers &mdash;
       especially with map mods. Type the customer's name and I will match it against the shipper,
-      receiver or market on each load.</p>
+      receiver or market on each load. Coming off is always yours to decide.</p>` : ''}
 
     <h3 class="sect">Dedicated drop and hook</h3>
     <div class="callout ${dh.dedicatedBlocked ? 'mute' : 'go'}">
@@ -6918,10 +6959,21 @@ async function handleAction(act, d, ev) {
         absorb(await api('/bootstrap'));
       }, 'Load added to the board.');
     }
-    case 'board-pass': return run(async () => {
-      DECISION = await api('/board/' + d.id + '/pass', 'POST', {});
-      absorb(await api('/bootstrap'));
-    }, 'Passed. Next load.');
+    case 'board-pass': {
+      const e = DECISION?.evaluations.find((x) => x.load.id === d.id);
+      // A free pass is arithmetic and needs no argument. One that spends a refusal goes on the record
+      // with a reason, the same as every other thing this app puts on the record.
+      let why = '';
+      if (e && !e.passIsFree) {
+        why = prompt(`Turn down the ${e.load.cargo} to ${e.load.destCity}, ${e.load.destState}?\n\n` +
+          `${e.passNote || ''}\n\nReason for the record:`);
+        if (why === null) return;
+      }
+      return run(async () => {
+        DECISION = await api('/board/' + d.id + '/pass', 'POST', { reason: why });
+        absorb(await api('/bootstrap'));
+      }, e && !e.passIsFree ? 'Turned down. It is on your record.' : 'Passed. Next load.');
+    }
     case 'board-del': return run(async () => {
       DECISION = await api('/board/' + d.id, 'DELETE');
       absorb(await api('/bootstrap'));
@@ -7189,11 +7241,31 @@ async function handleAction(act, d, ev) {
     case 'request-alt': {
       const e = DECISION?.evaluations.find((x) => x.load.id === d.id);
       if (!e) return;
-      const why = prompt(`Ask dispatch for the ${e.load.cargo} to ${e.load.destCity}, ${e.load.destState} instead.\n\nWhy do you want it?`);
+      // Where this load sits among the ones actually takeable, which is what dispatch is judging. The
+      // board order on screen is the same order the engine ranked them in.
+      const takeable = (DECISION?.evaluations || [])
+        .filter((x) => !x.hardFails.length && !x.homeTimeFails.length
+                       && x.feasibility?.verdict !== 'Infeasible');
+      const pos = takeable.findIndex((x) => x.load.id === d.id) + 1;
+      const depth = pos <= 1 ? 0 : Math.min(5 + (pos - 2) * 10, 60);
+      const base = ALTERNATES?.refusalChancePct ?? 20;
+      const odds = Math.max(0, Math.min(95, base + depth));
+
+      const why = prompt(
+        `Ask dispatch for the ${e.load.cargo} to ${e.load.destCity}, ${e.load.destState} instead.\n\n` +
+        (pos > 1
+          ? `That is number ${pos} on the board, with ${pos - 1} better load(s) above it. ` +
+            `Roughly ${odds}% chance of a no — the further down you reach, the worse that gets.\n\n`
+          : '') +
+        'Why do you want it?');
       if (why === null) return;
       return run(async () => {
         const r = absorb(await api('/dispatch/request-alternate', 'POST', { loadId: d.id, reason: why }));
-        toast(r.message, '');
+        toast(r.message, r.granted ? 'ok' : 'bad');
+        // Re-read the board: a yes changes what the driver may accept, and a no has moved the odds on
+        // the next ask.
+        DECISION = await api('/board/evaluate', 'POST');
+        absorb(await api('/bootstrap'));
       });
     }
 
@@ -8048,6 +8120,11 @@ async function handleAction(act, d, ev) {
       { notes: sv('ri-note') })), 'Driver reinstated.');
 
     /* ---- career */
+    case 'ask-dedicated': return run(async () => {
+      const r = absorb(await api('/career/dedicated/request', 'POST', {}));
+      toast(r.request?.answer || 'Asked.', r.request?.status === 'Granted' ? 'ok' : 'bad');
+    });
+
     case 'set-dedicated': {
       const on = d.on === '1';
       if (on && !sv('ded-account'))
