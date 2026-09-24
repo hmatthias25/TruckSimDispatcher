@@ -548,7 +548,19 @@ public static class AiService
         if (!string.IsNullOrWhiteSpace(l.DeliverByText)
             && DeliveryWindow.Read(state, l.DeliverByText, l.DestState) is { } win)
         {
-            if (l.DeadlineHours <= 0)
+            // <b>Where the text named its day, the app's conversion wins outright.</b>
+            //
+            // The reader is told to transcribe the window and leave deadlineHours at 0, because only the
+            // app has the game clock. It does not always obey, and this deferred to whatever number it
+            // volunteered — so a listing reading "Mon 11:14 pm - Tue 5:54 am" on a Monday morning came in
+            // as 162 hours, a week out, while the app's own correct conversion of the very same text was
+            // computed and thrown away. Reported from play with the game card beside it.
+            //
+            // A BARE time is the one case the model's number is still worth having: "5:54 am" alone does
+            // not say which day, the app can only resolve it to the soonest future occurrence, and a
+            // stated time-to-deliver is the only evidence of the day meant. That is the same distinction
+            // DeliveryWindow.RollToDeadline draws, and for the same reason.
+            if (win.Anchored || l.DeadlineHours <= 0)
             {
                 l.DeadlineHours = Math.Round(win.HoursUntilDue, 2);
                 l.Unreadable.RemoveAll(u => u.Equals("deadlineHours", StringComparison.OrdinalIgnoreCase));
