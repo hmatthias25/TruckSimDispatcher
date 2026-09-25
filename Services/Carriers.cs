@@ -386,128 +386,233 @@ public static class Carriers
         new("Schneider National", "SNI",
             new[] { "Dry Van", "Intermodal", "Dedicated", "Tanker" }, "Large",
             "Green Bay", "WI", new[] { "Dallas,TX", "Charlotte,NC", "Phoenix,AZ", "Chicago,IL" },
-            0.52m, 0.42m, 0, 0, 86, 4, 11, NoHaz, true, false, 4, 3, 3,
+            0.60m, 0.48m, 0, 0, 86, 4, 11, NoHaz, true, false, 4, 3, 3,
             "One of the largest carriers in North America, running dry van, intermodal drayage and dedicated fleets out of Green Bay. Runs one of the industry's biggest driver-training programmes and regularly hires drivers straight out of CDL school.",
             "Hires inexperienced drivers through their training programme."),
 
         new("Werner Enterprises", "WER",
             new[] { "Dry Van", "Dedicated", "Reefer", "Intermodal" }, "Large",
             "Omaha", "NE", new[] { "Dallas,TX", "Atlanta,GA", "Phoenix,AZ" },
-            0.50m, 0.40m, 0, 0, 85, 4, 12, NoHaz, true, false, 3, 3, 2,
+            0.58m, 0.47m, 0, 0, 85, 4, 12, NoHaz, true, false, 3, 3, 2,
             "Omaha-based nationwide truckload carrier running van, dedicated, temperature-controlled and intermodal freight. Long-standing entry point for new drivers.",
             "Takes recent CDL graduates."),
 
         new("Knight-Swift Transport", "KNX",
             new[] { "Dry Van", "Intermodal", "Reefer", "Dedicated" }, "Large",
             "Phoenix", "AZ", new[] { "Dallas,TX", "Atlanta,GA", "Memphis,TN", "Denver,CO" },
-            0.51m, 0.41m, 0, 0, 87, 4, 11, NoHaz, true, false, 4, 3, 3,
+            0.57m, 0.46m, 0, 0, 87, 4, 11, NoHaz, true, false, 4, 3, 3,
             "The largest truckload carrier in the United States after the Knight and Swift merger, headquartered in Phoenix. Van, reefer, intermodal and dedicated across the whole country.",
             "Hires new CDL holders."),
 
         new("C.R. England", "CRE",
             new[] { "Reefer", "Dedicated", "Dry Van" }, "Large",
             "Salt Lake City", "UT", new[] { "Dallas,TX", "Indianapolis,IN", "Phoenix,AZ" },
-            0.53m, 0.43m, 0, 0, 89, 3, 9, NoHaz, true, false, 3, 2, 3,
+            0.56m, 0.45m, 0, 0, 89, 3, 9, NoHaz, true, false, 3, 2, 3,
             "Salt Lake City refrigerated carrier, one of the biggest reefer fleets in the country, with dedicated and van divisions alongside. Operates large driver-training and hiring programmes for people entering the industry.",
             "Trains and hires inexperienced drivers."),
 
         new("Roehl Transport", "ROE",
             new[] { "Flatbed", "Reefer", "Dry Van", "Dedicated" }, "Regional",
             "Marshfield", "WI", new[] { "Chicago,IL", "Dallas,TX", "Atlanta,GA" },
-            0.56m, 0.45m, 0, 0, 88, 3, 10, NoHaz, true, false, 4, 4, 3,
+            0.62m, 0.50m, 0, 0, 88, 3, 10, NoHaz, true, false, 4, 4, 3,
             "Family-owned Wisconsin carrier running flatbed, refrigerated and dry van, with around 2,000 trucks. Offers on-the-job training for recent CDL school graduates and is known for structured onboarding and home-time programmes.",
             "Hires inexperienced drivers with on-the-job training."),
 
         new("Prime Inc.", "PRI",
             new[] { "Reefer", "Flatbed", "Tanker", "Dry Van" }, "Large",
             "Springfield", "MO", new[] { "Salt Lake City,UT", "Pittston,PA", "Denver,CO" },
-            0.57m, 0.46m, 0, 0, 88, 3, 9, NoHaz, true, false, 4, 3, 4,
+            0.64m, 0.51m, 0, 0, 88, 3, 9, NoHaz, true, false, 4, 3, 4,
             "Springfield, Missouri carrier with large refrigerated, flatbed and tanker divisions and over $2.5 billion in revenue. Its size and constant demand make it a common first job for new CDL graduates.",
             "Runs a well-known training programme for new drivers."),
 
         new("Marten Transport", "MRT",
             new[] { "Reefer", "Dedicated", "Intermodal" }, "Regional",
             "Mondovi", "WI", new[] { "Dallas,TX", "Atlanta,GA", "Ontario,CA" },
-            0.59m, 0.48m, 2, 0, 93, 1, 6, NoHaz, false, false, 4, 3, 4,
+            0.62m, 0.50m, 2, 0, 93, 1, 6, NoHaz, false, false, 4, 3, 4,
             "A leader in refrigerated transportation, based in Mondovi, Wisconsin. Temperature-controlled truckload, dedicated and intermodal — food-grade freight with tight appointment windows.",
             "Two years of verifiable experience."),
 
         new("KLLM Transport Services", "KLM",
             new[] { "Reefer", "Dedicated", "Dry Van" }, "Regional",
             "Richland", "MS", new[] { "Dallas,TX", "Atlanta,GA", "Laredo,TX" },
-            0.58m, 0.47m, 1, 0, 92, 1, 7, NoHaz, false, false, 3, 3, 3,
+            0.60m, 0.48m, 1, 0, 92, 1, 7, NoHaz, false, false, 3, 3, 3,
             "Mississippi-based temperature-controlled carrier that has moved perishables across the US and Mexico for around fifty years. Heavy cross-border produce and food freight.",
             "One year, or their training programme."),
 
         new("Melton Truck Lines", "MEL",
             new[] { "Flatbed", "Step Deck" }, "Regional",
             "Tulsa", "OK", new[] { "Laredo,TX", "Birmingham,AL", "Salt Lake City,UT" },
-            0.62m, 0.50m, 2, 0, 92, 1, 6, NoHaz, false, true, 4, 2, 4,
+            0.65m, 0.52m, 2, 0, 92, 1, 6, NoHaz, false, true, 4, 2, 4,
             "Tulsa-based flatbed specialist running steel, building products and machinery across the US, Canada and Mexico. Tarping and load securement are the daily job.",
             "Two years, open-deck experience strongly preferred."),
 
         new("Maverick Transportation", "MAV",
             new[] { "Flatbed", "Step Deck", "Reefer" }, "Regional",
             "North Little Rock", "AR", new[] { "Dallas,TX", "Atlanta,GA", "Chicago,IL" },
-            0.63m, 0.51m, 2, 0, 93, 1, 5, NoHaz, false, true, 4, 3, 4,
+            0.64m, 0.51m, 2, 0, 93, 1, 5, NoHaz, false, true, 4, 3, 4,
             "Arkansas open-deck carrier known for flatbed, glass and specialised securement work, with a temperature-controlled division alongside.",
             "Two years and demonstrated securement ability."),
 
         new("PS Logistics", "PSL",
             new[] { "Flatbed", "Step Deck", "Heavy Haul" }, "Large",
             "Birmingham", "AL", new[] { "Houston,TX", "Atlanta,GA", "Indianapolis,IN" },
-            0.61m, 0.49m, 2, 0, 90, 2, 7, NoHaz, false, true, 3, 2, 4,
+            0.62m, 0.50m, 2, 0, 90, 2, 7, NoHaz, false, true, 3, 2, 4,
             "One of the largest flatbed operators in the country, grown through acquisition and headquartered in Birmingham, Alabama. Steel, building materials and heavy specialised freight.",
             "Two years of open-deck work."),
 
         new("Anderson Trucking Service", "ATS",
             new[] { "Heavy Haul", "Flatbed", "Step Deck", "Lowboy" }, "Regional",
             "St. Cloud", "MN", new[] { "Houston,TX", "Denver,CO", "Chicago,IL" },
-            0.72m, 0.58m, 4, 25, 95, 0, 5, NoHaz, false, true, 5, 2, 5,
+            0.63m, 0.51m, 4, 25, 95, 0, 5, NoHaz, false, true, 5, 2, 5,
             "St. Cloud, Minnesota specialised carrier known for heavy haul, wind-energy components and oversized machinery. Permitted, route-surveyed freight.",
             "Four years and real heavy-haul history."),
 
         new("Bennett Motor Express", "BEN",
             new[] { "Heavy Haul", "Lowboy", "Flatbed", "Step Deck" }, "Regional",
             "McDonough", "GA", new[] { "Houston,TX", "Chicago,IL", "Denver,CO" },
-            0.74m, 0.60m, 5, 40, 96, 0, 4, NoHaz, false, true, 5, 3, 5,
+            0.66m, 0.53m, 5, 40, 96, 0, 4, NoHaz, false, true, 5, 3, 5,
             "Georgia-based specialised and heavy-haul carrier moving oversize machinery, transformers and project cargo. Every load is planned around permits and routing.",
             "Five years and forty loads of verifiable specialised history."),
 
         new("Groendyke Transport", "GRO",
             new[] { "Tanker", "Hazmat", "Bulk" }, "Regional",
             "Enid", "OK", new[] { "Houston,TX", "Baton Rouge,LA", "Odessa,TX" },
-            0.70m, 0.57m, 2, 0, 94, 1, 5, Cls("3", "8"), false, true, 4, 2, 5,
+            0.69m, 0.55m, 2, 0, 94, 1, 5, Cls("3", "8"), false, true, 4, 2, 5,
             "Enid, Oklahoma chemical and petroleum tank carrier. Placarded liquid bulk with the regulatory load that comes with it.",
             "Hazmat endorsement required — they run class 3 and class 8."),
 
         new("Trimac Transportation", "TRI",
             new[] { "Tanker", "Bulk", "Pneumatic", "Hazmat" }, "Large",
             "Houston", "TX", new[] { "Baton Rouge,LA", "Chicago,IL", "Salt Lake City,UT" },
-            0.68m, 0.55m, 2, 0, 94, 1, 5, Cls("3", "8"), false, true, 4, 2, 4,
+            0.66m, 0.53m, 2, 0, 94, 1, 5, Cls("3", "8"), false, true, 4, 2, 4,
             "Bulk tank carrier hauling chemicals, fuels and dry bulk across North America, with a strong emphasis on safety and driver training.",
             "Hazmat endorsement required — class 3 and class 8 chemical bulk."),
 
         new("Kenan Advantage Group", "KAG",
             new[] { "Tanker", "Bulk", "Hazmat" }, "Large",
             "North Canton", "OH", new[] { "Houston,TX", "Atlanta,GA", "Chicago,IL" },
-            0.66m, 0.53m, 1, 0, 93, 1, 6, Cls("3"), false, true, 4, 3, 4,
+            0.67m, 0.54m, 1, 0, 93, 1, 6, Cls("3"), false, true, 4, 3, 4,
             "North Canton, Ohio bulk transporter — fuel delivery, chemicals and food-grade liquid across a large regional network. Shorter runs and more home time than most tank work.",
             "Hazmat endorsement required — class 3 fuel haulage. One year minimum."),
 
         new("Jack Cooper Transport", "JCT",
             new[] { "Auto", "Dry Van" }, "Regional",
             "Kansas City", "MO", new[] { "Detroit,MI", "Louisville,KY", "Dallas,TX" },
-            0.65m, 0.53m, 3, 15, 95, 1, 3, NoHaz, false, true, 4, 3, 4,
+            0.64m, 0.52m, 3, 15, 95, 1, 3, NoHaz, false, true, 4, 3, 4,
             "Kansas City finished-vehicle carrier moving cars from assembly plants to dealers on multi-car rigs. Every unit is inspected at both ends.",
             "Three years and a clean damage record."),
 
         new("United Road Services", "URS",
             new[] { "Auto", "Dry Van" }, "Regional",
             "Romulus", "MI", new[] { "Dallas,TX", "Atlanta,GA", "Newark,NJ" },
-            0.64m, 0.52m, 3, 15, 94, 1, 3, NoHaz, false, true, 4, 3, 4,
+            0.62m, 0.50m, 3, 15, 94, 1, 3, NoHaz, false, true, 4, 3, 4,
             "Michigan-based vehicle logistics carrier hauling new and used automobiles for manufacturers, auctions and dealer groups.",
             "Three years and a clean damage record."),
+
+        // ------------------------------------------------------ the rest of the truckload field
+
+        new("J.B. Hunt Transport Services", "JBH",
+            new[] { "Intermodal", "Dedicated", "Dry Van", "Reefer" }, "Large",
+            "Lowell", "AR", new[] { "Chicago,IL", "Dallas,TX", "Atlanta,GA", "Phoenix,AZ" },
+            0.62m, 0.50m, 0, 0, 88, 3, 10, NoHaz, true, false, 4, 3, 4,
+            "The largest intermodal operation in the country, drayage off the ramps plus a very large dedicated fleet running customer-branded trucks. Dry van and temperature-controlled on top of it.",
+            "Hires new CDL holders into the dedicated fleets."),
+
+        new("Landstar System", "LDS",
+            new[] { "Flatbed", "Heavy Haul", "Dry Van", "Step Deck" }, "Large",
+            "Jacksonville", "FL", new[] { "Dallas,TX", "Laredo,TX", "Atlanta,GA" },
+            0.72m, 0.58m, 2, 25, 92, 2, 7, NoHaz, false, true, 4, 4, 5,
+            "An agent and owner-operator network rather than a company fleet, which is why the money is at the top of the board and the freight is whatever the agents have booked. Flatbed, specialised and heavy across the whole country.",
+            "Two years and a proven record. They are buying your judgement, not filling a seat."),
+
+        new("Crete Carrier", "CRT",
+            new[] { "Dry Van", "Reefer", "Flatbed" }, "Large",
+            "Lincoln", "NE", new[] { "Denver,CO", "Atlanta,GA", "Fontana,CA" },
+            0.66m, 0.53m, 1, 0, 90, 2, 9, NoHaz, false, false, 5, 3, 4,
+            "Lincoln-based national dry van, with Shaffer running the temperature-controlled side and Hunt Transportation the flatbed. Well-kept equipment and a reputation for leaving drivers alone to do the job.",
+            "One year. They do not take people straight out of school."),
+
+        new("CRST The Transportation Solution", "CRS",
+            new[] { "Dry Van", "Flatbed", "Dedicated" }, "Large",
+            "Cedar Rapids", "IA", new[] { "Dallas,TX", "Riverside,CA", "Atlanta,GA" },
+            0.55m, 0.44m, 0, 0, 84, 4, 12, NoHaz, true, false, 3, 2, 2,
+            "Cedar Rapids carrier built on expedited team freight, with flatbed and dedicated divisions alongside it. Runs its own driving school and hires out of it.",
+            "Takes students through their own programme."),
+
+        new("Heartland Express", "HTL",
+            new[] { "Dry Van", "Dedicated", "Reefer" }, "Regional",
+            "North Liberty", "IA", new[] { "Columbus,OH", "Dallas,TX", "Phoenix,AZ" },
+            0.60m, 0.48m, 1, 0, 90, 3, 9, NoHaz, false, false, 4, 4, 3,
+            "Short and medium-haul dry van out of Iowa, grown by buying up regional carriers. Pay steps up with tenure rather than starting high, and the home time is the reason people stay.",
+            "One year of verifiable over-the-road experience."),
+
+        new("Covenant Logistics", "CVN",
+            new[] { "Dry Van", "Reefer", "Dedicated" }, "Regional",
+            "Chattanooga", "TN", new[] { "Dallas,TX", "Laredo,TX", "Ontario,CA" },
+            0.58m, 0.47m, 1, 0, 88, 3, 10, NoHaz, false, false, 3, 2, 3,
+            "Chattanooga carrier running expedited and time-critical freight, much of it team, plus temperature-controlled and dedicated. The freight that has to be there is the freight they take.",
+            "One year. Expedited work does not forgive a thin record."),
+
+        new("Western Express", "WEX",
+            new[] { "Dry Van", "Flatbed" }, "Regional",
+            "Nashville", "TN", new[] { "Dallas,TX", "Atlanta,GA", "Phoenix,AZ" },
+            0.52m, 0.42m, 0, 0, 82, 5, 14, NoHaz, true, false, 2, 2, 2,
+            "Nashville-based van and flatbed carrier, and one of the easiest doors in the country to get through with a new licence or a blemished record. The equipment and the pay reflect that.",
+            "Hires new CDL holders, and will look at records other carriers will not."),
+
+        new("Stevens Transport", "STV",
+            new[] { "Reefer", "Dedicated", "Dry Van" }, "Regional",
+            "Dallas", "TX", new[] { "Atlanta,GA", "Fontana,CA", "Laredo,TX" },
+            0.54m, 0.44m, 0, 0, 86, 4, 11, NoHaz, true, false, 3, 2, 2,
+            "Family-owned Dallas refrigerated carrier running produce and food freight nationwide and into Mexico. Trains and hires its own students.",
+            "Takes recent graduates through their own school."),
+
+        new("Ruan Transportation", "RUA",
+            new[] { "Dedicated", "Tanker", "Bulk", "Dry Van" }, "Regional",
+            "Des Moines", "IA", new[] { "Kansas City,MO", "Denver,CO", "Dallas,TX" },
+            0.63m, 0.51m, 1, 0, 91, 2, 8, Cls("3", "8"), false, false, 4, 5, 4,
+            "Dedicated contract carriage almost entirely — one customer, one lane set, and a schedule you can plan a life around. Liquid and dry bulk on the tank side, some of it placarded.",
+            "One year, and hazmat for the tank work — classes 3 and 8."),
+
+        new("TMC Transportation", "TMC",
+            new[] { "Flatbed", "Step Deck", "Heavy Haul" }, "Regional",
+            "Des Moines", "IA", new[] { "Kansas City,MO", "Columbus,OH", "Dallas,TX" },
+            0.60m, 0.49m, 0, 0, 89, 3, 10, NoHaz, true, false, 5, 4, 3,
+            "Employee-owned flatbed carrier out of Des Moines, known for the black-and-chrome fleet and for teaching flatbed properly rather than throwing you at a load of steel. Home most weekends.",
+            "Takes new drivers and trains the securement itself."),
+
+        // ------------------------------------------------------ agriculture, livestock and timber
+        //
+        // The game has had livestock, hopper and log trailers, and Markets.cs has tagged the cities
+        // that move that freight, since long before there was anybody to haul it for. These are the
+        // employers that go with the equipment.
+        //
+        // All three are REGIONAL and none takes a rookie, which is not a balance decision — it is what
+        // the sector looks like. Live weight shifts when you brake, a hopper has to be tarped and
+        // metered off in the right order, and a log truck spends its day on surfaces that will put an
+        // inexperienced driver in a ditch. The outfits that do this work are small, local, and hire on
+        // a recommendation.
+
+        new("Hitch Enterprises", "HIT",
+            new[] { "Livestock", "Ag", "Hopper" }, "Regional",
+            "Guymon", "OK", new[] { "Amarillo,TX", "Dodge City,KS", "Garden City,KS" },
+            0.64m, 0.52m, 2, 10, 90, 2, 10, NoHaz, false, true, 3, 4, 4,
+            "Oklahoma panhandle cattle operation running its own trucks — feedyards, sale barns and packing houses across the high plains, plus grain out of the same country. Live freight: it moves when you move, and you learn to brake for it.",
+            "Two years and ten clean loads. Nobody hands a pot of cattle to somebody they have not watched drive."),
+
+        new("Scoular", "SCO",
+            new[] { "Ag", "Hopper", "Bulk", "Dry Van" }, "Regional",
+            "Omaha", "NE", new[] { "Kansas City,MO", "Salina,KS", "Minneapolis,MN" },
+            0.61m, 0.49m, 2, 0, 90, 2, 9, NoHaz, false, true, 3, 4, 3,
+            "Grain and feed ingredients out of Omaha, moving between elevators, processors and terminals across the middle of the country. Hopper work: scale tickets, moisture, and a dump order that matters.",
+            "Two years. Harvest is not the season to be learning the equipment."),
+
+        new("Joel Olson Trucking", "JOT",
+            new[] { "Log", "Bulk", "Flatbed" }, "Small",
+            "Kalama", "WA", new[] { "Longview,WA", "Eugene,OR", "Boise,ID" },
+            0.62m, 0.50m, 3, 0, 88, 2, 13, NoHaz, false, true, 3, 5, 3,
+            "Logs, chips and wood residuals out of the lower Columbia — mill to mill, landing to yard, and a fair amount of gravel road to get there. Home nearly every night, which is most of why the seats do not turn over.",
+            "Three years. A loaded log truck on a wet forest road is not where you find out."),
     };
 
     /// <summary>
@@ -517,6 +622,11 @@ public static class Carriers
     /// </summary>
     private static readonly Spec[] Fictional =
     {
+        // Stands one-for-one against the real table: same sizes, same divisions, same hiring bars and
+        // the same place on the pay band. Turning real names off changes what is written on the door
+        // and nothing else — including the agricultural, livestock and timber seats, which would
+        // otherwise vanish for anybody who preferred invented carriers.
+
         new("Beacon Express", "BEX",
             new[] { "Dry Van", "Reefer", "Intermodal" }, "Large",
             "Dallas", "TX", new[] { "Atlanta,GA", "Columbus,OH", "Phoenix,AZ", "Chicago,IL" },
@@ -586,6 +696,152 @@ public static class Carriers
             0.78m, 0.63m, 5, 40, 96, 0, 4, NoHaz, false, true, 5, 3, 5,
             "Permitted oversize and machinery moves on RGN and lowboy, with step deck and flat for the smaller pieces. Small outfit, senior drivers only, and every load is planned around a permit and a route survey.",
             "Five years, forty loads of verifiable history, and nothing preventable on your record."),
+        new("Fairmont Transport", "FMT",
+            new[] { "Dry Van", "Dedicated", "Reefer", "Intermodal" }, "Large",
+            "Kansas City", "MO", new[] { "Dallas,TX", "Atlanta,GA", "Phoenix,AZ" },
+            0.58m, 0.47m, 0, 0, 85, 4, 12, NoHaz, true, false, 3, 3, 2,
+            "Nationwide truckload out of the middle of the country — van, dedicated, temperature-controlled and a container fleet off the ramps. A long-standing first seat for new drivers.",
+            "Takes recent CDL graduates."),
+
+        new("Summit Line Transport", "SLT",
+            new[] { "Dry Van", "Intermodal", "Reefer", "Dedicated" }, "Large",
+            "Phoenix", "AZ", new[] { "Dallas,TX", "Atlanta,GA", "Memphis,TN", "Denver,CO" },
+            0.57m, 0.46m, 0, 0, 87, 4, 11, NoHaz, true, false, 4, 3, 3,
+            "One of the largest truckload fleets on the continent after a merger that put two big names under one roof. Van, reefer, intermodal and dedicated, everywhere.",
+            "Hires new CDL holders."),
+
+        new("Keystone Reefer Lines", "KRL",
+            new[] { "Reefer", "Flatbed", "Tanker", "Dry Van" }, "Large",
+            "Springfield", "MO", new[] { "Dallas,TX", "Fontana,CA", "Atlanta,GA" },
+            0.64m, 0.51m, 1, 0, 90, 3, 9, Cls("3"), false, false, 4, 2, 4,
+            "A big refrigerated fleet with flatbed and tank divisions beside it, known for running its own school and for paying the people who stay. Long weeks, good money.",
+            "One year, or their own programme. Hazmat for the tank side — class 3."),
+
+        new("Northline Cold Freight", "NCF",
+            new[] { "Reefer", "Dedicated", "Intermodal" }, "Regional",
+            "Eau Claire", "WI", new[] { "Chicago,IL", "Dallas,TX", "Ontario,CA" },
+            0.62m, 0.50m, 1, 0, 91, 2, 8, NoHaz, false, false, 4, 3, 3,
+            "Temperature-controlled food freight out of the upper midwest, much of it dedicated to a handful of large shippers. Tight appointments and a hard line on reefer temperatures.",
+            "One year. The freight is perishable and so is their patience with a thin record."),
+
+        new("Delta Cold Carriers", "DCC",
+            new[] { "Reefer", "Dedicated", "Dry Van" }, "Regional",
+            "Jackson", "MS", new[] { "Dallas,TX", "Atlanta,GA", "Laredo,TX" },
+            0.60m, 0.48m, 1, 0, 89, 3, 10, NoHaz, false, false, 3, 2, 3,
+            "Refrigerated truckload out of the deep south running produce, protein and packaged food, with a dedicated fleet on the grocery side and regular runs into Mexico.",
+            "One year over the road."),
+
+        new("Copperhead Flatbed", "CPF",
+            new[] { "Flatbed", "Step Deck" }, "Regional",
+            "Tulsa", "OK", new[] { "Houston,TX", "Birmingham,AL", "Laredo,TX" },
+            0.65m, 0.52m, 1, 0, 90, 2, 10, NoHaz, false, true, 4, 2, 4,
+            "Open-deck only — steel, building products and machinery, tarped and strapped by the driver. The pay is at the top end because the work genuinely is harder.",
+            "One year. Securement is the job here, not a detail of it."),
+
+        new("Blackrock Transportation", "BRT",
+            new[] { "Flatbed", "Step Deck", "Reefer" }, "Regional",
+            "Little Rock", "AR", new[] { "Dallas,TX", "Atlanta,GA", "Denver,CO" },
+            0.64m, 0.51m, 1, 0, 90, 2, 10, NoHaz, false, true, 4, 3, 4,
+            "Flatbed and step deck with a glass and temperature-controlled division alongside. Specialised securement, and training to go with it.",
+            "One year, and a record that says you tie things down properly."),
+
+        new("Southern Steel Carriers", "SSC",
+            new[] { "Flatbed", "Step Deck", "Heavy Haul" }, "Large",
+            "Birmingham", "AL", new[] { "Houston,TX", "Atlanta,GA", "Chicago,IL" },
+            0.62m, 0.50m, 1, 0, 89, 3, 10, NoHaz, false, true, 3, 2, 3,
+            "One of the larger open-deck groups in the country, built by buying up regional flatbed outfits. Steel, pipe and building products out of the southeast.",
+            "One year of open-deck or comparable."),
+
+        new("Granite Ridge Heavy Haul", "GRH",
+            new[] { "Heavy Haul", "Lowboy", "Flatbed", "Step Deck" }, "Regional",
+            "Duluth", "MN", new[] { "Chicago,IL", "Denver,CO", "Houston,TX" },
+            0.70m, 0.56m, 3, 20, 93, 1, 6, NoHaz, false, true, 5, 2, 5,
+            "Oversize and overweight — wind components, transformers, mining equipment. Permits, escorts, routes surveyed in advance and a schedule that bends around all three.",
+            "Three years and twenty clean loads. Nothing about this freight forgives a mistake."),
+
+        new("Vulcan Tank Lines", "VTL",
+            new[] { "Tanker", "Hazmat", "Bulk" }, "Regional",
+            "Wichita", "KS", new[] { "Tulsa,OK", "Amarillo,TX", "Denver,CO" },
+            0.69m, 0.55m, 2, 0, 93, 1, 5, Cls("3"), false, true, 4, 3, 4,
+            "Liquid bulk across the plains — fuel, asphalt and industrial chemicals. Surge, rollover margins and a safety culture that is not decorative.",
+            "Two years and a hazmat endorsement — class 3."),
+
+        new("Ridgeway Intermodal", "RWI",
+            new[] { "Intermodal", "Dedicated", "Dry Van", "Reefer" }, "Large",
+            "Bentonville", "AR", new[] { "Chicago,IL", "Dallas,TX", "Atlanta,GA", "Phoenix,AZ" },
+            0.62m, 0.50m, 0, 0, 88, 3, 10, NoHaz, true, false, 4, 3, 4,
+            "The biggest container operation on the continent, drayage off the ramps plus a very large dedicated fleet in customer colours. Van and reefer on top of it.",
+            "Hires new CDL holders into the dedicated fleets."),
+
+        new("Freeport Agency Carriers", "FAC",
+            new[] { "Flatbed", "Heavy Haul", "Dry Van", "Step Deck" }, "Large",
+            "Savannah", "GA", new[] { "Dallas,TX", "Laredo,TX", "Atlanta,GA" },
+            0.72m, 0.58m, 2, 25, 92, 2, 7, NoHaz, false, true, 4, 4, 5,
+            "An agency network rather than a company fleet: local agents book the freight and the trucks run under the name. Top of the board for money, and whatever the agents have is what you haul.",
+            "Two years and a proven record. They are buying judgement, not filling a seat."),
+
+        new("Prairie State Carriers", "PSC",
+            new[] { "Dry Van", "Reefer", "Flatbed" }, "Large",
+            "Peoria", "IL", new[] { "Denver,CO", "Atlanta,GA", "Fontana,CA" },
+            0.66m, 0.53m, 1, 0, 90, 2, 9, NoHaz, false, false, 5, 3, 4,
+            "National dry van with refrigerated and flatbed divisions under the same roof. Well-kept equipment and a reputation for leaving drivers alone to do the job.",
+            "One year. They do not take people straight out of school."),
+
+        new("Iron Gate Transport", "IGT",
+            new[] { "Dry Van", "Flatbed", "Dedicated" }, "Large",
+            "Davenport", "IA", new[] { "Dallas,TX", "Riverside,CA", "Atlanta,GA" },
+            0.55m, 0.44m, 0, 0, 84, 4, 12, NoHaz, true, false, 3, 2, 2,
+            "Built on expedited team freight, with flatbed and dedicated divisions alongside. Runs its own driving school and hires out of it.",
+            "Takes students through their own programme."),
+
+        new("Cornbelt Express", "CBX",
+            new[] { "Dry Van", "Dedicated", "Reefer" }, "Regional",
+            "Cedar Falls", "IA", new[] { "Columbus,OH", "Dallas,TX", "Phoenix,AZ" },
+            0.60m, 0.48m, 1, 0, 90, 3, 9, NoHaz, false, false, 4, 4, 3,
+            "Short and medium-haul van, grown by buying up regional carriers. Pay steps up with tenure rather than starting high, and the home time is the reason people stay.",
+            "One year of verifiable over-the-road experience."),
+
+        new("Lookout Mountain Freight", "LMF",
+            new[] { "Dry Van", "Reefer", "Dedicated" }, "Regional",
+            "Knoxville", "TN", new[] { "Dallas,TX", "Laredo,TX", "Ontario,CA" },
+            0.58m, 0.47m, 1, 0, 88, 3, 10, NoHaz, false, false, 3, 2, 3,
+            "Expedited and time-critical freight, much of it team, plus temperature-controlled and dedicated. The freight that has to be there is the freight they take.",
+            "One year. Expedited work does not forgive a thin record."),
+
+        new("Cumberland Van Lines", "CVL",
+            new[] { "Dry Van", "Flatbed" }, "Regional",
+            "Bowling Green", "KY", new[] { "Dallas,TX", "Atlanta,GA", "Phoenix,AZ" },
+            0.52m, 0.42m, 0, 0, 82, 5, 14, NoHaz, true, false, 2, 2, 2,
+            "Van and flatbed, and one of the easiest doors in the country to get through with a new licence or a blemished record. The equipment and the pay reflect that.",
+            "Hires new CDL holders, and will look at records other carriers will not."),
+
+        new("Lone Star Cold Lines", "LSC",
+            new[] { "Reefer", "Dedicated", "Dry Van" }, "Regional",
+            "Fort Worth", "TX", new[] { "Atlanta,GA", "Fontana,CA", "Laredo,TX" },
+            0.54m, 0.44m, 0, 0, 86, 4, 11, NoHaz, true, false, 3, 2, 2,
+            "Family-owned refrigerated carrier running produce and food freight nationwide and into Mexico. Trains and hires its own students.",
+            "Takes recent graduates through their own school."),
+
+        new("Hawkeye Dedicated Systems", "HDS",
+            new[] { "Dedicated", "Tanker", "Bulk", "Dry Van" }, "Regional",
+            "Cedar Rapids", "IA", new[] { "Kansas City,MO", "Denver,CO", "Dallas,TX" },
+            0.63m, 0.51m, 1, 0, 91, 2, 8, Cls("3", "8"), false, false, 4, 5, 4,
+            "Dedicated contract carriage almost entirely — one customer, one lane set, and a schedule you can plan a life around. Liquid and dry bulk on the tank side, some of it placarded.",
+            "One year, and hazmat for the tank work — classes 3 and 8."),
+
+        new("Homestead Flatbed Co.", "HFC",
+            new[] { "Flatbed", "Step Deck", "Heavy Haul" }, "Regional",
+            "Omaha", "NE", new[] { "Kansas City,MO", "Columbus,OH", "Dallas,TX" },
+            0.60m, 0.49m, 0, 0, 89, 3, 10, NoHaz, true, false, 5, 4, 3,
+            "Employee-owned open-deck carrier, known for the polished fleet and for teaching securement properly rather than throwing you at a load of steel. Home most weekends.",
+            "Takes new drivers and trains the securement itself."),
+
+        new("Redwing Grain Transport", "RGT",
+            new[] { "Ag", "Hopper", "Bulk", "Dry Van" }, "Regional",
+            "Sioux Falls", "SD", new[] { "Omaha,NE", "Fargo,ND", "Minneapolis,MN" },
+            0.61m, 0.49m, 2, 0, 90, 2, 9, NoHaz, false, true, 3, 4, 3,
+            "Grain and feed ingredients between elevators, processors and river terminals across the northern plains. Hopper work: scale tickets, moisture, and a dump order that matters.",
+            "Two years. Harvest is not the season to be learning the equipment."),
     };
 
     /// <summary>
@@ -630,6 +886,26 @@ public static class Carriers
     private static Spec[] Roster(AppState s) =>
         string.Equals(s.Settings.CarrierRoster, "Fictional", StringComparison.OrdinalIgnoreCase)
             ? Fictional : RealWorld;
+
+    /// <summary>
+    /// The part of the country a carrier is run from.
+    ///
+    /// Coarse on purpose. A driver filtering the board is asking "is this outfit anywhere near the
+    /// freight I want to run", not for a census region — and the sectors that make this worth having
+    /// at all are the regional ones. Livestock and grain are the plains; logs are the northwest and
+    /// the southeast; and none of them is a national seat you can take from anywhere.
+    /// </summary>
+    public static string RegionOf(string? state) => (state ?? "").Trim().ToUpperInvariant() switch
+    {
+        "WA" or "OR" or "ID" or "MT" or "AK" => "Northwest",
+        "CA" or "NV" or "AZ" or "UT" or "HI" => "West",
+        "WY" or "CO" or "NM" or "ND" or "SD" or "NE" or "KS" or "OK" or "TX" => "Plains & Southwest",
+        "MN" or "IA" or "MO" or "WI" or "IL" or "MI" or "IN" or "OH" => "Midwest",
+        "AR" or "LA" or "MS" or "AL" or "TN" or "KY" or "GA" or "FL" or "SC" or "NC" or "VA" or "WV" => "South",
+        "PA" or "NY" or "NJ" or "MD" or "DE" or "CT" or "RI" or "MA" or "VT" or "NH" or "ME" or "DC" => "Northeast",
+        "" => "",
+        _ => "Other",
+    };
 
     private static Spec[] AllSpecs => RealWorld.Concat(Fictional).Concat(SecondChanceCarriers).ToArray();
 
@@ -754,6 +1030,10 @@ public static class Carriers
                 Name = spec.Name,
                 Divisions = spec.Divisions.ToList(),
                 PrimaryDivision = spec.Divisions[0],
+                Trailers = spec.Divisions.SelectMany(CompanyFreight.TrailersFor)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(),
+                Region = RegionOf(spec.HqState),
                 Size = spec.Size,
                 HqCity = spec.HqCity,
                 HqState = spec.HqState,
@@ -866,11 +1146,18 @@ public static class Carriers
         var totalLoads = stats.LoadsDelivered + s.Driver.PriorLoads;
         var declared = s.Application?.ExperienceYears ?? 0;
 
-        var byExperience = 0;
-        _ = byExperience;
+        _ = declared;
+
         // Only the loads gate is answerable in loads. Being short of years is answered in days, which
         // DaysStillNeeded reports — quoting a load count against a time requirement was the bug.
-        return Math.Max(0, spec.MinLoads - totalLoads);
+        //
+        // AGAINST THE BAR THEY ARE ACTUALLY HOLDING, not the posted one. Screen() and the card both
+        // scale the minimum by the carrier's condition, and this did not, so a carrier that was
+        // expanding advertised a lowered bar and then set a progress target above it — "15 verifiable
+        // loads" on the card with "~17 more load(s)" under it. Invisible until the roster grew enough
+        // for an expanding carrier with a load gate to be on the board at the same time.
+        var minLoads = (int)Math.Round(spec.MinLoads * ConditionOf(s, spec.Code).LoadsFactor);
+        return Math.Max(0, minLoads - totalLoads);
     }
 
     /// <summary>
@@ -1681,6 +1968,23 @@ public class CarrierListing
     public string Name { get; set; } = "";
     public List<string> Divisions { get; set; } = new();
     public string PrimaryDivision { get; set; } = "";
+
+    /// <summary>
+    /// Every trailer this carrier's divisions put a driver behind, off <see cref="CompanyFreight"/>.
+    ///
+    /// Derived here rather than worked out again in the browser, because the board filters on it and a
+    /// second copy of the division-to-trailer table is a second copy to fall out of step. A driver
+    /// looking for flatbed work is looking for the TRAILER; "open deck", "Heavy Haul" and "Step Deck"
+    /// are three division names that all put them on one.
+    /// </summary>
+    public List<string> Trailers { get; set; } = new();
+
+    /// <summary>
+    /// Roughly where in the country they are based, for filtering a roster that is now too long to
+    /// read. Off the headquarters only — the network is discovery-gated and a yard the driver has
+    /// never seen should not make a carrier look local.
+    /// </summary>
+    public string Region { get; set; } = "";
 
     /// <summary>Years the driver has on THIS carrier's main freight, rather than years in total.</summary>
     public double DivisionYears { get; set; }

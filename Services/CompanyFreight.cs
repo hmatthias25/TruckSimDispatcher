@@ -49,7 +49,13 @@ public static class CompanyFreight
         // Arrangements and credentials, not trailers. "Dedicated" describes who the freight belongs to
         // and "Hazmat" what is inside it — neither is something a driver can look for in a trailer
         // column, and listing them there would send somebody hunting a dedicated trailer.
-        "Dedicated" or "Hazmat" or "Ag" => Array.Empty<string>(),
+        "Dedicated" or "Hazmat" => Array.Empty<string>(),
+
+        // Ag was sitting in that group and should never have been: it is a COMMODITY, not an
+        // arrangement, and it has equipment of its own. An ag carrier came out matching no trailer at
+        // all, which is the same as having no freight — harmless only for as long as nobody could be
+        // hired into one. Grain and feed move in hoppers, and the bulkier crop freight in dumps.
+        "Ag" => new[] { "hopper", "dump" },
         "Pneumatic" => new[] { "pneumatic bulk" },
         "Step Deck" => new[] { "step deck" },
         "Lowboy" => new[] { "lowboy", "RGN" },

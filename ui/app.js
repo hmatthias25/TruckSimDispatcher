@@ -20,6 +20,13 @@ let BOARD_STAGE = 'local';
 // not a preference about the next one.
 let BOARD_STAGE_PINNED = false;
 let BUSY = '';             // label of an in-flight long operation
+/* What the job market is being narrowed to.
+ *
+ * Module state rather than a query string or a server round trip: it is a way of LOOKING at a list the
+ * browser already has, it should survive a re-render of the tab, and it should not survive a reload —
+ * coming back tomorrow to a board silently hiding two thirds of the carriers is how a driver concludes
+ * nobody is hiring. */
+let MARKETF = { hauls: '', trailer: '', region: '', open: false };
 
 const TABS = [
   ['dispatch', 'Dispatch'],
@@ -668,14 +675,65 @@ function payLadderHtml(c) {
   </div>`;
 }
 
+/**
+ * Everything the board could be narrowed by, read off the carriers actually on it.
+ *
+ * Built from the roster rather than listed here, so a division or a trailer added to a carrier turns
+ * up in the filter the same day — and a filter can never offer something that would match nothing.
+ */
+function marketFacets(market) {
+  const uniq = (xs) => [...new Set(xs.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return {
+    hauls: uniq(market.flatMap((c) => c.divisions || [])),
+    trailers: uniq(market.flatMap((c) => c.trailers || [])),
+    regions: uniq(market.map((c) => c.region)),
+  };
+}
+
+/** Whether one carrier survives the current filter. */
+function marketMatches(c) {
+  const has = (xs, v) => (xs || []).some((x) => (x || '').toLowerCase() === v.toLowerCase());
+  if (MARKETF.hauls && !has(c.divisions, MARKETF.hauls)) return false;
+  if (MARKETF.trailer && !has(c.trailers, MARKETF.trailer)) return false;
+  if (MARKETF.region && (c.region || '') !== MARKETF.region) return false;
+  // Deliberately not the default. A rookie's board is mostly carriers that will not take them yet, and
+  // that IS the information — hiding it leaves them looking at four doors with no idea what the other
+  // twenty-seven want.
+  if (MARKETF.open && !c.wouldHire) return false;
+  return true;
+}
+
 /** The job market: who is hiring, who would take you, and who to come back to later. */
 function renderMarket(market, { onboarding }) {
   // Applying out from an unfinished probation is the one thing that overrides a good record, so it is
   // said once and loudly rather than in small print on thirty cards.
   const onProbation = !onboarding && S?.driver?.rank === 'probationary';
-  const open = market.filter((c) => c.wouldHire && !c.isCurrentEmployer);
-  const shut = market.filter((c) => !c.wouldHire && !c.isCurrentEmployer);
+  const all = market.filter((c) => !c.isCurrentEmployer);
+  const shown = all.filter(marketMatches);
+  const open = shown.filter((c) => c.wouldHire);
+  const shut = shown.filter((c) => !c.wouldHire);
   const anyReal = market.some((c) => c.isRealCompany);
+  const facets = marketFacets(all);
+  const narrowed = shown.length !== all.length;
+
+  const pick = (id, label, value, options) => `<label>${esc(label)}
+    <select id="${id}" data-act="market-filter">
+      <option value="">Any</option>
+      ${options.map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+    </select></label>`;
+
+  
+  const filterBar = `
+    <div class="grid4" style="align-items:end">
+      ${pick('mk-hauls', 'What they haul', MARKETF.hauls, facets.hauls)}
+      ${pick('mk-trailer', 'Trailer', MARKETF.trailer, facets.trailers)}
+      ${pick('mk-region', 'Based in', MARKETF.region, facets.regions)}
+      <label class="chk" style="margin-bottom:8px"><input type="checkbox" id="mk-open"
+        data-act="market-filter" ${MARKETF.open ? 'checked' : ''}> Only ones that would take me</label>
+    </div>
+    ${narrowed ? `<p class="hint" style="margin:0 0 8px">Showing <b>${shown.length}</b> of
+      <b>${all.length}</b> carriers.
+      <button class="btn tiny ghost" data-act="market-filter-clear">Clear filters</button></p>` : ''}`;
 
   const card = (c) => `
     <div class="loadcard ${c.wouldHire ? 'auth' : 'reject'}">
@@ -765,6 +823,10 @@ function renderMarket(market, { onboarding }) {
     <div class="panel">
       <div class="panel-head"><h2>Carriers hiring</h2>
         <span class="sub">${open.length} would take you now · ${shut.length} to work toward</span></div>
+      ${/* Above the notices, because it is the thing that makes the rest of the panel readable. A
+            roster this long is a wall of cards otherwise, and the sectors worth hunting for —
+            livestock, grain, timber — are a handful of regional outfits buried in it. */ ''}
+      ${filterBar}
       ${onProbation ? `<div class="callout stop">
         <h4>You are still on probation</h4>
         <p>Almost nobody will take on a driver who has not finished the last place. Whatever your record
@@ -775,10 +837,17 @@ function renderMarket(market, { onboarding }) {
           standing between you and being taken seriously here.</p></div>` : ''}
       ${anyReal ? `<div class="callout mute">
         <p><b>About these companies.</b> These are real US carriers, and their headquarters and the
-          freight they haul are factual. The <b>pay rates, hiring standards and star ratings are made up
-          for this game</b> — they are not these companies' real terms of employment. Prefer invented
-          carriers instead? Switch the roster in Settings.</p></div>` : ''}
-      ${open.length === 0 ? `<div class="callout warn"><h4>Nobody on this roster will take you yet</h4>
+          freight they haul are factual. The rates are on the <b>real 2026 mileage band</b> for the
+          sector, and a few are the carrier's own published figures — but a rate here is still
+          <b>this game's number, not an offer</b>, and the hiring standards and star ratings are made
+          up entirely. Nothing here describes a real employer's equipment, safety or treatment of
+          drivers. Prefer invented carriers? Switch the roster in Settings.</p></div>` : ''}
+      ${shown.length === 0 && narrowed
+        ? `<div class="callout warn"><h4>No carrier matches that</h4>
+            <p>Nothing on the roster hauls that behind that from there. Widen one of the three and try
+              again — the sectors with only a few outfits in them are the ones worth searching for on
+              their own.</p></div>`
+        : open.length === 0 ? `<div class="callout warn"><h4>Nobody${narrowed ? ' here' : ' on this roster'} will take you yet</h4>
         <p>Lower the experience bar by editing your application, or switch to the fictional roster in
           Settings — it has a carrier that takes anyone with a Class A.</p></div>` : ''}
       ${open.map(card).join('')}
@@ -1048,6 +1117,18 @@ document.addEventListener('change', (ev) => {
 //
 // Updated in place rather than re-rendered, because only the unit list and one input depend on them —
 // rebuilding the whole panel would discard anything else half-typed on the form.
+/* Narrowing the job market. Re-renders the tab rather than hiding cards in place: the counts in the
+   panel head, the two sections and the empty state are all derived from what survives the filter, and
+   half-updating them is how a board comes to say "3 would take you now" above nothing at all. */
+document.addEventListener('change', (ev) => {
+  if (ev.target.dataset?.act !== 'market-filter') return;
+  MARKETF = {
+    hauls: sv('mk-hauls'), trailer: sv('mk-trailer'), region: sv('mk-region'),
+    open: !!document.getElementById('mk-open')?.checked,
+  };
+  render();
+});
+
 document.addEventListener('change', (ev) => {
   if (ev.target.id === 'wo-kind2') {
     WO_KIND = ev.target.value || 'Truck';
@@ -7476,6 +7557,10 @@ async function handleAction(act, d, ev) {
         toast(`${r.trip.number} authorized.`, 'ok');
       });
     }
+
+    case 'market-filter-clear':
+      MARKETF = { hauls: '', trailer: '', region: '', open: false };
+      return render();
 
     /* ---- trips */
     case 'trip-detail': return tripDetailModal(d.id);

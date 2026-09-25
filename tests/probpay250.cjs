@@ -17,6 +17,13 @@
  *
  * Corrected downwards only. A second-chance scale or a hand-set rate below the probationary figure is
  * somebody's decision, not this bug, and settlements already run are left as they were paid.
+ *
+ * THE FIGURES ABOVE ARE THE ONES IN THE REPORT, not constants. Prime's posted rate has since moved with
+ * the rest of the roster onto the real 2026 mileage band, and this suite pinned $0.57 and $0.513 in
+ * nine places — so a pay change that broke nothing failed nine assertions and looked like it had. The
+ * relationship is what is being tested: the probationary scale is nine tenths of whatever the carrier
+ * posts today. So that is what is read and multiplied, and the rate can move again without touching
+ * this file.
  */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5893}/api`;
 async function api(p, m = 'GET', b) {
@@ -35,20 +42,34 @@ const app = { driverName: 'A. Kowalczyk', preferredDivision: 'Dry Van', experien
   homeCity: 'Springfield', homeState: 'MO', acceptsProbation: true, homeTimePreference: 'biweekly' };
 
 let S;
+
+/** What Prime posts today, and what nine tenths of it comes to. */
+let POSTED = 0, PROB = 0, POSTED_DH = 0;
+async function readScale() {
+  const card = (await api('/onboarding/market', 'POST', app)).market.find((c) => c.code === 'PRI');
+  if (!card) throw new Error('PRI not on the board');
+  POSTED = +card.postedLoadedCpm;
+  POSTED_DH = +card.deadheadCpm;
+  PROB = Math.round(POSTED * 0.9 * 1000) / 1000;
+}
+
 const hire = async () => {
   await api('/onboarding/market', 'POST', app);
   return un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(2), code: 'PRI' }));
 };
 
 (async () => {
+  await readScale();
+  console.log(`  ..    Prime posts ${POSTED.toFixed(3)}; the probationary scale is ${PROB.toFixed(3)}`);
+
   head('1. A hire made today starts under the company rate');
   S = await hire();
   console.log(`  ..    ${S.driver.rank}: $${S.driver.pay.loadedCpm} loaded, $${S.driver.pay.deadheadCpm} empty`);
   console.log(`  ..    ${S.driver.pay.notes}`);
   ok('they are on probation', S.driver.rank === 'probationary', S.driver.rank);
-  ok('and not on the posted company rate', S.driver.pay.loadedCpm < 0.57, `$${S.driver.pay.loadedCpm}`);
-  ok('it is nine tenths of it', Math.abs(S.driver.pay.loadedCpm - 0.513) < 0.002,
-    `$${S.driver.pay.loadedCpm} against $0.513`);
+  ok('and not on the posted company rate', S.driver.pay.loadedCpm < POSTED, `${S.driver.pay.loadedCpm}`);
+  ok('it is nine tenths of it', Math.abs(S.driver.pay.loadedCpm - PROB) < 0.002,
+    `${S.driver.pay.loadedCpm} against ${PROB.toFixed(3)}`);
   ok('and the note says which scale it is', /probationary scale/i.test(S.driver.pay.notes || ''),
     S.driver.pay.notes);
 
@@ -59,27 +80,30 @@ const hire = async () => {
   console.log(`  ..    company driver: $${S.driver.pay.loadedCpm}`);
   ok('the company rate is higher than the probationary one', S.driver.pay.loadedCpm > before,
     `$${before} → $${S.driver.pay.loadedCpm}`);
-  ok('and it is the posted rate', Math.abs(S.driver.pay.loadedCpm - 0.57) < 0.002,
-    `$${S.driver.pay.loadedCpm}`);
+  ok('and it is the posted rate', Math.abs(S.driver.pay.loadedCpm - POSTED) < 0.002,
+    `${S.driver.pay.loadedCpm}`);
 
   head('3. A career carrying the old number is corrected');
   // The reported save: still probationary, still being paid the cleared rate.
   S = await hire();
   let st = await api('/export');
   st.schemaVersion = 24;
-  st.driver.pay.loadedCpm = 0.57;      // exactly as reported
-  st.driver.pay.deadheadCpm = 0.46;
+  // The shape of the reported save: a probationary driver carrying the cleared rate. Planted at
+  // today's posted figure rather than the one in the report, which is the same situation.
+  st.driver.pay.loadedCpm = POSTED;
+  st.driver.pay.deadheadCpm = POSTED_DH;
   S = un(await api('/import', 'POST', st));
   console.log(`  ..    after load: $${S.driver.pay.loadedCpm} loaded, $${S.driver.pay.deadheadCpm} empty`);
   ok('the schema moved on', S.schemaVersion >= 25, `${S.schemaVersion}`);
-  ok('the rate comes off the company rate', S.driver.pay.loadedCpm < 0.57, `$${S.driver.pay.loadedCpm}`);
-  ok('onto the probationary one', Math.abs(S.driver.pay.loadedCpm - 0.513) < 0.002,
-    `$${S.driver.pay.loadedCpm}`);
-  ok('and the empty rate with it', S.driver.pay.deadheadCpm < 0.46, `$${S.driver.pay.deadheadCpm}`);
+  ok('the rate comes off the company rate', S.driver.pay.loadedCpm < POSTED, `${S.driver.pay.loadedCpm}`);
+  ok('onto the probationary one', Math.abs(S.driver.pay.loadedCpm - PROB) < 0.002,
+    `${S.driver.pay.loadedCpm}`);
+  ok('and the empty rate with it', S.driver.pay.deadheadCpm < POSTED_DH, `${S.driver.pay.deadheadCpm}`);
 
   const ev = (await api('/events?take=40')).find((e) => /loaded rate is corrected/i.test(e.message || ''));
-  ok('the player is told, with both figures', !!ev && /0\.570.*0\.513/s.test(ev.message || ''),
-    ev?.message?.slice(0, 120) || '(silent)');
+  ok('the player is told, with both figures',
+    !!ev && ev.message.includes(POSTED.toFixed(3)) && ev.message.includes(PROB.toFixed(3)),
+    ev?.message?.slice(0, 140) || '(silent)');
   ok('and told their settlements are not being rewritten',
     /settlements already run stay as they were paid/i.test(ev?.message || ''), 'said');
 
@@ -99,15 +123,16 @@ const hire = async () => {
     `$${S.driver.pay.deadheadCpm}`);
 
   head('5. A cleared driver on the company rate is not touched');
-  // 0.57 is exactly right for a company driver at Prime. The bug is only ever about who is on it.
+  // The posted rate is exactly right for a company driver at Prime. The bug is only ever about WHO is
+  // on it, never about the figure itself.
   S = await hire();
   S = un(await api('/career/promote', 'POST', { rank: 'company', force: true, note: 'fixture' }));
   st = await api('/export');
   st.schemaVersion = 24;
   await api('/import', 'POST', st);
   const after = (await api('/bootstrap')).driver;
-  ok('a company driver keeps the company rate', Math.abs(after.pay.loadedCpm - 0.57) < 0.002,
-    `$${after.pay.loadedCpm}`);
+  ok('a company driver keeps the company rate', Math.abs(after.pay.loadedCpm - POSTED) < 0.002,
+    `${after.pay.loadedCpm}`);
 
   head('6. The job market quotes the rate you will actually be paid');
   // The other half of the report — "no other company I look at starts that high". The card leads with
