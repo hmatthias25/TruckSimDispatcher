@@ -278,7 +278,20 @@ public static class TripService
         // "Loaded" and "Departed" are the retired names, still honoured for older careers.
         if (trip.Status == "Authorized" && ev.Kind is "EndLoad" or "BeginLoad" or "Loaded" or "Departed")
             trip.Status = "InTransit";
-        if (!string.IsNullOrWhiteSpace(ev.GameTime)) s.Status.GameTime = ev.GameTime;
+        // THE CLOCK LANDS AT THE END OF A SPAN, not the start of it. A ten-hour rest logged at 21:00
+        // left the driver's clock reading 21:00, which is the moment they shut down rather than the
+        // moment they are standing in. Everything reads off that clock: a payday falling inside the
+        // rest never fired, and the arrival form came up holding a time from before the stop, so the
+        // next few entries went in wrong too and had to be unpicked.
+        //
+        // Deliberately not conditioned on the kind. The UI decides which events are worth ASKING for an
+        // end time on; here, an end time later than the start means the driver sat through it, whatever
+        // it was called — and a second list of kinds is a second list to drift.
+        var landed = GameClock.TryParse(ev.EndGameTime) is { } rolled
+                     && GameClock.TryParse(ev.GameTime) is { } began && rolled > began
+            ? ev.EndGameTime
+            : ev.GameTime;
+        if (!string.IsNullOrWhiteSpace(landed)) s.Status.GameTime = landed;
 
         // A fuel stop logged as it happens becomes a purchase on the trip, so close-out already has it
         // and the driver is never asked to reconstruct three fills from memory.

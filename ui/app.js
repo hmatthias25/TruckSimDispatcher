@@ -267,6 +267,20 @@ function amendEventModal(tripId, evId) {
 // Day 1 is a Monday — the app's own calendar, and what makes payday mean something. Indexed so that
 // day % 7 lands on the right name: day 1 -> Mon, day 7 -> Sun, day 8 -> Mon.
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * The events that are a SPAN rather than a moment — the ones you sit through.
+ *
+ * Only these get an end time on the form. Begin load and End load are already a pair, so a second end
+ * time on either half is a question with no answer; a fuel stop has a length in Settings; a note and a
+ * scale are moments. Offering the field on all of them made the whole panel read as though every event
+ * wanted two stamps, and the one place it genuinely matters got lost among them.
+ *
+ * Restart is not in the dropdown but is honoured — older careers have them, and SpeedLearning measures
+ * exactly these five.
+ */
+const SPAN_EVENTS = new Set(['Rest', 'Restart', 'Break', 'Delay', 'Breakdown']);
+const isSpanEvent = (kind) => SPAN_EVENTS.has(kind);
 function dowOf(v) {
   const d = dayOf(v);
   return Number.isFinite(d) ? DOW[((d % 7) + 7) % 7] : '';
@@ -984,6 +998,58 @@ document.addEventListener('change', (ev) => {
     return syncWoDamageBefore();
   }
   if (ev.target.id === 'wo-unit') syncWoDamageBefore();
+});
+
+/* The end time belongs to the event, so it appears only with the events that have one.
+ *
+ * Updated in place rather than through render(), which would rebuild the panel and throw away the
+ * stamp, the detail and the fuel figures alongside it.
+ *
+ * THE END DAY IS WORKED OUT RATHER THAN TYPED. A rest is 21:00 to 07:00 and a driver says it that way;
+ * being made to notice that 07:00 falls on the next day, and to spin a second day box to match, is
+ * most of what made this panel tiresome — and getting it wrong put the clock a day out, which is worse
+ * than tiresome. So an end time BEFORE the start time means the next day, and after it means the same
+ * day. Recomputed whenever the start moves.
+ *
+ * An end time EQUAL to the start stays on the same day, which makes it a zero-length span — the app's
+ * way of saying nothing was stated. That is what the field opens holding, so forgetting it logs no
+ * span at all rather than a silent twenty-four-hour one that would carry the clock a day forward.
+ *
+ * Unless the driver sets the day themselves. A thirty-hour breakdown is two days on, nothing can infer
+ * that from a clock face, and a box that snaps back while you are using it is its own bug. One edit of
+ * the day box and the derivation stands off for the rest of the event.
+ */
+function syncSpanEnd(openedNow) {
+  const wrap = document.getElementById('ev-endwrap');
+  const kind = document.getElementById('ev-kind');
+  if (!wrap || !kind) return;
+  const span = isSpanEvent(kind.value);
+  wrap.classList.toggle('hidden', !span);
+  if (!span) return;
+
+  const day = document.getElementById('ev-end-day');
+  const tod = document.getElementById('ev-end-tod');
+  if (!day || !tod) return;
+
+  // Opening the panel is a fresh event: the boxes may still hold the last one's answer, and the flag
+  // that held the derivation off belonged to that one too.
+  if (openedNow) { tod.value = sv('ev-time-tod'); delete day.dataset.touched; }
+  if (day.dataset.touched) return;
+
+  const started = parseInt(sv('ev-time-day'), 10);
+  if (!Number.isFinite(started)) return;
+  day.value = tod.value >= sv('ev-time-tod') ? started : started + 1;
+  const dow = document.getElementById('ev-end-dow');
+  if (dow) dow.textContent = dowForDay(day.value);
+}
+
+document.addEventListener('change', (ev) => {
+  if (['ev-kind', 'ev-time-day', 'ev-time-tod', 'ev-end-tod'].includes(ev.target.id)) {
+    syncSpanEnd(ev.target.id === 'ev-kind');
+  }
+});
+document.addEventListener('input', (ev) => {
+  if (ev.target.id === 'ev-end-day') ev.target.dataset.touched = '1';
 });
 
 // The weekday beside a day-number box, kept current while it is being typed rather than on submit —
@@ -2073,18 +2139,22 @@ function viewActive() {
             when I start rest (I can log a rest time) but not when it ends. So if I rest more than 10 (ex
             waiting for a shipper to open) then you don't know this. Just assuming a rest is 10 hours is
             incorrect." Everything sat beyond the minimum used to land in the divisor as driving. */ ''}
-      <div class="grid2">
-        ${dayTimeInput('ev-end', S.status.gameTime, 'Rolled again at — for a rest, break or delay')}
-        <div><p class="hint" style="margin-top:22px">Leave it on the same time as above if this is not a
-          stop, or if you would rather not say.</p></div>
-      </div>
-      <div class="callout info">
-        <p style="margin:0"><b>On a rest, put the time you rolled again.</b> It is the one thing the app
-          cannot see: it knows when you stopped because you told it, but a ten-hour reset and a sixteen-hour
-          wait for a shipper to open look identical from here. Without it those extra hours count as
-          <b>driving</b>, and the run teaches the planner that the map is far slower than it is — which is
-          what every feasibility answer divides your miles by. With it, the run is a proper measurement.
-          A rest with no end time is thrown out rather than guessed at, and the close-out says so.</p>
+      ${/* Hidden until a span is picked, and hidden on first paint because neither first option is one.
+            The change listener below is what opens it. */ ''}
+      <div id="ev-endwrap" class="hidden">
+        <div class="grid2">
+          ${dayTimeInput('ev-end', S.status.gameTime, 'Rolled again at')}
+          <div><p class="hint" style="margin-top:22px">Leave it alone only if you would rather not say —
+            the stop is then thrown out rather than guessed at.</p></div>
+        </div>
+        <div class="callout info">
+          <p style="margin:0"><b>Put the time you rolled again, and the app's clock moves there with
+            you.</b> It is the one thing the app cannot see: it knows when you stopped because you told
+            it, but a ten-hour reset and a sixteen-hour wait for a shipper to open look identical from
+            here. Without it those extra hours count as <b>driving</b>, and the run teaches the planner
+            that the map is far slower than it is — which is what every feasibility answer divides your
+            miles by. With it, the run is a proper measurement.</p>
+        </div>
       </div>
       <label>Detail <span class="sub">— optional</span>
         <input id="ev-detail" placeholder="only if there is something worth noting"></label>
@@ -7344,9 +7414,12 @@ async function handleAction(act, d, ev) {
       const gal = fv('ev-gal'), price = fv('ev-price');
       return run(async () => {
         // Blank unless it is genuinely later than the start: the field defaults to the current clock,
-        // so "left alone" has to mean "not stated" rather than "a zero-length rest".
+        // so "left alone" has to mean "not stated" rather than "a zero-length rest". Only read at all
+        // where the field was on screen — a hidden box still holds a value, and on a Begin load that
+        // value would silently become an end time and drag the clock with it.
         const began = readDayTime('ev-time');
-        const rolled = readDayTime('ev-end');
+        const span = isSpanEvent(sv('ev-kind'));
+        const rolled = span ? readDayTime('ev-end') : '';
         const r = absorb(await api(`/trips/${d.id}/event`, 'POST', {
           gameTime: began, kind: sv('ev-kind'),
           endGameTime: rolled && rolled > began ? rolled : '',
@@ -7356,11 +7429,16 @@ async function handleAction(act, d, ev) {
           gallons: gal, pricePerGal: price, cost: 0,
         }));
         const isRest = sv('ev-kind') === 'Rest' || sv('ev-kind') === 'Restart';
+        const moved = rolled && rolled > began;
         toast(gal > 0 && sv('ev-kind') === 'Fuel'
           ? `Logged — ${gal} gal added to the close-out.`
-          : isRest && !(rolled && rolled > began)
+          // Where the clock has jumped hours or days, say where it landed. Everything downstream reads
+          // off it — what the arrival form comes up holding, whether a payday has fallen due — so a
+          // driver finding out later is a driver unpicking a stack of entries.
+          : moved ? `Logged — clock moved to ${gt(rolled)}.`
+          : isRest
             ? 'Logged — but with no end time on it, this run will not teach the planner your driving speed.'
-            : 'Logged.', isRest && !(rolled && rolled > began) ? 'warn' : 'ok');
+            : 'Logged.', isRest && !moved ? 'warn' : 'ok');
         return r;
       });
     }
