@@ -137,7 +137,13 @@ public static class Carriers
     public static (List<string> Keys, string Note, string Default) TripLengthOffer(
         string size, double creditedYears)
     {
-        if (string.Equals(size, "Regional", StringComparison.OrdinalIgnoreCase))
+        // SMALL COUNTS AS REGIONAL, which it did not, and the only reason nobody noticed is that every
+        // small carrier on the roster was heavy haul. Only "Regional" was named here, so "Small" fell
+        // through to the over-the-road branch below and a local outfit was offered long and OTR and
+        // nothing else. Joel Olson Trucking hauls logs around the lower Columbia and is home nearly
+        // every night; it was being asked to run coast to coast.
+        if (string.Equals(size, "Regional", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(size, "Small", StringComparison.OrdinalIgnoreCase))
             return (new List<string> { "short", "medium" },
                 "Regional carrier — you work a box around your home yard, about 300 miles out on " +
                 "medium and 150 on short. It is not a limit on how long any one load is; it is where " +
@@ -156,6 +162,27 @@ public static class Carriers
             $"Anything you want — you have the {RegionalSeatYears:0} years their regional seats ask for.",
             "medium");
     }
+
+    /// <summary>
+    /// What a probationary driver runs, decided by what the CARRIER is rather than by what the offer
+    /// happens to default to.
+    ///
+    /// <para>Not the same thing as <see cref="TripLengthOffer"/>'s default, which is shaped by the
+    /// driver's experience: a big over-the-road carrier opens all four lengths to somebody with the
+    /// years its regional seats ask for, and defaults them to medium. That is right for a cleared
+    /// driver choosing their work and wrong for one starting a period — it would have an OTR carrier
+    /// assessing a probationary hire on four loads and 700 miles a week while running freight that
+    /// pays out at one and 1,400.</para>
+    ///
+    /// <para>A period exists to show somebody doing the carrier's actual work, so it is served on the
+    /// carrier's actual work. Regional and small outfits run the box around the yard; everybody else
+    /// stays out.</para>
+    /// </summary>
+    public static string ProbationTripLength(string? size) =>
+        string.Equals(size, "Regional", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(size, "Small", StringComparison.OrdinalIgnoreCase)
+            ? "medium"
+            : "otr";
 
     /// <summary>
     /// The cities a carrier actually runs terminals in: headquarters plus its published yards, as

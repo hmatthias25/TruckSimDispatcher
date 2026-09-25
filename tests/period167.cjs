@@ -81,27 +81,47 @@ async function report(city, st, day, o = {}) {
 
   head('4. #169 The bar is in the shape the driver runs');
   // A flat over-the-road figure would punish a local runner for the work they chose. Short runs mean
-  // many deliveries and few miles; OTR the reverse. And switching mid-period has to move the bar.
-  const before169 = (await boot()).driver.probation;
-  await api('/career/trip-length', 'POST', { preference: 'short' });
-  const shortP = (await boot()).driver.probation;
-  ok('going local asks for more deliveries', shortP.requiredLoads > before169.requiredLoads,
-    `${before169.requiredLoads} -> ${shortP.requiredLoads} loads`);
-  ok('and fewer miles', shortP.requiredMiles < before169.requiredMiles,
-    `${before169.requiredMiles} -> ${shortP.requiredMiles} mi`);
+  // many deliveries and few miles; over-the-road the reverse.
+  //
+  // THE SHAPE IS THE CARRIER'S NOW, NOT A SETTING THE DRIVER MOVES. This section used to change the
+  // trip length mid-period and watch the bar follow, which is exactly the hole that closed: the
+  // targets come off the preference, so a driver near the end of an OTR period, long on loads and
+  // short on miles, could switch to short and clear both bars in the same instant. Retarget() wrote
+  // the easier numbers down and the app congratulated them. The period is only a test if the
+  // questions are fixed.
+  //
+  // So #169's point is checked the way it now happens: by comparing carriers. A regional outfit's
+  // period is served on medium and asks for a regional shape; an over-the-road carrier's is served on
+  // OTR and asks for an OTR one. The local runner is still not held to a coast-to-coast mileage.
+  const regional = (await boot()).driver.probation;
+  ok('a regional period is shaped for regional work',
+    regional.requiredLoads > 0 && regional.requiredMiles > 0,
+    `${regional.requiredLoads} loads, ${regional.requiredMiles} mi over ${regional.durationDays} days`);
 
-  // Medium rather than OTR. SFL is a regional carrier and the app now holds a driver to what their
-  // employer actually runs — a regional outfit has no over-the-road board to put anybody on, so asking
-  // for one is refused. The point here is that the bar moves with the SHAPE, and short to medium is a
-  // shape change like any other.
-  await api('/career/trip-length', 'POST', { preference: 'medium' });
-  const otrP = (await boot()).driver.probation;
-  ok('running longer asks for fewer deliveries', otrP.requiredLoads < shortP.requiredLoads,
-    `${shortP.requiredLoads} -> ${otrP.requiredLoads} loads`);
-  ok('and more miles', otrP.requiredMiles > shortP.requiredMiles,
-    `${shortP.requiredMiles} -> ${otrP.requiredMiles} mi`);
-  ok('the period itself does not move', otrP.durationDays === before169.durationDays,
-    `${otrP.durationDays} days`);
+  // Same driver, same application, an over-the-road employer. Prime is Large, so the period is served
+  // on OTR whatever was asked for.
+  await api('/onboarding/market', 'POST', app);
+  await api('/onboarding/hire', 'POST',
+    { application: app, force: true, gameTime: at(1), code: 'PRI' });
+  const otr = (await boot()).driver.probation;
+  ok('an over-the-road period asks for fewer deliveries',
+    otr.requiredLoads < regional.requiredLoads,
+    `${regional.requiredLoads} regional -> ${otr.requiredLoads} OTR`);
+  ok('and a great many more miles', otr.requiredMiles > regional.requiredMiles,
+    `${regional.requiredMiles} -> ${otr.requiredMiles} mi`);
+
+  // And the shape cannot be talked into moving from inside the period, which is the whole point.
+  let moved = '';
+  try { await api('/career/trip-length', 'POST', { preference: 'short' }); } catch (e) { moved = e.message; }
+  ok('and the driver cannot reshape it from inside the period', !!moved, moved.slice(0, 90) || 'ALLOWED');
+  const after = (await boot()).driver.probation;
+  ok('so the bar they were set is the bar they are held to',
+    after.requiredLoads === otr.requiredLoads && after.requiredMiles === otr.requiredMiles,
+    `${after.requiredLoads} loads, ${after.requiredMiles} mi`);
+
+  // Back onto the regional carrier this suite is otherwise about.
+  await api('/onboarding/market', 'POST', app);
+  await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: at(1) });
 
   // The discipline ladder applies to everyone; probation has its own harsher rule that ends a
   // career at three strikes and would pre-empt the ladder before it could escalate. Clear it so

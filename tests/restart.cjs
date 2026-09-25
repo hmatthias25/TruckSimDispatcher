@@ -156,6 +156,9 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
   head('10. It will NOT deadhead half a day home for home time that is a week away');
   // The silly case: home time comfortably far off, the yard a long empty run away. Sitting it where
   // they are and being routed home with freight later is the right answer.
+  // Fixture, not the thing under test: home time is fixed while a period runs, and this section is
+  // about how a restart is routed. Cleared first so the arrangement can be set at all.
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
   await api('/career/home-time', 'POST', { preference: 'monthly' });
   S = un(await api('/status', 'POST', {
     locationCity: 'Los Angeles', locationState: 'CA', locationKind: 'TruckStop', gameTime: at(50),

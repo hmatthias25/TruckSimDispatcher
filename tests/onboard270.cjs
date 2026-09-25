@@ -133,6 +133,11 @@ const market = async (a) => (await api('/onboarding/market', 'POST', a)).market
 
   head('6. And neither can be talked into from the career tab afterwards');
   // Otherwise the terms on the card are decoration: take the job, change the setting a minute later.
+  //
+  // Cleared first so it is the CARRIER's refusal being read. A probationary driver is refused both
+  // outright, whatever the carrier would sign, and that rule is probterms' subject — here it would
+  // just mask the one this section exists for.
+  await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
   let threw = '';
   try { await api('/career/home-time', 'POST', { preference: 'weekly' }); } catch (e) { threw = e.message; }
   console.log(`  ..    ${threw.slice(0, 110) || '(allowed)'}`);

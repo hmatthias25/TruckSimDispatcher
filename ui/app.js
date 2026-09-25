@@ -4029,9 +4029,17 @@ function domicilePrefsHtml() {
       with breaks, ten-hour resets and 34-hour restarts worked into the plan.</p>
     ${S.terms?.tripLengthNote ? `<div class="callout info" style="margin-bottom:8px">
       <p style="margin:0">${esc(S.terms.tripLengthNote)}</p></div>` : ''}
+    ${/* Shown as settled rather than as a control you press and get told off for. A disabled select
+          and a greyed button read as "not yours to change", which is the true thing; leaving them live
+          and answering with an error reads as the app being broken. */ ''}
+    ${S.views.probation?.on ? `<div class="callout info" style="margin-bottom:8px">
+      <p style="margin:0"><b>Fixed until your probation is served.</b> ${esc(S.company.name)} runs you
+        <b>${esc(S.application?.preferredTripLength || '—')}</b> and that was on their card before you
+        applied. It is also what your period is measured on — the loads and miles it asks for come off
+        this setting, so it cannot move while you are being assessed against it.</p></div>` : ''}
     ${(S.terms?.tripLengthsOffered || []).length > 1 ? `<div class="grid3">
       <label>Trip length
-        <select id="tl-pref">
+        <select id="tl-pref"${S.views.probation?.on ? ' disabled' : ''}>
           ${/* A radius from the yard, not a load length — see DispatchEngine.OperatingRadiusMiles. */ ''}
           ${[['short', 'Short — within about 150 mi of the yard'],
              ['medium', 'Medium — within about 300 mi of the yard'],
@@ -4040,9 +4048,11 @@ function domicilePrefsHtml() {
             .filter(([k]) => (S.terms.tripLengthsOffered || []).includes(k))
             .map(([k, label]) => `<option value="${k}" ${(S.application && S.application.preferredTripLength === k) ? 'selected' : ''}>${esc(label)}</option>`).join('')}
         </select></label>
-      <label style="align-self:end"><button class="btn primary wide" data-act="save-trip-length">Update</button></label>
-      <div><p class="hint" style="margin-top:22px">Within what they run. Takes effect on the next board
-        you pull.</p></div>
+      <label style="align-self:end"><button class="btn primary wide" data-act="save-trip-length"
+        ${S.views.probation?.on ? 'disabled' : ''}>Update</button></label>
+      <div><p class="hint" style="margin-top:22px">${S.views.probation?.on
+        ? 'Yours to set once the period is cleared.'
+        : 'Within what they run. Takes effect on the next board you pull.'}</p></div>
     </div>` : `<p style="margin:0 0 4px"><b>${esc(S.application?.preferredTripLength || '—')}</b>
       <span class="sub">— the only thing they put you on. It opens up as you put time in.</span></p>`}
 
@@ -4063,12 +4073,17 @@ function domicilePrefsHtml() {
         &mdash; it is a period you serve, not a leash, and running longer will not shorten it. Once the
         ${S.views.probation.durationDays ? `<b>${S.views.probation.durationDays} days</b>` : 'period'} are
         up, the next home time is where the review that clears you is taken.</p></div>`) : ''}
+    ${S.views.probation?.on ? `<div class="callout info" style="margin-bottom:8px">
+      <p style="margin:0"><b>Fixed until your probation is served.</b> This is the arrangement
+        ${esc(S.company.name)} signed you to, and it sets when the review that clears you can be
+        taken. Ask for a different one once you are off the period.</p></div>` : ''}
     <div class="grid3">
       <label>Arrangement
-        <select id="ht-pref">${(S.views.homeTimeOptions || []).map((o) =>
+        <select id="ht-pref"${S.views.probation?.on ? ' disabled' : ''}>${(S.views.homeTimeOptions || []).map((o) =>
           `<option value="${esc(o.key)}" ${(S.application && S.application.homeTimePreference === o.key) ? 'selected' : ''}
             >${esc(o.label)}</option>`).join('')}</select></label>
-      <label style="align-self:end"><button class="btn primary wide" data-act="save-home-time">Update arrangement</button></label>
+      <label style="align-self:end"><button class="btn primary wide" data-act="save-home-time"
+        ${S.views.probation?.on ? 'disabled' : ''}>Update arrangement</button></label>
       <div>${S.views.homeTime && S.views.homeTime.tracked
         ? `<p class="hint" style="margin-top:22px">${num(S.views.homeTime.daysOut, 1)} days out of
            ${S.views.homeTime.intervalDays}.</p>` : ''}</div>

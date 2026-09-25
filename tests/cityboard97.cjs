@@ -76,6 +76,11 @@ async function cityBoard(rows) {
   await api('/onboarding/market', 'POST', app);
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(1), code: 'PRI' }));
   await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });
+  // A probationary hire is put on the carrier's own work and STAYS there until they ask for something
+  // else — clearing the period hands the choice back, it does not guess. Prime is over-the-road, so
+  // this career comes off probation running OTR, and an OTR seat has no operating radius for a board
+  // to be scored against. Asked for explicitly, because every section below is about that radius.
+  await api('/career/trip-length', 'POST', { preference: 'medium' });
 
   head('1. Home time nowhere near: a dock board is committed to as before');
   await place('Oklahoma City', 'OK', 4);

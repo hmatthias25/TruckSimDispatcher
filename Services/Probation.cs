@@ -64,6 +64,35 @@ public static class Probation
     public static bool IsOn(AppState s) => s.Driver.Rank == "probationary";
 
     /// <summary>
+    /// Terms of the offer, which a probationary driver does not get to renegotiate.
+    ///
+    /// <para>Both were already gated to what the carrier will sign, and that was the wrong gate: the
+    /// question is not whether the employer WOULD agree to it, it is that a driver being assessed
+    /// cannot move the terms they are being assessed against. Home time and trip length were on the
+    /// card before the application went in. Taking the job is agreeing to them.</para>
+    ///
+    /// <para>TRIP LENGTH IS THE ONE THAT ACTUALLY MATTERS, because the probation targets are derived
+    /// from it — <see cref="ProbationPlanner.TargetsFor"/> reads the preference in force and asks for
+    /// four loads and 700 miles a week on "short" against one load and 1,400 on "otr". Over a 90-day
+    /// period that is ~51 loads and 9,000 miles one way, ~13 loads and 18,000 miles the other. A
+    /// driver near the end of an OTR probation, long on loads and short on miles, could switch to
+    /// short and clear both bars in the same instant. Retarget() then wrote the easier numbers down
+    /// and the app congratulated them. The period is only a test if the questions are fixed.</para>
+    ///
+    /// <para>Home time is the smaller half and locked for the same reason: it sets the review cadence,
+    /// so the arrangement decides when the period can be closed out at all.</para>
+    /// </summary>
+    public static void RefuseTermChange(AppState s, string what)
+    {
+        if (!IsOn(s)) return;
+        var company = string.IsNullOrWhiteSpace(s.Company?.Name) ? "They" : s.Company.Name;
+        throw new InvalidOperationException(
+            $"{company} set your {what} when they hired you, and it is fixed while you are on probation. " +
+            "It was on their card before you applied — taking the job was agreeing to it. " +
+            "Clear the period and it becomes yours to ask about.");
+    }
+
+    /// <summary>
     /// The home-time interval actually in force.
     ///
     /// <para><b>Your own arrangement stands while you are serving the period.</b> It used to be

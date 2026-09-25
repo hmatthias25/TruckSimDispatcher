@@ -438,7 +438,22 @@ app.MapPost("/api/onboarding/hire", (HireRequest req) => Results.Ok(store.Mutate
 
         var (lengthKeys, _, lengthDefault) = Carriers.TripLengthOffer(
             Carriers.SizeOf(req.Code), Carriers.CreditedExperienceFor(s));
-        if (string.IsNullOrWhiteSpace(a.PreferredTripLength)
+
+        // A PROBATIONARY DRIVER STARTS ON WHAT THE CARRIER RUNS, not on what they asked for.
+        //
+        // The preference was honoured wherever the carrier would sign it, which is right for somebody
+        // already cleared and wrong for somebody starting a period. An experienced driver joining a
+        // big over-the-road carrier has all four lengths open to them — they have the years their
+        // regional seats ask for — so they could serve their probation on "short" at a carrier whose
+        // work is OTR, and be measured on four loads and 700 miles a week while running freight that
+        // pays out at one and 1,400. The period is meant to show them doing the carrier's actual work.
+        //
+        // Regional and small carriers default to medium, over-the-road carriers to otr, so this lands
+        // where it should on both. Once the period is served it becomes theirs to change, within what
+        // the carrier offers — which is the point of clearing it.
+        if (Probation.IsOn(s))
+            a.PreferredTripLength = Carriers.ProbationTripLength(Carriers.SizeOf(req.Code));
+        else if (string.IsNullOrWhiteSpace(a.PreferredTripLength)
             || !lengthKeys.Contains(a.PreferredTripLength, StringComparer.OrdinalIgnoreCase))
             a.PreferredTripLength = lengthDefault;
 
@@ -2370,6 +2385,11 @@ app.MapPost("/api/career/trip-length", (TripLengthRequest req) => Results.Ok(sto
     if (pref is not ("short" or "medium" or "long" or "otr"))
         throw new InvalidOperationException("Trip length is short, medium, long or otr.");
 
+    // Before the carrier's own gate, because this one is not about what they would sign. A driver on
+    // probation is being measured against targets derived from this very setting, and changing it
+    // moved the targets — see Probation.RefuseTermChange for the arithmetic.
+    Probation.RefuseTermChange(s, "trip length");
+
     // Your employer decides what you run, the same as they did at hire — see the home-time endpoint for
     // why this is a refusal rather than a quiet substitution. A regional carrier has no long board to
     // put you on, and a big one holds its regional seats for drivers who have earned them, so this
@@ -2406,6 +2426,8 @@ app.MapPost("/api/career/home-time", (HomeTimeArrangementRequest req) => Results
     var days = HomeTime.DaysFor(req.Preference);
     if (days <= 0 && !string.Equals(req.Preference, "none", StringComparison.OrdinalIgnoreCase))
         throw new InvalidOperationException("That is not a home-time arrangement I recognise.");
+
+    Probation.RefuseTermChange(s, "home-time arrangement");
 
     // Your employer has to agree to it, the same as they did at hire.
     //

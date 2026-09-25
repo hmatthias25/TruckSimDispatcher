@@ -37,7 +37,27 @@ const iso = (d, hm = '08:00') => {
 };
 
 const views = async () => (await api('/bootstrap')).views;
-const setPref = (p) => api('/career/home-time', 'POST', { preference: p });
+/**
+ * Put an arrangement in place on a driver who is mid-probation.
+ *
+ * Home time is a term of the offer now and is fixed while a period is running — see probterms. That
+ * rule is not what this suite is about: the question here is whether a probationary driver's agreed
+ * arrangement is HONOURED, which it was not, and which has nothing to do with who may change it.
+ *
+ * So the lock is lifted and restored around the change rather than worked around by re-hiring, because
+ * a fresh career would discard the reviews and days-out that sections 3 to 5 are measuring.
+ */
+const setPref = async (p) => {
+  let st = await api('/export');
+  const rank = st.driver.rank, active = st.driver.probation.active;
+  st.driver.rank = 'company';
+  await api('/import', 'POST', st);
+  await api('/career/home-time', 'POST', { preference: p });
+  st = await api('/export');
+  st.driver.rank = rank;
+  st.driver.probation.active = active;
+  return api('/import', 'POST', st);
+};
 
 let S;
 

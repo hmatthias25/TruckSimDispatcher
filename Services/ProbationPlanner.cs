@@ -52,9 +52,13 @@ public static class ProbationPlanner
     /// <summary>
     /// Loads and miles this driver's period asks for, on the preference in force NOW.
     ///
-    /// Recomputed rather than frozen at hire, because a driver who switches from OTR to local halfway
-    /// through has changed what their work looks like, and holding them to the old shape would be the
-    /// app punishing them for a choice it invited them to make.
+    /// Recomputed rather than frozen at hire, because a driver who switches from OTR to local has
+    /// changed what their work looks like, and holding them to the old shape would be the app
+    /// punishing them for a choice it invited them to make.
+    ///
+    /// NOT "halfway through" any more. That was the hole: the preference is a term of the offer and is
+    /// fixed for the duration of a probation, so nothing can move these numbers while the period is
+    /// running. See <see cref="Probation.RefuseTermChange"/>.
     /// </summary>
     public static (int Loads, double Miles) TargetsFor(AppState s, int days)
     {
