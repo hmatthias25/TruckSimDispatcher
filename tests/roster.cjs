@@ -193,6 +193,44 @@ async function rosterOf(which) {
     Math.min(...spec) > Math.min(...rookie),
     `specialist low $${Math.min(...spec).toFixed(2)} vs rookie low $${Math.min(...rookie).toFixed(2)}`);
 
+  head('9. The top of the pay board cannot be reached without experience');
+  //   "so did we make the higher paid companies more tightly gated?"
+  //
+  // Mostly, and then one carrier did not. Moving the roster onto the 2026 band took Prime to $0.64
+  // while it still asked for nothing at all — no years, no loads — which made it STRICTLY BETTER than
+  // every other door open to a new driver. Roehl, J.B. Hunt, TMC and Schneider all ask exactly as
+  // little and pay less, so there was no reason to read past Prime's card: four choices deleted by one
+  // number. It now asks for a year, which is where its own fictional counterpart has always been.
+  //
+  // Checked as a THRESHOLD rather than as dominance. Pay is not the only axis — home time, equipment,
+  // trip lengths and region are all real counterweights, and a carrier paying a little more than
+  // another with a similar bar is an ordinary trade-off. What should never happen is the best money on
+  // the board being available for nothing.
+  for (const [label, roster] of [['real', real], ['fictional', fict]]) {
+    const rates = roster.map((c) => +c.postedLoadedCpm).sort((a, b) => b - a);
+    const topThird = rates[Math.ceil(rates.length / 3) - 1];
+    const open = roster.filter((c) => c.takesRookies);
+    const intruders = open.filter((c) => +c.postedLoadedCpm >= topThird);
+    ok(`${label}: nothing in the top third of pay takes a rookie`, intruders.length === 0,
+      intruders.map((c) => `${c.name} $${(+c.postedLoadedCpm).toFixed(2)}`).join(', ')
+      || `top third starts at $${topThird.toFixed(2)}, best rookie seat $${Math.max(...open.map((c) => +c.postedLoadedCpm)).toFixed(2)}`);
+  }
+
+  // Both rosters have to let a new driver in somewhere, or the choice of names decides whether a
+  // career can be started at all.
+  //
+  // NOT asserted as an equal count, which is what this check said first and which failed: ten against
+  // nine. The fictional roster is not a field-for-field mirror and was never built as one — Beacon
+  // Express exists as its deliberate no-standards door, taking anyone with a Class A, and the empty
+  // state on the market points at it by name. The ten fictional carriers that predate this change
+  // still carry their original rates, which sit outside the 2026 band the real roster was moved onto.
+  // Worth knowing, and not something to paper over with a weaker version of the same claim.
+  for (const [label, roster] of [['real', real], ['fictional', fict]]) {
+    const open = roster.filter((c) => c.takesRookies);
+    ok(`${label}: a new driver can get in somewhere`, open.length >= 3,
+      `${open.length} doors: ${open.map((c) => c.name).join(', ')}`);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); process.exit(1); });

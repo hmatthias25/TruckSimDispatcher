@@ -421,9 +421,20 @@ public static class Carriers
         new("Prime Inc.", "PRI",
             new[] { "Reefer", "Flatbed", "Tanker", "Dry Van" }, "Large",
             "Springfield", "MO", new[] { "Salt Lake City,UT", "Pittston,PA", "Denver,CO" },
-            0.64m, 0.51m, 0, 0, 88, 3, 9, NoHaz, true, false, 4, 3, 4,
-            "Springfield, Missouri carrier with large refrigerated, flatbed and tanker divisions and over $2.5 billion in revenue. Its size and constant demand make it a common first job for new CDL graduates.",
-            "Runs a well-known training programme for new drivers."),
+            // A YEAR, where this used to take anybody.
+            //
+            // Not a judgement about Prime, which really does run one of the biggest driver schools in
+            // the country. It is that the rate moved to $0.64 with the rest of the roster onto the
+            // 2026 band, and at $0.64 with no bar at all it strictly dominated every other door open
+            // to a new driver — Roehl, J.B. Hunt, TMC and Schneider all ask exactly as little and pay
+            // less, so there was no reason to read past this card. Four choices deleted by one number.
+            //
+            // A year puts it beside Covenant and Heartland on the bar and well above them on the
+            // money, which is what a good seat should look like: reachable, and worth reaching for.
+            // Their own fictional counterpart has read this way since the day it was written.
+            0.64m, 0.51m, 1, 0, 88, 3, 9, NoHaz, false, false, 4, 3, 4,
+            "Springfield, Missouri carrier with large refrigerated, flatbed and tanker divisions and over $2.5 billion in revenue. One of the best-paying seats a driver can reach inside their first couple of years.",
+            "One year. Their training programme is real and well known — this is the seat you take after it."),
 
         new("Marten Transport", "MRT",
             new[] { "Reefer", "Dedicated", "Intermodal" }, "Regional",
