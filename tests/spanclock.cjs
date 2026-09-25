@@ -56,7 +56,7 @@ function loadForm() {
   };
   const win = { addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) };
   return new Function('document', 'window', 'location', 'navigator', 'fetch',
-    src + '\nreturn { isSpanEvent, SPAN_EVENTS };')(doc, win, { hash: '' }, {}, () => new Promise(() => {}));
+    src + '\nreturn { isSpanEvent, SPAN_EVENTS, defaultSpanEnd, eventNote };')(doc, win, { hash: '' }, {}, () => new Promise(() => {}));
 }
 
 (async () => {
@@ -71,6 +71,49 @@ function loadForm() {
     ok(`${k} is not`, UI.isSpanEvent(k) === false);
   }
   ok('and there are exactly five of them', UI.SPAN_EVENTS.size === 5, [...UI.SPAN_EVENTS].join(', '));
+
+  head('1b. The break is the one stop that opens with its end already filled in');
+  //   "For break if an end date isn't put we should assume 30 mins which is standard (maybe prefill
+  //    the end date here to make it easier) this is the ONLY one we'd do that on"
+  //
+  // SpeedLearning has always assumed the thirty when nothing was said. Prefilling it puts the same
+  // figure on screen, where it can be typed over by a driver who sat longer — and, now that the clock
+  // follows the end of a span, actually moves the clock the thirty minutes as well.
+  ok('a break opens thirty minutes out',
+    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0.5) === '2000-01-04T21:30',
+    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0.5));
+  ok('and rolls into the next day when it has to',
+    UI.defaultSpanEnd('Break', '2000-01-04T23:50', 0.5) === '2000-01-05T00:20',
+    UI.defaultSpanEnd('Break', '2000-01-04T23:50', 0.5));
+  // The thirty is a setting. Reading it in one place and assuming it in another is how the app comes
+  // to disagree with itself.
+  ok('off the configured length rather than a hardcoded thirty',
+    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0.75) === '2000-01-04T21:45',
+    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0.75));
+  ok('and a break switched off is not assumed at all',
+    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0) === '2000-01-04T21:00');
+
+  for (const k of ['Rest', 'Restart', 'Delay', 'Breakdown']) {
+    // Everything else opens as a zero-length span, which is the app's way of saying nothing was
+    // stated. There is no standard length for any of them to fall back on.
+    ok(`${k} opens with nothing assumed`,
+      UI.defaultSpanEnd(k, '2000-01-04T21:00', 0.5) === '2000-01-04T21:00',
+      UI.defaultSpanEnd(k, '2000-01-04T21:00', 0.5));
+  }
+
+  head('1c. Every event says what it is for');
+  //   "When should a player use 'delay?' I've never used it. Should that be when waiting at the gate to
+  //    be unloaded or something?"
+  //
+  // No — that is measured already, from I have arrived to Begin unload, and logging it here as well
+  // would have it counted twice. The list offered no way to find that out, so it says so now.
+  for (const k of ['BeginLoad', 'EndLoad', 'BeginUnload', 'EndUnload', 'Fuel', 'Break', 'Rest',
+                   'Scale', 'Delay', 'Breakdown', 'Note']) {
+    ok(`${k} carries a note`, UI.eventNote(k).length > 20);
+  }
+  ok('and the delay note heads off the guess that was actually made',
+    /dock/i.test(UI.eventNote('Delay')) && /arrived/i.test(UI.eventNote('Delay')),
+    UI.eventNote('Delay').slice(0, 60) + '...');
 
   // ---------------------------------------------------------------- a career with a load on it
   const app = { driverName: 'W. Probe', preferredDivision: 'Dry Van', experienceYears: 4,
@@ -117,6 +160,13 @@ function loadForm() {
   });
   ok('the clock lands on the one time given', un(same).status.gameTime === at(5, '12:00'),
     un(same).status.gameTime);
+
+  // And the thirty the form now fills in for it goes through as a real span, clock and all.
+  const thirty = await log({
+    kind: 'Break', gameTime: at(5, '13:00'), endGameTime: at(5, '13:30'), detail: 'thirty',
+  });
+  ok('a prefilled thirty moves the clock thirty minutes',
+    un(thirty).status.gameTime === at(5, '13:30'), un(thirty).status.gameTime);
 
   head('5. An end time BEFORE the start is ignored rather than winding the clock back');
   // A mistyped AM/PM, or a day box left on yesterday. Running the career backwards is worse than

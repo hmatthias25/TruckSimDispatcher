@@ -281,6 +281,64 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
  */
 const SPAN_EVENTS = new Set(['Rest', 'Restart', 'Break', 'Delay', 'Breakdown']);
 const isSpanEvent = (kind) => SPAN_EVENTS.has(kind);
+
+/**
+ * What the end box opens holding.
+ *
+ * The same time as the start for everything but a break, which is a zero-length span and so reads as
+ * nothing stated — forget it and no stop is logged, rather than a silent one carrying the clock
+ * forward. THE BREAK IS THE EXCEPTION because it is the one stop with a standard length: the thirty is
+ * thirty, the planner has always assumed so when nothing was said, and making a driver type it every
+ * time to get what the app was going to assume anyway is work for nothing. Prefilled, so it is a
+ * figure on screen that can be changed rather than a rule applied out of sight — a break run long
+ * waiting on a gate is still typed over.
+ *
+ * Off the configured length, not a hardcoded thirty. It is a setting, and an app that reads it in one
+ * place and assumes it in another is an app that disagrees with itself.
+ */
+function defaultSpanEnd(kind, beganIso, breakLength) {
+  const t = Date.parse(isoUtc(beganIso));
+  if (kind !== 'Break' || !Number.isFinite(t) || !(breakLength > 0)) return beganIso;
+  return new Date(t + breakLength * 3600000).toISOString().slice(0, 16);
+}
+
+/**
+ * One line on what each event is for, under the picker.
+ *
+ * Reported from play: "When should a player use 'delay?' I've never used it. Should that be when
+ * waiting at the gate to be unloaded or something?" — which is exactly the wrong guess, and the list
+ * gave no way to find that out. Waiting to get onto a dock is already measured, from I have arrived to
+ * Begin unload; logging it again here would have it counted twice.
+ */
+function eventNote(kind) {
+  switch (kind) {
+    case 'BeginLoad': case 'BeginUnload':
+      return 'The clock going onto the dock. This and its End are the pair the app measures dock time from.';
+    case 'EndLoad': case 'EndUnload':
+      return 'The clock coming off the dock — how long they actually held you, and what this facility '
+           + 'gets remembered for.';
+    case 'Fuel':
+      return 'The fill goes onto the close-out as you make it. Gallons and price below.';
+    case 'Break':
+      return 'The required thirty. The end is filled in for you; change it if you sat longer.';
+    case 'Rest': case 'Restart':
+      return 'A reset in the bunk. The end time is the one thing the app cannot work out for itself — '
+           + 'a ten-hour reset and a night waiting for a shipper to open look identical from here.';
+    case 'Delay':
+      return 'Time the run lost that was not driving, a rest or a break, and NOT at a dock — traffic, a '
+           + 'closed road, weather, sitting for a scale or an escort. Waiting to be let onto the dock is '
+           + 'already measured from I have arrived, so it does not go here as well.';
+    case 'Breakdown':
+      return 'Sat with the truck down. Say when you rolled again — without it the planner reads the '
+           + 'whole wait as driving, and decides the map is slower than it is.';
+    case 'Scale':
+      return 'A weigh station. A moment, not a stop — log the detail if something came of it.';
+    case 'Note':
+      return 'Anything worth reading back later that is not one of the above.';
+    default:
+      return '';
+  }
+}
 function dowOf(v) {
   const d = dayOf(v);
   return Number.isFinite(d) ? DOW[((d % 7) + 7) % 7] : '';
@@ -1032,8 +1090,12 @@ function syncSpanEnd(openedNow) {
   if (!day || !tod) return;
 
   // Opening the panel is a fresh event: the boxes may still hold the last one's answer, and the flag
-  // that held the derivation off belonged to that one too.
-  if (openedNow) { tod.value = sv('ev-time-tod'); delete day.dataset.touched; }
+  // that held the derivation off belonged to that one too. The day is left to the derivation below,
+  // which gets it right for a break rolling past midnight without being told.
+  if (openedNow) {
+    tod.value = timeOf(defaultSpanEnd(kind.value, readDayTime('ev-time'), S?.settings?.hos?.breakLength));
+    delete day.dataset.touched;
+  }
   if (day.dataset.touched) return;
 
   const started = parseInt(sv('ev-time-day'), 10);
@@ -1044,9 +1106,12 @@ function syncSpanEnd(openedNow) {
 }
 
 document.addEventListener('change', (ev) => {
-  if (['ev-kind', 'ev-time-day', 'ev-time-tod', 'ev-end-tod'].includes(ev.target.id)) {
-    syncSpanEnd(ev.target.id === 'ev-kind');
+  if (!['ev-kind', 'ev-time-day', 'ev-time-tod', 'ev-end-tod'].includes(ev.target.id)) return;
+  if (ev.target.id === 'ev-kind') {
+    const note = document.getElementById('ev-kind-note');
+    if (note) note.textContent = eventNote(ev.target.value);
   }
+  syncSpanEnd(ev.target.id === 'ev-kind');
 });
 document.addEventListener('input', (ev) => {
   if (ev.target.id === 'ev-end-day') ev.target.dataset.touched = '1';
@@ -2135,6 +2200,9 @@ function viewActive() {
             ['Delay', 'Delay'], ['Breakdown', 'Breakdown'], ['Note', 'Note'],
           ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       </div>
+      ${/* Repainted by the change listener rather than through render(), which would rebuild the panel
+            and throw away the stamp and the detail with it. */ ''}
+      <p class="hint" id="ev-kind-note">${esc(eventNote(isDropHook(t) ? 'Fuel' : 'BeginLoad'))}</p>
       ${/* A stop is a SPAN, and the app only ever knew where it started. Reported from play: "you know
             when I start rest (I can log a rest time) but not when it ends. So if I rest more than 10 (ex
             waiting for a shipper to open) then you don't know this. Just assuming a rest is 10 hours is
@@ -2144,8 +2212,9 @@ function viewActive() {
       <div id="ev-endwrap" class="hidden">
         <div class="grid2">
           ${dayTimeInput('ev-end', S.status.gameTime, 'Rolled again at')}
-          <div><p class="hint" style="margin-top:22px">Leave it alone only if you would rather not say —
-            the stop is then thrown out rather than guessed at.</p></div>
+          <div><p class="hint" style="margin-top:22px">On a break this is already the standard thirty.
+            Anywhere else, leaving it alone means you would rather not say, and the stop is thrown out
+            rather than guessed at.</p></div>
         </div>
         <div class="callout info">
           <p style="margin:0"><b>Put the time you rolled again, and the app's clock moves there with
