@@ -63,8 +63,14 @@ async function ontoDropHook() {
  * catch, so no break was ever logged and the section that checks logged stops come off was asserting
  * on a run that had none.
  */
+/**
+ * @param dockHours hours spent on the receiver's property AFTER arriving, before the load is closed
+ *                  out. Sitting at a gate, waiting on a door, a long unload. None of it is driving and
+ *                  none of it should reach the divisor.
+ */
 async function run(miles, realMph,
-                   { logBreak = false, logRest = false, restHours = 10, restEnd = true } = {}) {
+                   { logBreak = false, logRest = false, restHours = 10, restEnd = true,
+                     dockHours = 0 } = {}) {
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
   await api('/board/clear', 'POST', {});
   const board = await api('/board/add', 'POST', {
@@ -109,18 +115,27 @@ async function run(miles, realMph,
   })();
 
   await api(`/trips/${trip.id}/arrived`, 'POST', { gameTime: at(arriveDay, arriveHm) }).catch(() => {});
+
+  // The close-out can be hours after the arrival, and on a real delivery usually is.
+  const closeAt = 6 + hours + Math.max(0, dockHours);
+  const doneDay = day + Math.floor(closeAt / 24);
+  const doneHm = (() => {
+    const x = closeAt % 24, h = Math.floor(x), m = Math.round((x - h) * 60);
+    return `${String(h).padStart(2, '0')}:${String(Math.min(59, m)).padStart(2, '0')}`;
+  })();
+
   odo += miles;
   const done = await api(`/trips/${trip.id}/complete`, 'POST', {
-    deliveredGameTime: at(arriveDay, arriveHm), actualMiles: miles, endOdometer: odo,
+    deliveredGameTime: at(doneDay, doneHm), actualMiles: miles, endOdometer: odo,
     actualRevenue: Math.round(miles * 2.6), fuelStops: [], tolls: 0, repairCost: 0, fines: 0,
     otherExpense: 0, truckDamageAfter: 3, trailerDamageAfter: 0, cargoDamagePct: 0,
     loadingHours: 0, unloadingHours: 0, detentionHours: 0, layoverDays: 0, breakdownDays: 0,
     extraStops: 0, tarpsUsed: 0, delayReason: '', damageCause: '', notes: '',
     locationCity: 'Salt Lake City', locationState: 'UT', locationKind: 'Receiver',
-    fuelPct: 60, gameTime: at(arriveDay, arriveHm),
+    fuelPct: 60, gameTime: at(doneDay, doneHm),
   });
   S = done.snapshot;
-  day = arriveDay + 1;
+  day = doneDay + 1;
   return done.audit;
 }
 
@@ -223,6 +238,29 @@ async function run(miles, realMph,
   console.log(`  ..    with a logged break: ${beforeBreak} → ${afterBreak}`);
   ok('a run with a logged break still lands on the same speed',
     Math.abs(afterBreak - beforeBreak) < 0.02, `${beforeBreak} → ${afterBreak}`);
+
+  head('6b. Time on the receiver’s property is not driving time');
+  //   "are we calculating the mph of delivery to end when the player enters the 'I have arrived' time?
+  //    We should otherwise we are adding in possible wait times due to a receiver not being able to
+  //    recieve us yet"
+  //
+  // It does — Measure() runs from the pull-out to trip.ArrivedGameTime and stops there. But every run
+  // in this suite closed out at the same moment it arrived, so nothing here had ever PROVED that the
+  // close-out time is not the far end. A gate queue, a wait for a door and a four-hour unload all land
+  // between the two, and if they reached the divisor the planner would conclude the roads were slow
+  // every time a receiver kept somebody waiting.
+  const clean = await run(700, 55);
+  const before6b = (await settings()).speedFactor;
+  // The same run at the same real speed, sat on their property for six hours before closing out.
+  const waited = await run(700, 55, { dockHours: 6 });
+  const after6b = (await settings()).speedFactor;
+  void clean; void waited;
+  ok('a six-hour wait at the receiver does not slow the learned speed',
+    Math.abs(after6b - before6b) < 0.015, `${before6b.toFixed(3)} -> ${after6b.toFixed(3)}`);
+  // And said the other way round, because a drifting factor is the symptom that would actually show:
+  // six hours on a 700-mile run is about a fifth of the elapsed time, so folding it in would be loud.
+  ok('which it very much would if the close-out were the far end',
+    after6b > 0.5, `factor still ${after6b.toFixed(3)}, not collapsed`);
 
   head('7. A run with no arrival stamp says why it taught nothing');
   // The far end of every measurement is the "I have arrived" stamp. Close out without pressing it and
