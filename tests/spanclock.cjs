@@ -72,34 +72,50 @@ function loadForm() {
   }
   ok('and there are exactly five of them', UI.SPAN_EVENTS.size === 5, [...UI.SPAN_EVENTS].join(', '));
 
-  head('1b. The break is the one stop that opens with its end already filled in');
+  head('1b. The stops with a standard length open with their end already filled in');
   //   "For break if an end date isn't put we should assume 30 mins which is standard (maybe prefill
-  //    the end date here to make it easier) this is the ONLY one we'd do that on"
+  //    the end date here to make it easier)"
+  //   "We should make rest do this as well but default the end time to 10 hours later"
   //
-  // SpeedLearning has always assumed the thirty when nothing was said. Prefilling it puts the same
-  // figure on screen, where it can be typed over by a driver who sat longer — and, now that the clock
-  // follows the end of a span, actually moves the clock the thirty minutes as well.
+  // SpeedLearning has always assumed exactly these two when nothing was said. Prefilling puts the same
+  // figures on screen, where they can be typed over by a driver who sat longer — and, now that the
+  // clock follows the end of a span, actually moves the clock with them.
+  const HOS = { breakLength: 0.5, offDutyReset: 10 };
   ok('a break opens thirty minutes out',
-    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0.5) === '2000-01-04T21:30',
-    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0.5));
+    UI.defaultSpanEnd('Break', '2000-01-04T21:00', HOS) === '2000-01-04T21:30',
+    UI.defaultSpanEnd('Break', '2000-01-04T21:00', HOS));
   ok('and rolls into the next day when it has to',
-    UI.defaultSpanEnd('Break', '2000-01-04T23:50', 0.5) === '2000-01-05T00:20',
-    UI.defaultSpanEnd('Break', '2000-01-04T23:50', 0.5));
-  // The thirty is a setting. Reading it in one place and assuming it in another is how the app comes
-  // to disagree with itself.
-  ok('off the configured length rather than a hardcoded thirty',
-    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0.75) === '2000-01-04T21:45',
-    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0.75));
-  ok('and a break switched off is not assumed at all',
-    UI.defaultSpanEnd('Break', '2000-01-04T21:00', 0) === '2000-01-04T21:00');
+    UI.defaultSpanEnd('Break', '2000-01-04T23:50', HOS) === '2000-01-05T00:20',
+    UI.defaultSpanEnd('Break', '2000-01-04T23:50', HOS));
 
-  for (const k of ['Rest', 'Restart', 'Delay', 'Breakdown']) {
-    // Everything else opens as a zero-length span, which is the app's way of saying nothing was
-    // stated. There is no standard length for any of them to fall back on.
+  ok('a rest opens ten hours out', UI.defaultSpanEnd('Rest', '2000-01-04T21:00', HOS) === '2000-01-05T07:00',
+    UI.defaultSpanEnd('Rest', '2000-01-04T21:00', HOS));
+  ok('and a restart does too', UI.defaultSpanEnd('Restart', '2000-01-04T21:00', HOS) === '2000-01-05T07:00',
+    UI.defaultSpanEnd('Restart', '2000-01-04T21:00', HOS));
+
+  // Both are settings. Reading a figure in one place and assuming it in another is how the app comes
+  // to disagree with itself.
+  ok('off the configured lengths rather than a hardcoded thirty and ten',
+    UI.defaultSpanEnd('Break', '2000-01-04T21:00', { breakLength: 0.75, offDutyReset: 11 }) === '2000-01-04T21:45'
+    && UI.defaultSpanEnd('Rest', '2000-01-04T21:00', { breakLength: 0.75, offDutyReset: 11 }) === '2000-01-05T08:00');
+  ok('and a break switched off is not assumed at all',
+    UI.defaultSpanEnd('Break', '2000-01-04T21:00', { breakLength: 0, offDutyReset: 10 }) === '2000-01-04T21:00');
+
+  for (const k of ['Delay', 'Breakdown']) {
+    // No standard length to fall back on, so these open as a zero-length span — the app's way of
+    // saying nothing was stated. Forgetting one logs no stop rather than a silent twenty-four-hour one.
     ok(`${k} opens with nothing assumed`,
-      UI.defaultSpanEnd(k, '2000-01-04T21:00', 0.5) === '2000-01-04T21:00',
-      UI.defaultSpanEnd(k, '2000-01-04T21:00', 0.5));
+      UI.defaultSpanEnd(k, '2000-01-04T21:00', HOS) === '2000-01-04T21:00',
+      UI.defaultSpanEnd(k, '2000-01-04T21:00', HOS));
   }
+
+  // And the whole point of the report: the figure follows the START, so correcting the time you
+  // actually pulled in carries the end with it rather than leaving the span silently wrong.
+  ok('moving the start moves a break with it',
+    UI.defaultSpanEnd('Break', '2000-01-04T14:05', HOS) === '2000-01-04T14:35',
+    UI.defaultSpanEnd('Break', '2000-01-04T14:05', HOS));
+  ok('and a rest', UI.defaultSpanEnd('Rest', '2000-01-04T14:05', HOS) === '2000-01-05T00:05',
+    UI.defaultSpanEnd('Rest', '2000-01-04T14:05', HOS));
 
   head('1c. Every event says what it is for');
   //   "When should a player use 'delay?' I've never used it. Should that be when waiting at the gate to

@@ -292,21 +292,27 @@ const isSpanEvent = (kind) => SPAN_EVENTS.has(kind);
 /**
  * What the end box opens holding.
  *
- * The same time as the start for everything but a break, which is a zero-length span and so reads as
- * nothing stated — forget it and no stop is logged, rather than a silent one carrying the clock
- * forward. THE BREAK IS THE EXCEPTION because it is the one stop with a standard length: the thirty is
- * thirty, the planner has always assumed so when nothing was said, and making a driver type it every
- * time to get what the app was going to assume anyway is work for nothing. Prefilled, so it is a
- * figure on screen that can be changed rather than a rule applied out of sight — a break run long
- * waiting on a gate is still typed over.
+ * The same time as the start for a stop with no standard length — a delay or a breakdown, where the
+ * zero-length span reads as nothing stated, and forgetting it logs no stop rather than a silent one
+ * carrying the clock forward.
  *
- * Off the configured length, not a hardcoded thirty. It is a setting, and an app that reads it in one
- * place and assumes it in another is an app that disagrees with itself.
+ * A BREAK AND A REST BOTH HAVE ONE, so both are filled in. The thirty is thirty and the reset is ten;
+ * the planner has always assumed exactly those when nothing was said, and making a driver type them
+ * every time to arrive at the figure the app was going to assume anyway is work for nothing.
+ * Prefilled rather than assumed out of sight, so it is a number on screen that can be typed over — a
+ * break run long waiting on a gate, or the sixteen-hour wait for a shipper to open that is the whole
+ * reason the end time exists.
+ *
+ * Off the configured lengths, never a hardcoded thirty or ten. Both are settings, and an app that
+ * reads a figure in one place and assumes it in another is an app that disagrees with itself.
  */
-function defaultSpanEnd(kind, beganIso, breakLength) {
+function defaultSpanEnd(kind, beganIso, hos) {
+  const hours = kind === 'Break' ? (hos?.breakLength || 0)
+    : (kind === 'Rest' || kind === 'Restart') ? (hos?.offDutyReset || 0)
+    : 0;
   const t = Date.parse(isoUtc(beganIso));
-  if (kind !== 'Break' || !Number.isFinite(t) || !(breakLength > 0)) return beganIso;
-  return new Date(t + breakLength * 3600000).toISOString().slice(0, 16);
+  if (!(hours > 0) || !Number.isFinite(t)) return beganIso;
+  return new Date(t + hours * 3600000).toISOString().slice(0, 16);
 }
 
 /**
@@ -1151,8 +1157,15 @@ document.addEventListener('change', (ev) => {
  * day. Recomputed whenever the start moves.
  *
  * An end time EQUAL to the start stays on the same day, which makes it a zero-length span — the app's
- * way of saying nothing was stated. That is what the field opens holding, so forgetting it logs no
- * span at all rather than a silent twenty-four-hour one that would carry the clock a day forward.
+ * way of saying nothing was stated. That is what the field opens holding for the stops with no
+ * standard length, so forgetting one logs no span at all rather than a silent twenty-four-hour one
+ * that would carry the clock a day forward.
+ *
+ * AND THE FILLED-IN END FOLLOWS THE START. Reported from play: "when player puts in start time and is
+ * done entering value the end value should automatically go to 30 mins ahead". It only did so when the
+ * event type was picked, so the ordinary order of work — choose Break, then correct the start time to
+ * when you actually pulled in — left the end sitting where it was and the span silently wrong. It is
+ * recomputed whenever the start moves, until the driver types an end of their own.
  *
  * Unless the driver sets the day themselves. A thirty-hour breakdown is two days on, nothing can infer
  * that from a clock face, and a box that snaps back while you are using it is its own bug. One edit of
@@ -1170,12 +1183,15 @@ function syncSpanEnd(openedNow) {
   const tod = document.getElementById('ev-end-tod');
   if (!day || !tod) return;
 
-  // Opening the panel is a fresh event: the boxes may still hold the last one's answer, and the flag
-  // that held the derivation off belonged to that one too. The day is left to the derivation below,
-  // which gets it right for a break rolling past midnight without being told.
-  if (openedNow) {
-    tod.value = timeOf(defaultSpanEnd(kind.value, readDayTime('ev-time'), S?.settings?.hos?.breakLength));
-    delete day.dataset.touched;
+  // Opening the panel is a fresh event: the boxes may still hold the last one's answer, and the flags
+  // that held the derivation off belonged to that one too.
+  if (openedNow) { delete day.dataset.touched; delete tod.dataset.touched; }
+
+  // The standard length, re-applied whenever the start moves. The day is left to the derivation below,
+  // which gets a break rolling past midnight right without being told — and a ten-hour reset started
+  // at 21:00 is on tomorrow either way.
+  if (!tod.dataset.touched) {
+    tod.value = timeOf(defaultSpanEnd(kind.value, readDayTime('ev-time'), S?.settings?.hos));
   }
   if (day.dataset.touched) return;
 
@@ -1195,7 +1211,9 @@ document.addEventListener('change', (ev) => {
   syncSpanEnd(ev.target.id === 'ev-kind');
 });
 document.addEventListener('input', (ev) => {
-  if (ev.target.id === 'ev-end-day') ev.target.dataset.touched = '1';
+  // Either half of the end, typed by hand, stops it being derived for the rest of this event. A box
+  // that snaps back while you are using it is its own bug.
+  if (ev.target.id === 'ev-end-day' || ev.target.id === 'ev-end-tod') ev.target.dataset.touched = '1';
 });
 
 // The weekday beside a day-number box, kept current while it is being typed rather than on submit —
@@ -2293,8 +2311,9 @@ function viewActive() {
       <div id="ev-endwrap" class="hidden">
         <div class="grid2">
           ${dayTimeInput('ev-end', S.status.gameTime, 'Rolled again at')}
-          <div><p class="hint" style="margin-top:22px">On a break this is already the standard thirty.
-            Anywhere else, leaving it alone means you would rather not say, and the stop is thrown out
+          <div><p class="hint" style="margin-top:22px">A break and a rest open at their standard
+            lengths and follow the start time; type over either if you sat longer. On a delay or a
+            breakdown, leaving it alone means you would rather not say, and the stop is thrown out
             rather than guessed at.</p></div>
         </div>
         <div class="callout info">

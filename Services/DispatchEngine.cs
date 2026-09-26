@@ -1327,6 +1327,10 @@ public static class DispatchEngine
             // How much that unload figure is worth. A seed table and ten measured deliveries are not the
             // same number and should not be trusted to the same margin.
             DockSamples = dock.Samples,
+            // An hour more buffer for a pickup somewhere inside a tier-one market, and only off the
+            // city board — at the dock the truck is already where the freight is. See PlanRequest.
+            WideMarketPickup = !load.AtLocation
+                && Markets.Find(s, load.OriginCity ?? "", load.OriginState ?? "")?.Tier == 1,
             NavEstimateHours = load.NavEstimateHours,
             ExtraStops = load.ExtraStops,
             DeadlineHours = load.DeadlineHours,

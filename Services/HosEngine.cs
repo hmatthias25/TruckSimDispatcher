@@ -35,6 +35,15 @@ public class HosTask
 
 public class PlanRequest
 {
+    /// <summary>
+    /// What a tier-one city pickup off the city board adds to the required buffer.
+    ///
+    /// One hour, which against the default two-hour margin is the three the report asked for. It is the
+    /// drive to a shipper that could be anywhere inside a very large market, and it is unestimatable
+    /// from here because a listing names a city and not a street.
+    /// </summary>
+    public const double WideMarketExtraBufferHours = 1.0;
+
     public double DeadheadMiles { get; set; }
 
     /// <summary>
@@ -58,6 +67,24 @@ public class PlanRequest
     /// silently more generous one.
     /// </summary>
     public string TrailerType { get; set; } = "";
+
+    /// <summary>
+    /// A pickup taken off the CITY board in a tier-one market, which buys an extra hour of buffer.
+    ///
+    /// <para>Reported from play: "Tier 1 cities you may have to drive more than 2 hours to get the load
+    /// as they cover a lot of area". Quite so — Los Angeles, Dallas and Chicago are one name covering a
+    /// great deal of ground, and the deadhead to a shipper somewhere inside one is both long and badly
+    /// estimated, because the app only knows the city.</para>
+    ///
+    /// <para>ONLY THE CITY BOARD. A load listed at the facility the truck is already standing at has no
+    /// such drive in front of it: "tier one slack at 2 hours is fine for the board at the receiver since
+    /// we are already there". And only tier one, because the problem is the size of the market rather
+    /// than the strength of it — the thinner tiers are single towns.</para>
+    ///
+    /// <para>Added to the configured buffer rather than replacing it, so a driver who has set their own
+    /// margin keeps it and gets the extra hour on top. Against the default two, it reads as three.</para>
+    /// </summary>
+    public bool WideMarketPickup { get; set; }
 
     /// <summary>ATS navigation drive-time estimate, when the driver reports it.</summary>
     public double? NavEstimateHours { get; set; }
@@ -885,7 +912,8 @@ public static class HosEngine
         var due = start.Value.AddHours(req.DeadlineHours);
         result.DueGameTime = Shown(due);
         var parking = Math.Max(0, s.ParkingBufferHours);
-        result.RequiredBufferHours = Math.Max(0, s.SafetyBufferHours);
+        result.RequiredBufferHours = Math.Max(0, s.SafetyBufferHours)
+                                     + (req.WideMarketPickup ? PlanRequest.WideMarketExtraBufferHours : 0);
         result.SlackHours = Math.Round((due - clock).TotalHours - parking, 2);
 
         // Said out loud, because the step list below and the arrival time above are now on two different
