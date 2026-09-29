@@ -65,6 +65,7 @@ PLAYER_TITLES = {
     "Running the load: the trip log and fuel stops",
     "Reporting after you load, and getting stuck at a dock",
     "Two kinds of receiver, and what each makes you wait for",
+    "At the shipper, before you load",
     "Saying you have arrived, and when they actually take it",
     "How the company is doing, and what it does about it",
     "Things that happen to your drivers",

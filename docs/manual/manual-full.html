@@ -2090,6 +2090,55 @@
   <div class="pfoot"><span>10 &middot; Running the load</span><span>23</span></div>
 </div>
 
+<!-- ============================================================ 10c2 - at the shipper -->
+<div class="page">
+  <div class="kicker">Section 10, continued</div>
+  <h2>At the shipper, before you load</h2>
+
+  <p class="lede">ATS loads you the moment you back up to the dock. Real freight is not always ready:
+    it is still being picked, the paperwork is not done, the mill is behind. This is where the shipper
+    gets to say so.</p>
+
+  <div class="rule">
+    <h4>The cycle</h4>
+    <p><b>1.</b> Pull onto the shipper's property. <b>2.</b> Press <b>I am at the shipper</b> on the
+      Active load with the game day and time you are looking at. <b>3.</b> It tells you when the freight
+      goes on, and why. <b>4.</b> Set the game clock to that time. <b>5.</b> Log <i>Begin load</i> &mdash;
+      or on drop and hook, hook the trailer.</p>
+    <p style="margin-top:6pt">There is <b>no appointment</b> at a pickup, and there is not meant to be. A
+      pickup has a range, not a slot: a warehouse dock ships around the clock, and a site, mill or yard
+      keeps its working day and is shut outside it.</p>
+  </div>
+
+  <h3>What you might be told</h3>
+  <table>
+    <tr><th style="width:1.4in">Answer</th><th>What it means</th></tr>
+    <tr><td><b>Ready</b></td><td>Straight onto a door. Log Begin load now.</td></tr>
+    <tr><td><b>You wait</b></td><td>A line at a site's gate, a dock running behind, or a shift short-staffed.</td></tr>
+    <tr><td><b>Not ready yet</b></td><td>The load is still being picked, is off the line late, is coming down to
+        temperature, or has no paperwork. Half an hour to three hours; about one pickup in five.</td></tr>
+    <tr><td><b>They are shut</b></td><td>A site outside its hours. You wait for opening, then for anyone ahead.</td></tr>
+  </table>
+
+  <div class="rule">
+    <h4>Loading where you just dropped: nothing to press</h4>
+    <p>Take the next load from the same company in the same city, or off ATS's <b>loads from this
+      location</b> list, and the truck never left their property. The arrival is set for you to the moment
+      your unload finished, and the shipper's answer comes up as soon as the load is authorized.</p>
+  </div>
+
+  <div class="rule">
+    <h4>The wait is detention, and it is not your fault</h4>
+    <p>Waiting on their property counts toward detention along with the loading &mdash; see <i>How
+      detention is worked out</i>. Hours parked at a site before it opens do not: nobody is holding you at
+      a shut gate. Dispatch does not plan a pickup wait, so it comes out of slack; a wait as long as the
+      slack the load was booked with makes a late delivery <b>unavoidable</b> on its own, with nothing to
+      type. Like the receiver's answer, it is rolled once, and asking twice is refused.</p>
+  </div>
+
+  <div class="pfoot"><span>10 &middot; Running the load</span><span>24</span></div>
+</div>
+
 <!-- ============================================================ 10d - arriving -->
 <div class="page">
   <div class="kicker">Section 10, continued</div>
@@ -2317,6 +2366,9 @@
       <b>an hour late</b> and it starts when you actually arrived, not at the appointment you missed. A
       job site's opening time is the same kind of floor as a booked slot &mdash; there is nobody there at
       04:00 to hold a door.</p>
+    <p style="margin-top:6pt"><b>At the shipper</b> there is no slot, so the clock starts when you press
+      <b>I am at the shipper</b> &mdash; or at a site's opening, if you got there first &mdash; and runs to
+      <i>End load</i>. Waiting gets the short queue allowance and the loading the full free time.</p>
   </div>
 
   <div class="rule">
@@ -2348,13 +2400,16 @@
   <p>So it measures instead. Every Begin/End pair you log trains the average <b>for that trailer
     type</b>, and the planner uses the figure for whatever is hooked.</p>
 
+  <p>It learns <b>the stay, not just the dock work</b>: a shipper's wait goes in. At the receiver only
+    holds the planner cannot foresee are added &mdash; it already waits for slots, openings and gate lines.</p>
+
   <p>The type it files a load under is <b>the trailer on the back of your truck</b>, not the one the job
     listing asked for. This app only runs cargo-market work &mdash; your own trailer, every time &mdash;
     so there is one trailer involved and it is yours. The listing's trailer type is a gate (can what I
     have haul this), never the thing being loaded. Filing loads the other way round grew learned figures
     for trailers a career had never pulled.</p>
 
-  <figure class="shot-sm" style="max-width:54%">
+  <figure class="shot-sm" style="max-width:48%">
     <img src="img/facility-times.png" alt="Dock time by trailer, in Settings">
     <figcaption>Four measured reefer loads have moved it off the 3.0-hour estimate to a real 3.5.</figcaption>
   </figure>
