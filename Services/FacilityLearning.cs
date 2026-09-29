@@ -12,6 +12,8 @@ namespace TruckSimDispatcher.Services;
 /// So the app measures instead of assuming. Every close-out that produced a real Begin/End pair feeds
 /// the average for that trailer type, and the planner uses the figure for whatever is hooked. Typed
 /// fallbacks are deliberately NOT learned from — a guess should not train the model.
+///
+/// The figure is the time the facility costs a load, waiting included — see <see cref="Measured"/>.
 /// </summary>
 public static class FacilityLearning
 {
@@ -150,19 +152,7 @@ public static class FacilityLearning
 
         foreach (var t in delivered)
         {
-            double? Span(string beginKind, string endKind)
-            {
-                var begin = t.Events.Where(e => e.Kind == beginKind)
-                    .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Min();
-                var end = t.Events.Where(e => e.Kind == endKind)
-                    .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Max();
-                if (begin == null || end == null) return null;
-                var hours = (end.Value - begin.Value).TotalHours;
-                return hours >= 0 ? hours : null;
-            }
-
-            var loaded = t.PreLoaded ? null : Span("BeginLoad", "EndLoad");
-            var unloaded = Span("BeginUnload", "EndUnload");
+            var (loaded, unloaded) = Measured(s, t);
             if (loaded == null && unloaded == null) continue;
 
             Record(s, t.TrailerType, loaded, unloaded);
@@ -173,6 +163,87 @@ public static class FacilityLearning
             .OrderBy(x => x.TrailerType)
             .ToList();
     }
+
+    /// <summary>
+    /// What one delivered trip says a shipper and a receiver take — the figures dispatch plans every load
+    /// on, so the whole stay on their property and not just the minutes somebody was on the trailer.
+    ///
+    /// <para>Reported from play: "add the DETENTION piece to both the loading and unloading time
+    /// calculations we do on every load ... this will help dispatch be more accurate." Learning only the
+    /// Begin/End span taught the planner that a shipper takes an hour and a half on the day it held the
+    /// truck three hours for freight that was not ready. The plan came in optimistic by exactly the time
+    /// detention was paying for.</para>
+    ///
+    /// <para>What goes in is what the planner has NO other term for. At the shipper that is every minute
+    /// of waiting after their clock started — nothing in the plan waits at a pickup. At the receiver the
+    /// plan already waits for a slot, for the window or a site to open, and for the line at a site's gate,
+    /// so those stay out; learning them as well would count them twice. What is left is the dock being
+    /// backed up, running behind its own slot, or a machine down — the holds nobody can plan for except
+    /// on average, which is exactly what this is.</para>
+    ///
+    /// <para>Still only off a logged Begin/End pair: the wait is added to a measured span, never
+    /// substituted for a missing one.</para>
+    /// </summary>
+    public static (double? Loading, double? Unloading) Measured(AppState s, Trip t)
+    {
+        var loaded = t.PreLoaded ? null : Span(t, "BeginLoad", "EndLoad");
+        var unloaded = Span(t, "BeginUnload", "EndUnload");
+        return (loaded is { } l ? l + ShipperWait(t) : null,
+                unloaded is { } u ? u + ReceiverHold(s, t) : null);
+    }
+
+    /// <summary>From the shipper's clock starting to the freight going on. Zero where nobody reported.</summary>
+    public static double ShipperWait(Trip t)
+    {
+        var clock = GameClock.TryParse(t.ShipperClockFromGameTime) ?? GameClock.TryParse(t.ShipperArrivedGameTime);
+        if (clock == null) return 0;
+        var began = First(t, "BeginLoad") ?? GameClock.TryParse(t.LoadStartsGameTime);
+        return began is { } b && b > clock.Value ? Math.Round((b - clock.Value).TotalHours, 2) : 0;
+    }
+
+    /// <summary>
+    /// The part of the receiver's wait the planner has no term for. Measured from the latest thing the
+    /// plan already waits for — the arrival, the slot or window, a site's opening — to when they took the
+    /// truck, less the line at a site's gate, which the plan queues for on its own.
+    /// </summary>
+    public static double ReceiverHold(AppState s, Trip t)
+    {
+        var arrived = GameClock.TryParse(t.ArrivedGameTime);
+        // What was logged beats what was quoted, the same as at the shipper: the log is when it happened.
+        var taken = First(t, "BeginUnload") ?? GameClock.TryParse(t.WorkStartsGameTime);
+        if (arrived == null || taken == null) return 0;
+
+        var floor = arrived.Value;
+        var due = GameClock.TryParse(t.AppointmentGameTime) ?? GameClock.TryParse(t.AppointmentOpensGameTime);
+        if (due is { } d && d > floor) floor = d;
+
+        var site = FacilityProfile.IsSiteTrip(t);
+        if (site && string.IsNullOrWhiteSpace(t.AppointmentOpensGameTime))
+        {
+            var hours = FacilityProfile.SeededHours(s, t.DestCity, t.DestState, t.Receiver);
+            var tod = floor.TimeOfDay.TotalHours;
+            if (tod < hours.OpenHour || tod >= hours.CloseHour)
+                floor = floor.AddHours((hours.OpenHour - tod + 24) % 24);
+        }
+
+        var line = site ? Math.Max(0, t.QueuePosition - 1) * ReceiverCall.HoursPerTruckAhead : 0;
+        var held = (taken.Value - floor).TotalHours - line;
+        return held > 0.01 ? Math.Round(held, 2) : 0;
+    }
+
+    private static double? Span(Trip t, string beginKind, string endKind)
+    {
+        var begin = First(t, beginKind);
+        var end = t.Events.Where(e => e.Kind == endKind)
+            .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Max();
+        if (begin == null || end == null) return null;
+        var hours = (end.Value - begin.Value).TotalHours;
+        return hours >= 0 ? hours : null;
+    }
+
+    private static DateTime? First(Trip t, string kind) =>
+        t.Events.Where(e => e.Kind == kind)
+            .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Min();
 
     /// <summary>
     /// Whether a measured dock time is believable, and what it looks like if it is not.

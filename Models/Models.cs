@@ -61,7 +61,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 31;
+    public const int Current = 32;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
 
@@ -1558,6 +1558,23 @@ public class Trip
     public string WorkStartsGameTime { get; set; } = "";
     public string ReceiverCallNote { get; set; } = "";
     public int QueuePosition { get; set; }
+
+    /// <summary>
+    /// The same moment at the other end: the driver said they were at the shipper, ready to load, and
+    /// the shipper said when the freight would actually go on. See <see cref="Services.ShipperCall"/>.
+    ///
+    /// No appointment, on purpose — a pickup has a range, not a slot. Rolled once and recorded, like the
+    /// receiver's. Blank on every load running before this existed, and the panel asks.
+    /// </summary>
+    public string ShipperArrivedGameTime { get; set; } = "";
+    public string ShipperCallKind { get; set; } = "";
+    /// <summary>When the shipper starts on you. What the driver sets the game clock to before Begin load.</summary>
+    public string LoadStartsGameTime { get; set; } = "";
+    /// <summary>When the shipper's detention clock starts: the arrival, or a site's opening if earlier.</summary>
+    public string ShipperClockFromGameTime { get; set; } = "";
+    public string ShipperCallNote { get; set; } = "";
+    /// <summary>Picked up where the last load was dropped, so the arrival was the end of that unload.</summary>
+    public bool ShipperArrivalAuto { get; set; }
 
     /// <summary>
     /// The booked slot, somewhere between the window opening and its close. What the plan targets and

@@ -624,9 +624,12 @@ public static class TripService
             && FacilityLearning.QuestionSpan(s, trip.TrailerType, facility.UnloadingHours, "unloading") is { } uq)
             audit.Warnings.Add(uq);
 
+        // What is learned is the stay, not the span: the wait the shipper or receiver held the truck for goes
+        // into the figure dispatch plans the next load on. The trip keeps the span — detention reads that.
+        var stay = FacilityLearning.Measured(s, trip);
         FacilityLearning.Record(s, trip.TrailerType,
-            facility.LoadDerived && !trip.PreLoaded ? facility.LoadingHours : null,
-            facility.UnloadDerived ? facility.UnloadingHours : null);
+            facility.LoadDerived && !trip.PreLoaded ? stay.Loading : null,
+            facility.UnloadDerived ? stay.Unloading : null);
 
         // And what the run said about how fast this player's roads actually are. Same bargain as the dock
         // times above: measured off clocks the driver read, folded in slowly, and thrown away where the
@@ -1292,6 +1295,12 @@ public static class TripService
         if (unloaded != null)
             f.Explain.Add($"Unloading {Hhmm.Of(unloaded.Value)} from the log ({Stamp(trip, "BeginUnload")} → {Stamp(trip, "EndUnload")}).");
 
+        // The shipper's side, measured the same way as the receiver's wherever the driver said they were
+        // there. Null on a trip that never did — then loading alone is what the shipper had, as before.
+        var atTheShipper = TimeAtShipper(trip, f.LoadingHours, out var shipperFrom, out var shipperWhy,
+                                         out var waitedAtShipper);
+        var shipperBillable = atTheShipper is { } sh ? Billable(sh, waitedAtShipper, free, queueFree) : 0;
+
         if (loaded == null && unloaded == null)
         {
             // Nothing logged — but the trip may still know when they arrived and when the receiver got
@@ -1299,13 +1308,33 @@ public static class TripService
             // to log, so before this a driver held two hours in a yard reported it by hand or not at all.
             var held = TimeOnTheirProperty(trip, f.UnloadingHours, out var heldFrom, out var heldWhy,
                                            out var heldWait);
-            if (held is { } onIt && Billable(onIt, heldWait, free, queueFree) > 0.01)
+            var heldBillable = held is { } h ? Billable(h, heldWait, free, queueFree) : 0;
+            if (heldBillable > 0.01 || shipperBillable > 0.01)
             {
-                f.DetentionHours = Math.Round(Billable(onIt, heldWait, free, queueFree), 2);
+                f.DetentionHours = Math.Round(shipperBillable + heldBillable, 2);
+                if (shipperBillable <= 0.01)
+                {
+                    // Receiver only — said exactly as it always was.
+                    if (heldWhy != null) f.Explain.Add(heldWhy);
+                    f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)} — on their clock from " +
+                                  $"{GameClock.Pretty(heldFrom!.Value)}. {Windows(held!.Value, heldWait, free, queueFree)} " +
+                                  "Nothing logged, so this is off the arrival and what they told you.");
+                    if (typedDetention > 0 && Math.Abs(typedDetention - f.DetentionHours) > 0.25)
+                        f.Explain.Add($"You reported {Hhmm.Of(typedDetention)}; their own clock works out to " +
+                                      $"{Hhmm.Of(f.DetentionHours)}. I am paying the clock.");
+                    return f;
+                }
+                if (shipperWhy != null) f.Explain.Add(shipperWhy);
+                if (shipperBillable > 0.01)
+                    f.Explain.Add($"{Hhmm.Of(shipperBillable)} at the shipper, on their clock from " +
+                                  $"{GameClock.Pretty(shipperFrom!.Value)}. " +
+                                  Windows(atTheShipper!.Value, waitedAtShipper, free, queueFree));
                 if (heldWhy != null) f.Explain.Add(heldWhy);
-                f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)} — on their clock from " +
-                              $"{GameClock.Pretty(heldFrom!.Value)}. {Windows(onIt, heldWait, free, queueFree)} " +
-                              "Nothing logged, so this is off the arrival and what they told you.");
+                if (heldBillable > 0.01)
+                    f.Explain.Add($"{Hhmm.Of(heldBillable)} at the receiver, on their clock from " +
+                                  $"{GameClock.Pretty(heldFrom!.Value)}. {Windows(held!.Value, heldWait, free, queueFree)}");
+                f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)}. " +
+                              "Nothing logged, so this is off the arrivals and what they told you.");
                 if (typedDetention > 0 && Math.Abs(typedDetention - f.DetentionHours) > 0.25)
                     f.Explain.Add($"You reported {Hhmm.Of(typedDetention)}; their own clock works out to " +
                                   $"{Hhmm.Of(f.DetentionHours)}. I am paying the clock.");
@@ -1323,7 +1352,7 @@ public static class TripService
             return f;
         }
 
-        var atShipper = Math.Max(0, f.LoadingHours - free);
+        var atShipper = atTheShipper != null ? shipperBillable : Math.Max(0, f.LoadingHours - free);
 
         // The receiver's clock starts when they were due to have you, not when they got round to it.
         // Time sat in their yard waiting for a door is the whole reason detention exists — the unload
@@ -1335,12 +1364,16 @@ public static class TripService
         var atReceiver = Billable(onProperty, waitedAtReceiver, free, queueFree);
         f.DetentionHours = Math.Round(atShipper + atReceiver, 2);
 
+        if (shipperWhy != null) f.Explain.Add(shipperWhy);
         if (why != null) f.Explain.Add(why);
 
         if (f.DetentionHours > 0)
         {
             var parts = new List<string>();
-            if (atShipper > 0) parts.Add($"{Hhmm.Of(atShipper)} at the shipper");
+            if (atShipper > 0)
+                parts.Add(shipperFrom == null
+                    ? $"{Hhmm.Of(atShipper)} at the shipper"
+                    : $"{Hhmm.Of(atShipper)} at the shipper, on their clock from {GameClock.Pretty(shipperFrom.Value)}");
             if (atReceiver > 0)
                 parts.Add(from == null
                     ? $"{Hhmm.Of(atReceiver)} at the receiver"
@@ -1458,6 +1491,50 @@ public static class TripService
                 : $"On their property {Hhmm.Of(hours)} — arrived {GameClock.Pretty(start)}, away " +
                   $"{GameClock.Pretty(finish)}. {Hhmm.Of(waited)} of that was waiting rather than working.";
 
+        return hours;
+    }
+
+    /// <summary>
+    /// How long the truck was on the shipper's property, on the shipper's clock — the pickup's
+    /// <see cref="TimeOnTheirProperty"/>.
+    ///
+    /// <para>No appointment to floor it at, because a pickup has none. The clock runs from the arrival,
+    /// or from a site's opening where the truck got there before it: nobody owes for a gate that was
+    /// shut. It ends at <c>EndLoad</c>, or failing that the loading time laid onto when loading began.</para>
+    ///
+    /// <para>Null where the driver never said they were at the shipper, which leaves loading alone as
+    /// the shipper's time — exactly what every trip before this was measured on.</para>
+    /// </summary>
+    private static double? TimeAtShipper(Trip trip, double loadingHours,
+        out DateTime? from, out string? explain, out double waitedHours)
+    {
+        from = null;
+        explain = null;
+        waitedHours = 0;
+
+        var arrived = GameClock.TryParse(trip.ShipperArrivedGameTime);
+        if (arrived == null) return null;
+        var clock = GameClock.TryParse(trip.ShipperClockFromGameTime) ?? arrived.Value;
+
+        var began = trip.Events.Where(e => e.Kind == "BeginLoad")
+            .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Min();
+        var ended = trip.Events.Where(e => e.Kind == "EndLoad")
+            .Select(e => GameClock.TryParse(e.GameTime)).Where(d => d != null).Max();
+        var told = GameClock.TryParse(trip.LoadStartsGameTime);
+
+        // A Begin load earlier than the clock is proof the clock started earlier.
+        if (began != null && began < clock) clock = began.Value;
+        var loadingFrom = began ?? told ?? clock;
+        if (loadingFrom < clock) loadingFrom = clock;
+        var finish = ended ?? loadingFrom.AddHours(Math.Max(0, loadingHours));
+        if (finish <= clock) return null;
+
+        from = clock;
+        var hours = (finish - clock).TotalHours;
+        waitedHours = Math.Clamp((loadingFrom - clock).TotalHours, 0, hours);
+        if (waitedHours > 0.01)
+            explain = $"At the shipper {Hhmm.Of(hours)} — their clock from {GameClock.Pretty(clock)}, loaded and " +
+                      $"away {GameClock.Pretty(finish)}. {Hhmm.Of(waitedHours)} of that was waiting for the freight.";
         return hours;
     }
 
@@ -1785,6 +1862,17 @@ public static class TripService
         {
             return ("Dispatcher", "Dispatcher fault. This load was committed without a recorded feasibility check, which is a violation of our own dispatch policy.");
         }
+
+        // The shipper ate the slack. The plan has no pickup wait in it — that is what slack is for — so a
+        // wait at the shipper as long as the slack the load was booked with is, on its own, the lateness.
+        // The app told them to wait, so they should not have to know to type "shipper" to be believed.
+        if (GameClock.TryParse(trip.ShipperClockFromGameTime) is { } heldFrom
+            && GameClock.TryParse(trip.LoadStartsGameTime) is { } loadFrom
+            && (loadFrom - heldFrom).TotalHours is var held && held > 0.01
+            && held >= f.SlackHours)
+            return ("Unavoidable",
+                $"Facility delay at the shipper. They held you {Hhmm.Of(held)} before loading, against " +
+                $"{Hhmm.Of(f.SlackHours)} of slack — that wait is the lateness. Detention applies; no fault to the driver.");
 
         // The window closing while they were still at the dock. Judged from the clocks they reported
         // rather than from whether they thought to write "detention" in the notes — a driver stuck on a

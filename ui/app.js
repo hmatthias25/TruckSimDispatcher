@@ -2177,6 +2177,41 @@ function resetOptionsHtml() {
 }
 
 /* ============================================================ ACTIVE LOAD */
+/**
+ * What a facility said when the truck pulled in — receiver or shipper — put in front of the driver.
+ * Not a toast that scrolls away: this is an instruction to go and carry out in the game before they touch
+ * anything else.
+ */
+function callModal(call) {
+  const waits = call.workStartsGameTime && call.workStartsGameTime !== call.arrivedGameTime;
+  return modal(`<div class="panel-head"><h2>${esc(call.headline)}</h2>
+    <div class="spacer"></div>
+    <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
+    <div class="callout ${call.kind === 'TakenEarly' || call.kind === 'StraightIn' ? 'go' : 'warn'}">
+      <p style="margin:0">${esc(call.instruction)}</p></div>
+    ${waits ? `
+      <div class="kv"><span>set the clock to
+        ${/* gt(), not the raw stamp. The epoch behind these times is arbitrary and exists only to be
+              subtracted from — ATS shows its own calendar and the two cannot be reconciled. Printing
+              it put "2000-01-02 18:00" in front of a driver, which is a date from nowhere. */ ''}
+        <b>${esc(gt(call.workStartsGameTime))}</b></span>
+        <span>waiting <b>${hhmm(call.waitHours)}</b></span>
+        ${call.position ? `<span>place in line <b>#${call.position}</b></span>` : ''}</div>` : ''}`);
+}
+
+/** The shipper's answer as a call, read back off the trip — for the pickup nobody had to report. */
+function shipperCallOf(t) {
+  const waits = t.loadStartsGameTime && t.loadStartsGameTime !== t.shipperArrivedGameTime;
+  return {
+    kind: t.shipperCallKind, arrivedGameTime: t.shipperArrivedGameTime,
+    workStartsGameTime: t.loadStartsGameTime, instruction: t.shipperCallNote,
+    waitHours: waits ? gapHours(t.shipperArrivedGameTime, t.loadStartsGameTime) : 0, position: 0,
+    headline: waits
+      ? `At the shipper — ${isDropHook(t) ? 'hook' : 'load'} at ${gt(t.loadStartsGameTime)}`
+      : `At the shipper — ${isDropHook(t) ? 'the trailer is ready' : 'the load is ready'}`,
+  };
+}
+
 function viewActive() {
   const t = S.views.activeTrip;
   if (!t) return `<div class="panel"><div class="empty">No open load. Head to the Dispatch tab, enter the board
@@ -2244,6 +2279,13 @@ function viewActive() {
              <div class="sub">${esc(pk.detail)}</div></dd>` : ''}
       ${sh ? `<dt>Their hours</dt><dd>${badge('info', sh.headline)}
              <div class="sub">${esc(sh.detail)}</div></dd>` : ''}
+      ${t.shipperArrivedGameTime ? `<dt>At the shipper</dt><dd>${badge(
+          t.loadStartsGameTime && t.loadStartsGameTime !== t.shipperArrivedGameTime ? 'warn' : 'ok',
+          t.loadStartsGameTime && t.loadStartsGameTime !== t.shipperArrivedGameTime
+            ? `${isDropHook(t) ? 'hook' : 'load'} at ${gt(t.loadStartsGameTime)}`
+            : 'ready')}
+             ${t.shipperArrivalAuto ? badge('mute', 'from your drop') : ''}
+             <div class="sub">${esc(t.shipperCallNote)}</div></dd>` : ''}
       ${t.arrivedGameTime ? `<dt>At the receiver</dt><dd>${badge(
           t.receiverCallKind === 'TakenEarly' ? 'ok' : t.receiverCallKind === 'StraightIn' ? 'ok' : 'warn',
           t.workStartsGameTime && t.workStartsGameTime !== t.arrivedGameTime
@@ -2382,6 +2424,23 @@ function viewActive() {
    </div>
 
    <div style="display:flex;flex-direction:column;gap:15px">
+    ${t.kind === 'Freight' && !t.shipperArrivedGameTime && !t.loadedReported
+        && !(t.events || []).some((e) => e.kind === 'BeginLoad' || e.kind === 'EndLoad') ? `<div class="panel">
+      <div class="panel-head"><h2>At the shipper?</h2>
+        <span class="sub">Say when you got there and I will tell you when the freight is ready.</span></div>
+      ${/* No appointment at a pickup, and none wanted — a range, not a slot. So the only thing to report is
+            being there. A pickup where the last load was dropped never shows this: the arrival is taken
+            off the end of that unload. */ ''}
+      <div class="grid2">
+        ${dayTimeInput('shp-time', S.status.gameTime, 'Game time you pulled in')}
+        <div class="row-actions" style="align-items:end">
+          <button class="btn" data-act="at-shipper" data-id="${esc(t.id)}">I am at the shipper</button>
+        </div>
+      </div>
+      <p class="hint">Do this before you ${isDropHook(t) ? 'hook the trailer' : 'load'} in game. If it is not
+        ready I will give you a time to set the clock to and the reason. Waiting on their property counts
+        toward detention along with the ${isDropHook(t) ? 'hook' : 'loading'}.</p>
+    </div>` : ''}
     ${!t.arrivedGameTime ? `<div class="panel">
       <div class="panel-head"><h2>At the receiver?</h2>
         <span class="sub">Say when you got there and I will tell you when they will actually take it.</span></div>
@@ -3540,6 +3599,10 @@ function tripDetailModal(id) {
             showed a delivery time and a detention figure and nothing connecting them — and on a drop and
             hook there are no Begin/End events in the log either, so there was no way to see where the
             detention came from. Reported as "where do you get my ACTUAL unload time?". */ ''}
+      ${t.shipperArrivedGameTime && t.loadStartsGameTime && t.loadStartsGameTime > t.shipperArrivedGameTime
+        ? row('At the shipper', 'arrived ' + gt(t.shipperArrivedGameTime) + ' · ready '
+            + gt(t.loadStartsGameTime) + ' · ' + hhmm(gapHours(t.shipperArrivedGameTime, t.loadStartsGameTime)) + ' waiting')
+        : t.shipperArrivedGameTime ? row('At the shipper', 'arrived ' + gt(t.shipperArrivedGameTime) + ' · ready') : ''}
       ${t.arrivedGameTime && t.workStartsGameTime && t.workStartsGameTime > t.arrivedGameTime
         ? row('At the receiver', 'arrived ' + gt(t.arrivedGameTime) + ' · they took you '
             + gt(t.workStartsGameTime) + ' · ' + hhmm(gapHours(t.arrivedGameTime, t.workStartsGameTime)) + ' waiting')
@@ -7257,21 +7320,14 @@ async function handleAction(act, d, ev) {
     case 'arrived': return run(async () => {
       const r = await api(`/trips/${d.id}/arrived`, 'POST', { gameTime: readDayTime('arr-time') });
       absorb(r);
-      // In front of them, not as a toast that scrolls away — this is an instruction to go and carry out
-      // in the game before they touch anything else.
-      queueModals([() => modal(`<div class="panel-head"><h2>${esc(r.call.headline)}</h2>
-        <div class="spacer"></div>
-        <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
-        <div class="callout ${r.call.kind === 'TakenEarly' || r.call.kind === 'StraightIn' ? 'go' : 'warn'}">
-          <p style="margin:0">${esc(r.call.instruction)}</p></div>
-        ${r.call.workStartsGameTime && r.call.workStartsGameTime !== r.call.arrivedGameTime ? `
-          <div class="kv"><span>set the clock to
-            ${/* gt(), not the raw stamp. The epoch behind these times is arbitrary and exists only to be
-                  subtracted from — ATS shows its own calendar and the two cannot be reconciled. Printing
-                  it put "2000-01-02 18:00" in front of a driver, which is a date from nowhere. */ ''}
-            <b>${esc(gt(r.call.workStartsGameTime))}</b></span>
-            <span>waiting <b>${hhmm(r.call.waitHours)}</b></span>
-            ${r.call.position ? `<span>place in line <b>#${r.call.position}</b></span>` : ''}</div>` : ''}`)]);
+      queueModals([() => callModal(r.call)]);
+    });
+
+    // The pickup's version. Same answer, same way of saying it — the shipper is the other end of it.
+    case 'at-shipper': return run(async () => {
+      const r = await api(`/trips/${d.id}/at-shipper`, 'POST', { gameTime: readDayTime('shp-time') });
+      absorb(r);
+      queueModals([() => callModal(r.call)]);
     });
 
     case 'report-trailer': return run(async () => {
@@ -7507,6 +7563,9 @@ async function handleAction(act, d, ev) {
         { loadId: d.id, rationale: null, overrideTight: d.force === '1' }));
       DECISION = null; TAB = 'active';
       toast(`${r.trip.number} authorized.`, 'ok');
+      // Picked up where the last one came off, so the shipper has already answered. Said now, because
+      // it decides what the clock gets set to before anything is loaded.
+      if (r.trip.shipperArrivalAuto) queueModals([() => callModal(shipperCallOf(r.trip))]);
     });
 
     case 'request-alt': {

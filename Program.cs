@@ -1799,6 +1799,31 @@ app.MapPost("/api/trips/{id}/arrived", (string id, ArrivedRequest req) => Result
     };
 })));
 
+/// The driver is at the shipper, ready to load. The pickup's version of the arrival above, and held to the
+/// same rules: an action rather than a reading, rolled once, and not rolled again once it is recorded —
+/// the freight being ready is not something a refresh gets to change.
+app.MapPost("/api/trips/{id}/at-shipper", (string id, ArrivedRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var trip = s.Trips.FirstOrDefault(t => t.Id == id)
+               ?? throw new InvalidOperationException("Trip not found.");
+    if (trip.Status is "Delivered" or "Cancelled") throw new InvalidOperationException($"{trip.Number} is already closed out.");
+    if (trip.Kind != "Freight") throw new InvalidOperationException($"{trip.Number} has nothing to pick up.");
+    if (!string.IsNullOrWhiteSpace(trip.ShipperArrivedGameTime))
+        throw new InvalidOperationException(
+            $"{trip.Number}: already at the shipper from {GameClock.Pretty(trip.ShipperArrivedGameTime)}.");
+
+    var at = GameClock.TryParse(string.IsNullOrWhiteSpace(req.GameTime) ? s.Status.GameTime : req.GameTime)
+             ?? throw new InvalidOperationException("I need the game date and time you are looking at.");
+
+    var call = ShipperCall.Assess(s, trip, at)!;
+    ShipperCall.Record(trip, call);
+
+    store.Log(s, "dispatch",
+        $"{trip.Number}: at the shipper {GameClock.Pretty(trip.ShipperArrivedGameTime)} — {call.Headline}.", trip.Number);
+
+    return new { call, snapshot = Snapshot(s) };
+})));
+
 app.MapPost("/api/pay/acknowledge", (AcknowledgePayRequest? req) => Results.Ok(store.Mutate<object>(s =>
 {
     var marked = PayEngine.MarkAnnounced(s, req?.Numbers);

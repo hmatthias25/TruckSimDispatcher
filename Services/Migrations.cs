@@ -83,6 +83,20 @@ public static class Migrations
         // one would read as already applied and skip itself.
         PutTheFirstDayBackOnDayOne(s);
         ReReadWindowsThatNamedTheirDay(s);
+        LearnDockTimesWithTheWaitIn(s);
+    }
+
+    /// <summary>
+    /// Works the dock averages out again now that they include the holds on the property — see
+    /// <see cref="FacilityLearning.Measured"/>. Every receiver wait the career has already sat through is
+    /// still on its trips, so the planner can have it now rather than one load at a time from here.
+    /// Shipper waits start with the next pickup: nothing before this build asked when the truck got there.
+    /// </summary>
+    private static void LearnDockTimesWithTheWaitIn(AppState s)
+    {
+        if (s.SchemaVersion >= 32) return;
+        s.SchemaVersion = 32;
+        FacilityLearning.Rebuild(s);
     }
 
     /// <summary>

@@ -2463,6 +2463,17 @@ public static class DispatchEngine
                     "plan on a rest before they take it — do not burn the day waiting at the gate.";
         }
 
+        // Loading where the last load came off. The truck never left their property, so there is nothing
+        // to report — the arrival is when that unload finished, and the shipper answers now.
+        if (ShipperCall.AutoArrive(s, trip, load.AtLocation) is { } pickup)
+            trip.Events.Add(new TripEvent
+            {
+                GameTime = s.Status.GameTime,
+                Kind = "Note",
+                Detail = $"At the shipper from {GameClock.Pretty(pickup.ArrivedGameTime)} — picked up where the " +
+                         $"last load was dropped. {pickup.Headline}."
+            });
+
         s.Trips.Insert(0, trip);
         s.Status.ActiveTripId = trip.Id;
         s.Board.Clear();
