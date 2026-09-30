@@ -4770,13 +4770,13 @@ function fleetOpsHtml() {
             return `<tr>
             <td>${esc(d.name)}${d.onProbation ? ' ' + badge('warn', 'probation') : ''}</td>
             <td class="mono">${esc(d.assignedTruckUnit)}</td>
-            <td><input id="fr-lvl-${esc(d.id)}" type="number" step="1" min="0" style="width:64px"
+            <td class="num"><input id="fr-lvl-${esc(d.id)}" type="number" step="1" min="0" style="width:64px"
                   value="${d.level || ''}" placeholder="—"></td>
-            <td><input id="fr-permi-${esc(d.id)}" type="number" step="0.01" min="0" style="width:78px" placeholder="—"></td>
-            <td><input id="fr-perday-${esc(d.id)}" type="number" step="1" min="0" style="width:82px" placeholder="—"></td>
-            <td><input id="fr-tstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
+            <td class="num"><input id="fr-permi-${esc(d.id)}" type="number" step="0.01" min="0" style="width:78px" placeholder="—"></td>
+            <td class="num"><input id="fr-perday-${esc(d.id)}" type="number" step="1" min="0" style="width:82px" placeholder="—"></td>
+            <td class="num"><input id="fr-tstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
                   value="${tk?.stars || ''}" placeholder="—"></td>
-            <td><input id="fr-odo-${esc(d.id)}" type="number" step="1" min="0" style="width:96px"
+            <td class="num"><input id="fr-odo-${esc(d.id)}" type="number" step="1" min="0" style="width:96px"
                   value="${tk ? Math.round(tk.atsOdometer) : ''}" placeholder="—"></td>
           </tr>`; }).join('')}</tbody></table></div>
         ${playerLineHtml()}
