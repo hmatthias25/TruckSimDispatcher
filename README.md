@@ -1,8 +1,14 @@
 # TruckSim Dispatcher
 
-A dispatch office for American Truck Simulator. You are a company driver; the app is the carrier —
-operations, safety, maintenance and accounting. It decides what you haul, checks it against your
-hours before you hook, audits every trip, and pays you.
+A dispatch office for American Truck Simulator and Euro Truck Simulator 2. You are a company driver;
+the app is the carrier — operations, safety, maintenance and accounting. It decides what you haul,
+checks it against your hours before you hook, audits every trip, and pays you.
+
+The game is chosen per career, on the application. An ETS2 career runs on European carriers and
+countries (ProMods' included), kilometres and euros, ADR, EU Regulation 561/2006 and the Mobility
+Package, cabotage limits, ferries and the Channel Tunnel on real sailing times, and a monthly salary.
+The notes below are written for ATS; the User Manual's Section 22 covers what differs, and
+[docs/ets2-plan.md](docs/ets2-plan.md) is the design.
 
 Single portable `.exe`. No install, no runtime, no internet.
 
@@ -19,6 +25,9 @@ Canadian city coordinates come from [GeoNames](https://www.geonames.org/) (CC BY
 populated places across all ten provinces and three territories, so Coast to Coast and the Canadian
 packs get measured distances too. Without them every distance rule went quiet north of the border,
 including the home-time ceiling that stops a load running the wrong way.
+
+European place coordinates come from [GeoNames](https://www.geonames.org/) too (CC BY 4.0) — about
+96,600 places across every country ETS2 and ProMods drive.
 
 ---
 

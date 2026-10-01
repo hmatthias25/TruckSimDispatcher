@@ -236,6 +236,8 @@
     <div class="sub"><span class="n"></span><span class="t">Restarts, continued &mdash; and the miles between loads</span><span class="p">67</span></div>
     <div class="sub"><span class="n"></span><span class="t">The two empty legs, and the readings that pay them</span><span class="p">68</span></div>
     <div class="sub"><span class="n"></span><span class="t">When operations parks you and your clocks are fine</span><span class="p">69</span></div>
+    <div class="grp">Reference</div>
+    <div><span class="n">22</span><span class="t">ETS2 under the hood: the numbers</span><span class="p">70</span></div>
   </div>
 
   <div class="pfoot"><span>Operations Manual</span><span>2</span></div>
@@ -3683,6 +3685,35 @@
 </div>
 
 <!-- ============================================================ 22 -->
+<div class="page">
+  <div class="kicker">From Section 22</div>
+  <h2>ETS2 under the hood: the numbers</h2>
+
+  <p>Everything the European rules turn on, in one place. All of it lives in the code named, and the plan
+    behind it is <code>docs/ets2-plan.md</code>.</p>
+
+  <table>
+    <tr><th style="width:2.1in">Rule</th><th>Value, and where</th></tr>
+    <tr><td>Daily and weekly driving</td><td>9 h (10 h twice a week); 56 h a week Monday to Sunday; 90 h in two weeks. <code>EuHosRules</code>, <code>HosEngine</code>.</td></tr>
+    <tr><td>Breaks and rests</td><td>45 min after 4.5 h, or 15 + 30. Daily rest 11 h, reduced 9 h (three between weekly rests), split 3 + 9; spread 13 h (15 h on a reduced day). Weekly rest 45 h, reduced 24 h, due within 144 h; the shortfall is owed back by the end of the third week.</td></tr>
+    <tr><td>Home ceiling</td><td>28 days, whatever the carrier's arrangement. <code>MobilityPackage.HomeCeilingDays</code>.</td></tr>
+    <tr><td>Hotel</td><td>€90 a night for a regular weekly rest away from home, booked as Accommodation.</td></tr>
+    <tr><td>Cabotage</td><td>EU/EEA: 3 in 7 days after a laden entry, 1 in 3 days after an empty one, then 4 days off. UK: 2 after a laden entry. None in Switzerland, the non-EU Balkans, Türkiye, Russia, Ukraine, Moldova and others. Kept per truck. <code>Cabotage</code>.</td></tr>
+    <tr><td>Crossing as rest</td><td>With a cabin: 45 h+ regular weekly, 24 h+ reduced weekly, 11 h+ daily, 9 h+ reduced daily. 45 min+ is a break; 15 to 45 min is part of a split break. <code>Ferries.RestValue</code>.</td></tr>
+    <tr><td>Sailings</td><td>About 100 routes, marked checked (the operator's timetable, read 2026-10-01), frequent, estimate, game (no real counterpart) or promods (not yet checked against the mod). Weekday timetables; check-in before departure. <code>Ferries.All</code>.</td></tr>
+    <tr><td>Choosing the way across</td><td>Every crossing that joins the two areas, two in a row where none does alone; best verdict, then earliest arrival. A ferry is tried as a shortcut when the road either side is under 75% of the listing. <code>Crossings</code>.</td></tr>
+    <tr><td>Salary</td><td>The loaded rate &times; 5,000 miles (about 8,000 km) a month, to the nearest ten; paid every fourth Friday; a part month pro-rated over 28 days. On-time bonus: the on-time rate &times; 5,000. Safety: four weekly bonuses. <code>PayEngine</code>.</td></tr>
+    <tr><td>Allowance and tax</td><td>€30 a day on a load, €50 from a Central or Eastern European carrier; tax-free. One flat 20% deduction. No W-2. <code>PayrollTax</code>.</td></tr>
+    <tr><td>Defaults on a new ETS2 career</td><td>Diesel €2.20 a litre, a 56 mph (90 km/h) limiter, every country, no medical premium. <code>GameSetup</code>.</td></tr>
+  </table>
+
+  <p class="hint">Hours rules are modelled for a game. Do not use this software to plan real driving.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>70</span></div>
+</div>
+
+
+<!-- ============================================================ 23 -->
 
 </body>
 </html>

@@ -1,6 +1,6 @@
 # Euro Truck Simulator 2 support: plan
 
-Status: **not started**. This is the reference for building it later. It was written on 2026-10-01 against v0.73 (`2c8c2b6`), and the same day gained the Mobility Package home-time and weekly-rest rules (section 3a), cabotage inside and outside the EU (section 3b), and ferries and trains (section 3c). The counts below are approximate and came from a read-through of the code. Re-check any file or symbol named here before relying on it, because the code will have moved on.
+Status: **built** (steps 1 to 10, #267 to #276, finished 2026-10-01), for the v0.80 release. What follows is the plan as written, with notes on what was built added where it differed. It was written on 2026-10-01 against v0.73 (`2c8c2b6`), and the same day gained the Mobility Package home-time and weekly-rest rules (section 3a), cabotage inside and outside the EU (section 3b), and ferries and trains (section 3c). The counts below are approximate and came from a read-through of the code. Re-check any file or symbol named here before relying on it, because the code will have moved on.
 
 ## The decision
 

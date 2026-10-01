@@ -53,6 +53,7 @@ PLAYER_TITLES = {
     "After a delivery you usually just confirm",
     "Hours of service \u2014 the four clocks",
     "Reporting and reading your clocks",
+    "The speed factor teaches itself",
     "Reading your clocks off a screenshot",
     "The board: the dock first, then the city",
     "Pasting the board instead of typing it",
@@ -98,6 +99,11 @@ PLAYER_TITLES = {
     "Career, promotion and changing carriers",
     "Hired drivers and the fleet report",
     "Filling the review in",
+    # Euro Truck Simulator 2
+    "Playing Euro Truck Simulator 2",
+    "Europe's rules: the clocks, home and cabotage",
+    "Ferries and the Channel Tunnel",
+    "Paid by the month",
     # reference
     "Settings, backups and updating the app",
     "If something looks wrong",

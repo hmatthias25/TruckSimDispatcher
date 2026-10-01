@@ -877,8 +877,13 @@
   <p>All of them are editable in Settings. If your plans consistently drift by more than three hours the
     audit will tell you to adjust the speed factor.</p>
 
-  <div class="rule">
-    <h4>The speed factor teaches itself</h4>
+  <div class="pfoot"><span>7 &middot; Hours of service</span><span>11</span></div>
+</div>
+
+<!-- ============================================================ 7b - the speed factor -->
+<div class="page">
+  <div class="kicker">Section 7, continued</div>
+  <h2>The speed factor teaches itself</h2>
     <p>Every hour the app projects is miles divided by <b>governed mph &times; speed factor</b>. That one
       number decides whether a load is feasible, what it leaves on your 70-hour cycle and how much slack
       the plan thinks it has &mdash; so it shipping as an assumption somebody picked was felt everywhere.</p>
@@ -896,7 +901,6 @@
       Drop and hook has no load events, so <b>Report after hooking</b> asks for the time you pulled out,
       beside the odometer. Type a speed factor in yourself and it stops learning &mdash; you can see your
       own game. Settings shows how many runs are behind the current figure.</p>
-  </div>
 
   <div class="pfoot"><span>7 &middot; Hours of service</span><span>11</span></div>
 </div>
@@ -5233,13 +5237,9 @@
 
   <div class="rule">
     <h4>Experience is time, not load count</h4>
-    <p>You are credited with what you declared on the application <i>plus the days you have actually
-      served</i> — 365 of them is a year, and that is the only thing that makes years. The market shows
-      the gap in days, because days are what close it.</p>
-    <p style="margin-top:6pt">Loads do not buy years. They satisfy a carrier's <em>minimum loads</em>
-      requirement, which is a separate gate about verifiable history, and they are what proves the time
-      was worked — but running hard does not make more of it. A fleet wanting five years wants five
-      years.</p>
+    <p>You are credited with what you declared <i>plus the days you have actually served</i> — 365 make a
+      year, and the market shows the gap in days. Loads do not buy years: they meet a carrier's
+      <em>minimum loads</em> gate and prove the time was worked. A fleet wanting five years wants five.</p>
   </div>
 
   <div class="pfoot"><span>20 &middot; Career</span><span>72</span></div>
@@ -6842,6 +6842,200 @@
 <!-- ============================================================ 22 -->
 <div class="page">
   <div class="kicker">Section 22</div>
+  <h2>Playing Euro Truck Simulator 2</h2>
+
+  <p>The app runs a career in either SCS game. The first question on the application is <b>which game is
+    this career in?</b> Pick it before anything else: the carriers, the map, the money and the hours rules
+    all follow from it. It is fixed once you are hired. A career in the other game is a new career —
+    <b>Settings &rarr; Data &rarr; Careers&hellip; &rarr; Start another career</b> asks for the name and the game.</p>
+
+  <div class="rule">
+    <h4>A new game starts on its own settings</h4>
+    <p>A new career in the same game keeps your settings, as it always has. A career in the other game
+      starts on that game's defaults and brings only your API key across, because the rest describes one
+      game's install. On ETS2 that is European diesel prices, the 90 km/h limiter, every country switched
+      on, and no US medical premium.</p>
+  </div>
+
+  <h3>What changes on screen</h3>
+  <table>
+    <tr><th style="width:1.9in">ATS</th><th>ETS2</th></tr>
+    <tr><td>Miles, gallons, pounds, dollars</td><td>Kilometres, litres, kilograms, euros. <b>Settings &rarr; Units</b> switches either game to the other system; nothing stored changes.</td></tr>
+    <tr><td>States and provinces</td><td>Countries, by two-letter code: DE, FR, PL, UK, NO. ProMods' countries are included.</td></tr>
+    <tr><td>HazMat classes</td><td>ADR classes — the same six, unlocked the same way in the skill tree.</td></tr>
+    <tr><td>FMCSA hours: 11, 14, 70 in 8</td><td>EU Regulation 561/2006, in full. Section 22, continued.</td></tr>
+    <tr><td>Paid by the mile, every Friday</td><td>A monthly salary and a daily allowance, every fourth Friday.</td></tr>
+    <tr><td>Home time by arrangement</td><td>The Mobility Package: home within four weeks, and a hotel for a full weekly rest away.</td></tr>
+    <tr><td>One road network</td><td>Water in the way: ferries and the Channel Tunnel are planned, with real sailing times.</td></tr>
+  </table>
+
+  <h3>Where you run</h3>
+  <p><b>Settings &rarr; Where you run</b> lists every country, all on by default — a country your install
+    does not have never offers a job, so leaving it on costs nothing. Switch one off and dispatch refuses
+    loads that start or end there. That is for the driver who does not want to go all the way to Iceland.</p>
+
+  <h3>What you type is the same</h3>
+  <p>The board, the trip log, the clocks and the close-out work exactly as in ATS. Type what the game shows:
+    kilometres in kilometre mode, the payout in euros, the delivery window in 24-hour time as printed —
+    <code>Mon 14:00 - Mon 22:30</code>. The screenshot reader is told it is reading ETS2 and converts for itself.</p>
+
+  <p class="hint">Wherever the app says "ATS" in its own help, an ETS2 career reads "ETS2", "HazMat" reads
+    "ADR" and a CDL reads a licence. That is wording only.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>98</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
+  <h2>Europe's rules: the clocks, home and cabotage</h2>
+
+  <p>An ETS2 career is planned on <b>EU Regulation 561/2006</b>, as amended by the Mobility Package. The
+    app plans every load on it and tells you which rest to take and where, the same way it does in ATS.</p>
+
+  <table>
+    <tr><th style="width:1.9in">Clock</th><th>The rule</th></tr>
+    <tr><td>Daily driving</td><td>9 hours, or 10 twice a week.</td></tr>
+    <tr><td>Break</td><td>45 minutes after 4&frac12; hours' driving, or 15 then 30.</td></tr>
+    <tr><td>Daily rest</td><td>11 hours, or 9 up to three times between weekly rests, or split 3 + 9. It must fall within 24 hours of the last one ending.</td></tr>
+    <tr><td>Weekly driving</td><td>56 hours Monday to Sunday, and 90 over any two weeks in a row.</td></tr>
+    <tr><td>Weekly rest</td><td>45 hours, or 24 reduced, at most six 24-hour periods after the last one. A reduced rest is paid back in full before the end of the third week.</td></tr>
+  </table>
+
+  <h3>Home, and the hotel</h3>
+  <p>Two Mobility Package rules decide where your weekly rest happens:</p>
+  <ul>
+    <li><b>Home within four weeks.</b> Whatever arrangement a carrier offers, the app never lets more than 28
+      days pass without bringing you home. Dispatch steers freight that way as the date nears.</li>
+    <li><b>No full weekly rest in the cab.</b> A 45-hour rest away from home is a hotel, at the company's
+      cost. The app books it to the ledger as Accommodation and tells you where. A reduced 24-hour rest
+      can still be taken in the truck.</li>
+  </ul>
+
+  <h3>Cabotage: domestic loads abroad</h3>
+  <p>Your truck belongs to your carrier's country. A load that starts and ends inside <i>another</i> country
+    is cabotage, and the law limits it. Dispatch refuses one that breaks the rule and says why. It is never a
+    fine on your record, because operations chose the freight.</p>
+  <table>
+    <tr><th style="width:1.9in">Where</th><th>Allowed</th></tr>
+    <tr><td>EU and EEA countries</td><td>After delivering an international load there: up to 3 domestic loads within 7 days. Arriving empty: 1 within 3 days. Then 4 days with none in that country.</td></tr>
+    <tr><td>The United Kingdom</td><td>2, and only after arriving loaded.</td></tr>
+    <tr><td>Switzerland, the Balkans outside the EU, Türkiye, Russia and others</td><td>None for a foreign truck. You can still deliver there and load back out — that is international, not cabotage.</td></tr>
+  </table>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>99</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
+  <h2>Ferries and the Channel Tunnel</h2>
+
+  <p>Europe has water in the way. The app knows which land areas are joined by road and which crossings join
+    the rest. These include Great Britain, Ireland, Sicily, Sardinia and Corsica, the Greek islands, the
+    Scottish and Estonian islands, Iceland and Malta. A load that needs a crossing has it planned in. The
+    planner tries every way across and keeps the one that arrives first.</p>
+
+  <div class="rule">
+    <h4>Real sailings</h4>
+    <p>With <b>Settings &rarr; Real ferry sailings</b> on (the default), a crossing leaves on the operator's
+      timetable, and the wait is part of the plan. Reach Calais at 02:00 with no ferry until 06:00, and the
+      plan says so — and may send you to the tunnel instead, a little further, on a shuttle at 02:30.
+      Switch it off and a crossing leaves when you get there.</p>
+  </div>
+
+  <h3>At the port</h3>
+  <p>On the Active trip, <b>At a port?</b> asks which crossing and when you pulled in. It tells you which
+    sailing you make, what to set the game clock to, and what the crossing counts as. Log the crossing as a
+    <b>Ferry</b> event when you board, with the end time when you land. The fare goes on the load's tolls.</p>
+
+  <h3>What a crossing counts as</h3>
+  <p>The game counts any time on a ferry as rest. The law counts it only <b>with a cabin</b>, and only if it
+    is long enough. Eleven hours or more with a cabin is a daily rest, nine a reduced one, and 24 or more a
+    weekly rest. Without a cabin it is never a rest, only a break. The tunnel's 35 minutes can be half of a
+    split break.</p>
+
+  <h3>Shortcuts</h3>
+  <p>Some ferries are simply quicker than the road round. Aalborg to Oslo over the Skagerrak beats driving
+    through Sweden. Where a ferry cuts the drive well short, the planner tries it and takes it only if you
+    arrive sooner, and it says so.</p>
+
+  <h3>A crossing your game does not have</h3>
+  <p>The table is real-world routes matched to the game's, including the real ferries serving ProMods'
+    countries. If a plan picks one your install lacks, press <b>Not in my game</b> beside it on the board.
+    It is switched off and the board is planned again. <b>Settings &rarr; Ferries</b> lists them all, by area,
+    with one switch to turn off every ProMods route. If every crossing to a place is off, a load there is
+    refused: there is no road across the sea.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>100</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
+  <h2>Paid by the month</h2>
+
+  <p>European company drivers are salaried, and the law restricts pay tied to distance (561/2006, Article
+    10). So an ETS2 career is paid a <b>monthly salary</b>, every fourth Friday — days 26, 54, 82 and on.
+    It is paid whether or not a load closed that month, and a part month is paid for the days worked.</p>
+
+  <h3>What a payslip holds</h3>
+  <table>
+    <tr><th style="width:1.9in">Line</th><th>How it is worked out</th></tr>
+    <tr><td>Salary</td><td>The month at your rank's rate. Probation, raises, promotions and every carrier's offer move it exactly as they move the per-mile rate in ATS.</td></tr>
+    <tr><td>Daily allowance</td><td>Tax-free, for each day you were on a load: €30, or €50 from a Central or Eastern European carrier, where the allowance is a large part of what drivers take home.</td></tr>
+    <tr><td>On-time bonus</td><td>A monthly amount, when every load in the period was on time.</td></tr>
+    <tr><td>Safety bonus</td><td>Four weeks' worth, when the period had no incident that was your fault.</td></tr>
+    <tr><td>Fuel bonuses</td><td>Fuel economy and fuel buying, exactly as in ATS.</td></tr>
+    <tr><td>Deduction</td><td>One flat 20% for tax and social contributions, on everything except the allowance. No W-2.</td></tr>
+  </table>
+
+  <div class="rule">
+    <h4>A load earns nothing by the kilometre</h4>
+    <p>Each load's pay line says it is covered by the month. On the board, a load shows its <b>wages</b> —
+      the days of salary and allowance it takes — so the margin still compares one load against another.</p>
+  </div>
+
+  <h3>Detention</h3>
+  <p>Paid waiting time is an American convention, and a European salary covers the hours, so detention is
+    not paid by default. <b>Settings &rarr; Pay detention on top of the salary</b> turns it on. The arrival
+    calls and the detention clock run either way, because they keep the planner's dock times honest.</p>
+
+  <h3>Changing carriers</h3>
+  <p>The job market shows each carrier's offer as a monthly salary: what you would start on, what they pay
+    off probation, and the top of their scale. Leaving pays your salary up to the day you go.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>101</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
+  <h2>ETS2 under the hood: the numbers</h2>
+
+  <p>Everything the European rules turn on, in one place. All of it lives in the code named, and the plan
+    behind it is <code>docs/ets2-plan.md</code>.</p>
+
+  <table>
+    <tr><th style="width:2.1in">Rule</th><th>Value, and where</th></tr>
+    <tr><td>Daily and weekly driving</td><td>9 h (10 h twice a week); 56 h a week Monday to Sunday; 90 h in two weeks. <code>EuHosRules</code>, <code>HosEngine</code>.</td></tr>
+    <tr><td>Breaks and rests</td><td>45 min after 4.5 h, or 15 + 30. Daily rest 11 h, reduced 9 h (three between weekly rests), split 3 + 9; spread 13 h (15 h on a reduced day). Weekly rest 45 h, reduced 24 h, due within 144 h; the shortfall is owed back by the end of the third week.</td></tr>
+    <tr><td>Home ceiling</td><td>28 days, whatever the carrier's arrangement. <code>MobilityPackage.HomeCeilingDays</code>.</td></tr>
+    <tr><td>Hotel</td><td>€90 a night for a regular weekly rest away from home, booked as Accommodation.</td></tr>
+    <tr><td>Cabotage</td><td>EU/EEA: 3 in 7 days after a laden entry, 1 in 3 days after an empty one, then 4 days off. UK: 2 after a laden entry. None in Switzerland, the non-EU Balkans, Türkiye, Russia, Ukraine, Moldova and others. Kept per truck. <code>Cabotage</code>.</td></tr>
+    <tr><td>Crossing as rest</td><td>With a cabin: 45 h+ regular weekly, 24 h+ reduced weekly, 11 h+ daily, 9 h+ reduced daily. 45 min+ is a break; 15 to 45 min is part of a split break. <code>Ferries.RestValue</code>.</td></tr>
+    <tr><td>Sailings</td><td>About 100 routes, marked checked (the operator's timetable, read 2026-10-01), frequent, estimate, game (no real counterpart) or promods (not yet checked against the mod). Weekday timetables; check-in before departure. <code>Ferries.All</code>.</td></tr>
+    <tr><td>Choosing the way across</td><td>Every crossing that joins the two areas, two in a row where none does alone; best verdict, then earliest arrival. A ferry is tried as a shortcut when the road either side is under 75% of the listing. <code>Crossings</code>.</td></tr>
+    <tr><td>Salary</td><td>The loaded rate &times; 5,000 miles (about 8,000 km) a month, to the nearest ten; paid every fourth Friday; a part month pro-rated over 28 days. On-time bonus: the on-time rate &times; 5,000. Safety: four weekly bonuses. <code>PayEngine</code>.</td></tr>
+    <tr><td>Allowance and tax</td><td>€30 a day on a load, €50 from a Central or Eastern European carrier; tax-free. One flat 20% deduction. No W-2. <code>PayrollTax</code>.</td></tr>
+    <tr><td>Defaults on a new ETS2 career</td><td>Diesel €2.20 a litre, a 56 mph (90 km/h) limiter, every country, no medical premium. <code>GameSetup</code>.</td></tr>
+  </table>
+
+  <p class="hint">Hours rules are modelled for a game. Do not use this software to plan real driving.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>102</span></div>
+</div>
+
+
+<!-- ============================================================ 23 -->
+<div class="page">
+  <div class="kicker">Section 23</div>
   <h2>Settings, backups and updating the app</h2>
 
   <div class="side">
@@ -6884,12 +7078,12 @@
   <p>Any career it finds elsewhere on the machine is listed under <b>Settings → Data → List backups</b>
     with a button to load it — so an update never silently looks like a lost save.</p>
 
-  <div class="pfoot"><span>22 &middot; Settings and data</span><span>98</span></div>
+  <div class="pfoot"><span>23 &middot; Settings and data</span><span>98</span></div>
 </div>
 
-<!-- ============================================================ 23 -->
+<!-- ============================================================ 24 -->
 <div class="page">
-  <div class="kicker">Section 23</div>
+  <div class="kicker">Section 24</div>
   <h2>If something looks wrong</h2>
 
   <table>
@@ -6929,12 +7123,12 @@
       report it.</p>
   </div>
 
-  <div class="pfoot"><span>23 &middot; If something looks wrong</span><span>99</span></div>
+  <div class="pfoot"><span>24 &middot; If something looks wrong</span><span>99</span></div>
 </div>
 
-<!-- ============================================================ 24 -->
+<!-- ============================================================ 25 -->
 <div class="page">
-  <div class="kicker">Section 24</div>
+  <div class="kicker">Section 25</div>
   <h2>Credits</h2>
 
   <div class="rule" style="border-left-width:4pt">
@@ -6956,39 +7150,40 @@
   <p>Canadian city coordinates come from <b>GeoNames</b> (CC BY 4.0) &mdash; about 19,000 populated
     places across all ten provinces and three territories, so Coast to Coast and the Canadian packs get
     measured distances too. Without them every distance rule went quiet north of the border, the
-    home-time ceiling included.</p>
+    home-time ceiling included. About 96,600 European places, for ETS2 and ProMods, come from GeoNames too.</p>
   <p class="hint">Distances are great-circle plus a road factor, not routed mileage, and land within
     roughly a fifth of real road miles. Good enough to answer "is this taking me toward home" and "is
-    that yard worth deadheading to". Pay, fuel and feasibility always run off the miles ATS reports.</p>
+    that yard worth deadheading to". Pay, fuel and feasibility always run off the distance the game reports.</p>
 
   <h3>What this is not</h3>
-  <p>Not affiliated with or endorsed by SCS Software. American Truck Simulator is their work.</p>
+  <p>Not affiliated with or endorsed by SCS Software. ATS and ETS2 are their work.</p>
 
   <p>The carriers in the job market are real companies, used because it is more fun to drive for a fleet
     you have seen on the road. Their headquarters and the freight they run are broadly accurate; the
     pay, standards and hiring behaviour are <b>roleplay values chosen to make progression interesting
     and are not real employment terms</b>. Nothing here represents any of those companies.</p>
 
-  <p>Hours-of-service rules follow the US FMCSA pattern — 11 and 14 hour limits, a 30-minute break,
-    70 hours in 8 days, a 10-hour reset and a 34-hour restart. They are modelled for a game. Do not use
-    this software to plan real driving.</p>
+  <p>Hours-of-service rules follow the US FMCSA pattern on an ATS career — 11 and 14 hour limits, a
+    30-minute break, 70 hours in 8 days, a 10-hour reset and a 34-hour restart — and EU Regulation
+    561/2006 on an ETS2 career. They are modelled for a game. Do not use this software to plan real
+    driving.</p>
 
   <h3>Your data</h3>
   <p>Everything stays on your machine. No telemetry, no accounts, no network calls — unless you set an
     API key for reading screenshots, which is off by default and clearly marked where it is not.</p>
 
-  <div class="note" style="margin-top:26pt">
+  <div class="note" style="margin-top:10pt">
     <h4>Alpha build</h4>
     <p>Not ready for release. Play-testing feedback is the point of it existing in your hands at all —
       if something reads wrong, feels wrong or breaks, that is worth saying.</p>
   </div>
 
-  <p style="margin-top:26pt; text-align:center; color:#7d8b98; font-size:9pt">
+  <p style="margin-top:8pt; text-align:center; color:#7d8b98; font-size:9pt">
     Built with Claude Code.<br>
     Idea by SimRacerSteve.
   </p>
 
-  <div class="pfoot"><span>24 &middot; Credits</span><span>100</span></div>
+  <div class="pfoot"><span>25 &middot; Credits</span><span>100</span></div>
 </div>
 
 </body>

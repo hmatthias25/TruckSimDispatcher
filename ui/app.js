@@ -151,6 +151,57 @@ const money = (n) => (n < 0 ? '-' : '') + SYM() + Math.abs(+n || 0).toLocaleStri
 const money0 = (n) => (n < 0 ? '-' : '') + SYM() + Math.abs(+n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const num = (n, d = 0) => (+n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
+/* ---- the game's own words (#276)
+   The app was written for ATS, and "ATS" is in hundreds of strings, here and in the server's messages. On an
+   ETS2 career every one of them means "the game", so they are put into ETS2's words as the page is drawn:
+   ATS → ETS2, American Truck Simulator → Euro Truck Simulator 2, HazMat → ADR, a CDL → a licence. Text that
+   must name both games — the game picker — sits inside data-keep-game and is left alone. Native dialogs go
+   through the same words. Nothing stored changes; this is wording on screen. */
+const GAME_WORDS = [
+  [/\bAmerican Truck Simulator\b/g, 'Euro Truck Simulator 2'],
+  [/\bATS\b/g, 'ETS2'],
+  [/\bHazMat\b/g, 'ADR'], [/\bHAZMAT\b/g, 'ADR'], [/\bhazmat\b/g, 'ADR'],
+  [/\bCDL school\b/g, 'driving school'], [/\bClass A CDL\b/g, 'C+E licence'], [/\bCDL\b/g, 'licence'],
+];
+const inEts2 = () => !!(S && S.game && S.game.id === 'ETS2');
+/** A string in the career's game's words. */
+function gw(text) {
+  if (!inEts2() || typeof text !== 'string' || !text) return text;
+  let t = text;
+  for (const [re, to] of GAME_WORDS) t = t.replace(re, to);
+  return t;
+}
+const GW_ATTRS = ['placeholder', 'title', 'aria-label'];
+/** Rewrites the text and the readable attributes under a node, skipping anything marked to keep. */
+function gameWordsIn(root) {
+  if (!inEts2() || !root) return;
+  const keep = (n) => n.parentElement && n.parentElement.closest('[data-keep-game],script,style');
+  if (root.nodeType === 3) { if (!keep(root)) { const t = gw(root.nodeValue); if (t !== root.nodeValue) root.nodeValue = t; } return; }
+  if (root.nodeType !== 1 || root.closest('[data-keep-game]')) return;
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    if (!/ATS|American Truck|HazMat|HAZMAT|hazmat|CDL/.test(n.nodeValue) || keep(n)) continue;
+    n.nodeValue = gw(n.nodeValue);
+  }
+  for (const el of [root, ...root.querySelectorAll('[placeholder],[title],[aria-label]')]) {
+    if (el.closest('[data-keep-game]')) continue;
+    for (const a of GW_ATTRS) if (el.hasAttribute && el.hasAttribute(a)) {
+      const v = el.getAttribute(a), t = gw(v);
+      if (t !== v) el.setAttribute(a, t);
+    }
+  }
+}
+if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+  new MutationObserver((muts) => {
+    if (!inEts2()) return;
+    for (const m of muts) for (const n of m.addedNodes) gameWordsIn(n);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+  for (const k of ['alert', 'confirm', 'prompt']) {
+    const native = window[k] && window[k].bind(window);
+    if (native) window[k] = (msg, ...rest) => native(gw(msg), ...rest);
+  }
+}
+
 /** The distance unit: "mi" or "km". */
 const DU = () => UN().distance;
 /** A distance stored in miles, as the number shown. */
@@ -678,11 +729,13 @@ function closeModal() { $('modal').classList.add('hidden'); $('modal-body').inne
       $('onboarding').classList.remove('hidden');
       $('ap-gameday').value = 1; $('ap-gametod').value = '06:00';
       onboardingForGame();
+      gameWordsIn(document.body);   // the static application page, in the career's game's words
       // Choosing the game puts the career on it, with that game's defaults, before anything is applied for.
       $('ap-game').addEventListener('change', async () => {
         try {
           S = await api('/career/game', 'POST', { game: $('ap-game').value });
           onboardingForGame();
+          gameWordsIn(document.body);
           toast(`This career is ${S.game.name}.`, 'ok');
         } catch (e) { toast(e.message, 'bad'); $('ap-game').value = S.game.id; }
       });
@@ -1668,7 +1721,7 @@ function viewDispatch() {
                <label>Origin state<input id="b-ostate" class="up" maxlength="2" value="${esc(st.locationState)}"></label>`}
           <label>Destination city<input id="b-dcity" placeholder="e.g. Boise"></label>
           <label>Destination state<input id="b-dstate" class="up" maxlength="2" placeholder="ID"></label>
-          <label>Loaded ${DU()}<input id="b-miles" data-u="dist" type="number" step="1" min="0" placeholder="ATS distance"></label>
+          <label>Loaded ${DU()}<input id="b-miles" data-u="dist" type="number" step="1" min="0" placeholder="${esc(S.game.shortName)} distance"></label>
           ${/* The "trailer already loaded" tick is gone. It said a dry van or reefer off a facility's own
                 board came hooked to a loaded trailer and cost no loading time, and only a flatbed had to
                 be loaded. Wrong: in ATS you unload, and if you take a load from the same facility you go
@@ -3689,7 +3742,7 @@ function fleetReportModal(r) {
       <span>contribution <b>${money0(r.totalContribution)}</b></span>
       <span>repairs <b>${money0(r.totalRepairs)}</b></span>
       ${r.totalCapital ? `<span>equipment &amp; property <b>${money0(r.totalCapital)}</b></span>` : ''}
-      <span>miles <b>${num(r.totalMiles || 0)}</b></span>
+      <span>${DUWS()} <b>${num(distN(r.totalMiles || 0))}</b></span>
     </div>
 
     ${shopped.length ? `<div class="callout ${/condemn|held over/i.test(shopped.join(' ')) ? 'warn' : 'go'}">
@@ -3889,10 +3942,10 @@ function tripDetailModal(id) {
       ${row('Kind / division', esc(t.kind) + ' · ' + esc(t.division))}
       ${row('Origin', esc(t.originCity) + ', ' + esc(t.originState) + (t.shipper ? ' — ' + esc(t.shipper) : ''))}
       ${row('Destination', esc(t.destCity) + ', ' + esc(t.destState) + (t.receiver ? ' — ' + esc(t.receiver) : ''))}
-      ${row('Dispatched miles', num(t.dispatchedMiles) + ' loaded / ' + num(t.deadheadMiles) + ' deadhead'
-        + (t.repositionMiles > 0 ? ' / ' + num(t.repositionMiles) + ' repositioning' : ''))}
+      ${row(`Dispatched ${DUWS()}`, num(distN(t.dispatchedMiles)) + ' loaded / ' + num(distN(t.deadheadMiles)) + ' deadhead'
+        + (t.repositionMiles > 0 ? ' / ' + num(distN(t.repositionMiles)) + ' repositioning' : ''))}
       ${t.repositionNote ? row('Empty leg before this load', t.repositionNote) : ''}
-      ${row('Actual miles', num(t.actualMiles))}
+      ${row(`Actual ${DUWS()}`, num(distN(t.actualMiles)))}
       ${row('Odometer', num(t.startOdometer) + ' → ' + num(t.endOdometer))}
       ${row('ATS revenue / booked', money(t.gameRevenue) + ' / ' + money(t.companyRevenue))}
       ${row('Dispatched / due / delivered', gt(t.dispatchedGameTime) + ' · ' + gt(t.dueGameTime) + ' · ' + gt(t.deliveredGameTime))}
@@ -4295,10 +4348,10 @@ function unbookedEmptyHtml() {
   if (!u || !(u.miles > 0)) return '';
   const rate = +(S.driver?.pay?.deadheadCpm || 0);
   return `<div class="callout warn">
-    <h4>${num(u.miles)} empty miles not booked to anything</h4>
+    <h4>${dist(u.miles)} empty, not booked to anything</h4>
     <p>${esc(u.explanation)}</p>
     <div class="row-actions">
-      <button class="btn primary" data-act="book-empty">Book ${num(u.miles)} empty miles${
+      <button class="btn primary" data-act="book-empty">Book ${dist(u.miles)} empty${
         rate > 0 ? ` — ${money(u.miles * rate)}` : ''}</button>
     </div></div>`;
 }
@@ -4964,7 +5017,7 @@ function fleetOpsHtml() {
         ${fkpi('Drivers', f.driverCount || 0)}
         ${fkpi('Fleet contribution', money0(f.lifetimeContribution || 0))}
         ${fkpi('Yards', (S.company.terminals || []).length)}
-        ${fkpi('Fleet miles', num(f.lifetimeMiles || 0))}
+        ${fkpi(`Fleet ${DUWS()}`, num(distN(f.lifetimeMiles || 0)))}
         ${fkpi('Last report', f.lastPeriodEnd ? gt(f.lastPeriodEnd) : '—')}
       </div>
 
@@ -5105,7 +5158,7 @@ function fleetOpsHtml() {
                     r.lines.filter((l) => l.revenueBasis).length > 1 ? ' and others' : ''}</span>` : ''}
             <span>repairs <b>${money(r.totalRepairs)}</b></span>
             ${r.totalCapital ? `<span>equipment &amp; property <b>${money(r.totalCapital)}</b></span>` : ''}
-            <span>miles <b>${num(r.totalMiles)}</b></span>
+            <span>${DUWS()} <b>${num(distN(r.totalMiles))}</b></span>
             <span>drivers <b>${r.lines.length}</b></span>
           </div>
           ${r.instructions?.length ? `<div class="callout ${r.playerGetsNewTruck ? 'go' : 'warn'}" style="margin:8px 0">
@@ -5259,7 +5312,7 @@ function driverFileModal(id) {
     <div class="meters" style="margin-top:8px">
       ${fkpi('Lifetime contribution', money0(d.lifetimeContribution))}
       ${fkpi('Rung pays', pct(dz.offeredShare * 100, 0))}
-      ${fkpi('Lifetime miles', num(d.lifetimeMiles || 0))}
+      ${fkpi(`Lifetime ${DUWS()}`, num(distN(d.lifetimeMiles || 0)))}
       ${fkpi('Reports', d.reportsFiled || 0)}
       ${fkpi('Hired', d.hiredGameDate ? gt(d.hiredGameDate) : '—')}
     </div>
@@ -5495,8 +5548,8 @@ function stubTableHtml(st) {
     <tr><td colspan="2" style="padding-top:6px"><b>EARNINGS</b></td></tr>
     ${st.salary ? row(st.periodDays >= 27.99 ? 'Monthly salary' : `Salary, ${num(st.periodDays)} of 28 days`, st.salary) : ''}
     ${st.allowances ? row(`Daily allowance, ${st.allowanceDays} day(s) on the road (tax-free)`, st.allowances) : ''}
-    ${st.linehaulPay ? row(`Loaded miles ${num(st.loadedMiles)}`, st.linehaulPay) : ''}
-    ${st.deadheadPay ? row(`Empty miles ${num(st.deadheadMiles)}`, st.deadheadPay) : ''}
+    ${st.linehaulPay ? row(`Loaded ${DUWS()} ${num(distN(st.loadedMiles))}`, st.linehaulPay) : ''}
+    ${st.deadheadPay ? row(`Empty ${DUWS()} ${num(distN(st.deadheadMiles))}`, st.deadheadPay) : ''}
     ${st.divisionPremium ? row('Division / endorsement premium', st.divisionPremium) : ''}
     ${st.accessorials ? row('Accessorials', st.accessorials) : ''}
     ${st.onTimeBonus ? row('On-time bonus', st.onTimeBonus) : ''}
@@ -6573,8 +6626,8 @@ function viewCareer() {
     <div class="meters">
       ${fkpi('Loads delivered', st.loadsDelivered)}
       ${fkpi('On-time service', pct(st.onTimePct), st.onTimePct < 95 ? 'warn' : 'ok')}
-      ${fkpi('Total miles', num(st.totalMiles))}
-      ${fkpi('Loaded miles', num(st.loadedMiles))}
+      ${fkpi(`Total ${DUWS()}`, num(distN(st.totalMiles)))}
+      ${fkpi(`Loaded ${DUWS()}`, num(distN(st.loadedMiles)))}
       ${fkpi('Avg damage / trip', num(st.avgDamagePerTrip, 2),
         st.avgDamagePerTrip > S.driver.probation.maxAvgDamagePct ? 'warn' : 'ok')}
       ${fkpi('Driver-fault incidents', st.driverFaultIncidents,
@@ -8186,11 +8239,13 @@ async function handleAction(act, d, ev) {
       toast(r.message, 'ok');
     });
     case 'equip-move': {
-      const miles = prompt(`How many miles to ${d.where} to collect trailer ${d.unit}?`, '0');
-      if (miles === null) return;
+      const typed = prompt(`How many ${DUWS()} to ${d.where} to collect trailer ${d.unit}?`, '0');
+      if (typed === null) return;
+      // Typed in the career's units, stored in miles like every distance.
+      const miles = (parseFloat(typed) || 0) / UN().distancePerMile;
       return run(async () => {
         const r = absorb(await api('/equipment/move', 'POST',
-          { trailerUnit: d.unit, miles: parseFloat(miles) || 0, reason: '' }));
+          { trailerUnit: d.unit, miles, reason: '' }));
         DECISION = null; TAB = 'active';
         toast(`${r.trip.number} authorized — collect ${d.unit} at ${d.where}.`, 'ok');
       });
@@ -8880,10 +8935,10 @@ async function handleAction(act, d, ev) {
       const g = (S.game && S.game.id) || 'ATS';
       return modal(`<h2>Start another career</h2>
         <label>Name<input id="cn-name" placeholder="optional — the carrier gets picked when you apply"></label>
-        <label>Game<select id="cn-game">
+        <label data-keep-game>Game<select id="cn-game">
           <option value="ATS" ${g === 'ATS' ? 'selected' : ''}>American Truck Simulator</option>
           <option value="ETS2" ${g === 'ETS2' ? 'selected' : ''}>Euro Truck Simulator 2</option></select></label>
-        <p class="hint">The same game keeps your settings — hours rules, fuel and economy, the regions you run.
+        <p class="hint" data-keep-game>The same game keeps your settings — hours rules, fuel and economy, the regions you run.
           The other game starts on its own defaults, because those settings describe one game's install; only
           your API key comes across. The game is fixed for the career once you are hired.</p>
         <div class="row-actions"><div style="flex:1"></div>
