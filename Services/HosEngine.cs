@@ -326,7 +326,12 @@ public static class HosEngine
     public static FeasibilityResult Plan(AppState state, PlanRequest req, Truck? truck = null)
     {
         var s = state.Settings;
-        var rules = s.Hos;
+        // EU careers plan on Regulation 561/2006. The shared paths below read `rules`, which for EU is the EU
+        // rule set expressed as the same four limits; everything the EU has that the US does not is the
+        // `eu` branches further down. An ATS career never enters one of them.
+        var eu = GameProfile.For(state).HosRuleset == "EU561";
+        var euR = s.EuHos ?? new EuHosRules();
+        var rules = eu ? euR.AsPlanningRules(s.Hos) : s.Hos;
         var hos = state.Hos;
         var mph = EffectiveMph(s, truck);
         var result = new FeasibilityResult { EffectiveMph = mph };
@@ -374,6 +379,25 @@ public static class HosEngine
         double brk = Math.Max(0, hos.BreakRemaining);
         double cycle = Math.Max(0, hos.CycleRemaining);
 
+        // ---- EU counters. Read off the snapshot where the driver reported them, otherwise the most
+        // conservative reading that is still useful: the week counted from its start, no extensions or
+        // reduced rests used, and the last weekly rest at the start of the week.
+        var weekDriven = Math.Max(0, hos.EuWeekDriven ?? Math.Max(0, euR.WeeklyDriving - hos.CycleRemaining));
+        var lastWeekDriven = Math.Max(0, hos.EuLastWeekDriven ?? 0);
+        var extLeft = Math.Max(0, euR.ExtensionsPerWeek - hos.EuExtensionsUsed);
+        var reducedLeft = Math.Max(0, euR.ReducedRestsBetweenWeekly - hos.EuReducedRestsUsed);
+        // A driver with more than nine hours of daily driving left is already on an extended day.
+        var extendedToday = eu && hos.DriveRemaining > euR.DailyDriving + Eps;
+        var spreadExtended = eu && hos.ShiftRemaining > euR.Spread + Eps;
+        var nextRestReduced = spreadExtended;
+        var sinceWeekly = Math.Max(0, hos.EuHoursSinceWeeklyRest
+                                      ?? (start.Value - WeekStart(start.Value)).TotalHours);
+        var lastWeeklyReduced = hos.EuLastWeeklyRestReduced;
+        var owed = Math.Max(0, hos.EuCompensationOwed);
+        if (eu)
+            cycle = Math.Max(0, Math.Min(euR.WeeklyDriving - weekDriven,
+                                         euR.FortnightDriving - lastWeekDriven - weekDriven));
+
         var clock = start.Value;
         // Each batch with the moment it actually lands, worked out once from the day the trip starts.
         //
@@ -417,6 +441,34 @@ public static class HosEngine
             var from = clock;
             clock = clock.AddHours(hours);
             CreditRecapDue();
+            if (eu)
+            {
+                // Weekly driving belongs to the calendar week, so Monday 00:00 starts a new one whatever the
+                // truck is doing — mid-rest, mid-drive. The fortnight is this week and the last.
+                var boundary = WeekStart(from).AddDays(7);
+                var driving = kind == "Drive";
+                // Reaching Monday 00:00 exactly is reaching the new week — a wait timed to the boundary lands on it.
+                if (clock >= boundary)
+                {
+                    var after = (clock - boundary).TotalHours;
+                    lastWeekDriven = weekDriven + (driving ? hours - after : 0);
+                    weekDriven = driving ? after : 0;
+                    extLeft = euR.ExtensionsPerWeek;
+                    cycle = Math.Max(0, Math.Min(euR.WeeklyDriving - weekDriven,
+                                                 euR.FortnightDriving - lastWeekDriven - weekDriven));
+                }
+                else if (driving)
+                {
+                    weekDriven += hours;
+                }
+                sinceWeekly += hours;
+                // Any rest long enough to be a daily rest starts a new day, however the plan got to it —
+                // the paths that rest at a receiver or a truck stop set the clocks themselves.
+                if (kind is "Rest" or "Restart" && hours >= euR.ReducedDailyRest - Eps)
+                {
+                    extendedToday = false; spreadExtended = false; nextRestReduced = false;
+                }
+            }
             timeline.Add(new TimelineStep
             {
                 Label = label,
@@ -443,6 +495,7 @@ public static class HosEngine
 
         void TakeReset()
         {
+            if (eu) { TakeEuDailyRest(); return; }
             drive = rules.DriveLimit;
             shift = rules.ShiftLimit;
             brk = rules.DrivingBeforeBreak;
@@ -528,8 +581,91 @@ public static class HosEngine
             Step($"Back to {where}", "Drive", hop, 0);
         }
 
+        /// <summary>
+        /// The EU daily rest: eleven hours, or nine where the plan stretched today's spread to fifteen. And the
+        /// weekly rest instead, where another day would carry the driver past six days without one.
+        /// </summary>
+        void TakeEuDailyRest()
+        {
+            var len = nextRestReduced ? euR.ReducedDailyRest : euR.RegularDailyRest;
+            if (sinceWeekly + len + euR.Spread > euR.WeeklyRestDueAfterHours)
+            {
+                TakeEuWeeklyRest(0, "your six days since the last weekly rest are up");
+                return;
+            }
+            var where = atFacility != null ? $" — at {atFacility}" : "";
+            Step(nextRestReduced
+                    ? $"{len:0.#}-hour reduced daily rest{where}"
+                    : $"{len:0.#}-hour daily rest{where}", "Rest", len, 0);
+            if (nextRestReduced) result.ReducedDailyRests++;
+            result.RestsRequired++;
+            drive = euR.DailyDriving;
+            shift = euR.Spread;
+            brk = euR.DrivingBeforeBreak;
+            extendedToday = false;
+            spreadExtended = false;
+            nextRestReduced = false;
+            atFacility = null;
+            drivenToday = 0;
+        }
+
+        /// <summary>
+        /// The EU weekly rest: 45 hours, or 24 where the last one was regular and the planner may reduce it —
+        /// with the 21 owed and paid back on a later regular one. Resets the day, the reduced-rest count and
+        /// the six-day clock; NOT weekly driving, which belongs to the calendar week.
+        /// </summary>
+        void TakeEuWeeklyRest(double atLeast, string why)
+        {
+            var reduced = euR.AllowReducedWeeklyRest && !lastWeeklyReduced && atLeast <= euR.ReducedWeeklyRest + Eps;
+            var len = reduced ? euR.ReducedWeeklyRest : euR.RegularWeeklyRest + owed;
+            len = Math.Max(len, atLeast);
+            var label = reduced
+                ? $"{len:0.#}-hour reduced weekly rest — {why}; {euR.RegularWeeklyRest - euR.ReducedWeeklyRest:0.#} h owed back"
+                : owed > Eps
+                    ? $"{len:0.#}-hour weekly rest — {why}, with {Hhmm.Of(owed)} of compensation paid back"
+                    : $"{len:0.#}-hour weekly rest — {why}";
+            Step(label, "Restart", len, 0);
+            if (reduced) { owed += euR.RegularWeeklyRest - euR.ReducedWeeklyRest; result.ReducedWeeklyRests++; }
+            else owed = 0;
+            lastWeeklyReduced = reduced;
+            result.WeeklyRestsRequired++;
+            drive = euR.DailyDriving;
+            shift = euR.Spread;
+            brk = euR.DrivingBeforeBreak;
+            sinceWeekly = 0;
+            reducedLeft = euR.ReducedRestsBetweenWeekly;
+            extendedToday = false;
+            spreadExtended = false;
+            nextRestReduced = false;
+            atFacility = null;
+            drivenToday = 0;
+        }
+
+        /// <summary>
+        /// Weekly driving is spent — 56 this week or 90 over two. Nothing moves until Monday 00:00, and a wait
+        /// that long is the weekly rest: the planner takes it as one rather than as dead time.
+        /// </summary>
+        void WaitForNewWeek()
+        {
+            var until = (WeekStart(clock).AddDays(7) - clock).TotalHours;
+            if (until >= euR.ReducedWeeklyRest - Eps)
+            {
+                TakeEuWeeklyRest(until, "weekly driving is used up until Monday");
+            }
+            else
+            {
+                var len = Math.Max(until, euR.RegularDailyRest);
+                Step($"{Hhmm.Of(len)} off — weekly driving is used up until Monday", "Rest", len, 0);
+                result.RestsRequired++;
+                drive = euR.DailyDriving; shift = euR.Spread; brk = euR.DrivingBeforeBreak;
+                extendedToday = false; spreadExtended = false; nextRestReduced = false;
+                atFacility = null; drivenToday = 0;
+            }
+        }
+
         void TakeRestart()
         {
+            if (eu) { WaitForNewWeek(); return; }
             drive = rules.DriveLimit;
             shift = rules.ShiftLimit;
             brk = rules.DrivingBeforeBreak;
@@ -688,6 +824,7 @@ public static class HosEngine
 
                         // The wall clock still moves. The shift clock does not, and that is the point.
                         clock = clock.AddHours(waiting);
+                        if (eu) sinceWeekly += waiting;
                         result.SleptInHours = Math.Round(waiting, 2);
                         result.WaitForAppointmentHours = 0;
                         result.IdleHours = Math.Round(waiting, 2);
@@ -701,7 +838,8 @@ public static class HosEngine
                         // Nothing to extend: no rest in this plan to hang the wait on, and a fresh one
                         // will not fit inside slack shorter than a reset. Sitting really is the option.
                         shift = Math.Max(0, shift - waiting);
-                        cycle = Math.Max(0, cycle - waiting);
+                        // EU weekly driving counts driving only; a wait at a gate is not driving.
+                        if (!eu) cycle = Math.Max(0, cycle - waiting);
                         result.IdleHours = Math.Round(waiting, 2);
                         Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}", "OnDuty", waiting, 0);
                         if (waiting >= 0.25)
@@ -753,9 +891,27 @@ public static class HosEngine
 
                 if (task.Kind == "Drive")
                 {
+                    if (eu)
+                    {
+                        // A 10-hour day, where the nine would end this leg early and the week has one left.
+                        if (!extendedToday && extLeft > 0 && drive < remaining - Eps && drive > Eps && shift > drive + Eps)
+                        {
+                            drive += euR.ExtendedDailyDriving - euR.DailyDriving;
+                            extLeft--; extendedToday = true; result.ExtendedDays++;
+                        }
+                        // A 15-hour spread, paid for with a 9-hour rest tonight, where the thirteen is what
+                        // would stop the leg and a reduced rest is still allowed before the weekly one.
+                        if (!spreadExtended && reducedLeft > 0 && shift < Math.Min(drive, remaining) - Eps)
+                        {
+                            shift += euR.ReducedSpread - euR.Spread;
+                            reducedLeft--; spreadExtended = true; nextRestReduced = true;
+                        }
+                    }
+                    // The six days since the last weekly rest, as a clock like any other.
+                    var weeklyDue = eu ? Math.Max(0, euR.WeeklyRestDueAfterHours - sinceWeekly) : double.MaxValue;
                     var cap = requireBreak
-                        ? Min(drive, shift, brk, cycle, remaining)
-                        : Min(drive, shift, cycle, remaining);
+                        ? Min(drive, shift, brk, cycle, remaining, weeklyDue)
+                        : Min(drive, shift, cycle, remaining, weeklyDue);
 
                     // ---- park before the clock runs out, not as it does
                     //
@@ -795,6 +951,7 @@ public static class HosEngine
                     if (cap <= Eps)
                     {
                         // Which clock is blocking?
+                        if (eu && weeklyDue <= Eps) { TakeEuWeeklyRest(0, "your six days since the last weekly rest are up"); continue; }
                         if (cycle <= Eps) { TakeRestart(); continue; }
                         if (requireBreak && brk <= Eps && drive > Eps && shift > rules.BreakLength + Eps)
                         { TakeBreak(); continue; }
@@ -826,7 +983,8 @@ public static class HosEngine
                     // Which clock pays for this. On-duty work runs both the fourteen and the seventy;
                     // time the driver spends in the bunk waiting on a dock runs the fourteen only,
                     // because sleeper-berth time is not on-duty time. See TrailerSpec.WorksTheDock.
-                    var burnsCycle = !task.HandsOff;
+                    // EU weekly limits count DRIVING, so dock work never touches them however it is worked.
+                    var burnsCycle = !eu && !task.HandsOff;
 
                     var dockWork = task.Hours + queue;
                     var notStarted = Math.Abs(remaining - dockWork) < Eps;
@@ -834,6 +992,13 @@ public static class HosEngine
                     // is true in the bunk as much as on the straps, because the driver has to be legal to
                     // drive away at the end of it. What no longer forces the issue is the seventy: a
                     // driver out of cycle can still sit in a berth while somebody else unloads them.
+                    // EU: a reduced rest tonight stretches the spread to fifteen, which may be what covers the dock.
+                    if (eu && task.AtDock && notStarted && shift + Eps < dockWork && !spreadExtended && reducedLeft > 0
+                        && shift + euR.ReducedSpread - euR.Spread + Eps >= dockWork)
+                    {
+                        shift += euR.ReducedSpread - euR.Spread;
+                        reducedLeft--; spreadExtended = true; nextRestReduced = true;
+                    }
                     if (task.AtDock && notStarted && dockWork > Eps && shift + Eps < dockWork
                         && (cycle > Eps || !burnsCycle))
                     {
@@ -901,6 +1066,7 @@ public static class HosEngine
 
         result.ProjectedArrivalGameTime = Shown(clock);
         result.CycleRemainingAfter = Math.Round(cycle, 2);
+        result.CompensationOwedAfter = Math.Round(owed, 2);
         // The window left once they are empty and standing at the receiver. This is what decides
         // whether a dock holding them a little longer strands them on the property overnight.
         result.ShiftRemainingOnArrival = Math.Round(shift, 2);
@@ -959,6 +1125,25 @@ public static class HosEngine
         if (result.CycleRestartRequired)
             result.Warnings.Add($"This load cannot be completed without a {rules.CycleRestartHours:0.#}-hour cycle restart mid-trip. That is a planning failure unless it is deliberate.");
 
+        if (eu)
+        {
+            // Said, because each of these is a decision the planner made on the driver's behalf and every
+            // one of them is something the driver could choose not to do.
+            if (result.ExtendedDays > 0)
+                result.Warnings.Add($"This plan drives {result.ExtendedDays} ten-hour day(s) — you have " +
+                                    $"{euR.ExtensionsPerWeek} a week, and {extLeft} left after this.");
+            if (result.ReducedDailyRests > 0)
+                result.Warnings.Add($"This plan takes {result.ReducedDailyRests} reduced (9-hour) daily rest(s) to get a " +
+                                    $"15-hour spread. You may take {euR.ReducedRestsBetweenWeekly} between weekly rests.");
+            if (result.WeeklyRestsRequired > 0)
+                result.Warnings.Add($"This plan includes {result.WeeklyRestsRequired} weekly rest(s)" +
+                                    (result.ReducedWeeklyRests > 0 ? $", {result.ReducedWeeklyRests} of them reduced to 24 hours" : "") + ".");
+            if (owed > Eps)
+                result.Warnings.Add($"{Hhmm.Of(owed)} of reduced weekly rest is still owed once this load is done. It " +
+                                    "has to be paid back, attached to a rest of at least 9 hours, before the end of the " +
+                                    "third week after the reduced one.");
+        }
+
         // Recap, told once and only where it changes the answer.
         //
         // This used to fire a cheerful "recap returns 8:00 to the cycle" the moment a batch landed
@@ -986,7 +1171,12 @@ public static class HosEngine
         // true: it is true because they went into the sleeper, and if they sit in the seat on duty
         // instead then ATS will run their seventy down and the app will insist it did not. So this is
         // not a note about a calculation, it is the calculation telling them what it assumed.
-        if (result.DockRestHours > 0.01)
+        if (eu && req.UnloadingHours + req.LoadingHours > 0.01)
+            result.DockAdvice =
+                $"{Hhmm.Of(req.LoadingHours + req.UnloadingHours)} of dock time on this one is other work, not " +
+                "driving: it runs your spread down like any other hour of the day, but none of your driving limits — " +
+                "daily, weekly or the fortnight — move for it.";
+        else if (result.DockRestHours > 0.01)
             result.DockAdvice =
                 $"{Hhmm.Of(result.DockRestHours)} of dock time on this one is waiting, not working — behind a " +
                 $"{TrailerSpec.Describe(req.TrailerType, null)} the dock does it and you are in the way. " +
@@ -1000,7 +1190,14 @@ public static class HosEngine
                 "Stay on duty for it in ATS: it comes off your 70 as well as your 14, and the plan above " +
                 "has already counted it that way.";
 
-        if (cycle <= 0.01)
+        if (eu)
+        {
+            if (cycle <= 0.01)
+                result.Warnings.Add("Weekly driving lands at zero on delivery — no more driving until Monday 00:00.");
+            else if (cycle < 8)
+                result.Warnings.Add($"Only {Hhmm.Of(cycle)} of weekly driving left on delivery (56 a week, 90 over two).");
+        }
+        else if (cycle <= 0.01)
             result.Warnings.Add("Cycle lands at zero on delivery — the truck will be parked until a restart.");
         else if (cycle < 8)
             result.Warnings.Add($"Only {Hhmm.Of(cycle)} of cycle left on delivery. Reset planning starts now, not later.");
@@ -1048,7 +1245,7 @@ public static class HosEngine
 
         else if (req.UnloadingHours > 0 && shift < strandMargin)
             result.Warnings.Add(
-                $"This delivers with only {Hhmm.Of(shift)} left on your 14-hour SHIFT once you are empty — " +
+                $"This delivers with only {Hhmm.Of(shift)} left on your {(eu ? "spread" : "14-hour SHIFT")} once you are empty — " +
                 $"nothing to do with the delivery window. If they hold you {Hhmm.Of(shift)} longer than " +
                 $"planned, the window shuts while you are on the property. {berth}");
 
@@ -1063,6 +1260,15 @@ public static class HosEngine
     }
 
     private static double Min(params double[] v) => v.Min();
+
+    /// <summary>00:00 on the Monday of the calendar week this moment falls in, on the game's own calendar
+    /// (day 1 is a Monday). EU weekly driving runs Monday 00:00 to Sunday 24:00.</summary>
+    internal static DateTime WeekStart(DateTime at)
+    {
+        var day = GameClock.DayOf(at);
+        var monday = day - ((day - 1) % 7 + 7) % 7;
+        return GameClock.Epoch.AddDays(monday - 1);
+    }
 
     /// <summary>
     /// Hours until a site-type receiver will take the load, arriving at this moment. Zero where they are

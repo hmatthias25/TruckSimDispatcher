@@ -192,6 +192,14 @@ app.MapPost("/api/hos", (HosSnapshot h) => Results.Ok(store.Mutate(s =>
     s.Hos.BreakRemaining = Math.Max(0, h.BreakRemaining);
     s.Hos.CycleRemaining = Math.Max(0, h.CycleRemaining);
     s.Hos.Recap = h.Recap ?? new();
+    // The EU counters, on an ETS2 career. Sent as the driver read them; an ATS career never sends them.
+    s.Hos.EuWeekDriven = h.EuWeekDriven is { } wd ? Math.Max(0, wd) : null;
+    s.Hos.EuLastWeekDriven = h.EuLastWeekDriven is { } lw ? Math.Max(0, lw) : null;
+    s.Hos.EuExtensionsUsed = Math.Max(0, h.EuExtensionsUsed);
+    s.Hos.EuReducedRestsUsed = Math.Max(0, h.EuReducedRestsUsed);
+    s.Hos.EuHoursSinceWeeklyRest = h.EuHoursSinceWeeklyRest is { } sw ? Math.Max(0, sw) : null;
+    s.Hos.EuLastWeeklyRestReduced = h.EuLastWeeklyRestReduced;
+    s.Hos.EuCompensationOwed = Math.Max(0, h.EuCompensationOwed);
     // A reading typed in by the driver is a reading: not a projection, and not stale. Nothing here used
     // to set Confirmed, so once it went false it stayed false and the driver was told their clocks were
     // out of date however many times they reported them.

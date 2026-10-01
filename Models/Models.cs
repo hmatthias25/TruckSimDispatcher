@@ -1248,6 +1248,29 @@ public class HosSnapshot
     public double BreakRemaining { get; set; } = 8;
     /// <summary>Hours left on the 70-in-8 cycle.</summary>
     public double CycleRemaining { get; set; } = 70;
+
+    // ---- EU clocks (Regulation 561/2006), for an ETS2 career. See Services.HosEngine and EuHosRules.
+    //
+    // On an EU career the four above mean: DriveRemaining is daily driving left (9 h, or 10 on an extended
+    // day); ShiftRemaining is the SPREAD left before the daily rest has to start (13 h from the end of the
+    // last rest, 15 h if the next rest will be a reduced one); BreakRemaining is driving left before the
+    // 45-minute break; CycleRemaining is weekly driving left — the smaller of 56 h this week and 90 h over
+    // this week and last. The rest are the counters the EU rules need and the US ones never did.
+
+    /// <summary>Driving so far this calendar week (Monday 00:00 to Sunday 24:00). Null where never reported.</summary>
+    public double? EuWeekDriven { get; set; }
+    /// <summary>Driving last calendar week, for the 90-hour fortnight. Null where never reported.</summary>
+    public double? EuLastWeekDriven { get; set; }
+    /// <summary>10-hour days already used this week, of the two allowed.</summary>
+    public int EuExtensionsUsed { get; set; }
+    /// <summary>Reduced (9-hour) daily rests already taken since the last weekly rest, of the three allowed.</summary>
+    public int EuReducedRestsUsed { get; set; }
+    /// <summary>Hours since the last weekly rest ended. The next one must start within 144. Null where never reported.</summary>
+    public double? EuHoursSinceWeeklyRest { get; set; }
+    /// <summary>Whether the last weekly rest was a reduced one — then the next must be regular.</summary>
+    public bool EuLastWeeklyRestReduced { get; set; }
+    /// <summary>Hours of reduced weekly rest still to be paid back, attached to a rest of 9 hours or more.</summary>
+    public double EuCompensationOwed { get; set; }
     /// <summary>Optional recap hours the driver's HOS display projects returning.</summary>
     public List<RecapDay> Recap { get; set; } = new();
     public string Source { get; set; } = "";
@@ -3075,6 +3098,8 @@ public class AppSettings
 
     // --- HOS rule set (editable; the driver's mod always wins)
     public HosRules Hos { get; set; } = new();
+    /// <summary>The EU rules an ETS2 career plans on. See <see cref="EuHosRules"/>. ATS never reads it.</summary>
+    public EuHosRules EuHos { get; set; } = new();
 
     // --- operational assumptions
     public int GovernedMph { get; set; } = 65;
@@ -3366,6 +3391,78 @@ public class HosRules
 }
 
 /// <summary>What a dock actually costs in hours, for one trailer type.</summary>
+/// <summary>
+/// Driving and rest times under EU Regulation 561/2006 (as amended by 2020/1054), for ETS2 careers.
+/// Step 4 of ETS2 support (#266, #270). Real law, not the game's own fatigue system — ETS2 has a far
+/// simpler one, and the app is here to hold the driver to the real rules.
+///
+/// Kept apart from <see cref="HosRules"/> rather than as different numbers in it, because the SHAPE is
+/// different: weekly driving counts driving only and resets on a Monday rather than after a rest, there is
+/// a fortnight on top of the week, a daily limit that two days a week may stretch, a daily rest that three
+/// times may shrink, and a weekly rest that has to start within six days whatever the clocks say.
+/// </summary>
+public class EuHosRules
+{
+    /// <summary>Daily driving: 9 hours.</summary>
+    public double DailyDriving { get; set; } = 9;
+    /// <summary>...extendable to 10 hours, twice a calendar week.</summary>
+    public double ExtendedDailyDriving { get; set; } = 10;
+    public int ExtensionsPerWeek { get; set; } = 2;
+    /// <summary>A 45-minute break after 4.5 hours of driving. It may be split 15 then 30.</summary>
+    public double DrivingBeforeBreak { get; set; } = 4.5;
+    public double BreakLength { get; set; } = 0.75;
+    /// <summary>Regular daily rest: 11 hours, within 24 hours of the end of the last one — so a 13-hour spread.</summary>
+    public double RegularDailyRest { get; set; } = 11;
+    /// <summary>Reduced daily rest: 9 hours, at most three times between weekly rests — a 15-hour spread.</summary>
+    public double ReducedDailyRest { get; set; } = 9;
+    public int ReducedRestsBetweenWeekly { get; set; } = 3;
+    /// <summary>Weekly driving: 56 hours in a calendar week...</summary>
+    public double WeeklyDriving { get; set; } = 56;
+    /// <summary>...and 90 hours over any two consecutive weeks.</summary>
+    public double FortnightDriving { get; set; } = 90;
+    /// <summary>Regular weekly rest: 45 hours.</summary>
+    public double RegularWeeklyRest { get; set; } = 45;
+    /// <summary>Reduced weekly rest: 24 hours, the shortfall repaid within three weeks. At least one of any
+    /// two consecutive weekly rests must be regular.</summary>
+    public double ReducedWeeklyRest { get; set; } = 24;
+    /// <summary>A weekly rest must start no later than six 24-hour periods after the last one ended.</summary>
+    public double WeeklyRestDueAfterHours { get; set; } = 144;
+    /// <summary>Whether the planner may use a reduced weekly rest where the rules allow one.</summary>
+    public bool AllowReducedWeeklyRest { get; set; } = true;
+
+    /// <summary>The spread a regular daily rest leaves: 24 hours less the rest.</summary>
+    public double Spread => 24 - RegularDailyRest;
+    /// <summary>The spread a reduced daily rest leaves.</summary>
+    public double ReducedSpread => 24 - ReducedDailyRest;
+
+    /// <summary>
+    /// These rules as the four numbers the planner's shared paths read — breaks, the window, the daily
+    /// rest, waiting for a dock. The EU-only logic sits on top of that in HosEngine. Dispatch thresholds
+    /// carry over from the career's own settings.
+    /// </summary>
+    public HosRules AsPlanningRules(HosRules career) => new()
+    {
+        DriveLimit = DailyDriving,
+        ShiftLimit = Spread,
+        RequireBreak = true,
+        DrivingBeforeBreak = DrivingBeforeBreak,
+        BreakLength = BreakLength,
+        CycleLimit = WeeklyDriving,
+        CycleDays = 7,
+        OffDutyReset = RegularDailyRest,
+        CycleRestartHours = RegularWeeklyRest,
+        StopDispatchAtCycleHours = career.StopDispatchAtCycleHours,
+        StopDispatchAtDriveHours = career.StopDispatchAtDriveHours,
+        RestartHomeMaxDeadheadHours = career.RestartHomeMaxDeadheadHours,
+        RestartHomeMaxDaysUntilDue = career.RestartHomeMaxDaysUntilDue,
+        SleeperSplitAllowed = false,
+        // The spread is elapsed time: a break inside it is still inside it.
+        BreakConsumesShift = true,
+        OffDutyExtendsShift = false,
+        DriveDisplayCaps = "no",
+    };
+}
+
 public class FacilityTimeSample
 {
     public string TrailerType { get; set; } = "";
@@ -3794,6 +3891,14 @@ public class FeasibilityResult
     public int BreaksRequired { get; set; }
     public int FuelStopsRequired { get; set; }
     public bool CycleRestartRequired { get; set; }
+    /// <summary>EU only: weekly rests the plan takes, and how many of them were reduced to 24 hours.</summary>
+    public int WeeklyRestsRequired { get; set; }
+    public int ReducedWeeklyRests { get; set; }
+    /// <summary>EU only: 10-hour days and 9-hour daily rests the plan uses.</summary>
+    public int ExtendedDays { get; set; }
+    public int ReducedDailyRests { get; set; }
+    /// <summary>EU only: weekly-rest hours still owed when the plan ends.</summary>
+    public double CompensationOwedAfter { get; set; }
     public double CycleRemainingAfter { get; set; }
     /// <summary>
     /// The 14-hour window left once the driver is empty at the receiver. Thin here means a dock that
