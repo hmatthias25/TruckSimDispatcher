@@ -89,7 +89,7 @@ public static class MapCoverage
     /// career gets the sensible half of the continent on day one and turns Canada on deliberately.
     /// </summary>
     public static List<string> DefaultSelection() =>
-        All.Where(r => r.Country == GameProfile.Current.DefaultRegionCountry).Select(r => r.Code).ToList();
+        GameProfile.Current.DefaultRegions.ToList();
 
     private static string Norm(string? code) => (code ?? "").Trim().ToUpperInvariant();
 
@@ -215,6 +215,10 @@ public static class MapCoverage
             regions = All.Select(r => new { code = r.Code, name = r.Name, country = r.Country, on = on.Contains(r.Code) }),
             selectedCount = All.Count(r => on.Contains(r.Code)),
             usDefault = DefaultSelection(),
+            // The game's own groups, in order, so the panel draws whatever the career's map has.
+            groups = GameProfile.Current.RegionGroups.Select(g => new { key = g.Key, title = g.Title, note = g.Note }),
+            defaultNote = GameProfile.Current.DefaultRegionsNote,
+            gameShort = GameProfile.Current.ShortName,
             strandedNote = StrandedNote(s),
         };
     }

@@ -6599,7 +6599,7 @@ function facilityTimesHtml() {
 }
 
 /* ============================================================ SETTINGS */
-/* Which states and provinces the driver actually runs.
+/* Which states and provinces — or, in ETS2, countries — the driver actually runs.
  *
  * A map mod is not an instruction to work the whole continent. C2C lays the lot down at once, so a
  * driver who wanted the west gets offered Maine — and the only thing between them and a four-day
@@ -6633,18 +6633,16 @@ function mapCoveragePanel() {
         have switched off — it is refused on the board with the reason, not scored down. Nothing is said
         about what a run passes <i>through</i>: this app has city coordinates and no roads, and a guess at
         your route is not something to refuse a load on.</p>
-      <p class="hint">Defaults to every US state, which is a superset of anywhere base ATS goes — so on a
-        stock install this does nothing at all. It is here for map mods. Turn a region off when you do not
-        have it installed, or have it and do not want the work.</p>
+      ${/* The groups and what the default means come from the career's game: US states, Canada and Mexico
+            for ATS; the base game, each map DLC and ProMods for ETS2. */ ''}
+      <p class="hint">${esc(mc.defaultNote || '')}</p>
       <div class="row-actions">
-        <button class="btn" data-act="mc-preset" data-which="us">All US states</button>
+        <button class="btn" data-act="mc-preset" data-which="us">${esc(mc.gameShort || 'Game')} default</button>
         <button class="btn" data-act="mc-preset" data-which="all">Everything</button>
         <button class="btn" data-act="mc-preset" data-which="none">Clear all</button>
       </div>
-      ${group('US', 'United States', '')}
-      ${group('CA', 'Canada', 'Coast to Coast, Promods Canada and the Canadian packs. Off unless you run one.')}
-      ${group('MX', 'Mexico', 'Viva Mexico and the southern packs. Off unless you run one.')}
-      <p class="hint">Clearing every box is read as "not set" and falls back to the US default, because a
+      ${(mc.groups || []).map((g) => group(g.key, esc(g.title), esc(g.note))).join('')}
+      <p class="hint">Clearing every box is read as "not set" and falls back to the default, because a
         board that refuses everything with no explanation is indistinguishable from a broken app.</p>
     </div>`;
 }

@@ -444,15 +444,18 @@ public static class Markets
     """;
 
     /// <summary>ATS's freight markets. Reached through <see cref="GameProfile.Markets"/>.</summary>
-    internal static readonly List<MarketCity> AtsBuiltIn = Parse();
+    internal static readonly List<MarketCity> AtsBuiltIn = Parse(Table);
+
+    /// <summary>ETS2's freight markets. Reached through <see cref="GameProfile.Markets"/>.</summary>
+    internal static readonly List<MarketCity> Ets2BuiltIn = Parse(Ets2Data.MarketTable);
 
     /// <summary>The open career's game's freight markets, before any the driver added.</summary>
     public static IReadOnlyList<MarketCity> BuiltIn => GameProfile.Current.Markets;
 
-    private static List<MarketCity> Parse()
+    private static List<MarketCity> Parse(string table)
     {
         var list = new List<MarketCity>();
-        foreach (var raw in Table.Split('\n'))
+        foreach (var raw in table.Split('\n'))
         {
             var line = raw.Trim();
             if (line.Length == 0) continue;

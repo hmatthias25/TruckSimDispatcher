@@ -10,7 +10,8 @@ namespace TruckSimDispatcher.Services;
 /// and a career that changed game halfway would be wrong in every one of them. So the choice lives on
 /// <see cref="AppState.Game"/>, and this is what it resolves to.</para>
 ///
-/// <para><b>Only ATS exists so far.</b> This step moves no behaviour. It is the seam: the tables that were
+/// <para><b>ATS and ETS2.</b> ETS2's data arrived in step 3 (#269); its own rules — hours of service, pay —
+/// come in later steps, and until they do an ETS2 career borrows ATS's. Step 1 moved no behaviour. It is the seam: the tables that were
 /// read directly — the freight markets, the city coordinates, the regions, the time zones, fuel, the
 /// in-game companies, the carriers, the starting companies, the dealer trucks, the trailer makes, the HazMat
 /// classes, payroll tax, the mod folders — are now
@@ -48,6 +49,7 @@ public sealed class GameProfile
 
     private readonly Lazy<IReadOnlyList<MarketCity>> _markets;
     private readonly Lazy<IReadOnlyList<MapCoverage.Region>> _regions;
+    private readonly Lazy<IReadOnlyList<string>> _defaultRegions;
     private readonly Lazy<IReadOnlyDictionary<string, (double Lat, double Lon)>> _centres;
     private readonly Lazy<IReadOnlyDictionary<string, int>> _zones;
     private readonly Lazy<IReadOnlyDictionary<int, string>> _zoneNames;
@@ -68,8 +70,12 @@ public sealed class GameProfile
     public IReadOnlyDictionary<string, (double Lat, double Lon)> RegionCentres => _centres.Value;
     /// <summary>The states, provinces or countries a driver can say they run.</summary>
     public IReadOnlyList<MapCoverage.Region> Regions => _regions.Value;
-    /// <summary>Which of <see cref="Regions"/> a new career runs, by country.</summary>
-    public string DefaultRegionCountry { get; }
+    /// <summary>How <see cref="Regions"/> are grouped on the Where you run panel: key, heading, note.</summary>
+    public IReadOnlyList<(string Key, string Title, string Note)> RegionGroups { get; }
+    /// <summary>The regions a career runs until the driver says otherwise.</summary>
+    public IReadOnlyList<string> DefaultRegions => _defaultRegions.Value;
+    /// <summary>What the default means, said on the Where you run panel.</summary>
+    public string DefaultRegionsNote { get; }
     /// <summary>Time zone by region, as hours ahead of an arbitrary base. Only differences are used.</summary>
     public IReadOnlyDictionary<string, int> TimeZones => _zones.Value;
     public IReadOnlyDictionary<int, string> TimeZoneNames => _zoneNames.Value;
@@ -113,7 +119,9 @@ public sealed class GameProfile
         string hosRuleset, string units, string currency, string taxModel,
         Func<IReadOnlyList<MarketCity>> markets, IReadOnlyList<string> cityResources,
         Func<IReadOnlyDictionary<string, (double Lat, double Lon)>> centres,
-        Func<IReadOnlyList<MapCoverage.Region>> regions, string defaultRegionCountry,
+        Func<IReadOnlyList<MapCoverage.Region>> regions,
+        IReadOnlyList<(string Key, string Title, string Note)> regionGroups,
+        Func<IReadOnlyList<string>> defaultRegions, string defaultRegionsNote,
         Func<IReadOnlyDictionary<string, int>> zones, Func<IReadOnlyDictionary<int, string>> zoneNames,
         Func<IReadOnlyDictionary<string, double>> fuelIndex, decimal defaultFuelPrice, string fuelPriceBasis,
         Func<AtsCompanies.Firm[]> companies, IReadOnlyList<string> baseGameRegions,
@@ -131,7 +139,9 @@ public sealed class GameProfile
         CityResources = cityResources;
         _centres = new(centres);
         _regions = new(regions);
-        DefaultRegionCountry = defaultRegionCountry;
+        RegionGroups = regionGroups;
+        _defaultRegions = new(defaultRegions);
+        DefaultRegionsNote = defaultRegionsNote;
         _zones = new(zones);
         _zoneNames = new(zoneNames);
         _fuelIndex = new(fuelIndex);
@@ -169,7 +179,16 @@ public sealed class GameProfile
         cityResources: new[] { "data/us-cities.txt", "data/ca-cities.txt" },
         centres: () => Geo.AtsCentres,
         regions: () => MapCoverage.AtsRegions,
-        defaultRegionCountry: "US",
+        regionGroups: new[]
+        {
+            ("US", "United States", ""),
+            ("CA", "Canada", "Coast to Coast, Promods Canada and the Canadian packs. Off unless you run one."),
+            ("MX", "Mexico", "Viva Mexico and the southern packs. Off unless you run one."),
+        },
+        defaultRegions: () => MapCoverage.AtsRegions.Where(r => r.Country == "US").Select(r => r.Code).ToList(),
+        defaultRegionsNote: "Defaults to every US state, which is a superset of anywhere base ATS goes — so on a " +
+                            "stock install this does nothing at all. It is here for map mods. Turn a region off " +
+                            "when you do not have it installed, or have it and do not want the work.",
         zones: () => GameZones.AtsZones,
         zoneNames: () => GameZones.AtsZoneNames,
         fuelIndex: () => Fuel.AtsStateIndex,
@@ -190,8 +209,53 @@ public sealed class GameProfile
         trucksShowcase: () => Seed.AtsShowcaseSpecs,
         trailerMake: Seed.AtsTrailerMake);
 
+    /// <summary>
+    /// Euro Truck Simulator 2. Its data is <see cref="Ets2Data"/>; see that for what is real and what is
+    /// still borrowed from ATS until a later step (trailer types, the pay model, the hours-of-service rules).
+    /// </summary>
+    public static readonly GameProfile Ets2 = new(
+        id: "ETS2",
+        name: "Euro Truck Simulator 2",
+        shortName: "ETS2",
+        steamAppId: "227300",
+        gameFolder: "Euro Truck Simulator 2",
+        // Not built yet (#270): until it is, the FMCSA engine runs on whatever numbers HosRules holds.
+        hosRuleset: "EU561",
+        units: "metric",
+        currency: "EUR",
+        taxModel: "Flat",
+        markets: () => Services.Markets.Ets2BuiltIn,
+        cityResources: new[] { "data/eu-cities.txt" },
+        centres: () => Ets2Data.Centres,
+        regions: () => Ets2Data.Regions,
+        regionGroups: Ets2Data.Groups,
+        // Every country. One you do not have installed lists no jobs, so leaving it on costs nothing.
+        defaultRegions: () => Ets2Data.Regions.Select(r => r.Code).ToList(),
+        defaultRegionsNote: "Every country is on by default — one you do not have installed lists no jobs, so " +
+                            "leaving it ticked costs nothing. Switch a country off when you do not want the " +
+                            "work there: nobody has to go all the way to Iceland.",
+        zones: () => Ets2Data.Zones,
+        zoneNames: () => Ets2Data.ZoneNames,
+        fuelIndex: () => Ets2Data.FuelIndex,
+        defaultFuelPrice: Ets2Data.DefaultFuelPricePerGallon,
+        fuelPriceBasis: Ets2Data.FuelPriceBasis,
+        companies: () => Ets2Data.Firms,
+        baseGameRegions: Ets2Data.BaseGame,
+        hazmat: () => Ets2Data.Adr,
+        regionTax: () => Ets2Data.NoRegionTax,
+        incomeTax: () => Ets2Data.FlatIncomeTax,
+        carriersReal: () => Ets2Data.CarriersReal,
+        carriersFictional: () => Ets2Data.CarriersFictional,
+        carriersSecondChance: () => Ets2Data.CarriersSecondChance,
+        carrierRegionOf: Ets2Data.RegionOf,
+        startingCompanies: () => Ets2Data.StartingCompanies,
+        trucksAutomatic: () => Ets2Data.TrucksAutomatic,
+        trucksManual: () => Ets2Data.TrucksManual,
+        trucksShowcase: () => Ets2Data.TrucksShowcase,
+        trailerMake: Ets2Data.TrailerMake);
+
     private static readonly Dictionary<string, GameProfile> ById =
-        new(StringComparer.OrdinalIgnoreCase) { [Ats.Id] = Ats };
+        new(StringComparer.OrdinalIgnoreCase) { [Ats.Id] = Ats, [Ets2.Id] = Ets2 };
 
     /// <summary>Every game the app supports.</summary>
     public static IReadOnlyCollection<GameProfile> All => ById.Values;

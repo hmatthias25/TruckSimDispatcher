@@ -39,6 +39,8 @@
     <!-- And Canada, for the map mods that go there. CC BY 4.0, attributed the same way. Without it
          every distance rule went silent north of the border — see Geo. -->
     <EmbeddedResource Include="data-embedded\ca-cities.txt" LogicalName="data/ca-cities.txt" />
+    <!-- European coordinates for ETS2 careers, from GeoNames (CC BY 4.0). Built for #269. -->
+    <EmbeddedResource Include="data-embedded\eu-cities.txt" LogicalName="data/eu-cities.txt" />
   </ItemGroup>
 
   <ItemGroup>
