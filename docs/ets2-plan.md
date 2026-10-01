@@ -207,7 +207,7 @@ Two related rules:
 - **A crossing is a new kind of trip event**, a span like a rest, with a start and end time, the two ports, the fare, and whether the driver had a **cabin**. The fare is a trip expense the company pays, like tolls, and the end time moves the app's clock the same way a rest does.
 - **The hours-of-service engine classifies each crossing** by its length and whether there was a cabin. It counts as one of: a regular daily rest (allowing the 1 hour of interruptions for driving on and off), a reduced weekly rest, a regular weekly rest (8 hours or more scheduled, with a cabin), or only a break. The driver is told when the game and the law disagree, for example: *"The game counts this 6-hour crossing as rest. The regulation does not: without 11 hours, it is a break, and your daily rest is still due."*
 - **A long crossing with a cabin solves the Mobility Package problem.** A regular weekly rest taken on an 8-hour-plus crossing with a cabin needs no hotel and costs no hotel night (section 3a). This is the real-world reason hauliers take long overnight ferries, and the planner should know it.
-- **The planner can route through ferries**, using the app's own table of real-world routes (below). With it, the planner can schedule a daily or weekly rest onto a crossing instead of a lay-by, which is often both faster and cheaper.
+- **The planner can route through ferries and the Channel Tunnel**, using the app's own table of real-world routes (below). With it, the planner can schedule a daily or weekly rest onto a crossing instead of a lay-by, which is often both faster and cheaper.
 - **Whether there is a cabin** cannot be read from the game. Default to **yes on overnight crossings** and **no on short ones and the Channel Tunnel**, with a setting or a per-route override.
 - **Cabotage and borders:** a crossing between two countries is part of an international load, so it does not change the cabotage counts in section 3b. A crossing to or from the UK starts or ends a UK entry for the UK cabotage rules.
 
@@ -221,7 +221,17 @@ Two related rules:
 - the real **crossing time**;
 - whether freight drivers get a **cabin**, which decides whether the crossing can be a daily or weekly rest (see the table above). Long overnight crossings usually include one; short hops usually do not;
 - a typical **freight fare**, used as the trip expense when the player has not entered the one the game charged;
-- the **sailings**: departure times by day of the week.
+- the **sailings**: either departure times by day of the week, or, for a frequent service, a **frequency** (for example "every 15 minutes, around the clock");
+- for a terminal with a check-in, how long before departure the driver has to be there.
+
+**The Channel Tunnel is one of these routes**, treated exactly like a ferry: Folkestone to Calais and back by Le Shuttle Freight. Its real figures:
+- **35 minutes** from platform to platform;
+- **around the clock**, with up to **4 departures an hour**, so a frequency rather than a timetable;
+- drivers are told to allow **30 minutes to 2 hours** for check-in at Folkestone;
+- **no cabin**, so the crossing is never a daily or weekly rest, at most a break;
+- in ETS2 it costs **€300 or £240** (as reported on the game wiki), against the real-world fare, which is not checked here.
+
+With **Real ferry sailings** on, the driver arriving at the terminal gets the check-in time plus the wait for the next shuttle on the frequency, which is usually short. That is still realism worth having on the UK route, where the tunnel and the Dover ferries compete.
 
 **Matching game routes to real ones.** ETS2's map is compressed, and its ferry links do not all match a real route one for one. For each route the game offers, find the real-world counterpart, the same operator's route between the same or the nearest real ports. Where there is no real counterpart, fall back to the crossing time the game uses and no timetable, and mark the route as such in the table.
 
@@ -330,4 +340,5 @@ These were checked on 2026-10-01. Laws and their interpretation change, so re-ch
 - Norway: the Norwegian Public Roads Administration's [International transport, cabotage and penalties](https://www.vegvesen.no/en/vehicles/professional-transport/international-transport-and-cabotage-by-road/international-transport-cabotage-and-penalties/), and Trans.info's [Norway adopts Mobility Package rules from 1 November](https://trans.info/en/norway-adopts-mobility-package-rules-november-2022-309759).
 - Ferries and trains, the law: the European Commission's [Driving and rest times](https://transport.ec.europa.eu/transport-modes/road/mobility-package-i/driving-rest-times_en) page; Regulation (EU) 2020/1054 on [EUR-Lex](https://eur-lex.europa.eu/eli/reg/2020/1054/oj/eng); Tachogram's [Rests on trains and ferries](https://tachogram.com/en/blog/2021/01/28/mobility-package-regulation-rests-on-trains-ferries); and Truck Mobility Info's [Sleeping on the ferry](https://truckmobility-info.com/sleeping-on-the-ferry-rest-rules/). The last one describes the rules from before the 2020 amendment, so take the weekly rest rules from the others.
 - Ferries and trains, in the game: the Steam discussion [Time to sleep](https://steamcommunity.com/app/227300/discussions/0/1644292444647278764/) on ferry time and the sleep timer; the Truck Simulator wiki's [Channel Tunnel](https://truck-simulator.fandom.com/wiki/Channel_Tunnel) page; and iXBT's [first look at update 1.60](https://ixbt.games/en/news/2026/05/30/euro-truck-simulator-2-i-ats-izmeniat-mexaniku-ustalosti-i-otdyxa-pervyi-vzgliad-na-obnovlenie-160.html).
+- The Channel Tunnel in real life: Freightlink's [LeShuttle Freight live service updates](https://www.freightlink.co.uk/eurotunnel-live-service-updates) (departures per hour), and Ferryscanner's [Folkestone to Calais shuttle](https://www.ferryscanner.com/en/ferry-routes/train-folkestone-calais) page (the 35-minute crossing, round-the-clock service and check-in times).
 - Russia, Turkey and the West Balkans: the ITF's [ECMT multilateral quota user guide, January 2026](https://www.itf-oecd.org/sites/default/files/docs/user_guide_2026_e.pdf).
