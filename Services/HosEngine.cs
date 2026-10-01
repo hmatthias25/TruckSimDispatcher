@@ -31,6 +31,9 @@ public class HosTask
     /// a day and a half of cycle a flatbed driver would not have.
     /// </summary>
     public bool HandsOff { get; set; }
+    /// <summary>A Crossing task's route (Services.Ferries) and which way it is taken.</summary>
+    public string CrossingRoute { get; set; } = "";
+    public bool CrossingFromA { get; set; }
 }
 
 public class PlanRequest
@@ -43,6 +46,21 @@ public class PlanRequest
     /// from here because a listing names a city and not a street.
     /// </summary>
     public const double WideMarketExtraBufferHours = 1.0;
+
+    // ---- where the legs run, for ETS2's crossings (Services.Crossings). Empty on ATS and on anything that
+    // only plans hours.
+    /// <summary>Where the empty run starts. Empty means where the truck is now.</summary>
+    public string FromCity { get; set; } = "";
+    public string FromState { get; set; } = "";
+    public string OriginCity { get; set; } = "";
+    public string OriginState { get; set; } = "";
+    public string DestCity { get; set; } = "";
+    /// <summary>A crossing chosen on the empty run or the loaded run, and the road either side of it.</summary>
+    public CrossingLeg? DeadheadCrossing { get; set; }
+    public CrossingLeg? LoadedCrossing { get; set; }
+
+    /// <summary>A copy, so each way across can be planned without disturbing the others.</summary>
+    public PlanRequest Clone() => (PlanRequest)MemberwiseClone();
 
     public double DeadheadMiles { get; set; }
 
@@ -312,7 +330,45 @@ public static class HosEngine
                                     Kind = "OnDuty", Hours = req.UnloadingHours,
                                     IsUnload = true, AtDock = true, HandsOff = handsOff });
 
+        // A crossing splits its leg at the port: the road to it, the ship or the train, the road from it.
+        if (req.DeadheadCrossing is { } dc) InsertCrossing(tasks, t => t.Label.StartsWith("Deadhead"), dc);
+        if (req.LoadedCrossing is { } lc) InsertCrossing(tasks, t => t.Label.StartsWith("Line haul"), lc);
         return tasks;
+    }
+
+    /// <summary>
+    /// Puts a crossing into a leg at the point the port is reached, splitting whichever drive segment it falls
+    /// in. The leg may be in several segments (fuel stops between), so the point is found by miles.
+    /// </summary>
+    private static void InsertCrossing(List<HosTask> tasks, Func<HosTask, bool> isLeg, CrossingLeg leg)
+    {
+        var route = Ferries.Find(leg.Route);
+        if (route == null) return;
+        var total = leg.MilesBefore + leg.MilesAfter;
+        var at = total > 0 ? leg.MilesBefore : 0;
+        var crossing = new HosTask
+        {
+            Label = $"{(route.Train ? "Channel Tunnel" : "Ferry")} {(leg.FromA ? route.A : route.B)} – {(leg.FromA ? route.B : route.A)}",
+            Kind = "Crossing", CrossingRoute = route.Id, CrossingFromA = leg.FromA,
+        };
+        var run = 0.0;
+        for (var i = 0; i < tasks.Count; i++)
+        {
+            var t = tasks[i];
+            if (t.Kind != "Drive" || !isLeg(t)) continue;
+            if (run + t.Miles + 1e-6 < at) { run += t.Miles; continue; }
+            var into = Math.Max(0, at - run);
+            var share = t.Miles > 0 ? into / t.Miles : 0;
+            var first = new HosTask { Label = t.Label + " (to the port)", Kind = "Drive", Hours = t.Hours * share, Miles = into };
+            var second = new HosTask { Label = t.Label + " (from the port)", Kind = "Drive", Hours = t.Hours * (1 - share), Miles = t.Miles - into };
+            tasks.RemoveAt(i);
+            var insert = new List<HosTask>();
+            if (first.Miles > 0.01) insert.Add(first);
+            insert.Add(crossing);
+            if (second.Miles > 0.01) insert.Add(second);
+            tasks.InsertRange(i, insert);
+            return;
+        }
     }
 
     public static int FuelStopsNeeded(AppSettings s, double totalMiles, double usableRange)
@@ -688,8 +744,79 @@ public static class HosEngine
             Step($"{rules.CycleRestartHours:0.#}-hour cycle restart", "Restart", rules.CycleRestartHours, 0);
         }
 
+        /// <summary>
+        /// A ferry or the Channel Tunnel. Check in, wait for the next departure, cross. What the crossing is worth
+        /// under EU rules (Article 9) decides what it does to the clocks: with a cabin and long enough it is the
+        /// daily rest; otherwise it is a break and the spread runs on, so a rest the spread will not last
+        /// through is taken before boarding.
+        /// </summary>
+        void TakeCrossing(HosTask task)
+        {
+            var route = Ferries.Find(task.CrossingRoute);
+            if (route == null) return;
+            var arrive = clock;
+            var real = Ferries.RealSailings(state) && route.HasTimetable;
+            var ready = real ? arrive.AddHours(route.CheckInHours) : arrive;
+            var departs = Ferries.NextDeparture(state, route, task.CrossingFromA, ready);
+            var wait = Math.Max(0, (departs - arrive).TotalHours);
+            var h = route.Hours;
+            var cabinRest = eu && route.Cabin && (h >= euR.RegularDailyRest - Eps || (h >= euR.ReducedDailyRest - Eps && reducedLeft > 0));
+            var what = route.Train ? "shuttle" : "sailing";
+
+            // The spread has to last until the rest starts. Without a rest on board, it has to last the crossing.
+            if (eu && !cabinRest && shift < wait + h - Eps && wait < euR.RegularDailyRest)
+            {
+                result.Warnings.Add($"Your spread will not last to the far side of {route.Label} with no cabin to rest in, so " +
+                                    "the daily rest is taken before you board.");
+                TakeReset();
+                arrive = clock;
+                ready = real ? arrive.AddHours(route.CheckInHours) : arrive;
+                departs = Ferries.NextDeparture(state, route, task.CrossingFromA, ready);
+                wait = Math.Max(0, (departs - arrive).TotalHours);
+            }
+
+            if (wait > Eps)
+            {
+                if (eu && wait >= euR.RegularDailyRest - Eps)
+                {
+                    // Long enough to be the daily rest — sat at the terminal.
+                    Step($"Waiting at {(task.CrossingFromA ? route.A : route.B)} for the {GameClock.Pretty(departs)} {what} — taken as the daily rest",
+                         "Rest", wait, 0);
+                    drive = euR.DailyDriving; shift = euR.Spread; brk = euR.DrivingBeforeBreak;
+                    result.RestsRequired++;
+                }
+                else
+                {
+                    shift = Math.Max(0, shift - wait);
+                    if (wait >= rules.BreakLength - Eps) brk = rules.DrivingBeforeBreak;
+                    Step(real ? $"Check-in and wait for the {GameClock.Pretty(departs)} {what}" : "Boarding", "Wait", wait, 0);
+                }
+                result.FerryWaitHours += Math.Round(wait, 2);
+            }
+
+            if (cabinRest)
+            {
+                var reduced = h < euR.RegularDailyRest - Eps;
+                if (reduced) { reducedLeft--; result.ReducedDailyRests++; }
+                Step($"{task.Label} — {Hhmm.Of(h)} with a cabin, taken as the {(reduced ? "reduced " : "")}daily rest", "Rest", h, 0);
+                drive = euR.DailyDriving; shift = euR.Spread; brk = euR.DrivingBeforeBreak;
+                result.RestsRequired++;
+            }
+            else
+            {
+                shift = Math.Max(0, shift - h);
+                if (h >= rules.BreakLength - Eps) brk = rules.DrivingBeforeBreak;
+                Step($"{task.Label} — {Hhmm.Of(h)}{(route.Cabin ? "" : ", no cabin")}", "Crossing", h, 0);
+            }
+            atFacility = null;
+            result.Crossings.Add($"{task.Label}: the {GameClock.Pretty(departs)} {what}, {Hhmm.Of(h)} across" +
+                                 (wait > 0.01 ? $" after {Hhmm.Of(wait)} at the port" : "") +
+                                 (cabinRest ? ", which is the daily rest" : "") + ".");
+        }
+
         foreach (var task in tasks)
         {
+            if (task.Kind == "Crossing") { TakeCrossing(task); continue; }
             // Turning up before the doors open means sitting there. ATS shows the window as a range;
             // the first time is when the receiver will actually take it, so arriving early is dead
             // time rather than slack. Skipped entirely when no opening time is known, which is how

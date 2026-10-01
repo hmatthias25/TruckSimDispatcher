@@ -1716,6 +1716,9 @@ public class TripEvent
     public double Gallons { get; set; }
     public decimal PricePerGal { get; set; }
     public decimal Cost { get; set; }
+    /// <summary>A Ferry event's crossing, by route id (Services.Ferries), and whether the driver had a cabin.</summary>
+    public string FerryRoute { get; set; } = "";
+    public bool Cabin { get; set; }
     public string LoggedUtc { get; set; } = DateTime.UtcNow.ToString("o");
 }
 
@@ -3313,6 +3316,13 @@ public class AppSettings
     /// </summary>
     public string DisplayUnits { get; set; } = "";
 
+    /// <summary>
+    /// ETS2: wait for the real ferry sailing (or Channel Tunnel shuttle) rather than leaving the moment the
+    /// truck reaches the port. On by default; switch it off for crossings that go when you get there. See
+    /// Services.Ferries. ATS has no ferries and never reads it.
+    /// </summary>
+    public bool RealFerrySailings { get; set; } = true;
+
     // --- optional AI hookup (blank = fully offline; nothing is sent anywhere)
     public string AnthropicApiKey { get; set; } = "";
     public string AnthropicModel { get; set; } = "claude-sonnet-5";
@@ -3931,6 +3941,9 @@ public class FeasibilityResult
     public int ReducedDailyRests { get; set; }
     /// <summary>EU only: weekly-rest hours still owed when the plan ends.</summary>
     public double CompensationOwedAfter { get; set; }
+    /// <summary>ETS2: the crossings the plan takes, said in words, and the hours spent waiting at ports.</summary>
+    public List<string> Crossings { get; set; } = new();
+    public double FerryWaitHours { get; set; }
     /// <summary>EU only: hotel nights for regular weekly rests the plan takes away from home, and their cost.</summary>
     public int HotelNights { get; set; }
     public decimal HotelCost { get; set; }

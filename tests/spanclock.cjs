@@ -63,14 +63,15 @@ function loadForm() {
   const UI = loadForm();
 
   head('1. Only the events you sit through are asked for an end time');
-  for (const k of ['Rest', 'Restart', 'Break', 'Delay', 'Breakdown']) {
+  for (const k of ['Rest', 'Restart', 'Break', 'Delay', 'Breakdown', 'Ferry']) {
     ok(`${k} is a span`, UI.isSpanEvent(k) === true);
   }
   // The four named in the report, plus the two that are moments by definition.
   for (const k of ['BeginLoad', 'EndLoad', 'BeginUnload', 'EndUnload', 'Fuel', 'Scale', 'Note']) {
     ok(`${k} is not`, UI.isSpanEvent(k) === false);
   }
-  ok('and there are exactly five of them', UI.SPAN_EVENTS.size === 5, [...UI.SPAN_EVENTS].join(', '));
+  // Six since #273: an ETS2 crossing is sat through like a rest, and is never driving.
+  ok('and there are exactly six of them', UI.SPAN_EVENTS.size === 6, [...UI.SPAN_EVENTS].join(', '));
 
   head('1b. The stops with a standard length open with their end already filled in');
   //   "For break if an end date isn't put we should assume 30 mins which is standard (maybe prefill

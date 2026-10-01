@@ -227,7 +227,7 @@ app.MapPost("/api/hos/plan", (PlanRequest req) =>
         req.UsableFuelRangeMiles = HosEngine.UsableRange(s.Settings, truck, s.Status.FuelPct);
     if (req.LoadingHours <= 0) req.LoadingHours = s.Settings.DefaultLoadingHours;
     if (req.UnloadingHours <= 0) req.UnloadingHours = s.Settings.DefaultUnloadingHours;
-    return Results.Ok(HosEngine.Plan(s, req, truck));
+    return Results.Ok(Crossings.PlanBest(s, req, truck));
 });
 
 app.MapPost("/api/settings", (AppSettings incoming) => Results.Ok(store.Mutate(s =>
@@ -1832,6 +1832,20 @@ app.MapPost("/api/trips/{id}/at-shipper", (string id, ArrivedRequest req) => Res
     return new { call, snapshot = Snapshot(s) };
 })));
 
+/// ETS2's crossings, with the real routes and sailings the app plans on. See Services.Ferries.
+app.MapGet("/api/ferries", () => Results.Ok(Ferries.View(store.State)));
+
+/// The driver is at a port, ready to board. Which sailing they make, and what to set the clock to — the same
+/// answer the shipper and the receiver give. Nothing is stored: the crossing is logged as a Ferry event.
+app.MapPost("/api/ferries/at-port", (FerryAtPortRequest req) =>
+{
+    var s = store.State;
+    var route = Ferries.Find(req.Route) ?? throw new InvalidOperationException("Which crossing? Pick it from the list.");
+    var at = GameClock.TryParse(string.IsNullOrWhiteSpace(req.GameTime) ? s.Status.GameTime : req.GameTime)
+             ?? throw new InvalidOperationException("I need the game date and time you are looking at.");
+    return Results.Ok(new { call = Ferries.Call(s, route, req.FromA, at) });
+});
+
 app.MapPost("/api/pay/acknowledge", (AcknowledgePayRequest? req) => Results.Ok(store.Mutate<object>(s =>
 {
     var marked = PayEngine.MarkAnnounced(s, req?.Numbers);
@@ -3050,6 +3064,8 @@ object Snapshot(AppState? given = null)
             mapCoverage = MapCoverage.View(s),
             // The truck's cabotage period and days off, on an EU career. Null on ATS.
             cabotage = Cabotage.View(s),
+            // ETS2's crossings, for the port panel and the trip log. Null on ATS, which has none.
+            ferries = GameProfile.For(s).Id == "ETS2" ? Ferries.View(s) : null,
             // What fuel costs where, so a route can be planned around it rather than paid for after.
             fuel = Fuel.PlanningView(s),
             // Said before the state line, which is the only time it is any use. Null when the run does
@@ -3242,6 +3258,7 @@ record WriteOffRequest(string Unit, bool DriverFault, decimal ScrapRecovery, str
 record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? Odometer, string? PulledOutGameTime);
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
 record ArrivedRequest(string? GameTime);
+record FerryAtPortRequest(string? Route, bool FromA, string? GameTime);
 record ReportTrailerRequest(string? TrailerUnit, string? Type, string? Subtype, string? GameId, string? Length);
 record WhereaboutsBulkRequest(List<WhereaboutsRequest>? Trailers, int? HomeDays);
 record ReconcileRequest(string? Account, decimal Amount, string Memo, decimal? FixUnsettledPay, int? FixFreightCounter);

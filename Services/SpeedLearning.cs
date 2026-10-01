@@ -294,6 +294,9 @@ public static class SpeedLearning
                 case "Break":
                     total += measured ?? Math.Max(0, rules.BreakLength);
                     break;
+                // A crossing is not driving. The truck is on a ship or a train, and counting the hours as
+                // road time would teach the planner that the map is slower than it is.
+                case "Ferry":
                 case "Delay":
                 case "Breakdown":
                     // Costed at nothing unless the driver said how long, because there is no minimum for

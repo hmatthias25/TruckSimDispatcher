@@ -159,9 +159,9 @@ None of these give foreign hauliers cabotage rights. International work there ru
 
 #### What this means for the app
 
-The EU rules above become **one rule set among several**, chosen by two things: the company's home country and the host country. In outline:
+The EU rules above become **one rule set among several**, chosen by two things: the company's home country and the host country. These limit only **domestic loads inside a foreign country** — international loads into, out of and between any of these countries are never restricted. In outline:
 
-| Home country | Host country | Rule |
+| Company based in | Domestic loads inside (a load that starts AND ends there) | Rule |
 |---|---|---|
 | EU or EEA | another EU or EEA country | 3 loads in 7 days, 1 per country after an empty entry, 4 days cooling-off |
 | EU or EEA | UK | 2 loads in 7 days after a laden entry, no empty entry |

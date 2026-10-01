@@ -379,9 +379,9 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
  * wanted two stamps, and the one place it genuinely matters got lost among them.
  *
  * Restart is not in the dropdown but is honoured — older careers have them, and SpeedLearning measures
- * exactly these five.
+ * exactly these. Ferry (ETS2) is a crossing: on a ship or a train, never driving.
  */
-const SPAN_EVENTS = new Set(['Rest', 'Restart', 'Break', 'Delay', 'Breakdown']);
+const SPAN_EVENTS = new Set(['Rest', 'Restart', 'Break', 'Delay', 'Breakdown', 'Ferry']);
 const isSpanEvent = (kind) => SPAN_EVENTS.has(kind);
 
 /**
@@ -2373,6 +2373,35 @@ function euClocksHtml(h, v) {
     </div>`;
 }
 
+/** The crossings, for a select: the game's route names, with the train marked. */
+function ferryOptions() {
+  const f = S.views.ferries;
+  if (!f) return '';
+  return f.routes.map((r) => `<option value="${esc(r.id)}">${esc(r.label)}${r.train ? ' (train)' : ''}${r.dlc ? ` — ${esc(r.dlc)}` : ''}</option>`).join('');
+}
+
+/**
+ * At the port (#273): which crossing, which way, and when the truck pulled in. The answer is the next real
+ * sailing — or straight on, with real sailings off — and what to set the game clock to, put in front of the
+ * driver the same way the shipper's and the receiver's are.
+ */
+function atPortHtml(t) {
+  if (!S.views.ferries) return '';
+  return `<div class="panel">
+    <div class="panel-head"><h2>At a port?</h2>
+      <span class="sub">Say which crossing and I will tell you which ${S.views.ferries.realSailings ? 'real ' : ''}sailing you make.</span></div>
+    <div class="grid3">
+      <label>Crossing<select id="fp-route">${ferryOptions()}</select></label>
+      <label>Direction<select id="fp-dir"><option value="a">From the first port</option><option value="b">From the second port</option></select></label>
+      ${dayTimeInput('fp-time', S.status.gameTime, 'Game time you pulled in')}
+    </div>
+    <div class="row-actions"><button class="btn" data-act="at-port">I am at the port</button></div>
+    <p class="hint">${S.views.ferries.realSailings
+      ? 'Real ferry sailings are on: you wait for the next departure on the operator\'s typical timetable. Switch it off in Settings to leave when you arrive.'
+      : 'Real ferry sailings are off in Settings, so the crossing leaves when you get there.'}</p>
+  </div>`;
+}
+
 function viewActive() {
   const t = S.views.activeTrip;
   if (!t) return `<div class="panel"><div class="empty">No open load. Head to the Dispatch tab, enter the board
@@ -2467,6 +2496,7 @@ function viewActive() {
         ${f.parkingReserveApplied ? `<p class="hint" style="margin:0">A driving day here stops
           <b>${hhmm(S.settings.parkingBufferHours)}</b> short of the clock so there is time to find
           parking. Change it under Settings &rarr; Operational assumptions.</p>` : ''}
+        ${(f.crossings || []).length ? `<p style="margin:6px 0 0"><b>Crossings:</b> ${f.crossings.map(esc).join(' ')}</p>` : ''}
         ${f.warnings.length ? `<ul>${f.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
       </div>
       ${/* Which duty status the plan assumed at the dock. Deliberately outside the verdict callout: it
@@ -2499,7 +2529,9 @@ function viewActive() {
               ['BeginUnload', 'Begin unload'], ['EndUnload', 'End unload'],
             ]),
             ['Fuel', 'Fuel'], ['Break', 'Break'], ['Rest', 'Rest'], ['Scale', 'Scale'],
-            ['Delay', 'Delay'], ['Breakdown', 'Breakdown'], ['Note', 'Note'],
+            ['Delay', 'Delay'], ['Breakdown', 'Breakdown'],
+            ...(S.views.ferries ? [['Ferry', 'Ferry / Channel Tunnel']] : []),
+            ['Note', 'Note'],
           ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       </div>
       ${/* Repainted by the change listener rather than through render(), which would rebuild the panel
@@ -2540,6 +2572,16 @@ function viewActive() {
         no dock time to record, and the planner will not learn from one. <b>I have arrived</b> above is
         what stamps when you got there, and that is what your on-time record is judged on. The odometer
         at pickup is still wanted, in <b>Report after hooking</b>.</p>` : ''}
+      ${S.views.ferries ? `<fieldset><legend>If this is a ferry or the Channel Tunnel</legend>
+        <div class="grid3">
+          <label>Crossing<select id="ev-ferry">${ferryOptions()}</select></label>
+          <label>Fare ${SYM()}<input id="ev-fare" type="number" step="1" min="0" placeholder="what the game charged"></label>
+          <label class="chk" style="align-self:end"><input type="checkbox" id="ev-cabin"> Had a cabin</label>
+        </div>
+        <p class="hint">Log it as you board, with the end time when you land. The fare goes on the load's tolls, and the
+          log says what the crossing counts as under EU rules — the game counts any ferry time as rest, the law only
+          counts it with a cabin, and long enough.</p>
+      </fieldset>` : ''}
       <fieldset><legend>If this is a fuel stop</legend>
         <div class="grid4">
           <label>${VU() === 'L' ? 'Litres' : 'Gallons'}<input id="ev-gal" data-u="vol" type="number" step="0.1" placeholder="0"></label>
@@ -2602,6 +2644,7 @@ function viewActive() {
         ready I will give you a time to set the clock to and the reason. Waiting on their property counts
         toward detention along with the ${isDropHook(t) ? 'hook' : 'loading'}.</p>
     </div>` : ''}
+    ${atPortHtml(t)}
     ${!t.arrivedGameTime ? `<div class="panel">
       <div class="panel-head"><h2>At the receiver?</h2>
         <span class="sub">Say when you got there and I will tell you when they will actually take it.</span></div>
@@ -6794,6 +6837,10 @@ function viewSettings() {
         ].map(([v, l]) => `<option value="${v}" ${(UN().chosen || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <p class="hint">Display only: your career is stored the same way whichever you pick, so you can change
         this whenever you like. Pick what your game's dashboard shows.</p>
+      ${S.views.ferries ? `<label class="chk"><input type="checkbox" id="op-ferries" ${s.realFerrySailings !== false ? 'checked' : ''}>
+        Real ferry sailings — wait for the next real departure at a port</label>
+      <p class="hint">On, a ferry or Channel Tunnel crossing leaves on the operator's typical timetable and dispatch plans
+        for the wait. Off, it leaves when you reach the port. The rest rules apply either way.</p>` : ''}
       <div class="grid2">
         <label>Governed ${UN().speed}<input id="op-gov" data-u="speed" type="number" step="1" value="${uv(s.governedMph, 'speed')}"></label>
         <label>Speed factor<input id="op-factor" type="number" step="0.01" min="0.3" max="1" value="${s.speedFactor}">
@@ -7506,6 +7553,13 @@ async function handleAction(act, d, ev) {
       queueModals([() => callModal(r.call)]);
     });
 
+    case 'at-port': return run(async () => {
+      const r = await api('/ferries/at-port', 'POST', { route: sv('fp-route'), fromA: sv('fp-dir') !== 'b', gameTime: readDayTime('fp-time') });
+      const c = r.call;
+      queueModals([() => callModal({ kind: c.waitHours > 0.01 ? 'Wait' : 'StraightIn', headline: c.headline, instruction: c.instruction,
+        arrivedGameTime: c.arrived, workStartsGameTime: c.departs, waitHours: c.waitHours, position: 0 })]);
+    });
+
     // The pickup's version. Same answer, same way of saying it — the shipper is the other end of it.
     case 'at-shipper': return run(async () => {
       const r = await api(`/trips/${d.id}/at-shipper`, 'POST', { gameTime: readDayTime('shp-time') });
@@ -7856,7 +7910,11 @@ async function handleAction(act, d, ev) {
           // The event type and time are the record; a detail is only worth having when there is one.
           detail: sv('ev-detail') || (gal > 0 ? `Fuelled ${vol(gal)}` : sv('ev-kind')),
           city: sv('ev-city'), state: sv('ev-state'),
-          gallons: gal, pricePerGal: price, cost: 0,
+          gallons: gal, pricePerGal: price,
+          // A crossing carries its route, the cabin, and the fare as the event's cost (it goes on the tolls).
+          ...(sv('ev-kind') === 'Ferry'
+            ? { ferryRoute: sv('ev-ferry'), cabin: bv('ev-cabin'), cost: fv('ev-fare') || 0, detail: sv('ev-detail') }
+            : { cost: 0 }),
         }));
         const isRest = sv('ev-kind') === 'Rest' || sv('ev-kind') === 'Restart';
         const moved = rolled && rolled > began;
@@ -8833,6 +8891,7 @@ function collectSettings() {
       breakConsumesShift: bv('hr-breakshift'), sleeperSplitAllowed: bv('hr-split'),
     },
     displayUnits: sv('op-units'),
+    realFerrySailings: $('op-ferries') ? bv('op-ferries') : s.realFerrySailings,
     governedMph: fv('op-gov'), speedFactor: fv('op-factor'),
     safetyBufferHours: hv('op-buffer'), parkingBufferHours: hv('op-park'),
     strandedMarginHours: hv('op-strand'),

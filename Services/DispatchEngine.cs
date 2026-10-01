@@ -1335,6 +1335,10 @@ public static class DispatchEngine
 
         var planReq = new PlanRequest
         {
+            // Where the legs run, so an ETS2 plan can find the water in the way. See Crossings.
+            OriginCity = string.IsNullOrWhiteSpace(load.OriginCity) ? s.Status.LocationCity : load.OriginCity,
+            OriginState = string.IsNullOrWhiteSpace(load.OriginState) ? s.Status.LocationState : load.OriginState,
+            DestCity = load.DestCity,
             DeadheadMiles = planDeadhead,
             DeadheadIsEstimate = quoted <= 0 && planDeadhead > 0.5,
             LoadedMiles = load.LoadedMiles,
@@ -1406,7 +1410,8 @@ public static class DispatchEngine
             Label = load.Cargo
         };
 
-        e.Feasibility = HosEngine.Plan(s, planReq, truck);
+        // ETS2: every way across the water tried and the best kept. Anything else plans as it always did.
+        e.Feasibility = Crossings.PlanBest(s, planReq, truck);
 
         // When a site opens, and how long the queue at its gate runs, are the app's reading of the world
         // rather than anything the game said. They are allowed to cost the driver hours. They are not
@@ -1425,7 +1430,7 @@ public static class DispatchEngine
             planReq.SiteOpenHour = -1;
             planReq.SiteCloseHour = -1;
 
-            var straightIn = HosEngine.Plan(s, planReq, truck);
+            var straightIn = Crossings.PlanBest(s, planReq, truck);
             if (straightIn.Verdict != "Infeasible")
             {
                 e.Feasibility = straightIn;

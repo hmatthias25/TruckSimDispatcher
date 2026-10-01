@@ -315,6 +315,25 @@ public static class TripService
             trip.FuelCost = Math.Round(trip.FuelStops.Sum(f => f.Cost), 2);
         }
 
+        // A crossing: the fare is the company's, like a toll, and what the crossing counts as under EU rules is
+        // said on the log — the game counts any ferry time as rest, and the law does not.
+        if (ev.Kind == "Ferry")
+        {
+            if (ev.Cost > 0) trip.Tolls = Math.Round(trip.Tolls + ev.Cost, 2);
+            var route = Ferries.Find(ev.FerryRoute);
+            var hours = GameClock.TryParse(ev.EndGameTime) is { } end && GameClock.TryParse(ev.GameTime) is { } start && end > start
+                ? (end - start).TotalHours
+                : route?.Hours ?? 0;
+            var value = route != null ? Ferries.RestValue(route, hours, ev.Cabin) : "";
+            var what = route?.Train == true ? "Channel Tunnel" : route != null ? route.Label : "Ferry";
+            ev.Detail = string.Join(" ", new[]
+            {
+                $"{what}: {Hhmm.Of(hours)} across{(ev.Cabin ? ", with a cabin" : "")}" + (ev.Cost > 0 ? $", fare {Units.Money(ev.Cost)}" : "") + ".",
+                value.Length > 0 ? $"Under EU rules that is {value}." : "",
+                ev.Detail,
+            }.Where(x => x.Length > 0));
+        }
+
         // Events carry a location when the driver gives one — that is a city we have now been to.
         if (!string.IsNullOrWhiteSpace(ev.City))
             DiscoveryService.Note(s, ev.City, ev.State, ev.GameTime, trip.Number);
