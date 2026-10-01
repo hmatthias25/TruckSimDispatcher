@@ -8,6 +8,56 @@ namespace TruckSimDispatcher.Services;
 /// </summary>
 public static class PayEngine
 {
+    // ---------------------------------------------------------------- the ETS2 salary (#274)
+    //
+    // European company drivers are salaried — monthly, with a tax-free allowance for each day away —
+    // and Regulation 561/2006, Article 10, forbids pay tied to distance where it puts safety at risk.
+    // So an ETS2 career is paid a salary every fourth Friday, with an allowance for each day on the road.
+    //
+    // The salary is the career's loaded rate turned into a month: the rate stays the one knob that
+    // probation, raises, promotions and every carrier offer already turn, and the salary follows it.
+
+    /// <summary>The month a salary is worked out over: the loaded rate times this many miles (about 8,000 km).</summary>
+    public const double SalaryMilesPerMonth = 5000;
+    /// <summary>A salaried pay period: four weeks, paid on the fourth Friday.</summary>
+    public const int SalaryPeriodDays = 28;
+
+    /// <summary>Whether this career is salaried — every ETS2 career is.</summary>
+    public static bool IsSalary(AppState s) => GameProfile.For(s).Id == "ETS2";
+
+    /// <summary>A loaded rate as a monthly salary, to the nearest ten.</summary>
+    public static decimal MonthlySalary(decimal loadedRate) =>
+        Math.Round(loadedRate * (decimal)SalaryMilesPerMonth / 10m, 0, MidpointRounding.AwayFromZero) * 10m;
+
+    public static decimal MonthlySalary(AppState s) => MonthlySalary(s.Driver.Pay.LoadedCpm);
+
+    /// <summary>
+    /// The tax-free allowance for a day on the road, by where the employer is based. Central and Eastern
+    /// European carriers pay a lower salary and a much larger allowance — the per diem is a big share of
+    /// take-home pay there — and the west the other way round.
+    /// </summary>
+    public static decimal DailyAllowance(AppState s) =>
+        (s.Company.TerminalState ?? "").Trim().ToUpperInvariant() is "LT" or "LV" or "EE" or "PL" or "HU" or "RO" or "BG"
+            or "SK" or "CZ" or "HR" or "SI" or "RS" or "BA" or "ME" or "MK" or "AL" or "XK" or "TR" or "RU" or "UA" or "BY" or "MD"
+            ? 50m : 30m;
+
+    /// <summary>Whether a game day is a salary payday: every fourth Friday, days 26, 54, 82 and on.</summary>
+    public static bool IsSalaryPayday(int day) => GameClock.IsPayday(day) && ((day - 5) / 7) % 4 == 3;
+
+    private static int NextSalaryPayday(int day)
+    {
+        for (var d = Math.Max(1, day); ; d++) if (IsSalaryPayday(d)) return d;
+    }
+
+    /// <summary>The days a load was on the road, by game day — what the daily allowance is paid on.</summary>
+    private static IEnumerable<int> RoadDays(Trip t)
+    {
+        var from = GameClock.DayOf(t.DispatchedGameTime);
+        var to = GameClock.DayOf(string.IsNullOrWhiteSpace(t.DeliveredGameTime) ? t.DispatchedGameTime : t.DeliveredGameTime);
+        if (from is not { } a || to is not { } b || b < a) return Array.Empty<int>();
+        return Enumerable.Range(a, Math.Min(b - a + 1, 60));
+    }
+
     private static decimal PayMiles(AppSettings s, double miles) =>
         (decimal)(miles * Math.Clamp(s.PayMileMultiplier, 0.1, 20.0));
 
@@ -15,6 +65,12 @@ public static class PayEngine
     public static decimal EstimatePay(AppState s, BoardLoad load)
     {
         var p = s.Driver.Pay;
+        if (IsSalary(s))
+        {
+            // What the load costs in wages: its days of salary and allowance, at a working day's driving.
+            var days = Math.Max(1, (int)Math.Ceiling((load.LoadedMiles + load.DeadheadMiles) / 450.0));
+            return Math.Round(days * (MonthlySalary(s) / 21.7m + DailyAllowance(s)), 2);
+        }
         var division = DispatchEngine.DivisionFor(load, DispatchEngine.AssignedTrailer(s));
         var loaded = PayMiles(s.Settings, load.LoadedMiles);
         var dh = PayMiles(s.Settings, load.DeadheadMiles);
@@ -55,6 +111,23 @@ public static class PayEngine
 
         b.LoadedMiles = loadedMiles;
         b.DeadheadMiles = dhMiles;
+
+        if (IsSalary(s))
+        {
+            // Salaried: the load is covered by the month. Detention only if the career pays it; chargebacks
+            // as ever. The salary and the allowance are paid on the settlement, not here.
+            var waited = Math.Max(0, trip.DetentionHours);
+            if (s.Settings.SalaryDetentionPay && waited > 0)
+            {
+                b.DetentionPay = Math.Round((decimal)waited * p.DetentionPerHour, 2);
+                b.Lines.Add($"Detention {Hhmm.Of(waited)} billable @ {Units.Money(p.DetentionPerHour)}/h = {Units.Money(b.DetentionPay)}");
+            }
+            b.Total = b.DetentionPay - b.Chargebacks;
+            b.Lines.Insert(0, $"Salaried: this load is covered by your monthly salary of {Units.Money(MonthlySalary(s))}, " +
+                              $"with {Units.Money(DailyAllowance(s))} tax-free for each day on the road, paid every fourth Friday.");
+            if (b.Chargebacks > 0) b.Lines.Add($"Chargeback: {b.ChargebackMemo} = -{Units.Money(b.Chargebacks)}");
+            return b;
+        }
 
         var payLoaded = PayMiles(s.Settings, loadedMiles);
         var payDh = PayMiles(s.Settings, dhMiles);
@@ -108,14 +181,21 @@ public static class PayEngine
 
     // ------------------------------------------------------------- settlements
 
-    public static Settlement RunSettlement(AppState s, string? notes)
+    public static Settlement RunSettlement(AppState s, string? notes) => RunSettlement(s, notes, null);
+
+    /// <param name="salaryThroughDay">Salaried careers: the last day this settlement pays salary for — the
+    /// payday, or today when leaving. Null means today.</param>
+    public static Settlement RunSettlement(AppState s, string? notes, int? salaryThroughDay)
     {
+        var salaried = IsSalary(s);
         var unsettled = s.Trips
             .Where(t => string.IsNullOrEmpty(t.SettlementNumber)
                         && t.Status is "Delivered" or "Cancelled"
-                        && t.Pay.Total != 0)
+                        && (t.Pay.Total != 0 || salaried))
             .OrderBy(t => t.Number)
             .ToList();
+
+        if (salaried) return RunSalarySettlement(s, notes, unsettled, salaryThroughDay);
 
         if (unsettled.Count == 0)
             throw new InvalidOperationException("Nothing to settle — no closed trips with accrued pay.");
@@ -258,6 +338,113 @@ public static class PayEngine
     }
 
     /// <summary>
+    /// A salaried settlement: the salary for the days since the last one (a full four weeks is the whole
+    /// month), the allowance for each day on the road, and the same bonuses the per-mile career earns —
+    /// on-time and safety as monthly amounts rather than per mile, fuel economy and fuel buying as ever.
+    /// </summary>
+    private static Settlement RunSalarySettlement(AppState s, string? notes, List<Trip> unsettled, int? throughDay)
+    {
+        var p = s.Driver.Pay;
+        var today = GameClock.DayOf(s.Status.GameTime) ?? 1;
+        var end = throughDay ?? today;
+        var hired = GameClock.DayOf(s.Driver.HiredGameDate) ?? 1;
+        var start = Math.Max(hired, s.Driver.LastSalaryThroughDay + 1);
+        var days = Math.Max(0, end - start + 1);
+        if (days == 0 && unsettled.Count == 0)
+            throw new InvalidOperationException("Nothing to settle — the salary is paid up to today and no load has closed since.");
+
+        var seq = ++s.Counters.Settlement;
+        var code = string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code;
+        var st = new Settlement
+        {
+            Number = $"{code}-PAY-{seq:0000}",
+            PeriodStartGame = GameClock.Format(GameClock.FromDay(start, 0, 0)),
+            PeriodEndGame = GameClock.Format(GameClock.FromDay(end, 23, 59)),
+            TripNumbers = unsettled.Select(t => t.Number).ToList(),
+            Notes = notes ?? "",
+        };
+
+        var monthly = MonthlySalary(s);
+        var share = Math.Clamp(days / (double)SalaryPeriodDays, 0, 1);
+        st.Salary = Math.Round(monthly * (decimal)share, 2);
+        st.PeriodDays = days;
+        st.SafetyBonusShare = Math.Round(share, 3);
+        st.Lines.Add(share >= 0.999
+            ? $"Monthly salary — {Units.Money(st.Salary)}"
+            : $"Salary for {days} of {SalaryPeriodDays} days — {Units.Money(st.Salary)} of {Units.Money(monthly)}");
+
+        // The allowance: every day of the period a load was on the road, each counted once.
+        var roadDays = s.Trips.Where(t => t.Kind is "Freight" or "EmptyMove")
+                              .SelectMany(RoadDays).Where(d => d >= start && d <= end).Distinct().Count();
+        st.AllowanceDays = roadDays;
+        st.Allowances = Math.Round(roadDays * DailyAllowance(s), 2);
+        if (roadDays > 0)
+            st.Lines.Add($"Daily allowance, tax-free: {roadDays} day(s) on the road @ {Units.Money(DailyAllowance(s))} = {Units.Money(st.Allowances)}");
+
+        foreach (var t in unsettled)
+        {
+            st.LoadedMiles += t.Pay.LoadedMiles;
+            st.DeadheadMiles += t.Pay.DeadheadMiles;
+            st.Accessorials += t.Pay.DetentionPay;
+            st.Chargebacks += t.Pay.Chargebacks;
+        }
+
+        var freight = unsettled.Where(t => t.Kind == "Freight" && t.Status == "Delivered").ToList();
+        var onTime = freight.Count(t => t.ServiceResult == "OnTime");
+        st.OnTimePct = freight.Count > 0 ? Math.Round(onTime * 100.0 / freight.Count, 1) : 100;
+
+        // On-time: the per-mile kicker's month, as a flat amount for a period with every load on time.
+        var onTimeMonthly = MonthlySalary(p.OnTimeBonusCpm);
+        if (freight.Count > 0 && onTime == freight.Count && onTimeMonthly > 0)
+        {
+            st.OnTimeBonus = Math.Round(onTimeMonthly * (decimal)share, 2);
+            st.Lines.Add($"On-time service bonus: {freight.Count}/{freight.Count} loads on time = {Units.Money(st.OnTimeBonus)}");
+        }
+        else if (freight.Count > 0)
+            st.Lines.Add($"On-time service bonus forfeited — {onTime}/{freight.Count} loads on time ({st.OnTimePct:0.#}%).");
+
+        // Safety: four weeks' worth of the weekly bonus, pro-rated the same way.
+        var periodTrips = st.TripNumbers.ToHashSet();
+        var faults = s.Incidents.Count(i => periodTrips.Contains(i.TripNumber) && i.FaultAttribution == "Driver");
+        if (faults > 0)
+            st.Lines.Add($"Safety bonus forfeited — {faults} driver-fault incident(s) this period.");
+        else if (p.SafetyBonusPerSettlement > 0 && days > 0)
+        {
+            st.SafetyBonus = Math.Round(p.SafetyBonusPerSettlement * 4 * (decimal)share, 2);
+            st.Lines.Add($"Safety bonus (no driver-fault incidents): {Units.Money(st.SafetyBonus)}");
+        }
+
+        var fuel = Fuel.Assess(s, freight);
+        st.Mpg = fuel.Mpg;
+        st.RatedMpg = fuel.RatedMpg;
+        st.FuelSaved = fuel.Saved;
+        st.FuelEfficiencyBonus = fuel.EfficiencyBonus;
+        st.FuelBuyingBonus = fuel.BuyingBonus;
+        foreach (var line in fuel.Lines) st.Lines.Add(line);
+
+        st.Gross = st.Salary + st.Allowances + st.Accessorials + st.OnTimeBonus + st.SafetyBonus
+                   + st.FuelEfficiencyBonus + st.FuelBuyingBonus - st.Chargebacks;
+        if (st.Accessorials > 0) st.Lines.Add($"Detention — {Units.Money(st.Accessorials)}");
+        if (st.Chargebacks > 0) st.Lines.Add($"Chargebacks — -{Units.Money(st.Chargebacks)}");
+
+        foreach (var t in unsettled) t.SettlementNumber = st.Number;
+        st.EmployerCode = s.Company.Code;
+        st.EmployerName = s.Company.Name;
+        st.Stub = PayrollTax.Compute(s, st,
+            PayrollTax.YtdGross(s, st.PeriodEndGame),
+            PayrollTax.YtdSocialSecurityWages(s, st.PeriodEndGame));
+
+        s.Settlements.Insert(0, st);
+        s.Driver.LastSalaryThroughDay = Math.Max(s.Driver.LastSalaryThroughDay, end);
+        s.Driver.UnsettledPay = Math.Round(Math.Max(0, s.Driver.UnsettledPay - unsettled.Sum(t => t.Pay.Total)), 2);
+        if (Math.Abs(s.Driver.UnsettledPay) < 0.01m) s.Driver.UnsettledPay = 0;
+        s.Driver.LifetimeEarnings = Math.Round(s.Driver.LifetimeEarnings + st.Gross, 2);
+
+        LedgerService.PostPayroll(s, st);
+        return st;
+    }
+
+    /// <summary>
     /// Runs any settlement the calendar owes the driver.
     ///
     /// Payday is Friday, and the app cannot see the game, so this fires when the driver reports a clock
@@ -277,6 +464,18 @@ public static class PayEngine
 
         foreach (var payday in GameClock.PaydaysBetween(lastPaid, now.Value))
         {
+            // Salaried: every fourth Friday, and paid whether or not a load closed — it is a salary.
+            if (IsSalary(s))
+            {
+                if (!IsSalaryPayday(payday)) { if (payday < now.Value) s.Driver.LastPaydayDay = payday; continue; }
+                s.Driver.LastPaydayDay = payday;
+                var paid = RunSettlement(s, $"Payday — Friday, Day {payday}: the month's salary.", payday);
+                paid.Trigger = "Payday";
+                paid.Announced = false;
+                issued.Add(paid);
+                continue;
+            }
+
             var owed = s.Trips.Any(t => string.IsNullOrEmpty(t.SettlementNumber)
                                         && t.Status is "Delivered" or "Cancelled" && t.Pay.Total != 0);
 
@@ -333,6 +532,17 @@ public static class PayEngine
     /// </summary>
     public static Settlement? SettleOnLeaving(AppState s)
     {
+        if (IsSalary(s))
+        {
+            // The salary up to today, and anything closed since the last payday.
+            var today = GameClock.DayOf(s.Status.GameTime) ?? 1;
+            var hired = GameClock.DayOf(s.Driver.HiredGameDate) ?? 1;
+            var anyClosed = s.Trips.Any(t => string.IsNullOrEmpty(t.SettlementNumber) && t.Status is "Delivered" or "Cancelled");
+            if (Math.Max(hired, s.Driver.LastSalaryThroughDay + 1) > today && !anyClosed) return null;
+            var last = RunSettlement(s, $"Final settlement — leaving {s.Company.Name}.", today);
+            last.Trigger = "JobChange";
+            return last;
+        }
         var owed = s.Trips.Any(t => string.IsNullOrEmpty(t.SettlementNumber)
                                     && t.Status is "Delivered" or "Cancelled" && t.Pay.Total != 0);
         if (!owed) return null;
@@ -346,6 +556,12 @@ public static class PayEngine
     public static (int Day, double DaysAway) NextPayday(AppState s)
     {
         var now = GameClock.DayOf(s.Status.GameTime) ?? 1;
+        if (IsSalary(s))
+        {
+            var due = NextSalaryPayday(now);
+            if (due == now && s.Driver.LastPaydayDay >= now) due = NextSalaryPayday(now + 1);
+            return (due, due - now);
+        }
         var next = GameClock.NextPayday(now);
         // Today counts only if the clock has not already passed this week's payday.
         if (next == now && s.Driver.LastPaydayDay >= now) next = GameClock.NextPayday(now + 1);

@@ -690,6 +690,8 @@ public class Driver
     public decimal UnsettledPay { get; set; }
     /// <summary>Game day of the last payday processed, so a Friday is never paid twice.</summary>
     public int LastPaydayDay { get; set; }
+    /// <summary>ETS2: the last game day a salary has been paid up to, so no day is paid twice.</summary>
+    public int LastSalaryThroughDay { get; set; }
     public decimal LifetimeEarnings { get; set; }
 
     /// <summary>Loads run for previous employers. A carrier screens on your whole record, not
@@ -1855,6 +1857,13 @@ public class LedgerEntry
 
 public class Settlement
 {
+    /// <summary>
+    /// ETS2: the monthly salary for this period (pro-rated for a part month), and the tax-free daily
+    /// allowance for the days on the road. Zero on a per-mile career. See PayEngine.
+    /// </summary>
+    public decimal Salary { get; set; }
+    public decimal Allowances { get; set; }
+    public int AllowanceDays { get; set; }
     public string Number { get; set; } = "";
     public string PeriodStartGame { get; set; } = "";
     public string PeriodEndGame { get; set; } = "";
@@ -1929,6 +1938,15 @@ public class Settlement
 public class PayStub
 {
     public string SettlementNumber { get; set; } = "";
+    /// <summary>
+    /// "US" — federal brackets, FICA and state tax — or "Flat" (ETS2): one deduction for tax and social
+    /// contributions together, at <see cref="FlatRate"/>, on everything but the tax-free allowances.
+    /// </summary>
+    public string TaxModel { get; set; } = "US";
+    public decimal FlatRate { get; set; }
+    public decimal FlatTax { get; set; }
+    /// <summary>Paid but not taxed: an ETS2 driver's daily allowances.</summary>
+    public decimal TaxFree { get; set; }
     public decimal Gross { get; set; }
     /// <summary>Pre-tax medical. Comes off before federal, state and FICA.</summary>
     public decimal Medical { get; set; }
@@ -3330,6 +3348,13 @@ public class AppSettings
     /// See Services.Ferries.IsOn.
     /// </summary>
     public List<string> FerriesOff { get; set; } = new();
+
+    /// <summary>
+    /// ETS2: pay detention on a salaried career. Off by default — paid waiting time is a US convention, and a
+    /// European salary covers the hours. The arrival calls and the detention clock run either way, because
+    /// they keep the planner honest.
+    /// </summary>
+    public bool SalaryDetentionPay { get; set; }
 
     // --- optional AI hookup (blank = fully offline; nothing is sent anywhere)
     public string AnthropicApiKey { get; set; } = "";

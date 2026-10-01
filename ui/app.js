@@ -172,6 +172,12 @@ const DUWS = () => (DU() === 'km' ? 'kilometres' : 'miles');
 const pm = (perMile, d = 3) => `${SYM()}${perDistN(perMile).toFixed(d)}`;
 /** A per-mile pay rate at three decimals, as "$0.540" or "€0.336", with no unit after it. */
 const cpm3 = (perMile) => `${SYM()}${perDistN(perMile).toFixed(3)}`;
+/* ETS2 careers are salaried (#274): the loaded rate is still the knob every raise turns, and it is shown
+   as the month it pays. SAL() is null on a per-mile career. */
+const SAL = () => (S.views && S.views.payroll && S.views.payroll.salary) || null;
+const salaryOf = (rate) => Math.round((+rate || 0) * (SAL() ? SAL().milesPerMonth : 0) / 10) * 10;
+/** A loaded rate as the driver reads it: "€2,700/month" salaried, "$0.540/mi" per mile. */
+const rateText = (rate, perWhat) => SAL() ? `${money0(salaryOf(rate))}/month` : `${cpm3(rate)}/${perWhat || DU()}`;
 /** The fuel unit: "gal" or "L". */
 const VU = () => UN().volume;
 /** Fuel stored in US gallons, as "85.0 gal" or "321.8 L". */
@@ -764,14 +770,14 @@ function payLadderHtml(c) {
   const sign = delta > 0 ? '+' : '';
 
   return `<div class="kv" style="margin-top:6px">
-    <span>to start <b class="mono">${cpm3(start)}</b>${
+    <span>to start <b class="mono">${SAL() ? rateText(start) : cpm3(start)}</b>${
       c.startingNote ? ` <span class="sub">${esc(c.startingNote)}</span>` : ''}</span>
-    <span>off probation <b class="mono">${cpm3(company)}</b></span>
-    ${c.topLoadedCpm ? `<span>top of scale <b class="mono">${cpm3(+c.topLoadedCpm)}</b>${
+    <span>off probation <b class="mono">${SAL() ? rateText(company) : cpm3(company)}</b></span>
+    ${c.topLoadedCpm ? `<span>top of scale <b class="mono">${SAL() ? rateText(+c.topLoadedCpm) : cpm3(+c.topLoadedCpm)}</b>${
       c.ceilingTitle ? ` <span class="sub">${esc(c.ceilingTitle)}</span>` : ''}</span>` : ''}
     ${now && !c.isCurrentEmployer
-      ? `<span>you earn now <b class="mono">${cpm3(now)}</b> ${
-          badge(cls, `${sign}${cpm3(delta)}/${DU()} to start`)}</span>`
+      ? `<span>you earn now <b class="mono">${SAL() ? rateText(now) : cpm3(now)}</b> ${
+          badge(cls, SAL() ? `${sign}${money0(salaryOf(delta))}/month to start` : `${sign}${cpm3(delta)}/${DU()} to start`)}</span>`
       : ''}
   </div>`;
 }
@@ -846,7 +852,7 @@ function renderMarket(market, { onboarding }) {
         <span class="lane">${esc(c.name)}</span>
         <span class="sub">${esc(c.hqCity)}, ${esc(c.hqState)} · ${esc(c.size)}</span>
         <div class="spacer"></div>
-        <b style="font-family:var(--mono)">${cpm3(+(c.startingCpm || c.loadedCpm))}/${DU()}</b>
+        <b style="font-family:var(--mono)">${rateText(+(c.startingCpm || c.loadedCpm))}</b>
         <span class="hint" style="margin:0">to start</span>
       </div>
       ${payLadderHtml(c)}
@@ -875,7 +881,7 @@ function renderMarket(market, { onboarding }) {
         <span>yards <b>${esc([c.hqCity + ', ' + c.hqState].concat(c.yards).join(' · '))}</b></span>
       </div>
       <div class="kv">
-        <span>scale <b>${cpm3(+c.loadedCpm)}</b> &rarr; <b>${cpm3(+c.topLoadedCpm)}</b>/loaded ${DU()}</span>
+        <span>scale <b>${SAL() ? rateText(+c.loadedCpm) : cpm3(+c.loadedCpm)}</b> &rarr; <b>${SAL() ? rateText(+c.topLoadedCpm) : cpm3(+c.topLoadedCpm)}</b>${SAL() ? '' : `/loaded ${DU()}`}</span>
         <span>tops out at <b>${esc(c.ceilingTitle)}</b></span>
       </div>
       ${/* The terms, beside the rate.
@@ -1068,7 +1074,8 @@ document.addEventListener('click', async (ev) => {
           <dt>Headquarters</dt><dd>${esc(r.company.terminalCity)}, ${esc(r.company.terminalState)}</dd>
           <dt>Yards</dt><dd>${esc((r.company.terminals || []).map((x) => `${x.city}, ${x.state} (${x.level})`).join(' · '))}</dd>
           <dt>Divisions</dt><dd>${esc(r.company.divisions.join(', '))}</dd>
-          <dt>Pay</dt><dd>${cpm3(+S.driver.pay.loadedCpm)}/loaded ${DU()} · ${cpm3(+S.driver.pay.deadheadCpm)}/empty ${DU()}</dd>
+          <dt>Pay</dt><dd>${SAL() ? `${rateText(+S.driver.pay.loadedCpm)} salary, ${money0(SAL().dailyAllowance)} a day on the road tax-free`
+            : `${cpm3(+S.driver.pay.loadedCpm)}/loaded ${DU()} · ${cpm3(+S.driver.pay.deadheadCpm)}/empty ${DU()}`}</dd>
           <dt>Truck</dt><dd>${t2 ? `Unit ${esc(t2.unit)} — ${t2.year} ${esc(t2.make)} ${esc(t2.model)}, ${esc(t2.transmission)}` : '—'}</dd>
           <dt>Trailer</dt><dd>${tr ? `${esc(tr.unit)} — ${esc(tr.length)} ${esc(tr.type)}` : '—'}</dd>
         </dl>
@@ -2228,7 +2235,7 @@ function loadCardHtml(e, d) {
       <span>drive <b>${hhmm(e.feasibility.driveHours)}</b></span>
       <span>rests <b>${e.feasibility.restsRequired}</b></span>
       <span>fuel <b>${e.feasibility.fuelStopsRequired}</b></span>
-      <span>your pay <b>${money(e.estimatedDriverPay)}</b></span>
+      <span>${SAL() ? 'wages' : 'your pay'} <b>${money(e.estimatedDriverPay)}</b></span>
       <span>margin <b>${money(e.estimatedMargin)}</b></span>
     </div>
     <div class="kv"><span>ETA <b>${gt(e.feasibility.projectedArrivalGameTime)}</b></span>
@@ -3311,10 +3318,12 @@ function advanceHtml(n) {
     <h4>${esc(n.headline)}</h4>
     <ul>${(n.detail || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
     <dl class="kv" style="margin-top:8px">
+      ${SAL() ? `<dt>Salary</dt><dd>${rateText(+n.loadedCpm)}${up > 0
+        ? ` <span class="sub">was ${rateText(+n.previousLoadedCpm)}</span>` : ''}</dd>` : `
       <dt>Loaded ${DUW()}</dt><dd>${cpm3(+n.loadedCpm)}${up > 0
         ? ` <span class="sub">was ${cpm3(+n.previousLoadedCpm)}</span>` : ''}</dd>
       <dt>Empty ${DUW()}</dt><dd>${cpm3(+n.deadheadCpm)}${up > 0
-        ? ` <span class="sub">was ${cpm3(+n.previousDeadheadCpm)}</span>` : ''}</dd>
+        ? ` <span class="sub">was ${cpm3(+n.previousDeadheadCpm)}</span>` : ''}</dd>`}
     </dl>
   </div>`;
 }
@@ -5451,6 +5460,8 @@ function stubTableHtml(st) {
 
   return `<div class="tablewrap"><table><tbody>
     <tr><td colspan="2" style="padding-top:6px"><b>EARNINGS</b></td></tr>
+    ${st.salary ? row(st.periodDays >= 27.99 ? 'Monthly salary' : `Salary, ${num(st.periodDays)} of 28 days`, st.salary) : ''}
+    ${st.allowances ? row(`Daily allowance, ${st.allowanceDays} day(s) on the road (tax-free)`, st.allowances) : ''}
     ${st.linehaulPay ? row(`Loaded miles ${num(st.loadedMiles)}`, st.linehaulPay) : ''}
     ${st.deadheadPay ? row(`Empty miles ${num(st.deadheadMiles)}`, st.deadheadPay) : ''}
     ${st.divisionPremium ? row('Division / endorsement premium', st.divisionPremium) : ''}
@@ -5464,6 +5475,18 @@ function stubTableHtml(st) {
     ${st.guaranteeMakeup ? row('Weekly guarantee make-up', st.guaranteeMakeup) : ''}
     ${st.chargebacks ? row('Chargebacks', -st.chargebacks, 'color:var(--red)') : ''}
     <tr><td><b>GROSS PAY</b></td><td class="num"><b>${money(b.gross)}</b></td></tr>
+    ${b.taxModel === 'Flat' ? `
+    <tr><td>Tax-free allowances</td><td class="num">${money(b.taxFree)}</td></tr>
+    <tr><td><b>TAXABLE PAY</b></td><td class="num"><b>${money(b.taxableWages)}</b></td></tr>
+    <tr><td colspan="2" style="padding-top:8px"><b>DEDUCTIONS</b></td></tr>
+    ${row(`Tax and social contributions ${pct(b.flatRate * 100, 0)}`, -b.flatTax, 'color:var(--amber2)')}
+    <tr><td><b>NET PAY</b></td>
+      <td class="num" style="font-weight:700;color:var(--green)">${money(b.net)}</td></tr>
+    <tr><td class="sub" style="padding-top:8px">Year to date, gross</td>
+      <td class="num sub" style="padding-top:8px">${money(b.ytdGross)}</td></tr>
+  </tbody></table></div>
+  <p class="hint">One flat deduction stands in for income tax and social contributions, which differ in every
+    country. The daily allowance is tax-free, as per diems are.</p>` : `
 
     <tr><td colspan="2" style="padding-top:8px"><b>PRE-TAX DEDUCTIONS</b></td></tr>
     ${row('Medical (single)', -b.medical, 'color:var(--amber2)')}
@@ -5485,7 +5508,7 @@ function stubTableHtml(st) {
   </tbody></table></div>
   <p class="hint">Withholding is approximated: the period is annualised over ${b.periodsPerYear} pay
     periods and run through the current single-filer brackets. Close enough to feel real, not close
-    enough to file a return from.</p>`;
+    enough to file a return from.</p>`}`;
 }
 
 /* ---- the tax year, and the W-2s behind it
@@ -5601,13 +5624,14 @@ function viewPayroll() {
         <div class="spacer"></div><span class="sub">${unsettled.length} trip(s) accrued</span></div>
 
       <div class="callout info">
-        <p style="margin:0"><b>Payday is Friday.</b> There is nothing to press — a settlement runs
+        <p style="margin:0"><b>${SAL() ? 'Payday is every fourth Friday: the salary for the month.' : 'Payday is Friday.'}</b> There is nothing to press — a settlement runs
           itself the moment your reported clock crosses one, and again whenever you change employer.
           ${pr.daysToPayday <= 0 ? 'Report your clock to trigger it.'
             : `Next one is <b>Day ${pr.nextPaydayDay}</b>, ${num(pr.daysToPayday, 0)} day(s) away.`}</p>
       </div>
 
-      ${unsettled.length ? `<div class="tablewrap"><table>
+      ${SAL() ? `<p class="hint">Salaried: loads do not earn by the ${DUW()}. Payday brings the month's salary,
+        ${money0(SAL().dailyAllowance)} for each day on the road, and the bonuses.</p>` : unsettled.length ? `<div class="tablewrap"><table>
         <thead><tr><th>Trip</th><th>Lane</th><th class="num">Loaded</th><th class="num">Empty</th><th class="num">Pay</th></tr></thead>
         <tbody>${unsettled.map((t) => `<tr><td class="mono">${esc(t.number)}</td>
           <td>${esc(t.destCity)}, ${esc(t.destState)}</td>
@@ -5616,22 +5640,26 @@ function viewPayroll() {
           <tr><td colspan="4"><b>Accrued, gross</b></td><td class="num"><b>${money(total)}</b></td></tr></tbody></table></div>`
         : '<div class="empty">Nothing accrued. Deliver a load first.</div>'}
 
-      <p class="hint">Withholding comes off at settlement: federal at single rate, Social Security,
+      ${SAL() ? `<p class="hint">One flat deduction for tax and social contributions comes off at settlement; the
+        daily allowance is tax-free.</p>` : `<p class="hint">Withholding comes off at settlement: federal at single rate, Social Security,
         Medicare, and ${pr.stateRate > 0 ? `${esc(pr.stateCode)} state tax at ${pct(pr.stateRate * 100, 2)}`
           : `no state tax — ${esc(pr.stateCode || 'your state')} does not tax wages`}.
-        Medical of ${money(pr.healthPremium)} comes off before tax.</p>
+        Medical of ${money(pr.healthPremium)} comes off before tax.</p>`}
     </div>
 
     <div class="panel">
       <div class="panel-head"><h2>Your pay plan</h2></div>
       <dl class="kvlist">
         <dt>Position</dt><dd>${esc(S.driver.rankTitle)}</dd>
+        ${SAL() ? `<dt>Salary</dt><dd>${money0(SAL().monthly)} a month, paid every fourth Friday</dd>
+        <dt>Daily allowance</dt><dd>${money0(SAL().dailyAllowance)} for each day on the road, tax-free</dd>
+        <dt>Detention</dt><dd>${SAL().detentionPaid ? `${money(p.detentionPerHour)}/h after ${hhmm(p.detentionFreeHours)} free` : 'covered by the salary'}</dd>` : `
         <dt>Loaded ${DUW()}</dt><dd>${cpm3(p.loadedCpm)}</dd>
         <dt>Empty ${DUW()}</dt><dd>${cpm3(p.deadheadCpm)}</dd>
         <dt>Reefer / hazmat / oversize</dt><dd>+${cpm3(p.reeferCpm)} / +${cpm3(p.hazmatCpm)} / +${cpm3(p.oversizeCpm)}</dd>
         <dt>Detention</dt><dd>${money(p.detentionPerHour)}/h after ${hhmm(p.detentionFreeHours)} free on the
           work, ${hhmm(p.queueFreeHours)} on waiting</dd>
-        <dt>Layover / breakdown</dt><dd>${money(p.layoverPerDay)} / ${money(p.breakdownPerDay)} per day</dd>
+        <dt>Layover / breakdown</dt><dd>${money(p.layoverPerDay)} / ${money(p.breakdownPerDay)} per day</dd>`}
         <dt>Stop / tarp</dt><dd>${money(p.extraStopPay)} / ${money(p.tarpPay)}</dd>
         <dt>On-time bonus</dt><dd>${cpm3(p.onTimeBonusCpm)}/loaded ${DU()} at 100% service</dd>
         <dt>Safety bonus</dt><dd>${money(p.safetyBonusPerSettlement)} per clean settlement</dd>
@@ -6583,8 +6611,9 @@ function viewCareer() {
     <div class="panel-head"><h2>Top of their scale</h2>
       ${badge('warn', esc(c.ceilingTitle))}</div>
     <p>${esc(c.ceilingTitle)} is as far as ${esc(S.company.name || 'this carrier')} promotes. You are on
+      ${SAL() ? `<b>${rateText(+S.driver.pay.loadedCpm)}</b>, and more loads will not move it.</p>` : `
       <b>${cpm3(+S.driver.pay.loadedCpm)}</b> a loaded ${DUW()} and
-      <b>${cpm3(+S.driver.pay.deadheadCpm)}</b> empty, and more loads will not move either.</p>
+      <b>${cpm3(+S.driver.pay.deadheadCpm)}</b> empty, and more loads will not move either.</p>`}
     <p class="hint">Higher rungs exist, just not here. Carriers set their own scale and a better one pays
       more at every rank, not only at the top — the Job Market shows what each pays now, what it tops out
       at, and how far it promotes. Your record travels with you.</p>
@@ -6639,8 +6668,9 @@ function viewCareer() {
     <div class="panel">
       <div class="panel-head"><h2>Your rate</h2><span class="sub">set by rank</span></div>
       <dl class="kv">
+        ${SAL() ? `<dt>Salary</dt><dd>${rateText(+S.driver.pay.loadedCpm)}</dd>` : `
         <dt>Loaded ${DUW()}</dt><dd>${cpm3(+S.driver.pay.loadedCpm)}</dd>
-        <dt>Empty ${DUW()}</dt><dd>${cpm3(+S.driver.pay.deadheadCpm)}</dd>
+        <dt>Empty ${DUW()}</dt><dd>${cpm3(+S.driver.pay.deadheadCpm)}</dd>`}
         <dt>Scale</dt><dd>${esc(S.driver.rankTitle)}</dd>
         <dt>Credited experience</dt><dd>${num(c.creditedExperienceYears, 1)} yr
           <span class="sub">declared + time served</span></dd>
@@ -6897,6 +6927,10 @@ function viewSettings() {
         Real ferry sailings — wait for the next real departure at a port</label>
       <p class="hint">On, a ferry or Channel Tunnel crossing leaves on the operator's typical timetable and dispatch plans
         for the wait. Off, it leaves when you reach the port. The rest rules apply either way.</p>` : ''}
+      ${SAL() ? `<label class="chk"><input type="checkbox" id="op-saldet" ${s.salaryDetentionPay ? 'checked' : ''}>
+        Pay detention on top of the salary</label>
+      <p class="hint">Off by default: paid waiting time is an American convention, and a European salary covers the
+        hours. The arrival calls and the detention clock run either way.</p>` : ''}
       <div class="grid2">
         <label>Governed ${UN().speed}<input id="op-gov" data-u="speed" type="number" step="1" value="${uv(s.governedMph, 'speed')}"></label>
         <label>Speed factor<input id="op-factor" type="number" step="0.01" min="0.3" max="1" value="${s.speedFactor}">
@@ -8956,6 +8990,7 @@ function collectSettings() {
     },
     displayUnits: sv('op-units'),
     realFerrySailings: $('op-ferries') ? bv('op-ferries') : s.realFerrySailings,
+    salaryDetentionPay: $('op-saldet') ? bv('op-saldet') : !!s.salaryDetentionPay,
     // As with the map: the boxes if the panel is on screen, the career's own list if it is not.
     ferriesOff: document.querySelector('input[data-fy]')
       ? [...document.querySelectorAll('input[data-fy]')].filter((b) => !b.checked).map((b) => b.dataset.fy)

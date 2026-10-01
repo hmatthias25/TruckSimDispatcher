@@ -2841,6 +2841,16 @@ object Snapshot(AppState? given = null)
             repositionOffers = HomeTime.RepositionOffers(s),
             payroll = new
             {
+                // ETS2 is salaried: the month, the allowance and how the rate becomes a salary, so every
+                // place the browser shows a rate can show the salary instead. Null on a per-mile career.
+                salary = PayEngine.IsSalary(s) ? new
+                {
+                    monthly = PayEngine.MonthlySalary(s),
+                    milesPerMonth = PayEngine.SalaryMilesPerMonth,
+                    dailyAllowance = PayEngine.DailyAllowance(s),
+                    periodDays = PayEngine.SalaryPeriodDays,
+                    detentionPaid = s.Settings.SalaryDetentionPay,
+                } : null,
                 nextPaydayDay = PayEngine.NextPayday(s).Day,
                 daysToPayday = PayEngine.NextPayday(s).DaysAway,
                 s.Driver.UnsettledPay,

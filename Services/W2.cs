@@ -115,6 +115,8 @@ public static class W2Service
     public static List<W2Form> IssueDue(AppState s)
     {
         var issued = new List<W2Form>();
+        // A W-2 is a US form. An ETS2 career's pay stubs carry the year to date, and that is all.
+        if (GameProfile.For(s).TaxModel != "US") return issued;
         var completed = YearsCompleted(s);
         if (completed < 1) return issued;
 

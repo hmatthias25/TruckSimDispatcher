@@ -106,6 +106,25 @@ public static class PayrollTax
         var cfg = s.Settings;
         var gross = settlement.Gross;
 
+        // ETS2: one flat deduction for income tax and social contributions, and the daily allowances
+        // tax-free, the way European per diems are. Per-country payroll is not modelled.
+        if (GameProfile.For(s).TaxModel == "Flat")
+        {
+            var rate = GameProfile.For(s).IncomeTaxBrackets.FirstOrDefault().Rate;
+            var flat = new PayStub
+            {
+                SettlementNumber = settlement.Number, Gross = gross, TaxModel = "Flat",
+                PeriodsPerYear = 13, FlatRate = rate,
+                TaxFree = Math.Min(Math.Max(0, settlement.Allowances), Math.Max(0, gross)),
+            };
+            flat.TaxableWages = Math.Round(Math.Max(0, gross - flat.TaxFree), 2);
+            flat.FlatTax = Math.Round(flat.TaxableWages * rate, 2);
+            flat.TotalTaxes = flat.FlatTax;
+            flat.Net = Math.Round(gross - flat.TotalTaxes, 2);
+            flat.YtdGross = Math.Round(ytdGross + gross, 2);
+            return flat;
+        }
+
         var stub = new PayStub
         {
             SettlementNumber = settlement.Number,
