@@ -173,6 +173,8 @@ public static class HomeTime
     public class HomeStatus
     {
         public bool Tracked { get; set; }
+        /// <summary>EU: the four-week legal ceiling, not the driver's own arrangement, sets the interval.</summary>
+        public bool LegalCeiling { get; set; }
         public int IntervalDays { get; set; }
         public string Arrangement { get; set; } = "";
         public string TerminalId { get; set; } = "";
@@ -249,9 +251,12 @@ public static class HomeTime
             // Probation does not touch this. It used to override it with a fortnight, which belonged to
             // the version where a run of reviews cleared it.
             IntervalDays = Probation.EffectiveIntervalDays(s),
-            Arrangement = Probation.IsOn(s) && ProbationPlanner.ReviewDue(s)
+            Arrangement = MobilityPackage.CeilingBinds(s, s.Driver.HomeTimeIntervalDays)
+                ? $"Home at least every {MobilityPackage.HomeCeilingDays / 7} weeks — EU law (the Mobility Package)"
+                : Probation.IsOn(s) && ProbationPlanner.ReviewDue(s)
                 ? $"{LabelFor(s.Application?.HomeTimePreference)} — probation served, the review is taken next time you are in"
                 : LabelFor(s.Application?.HomeTimePreference),
+            LegalCeiling = MobilityPackage.CeilingBinds(s, s.Driver.HomeTimeIntervalDays),
             HomeTimesTaken = s.Driver.HomeTimesTaken,
             LastHomeGameTime = s.Driver.LastHomeGameTime
         };
@@ -378,15 +383,20 @@ public static class HomeTime
             ? $"Nothing gets authorised that leaves you more than {Units.Distance(miles)} further out than you are now"
             : "Freight that closes the distance is scored ahead of freight that does not";
 
+        // EU: past the four weeks it is not a broken promise, it is a breach of the law, and it says so.
+        var against = st.LegalCeiling
+            ? $"the {MobilityPackage.HomeCeilingDays}-day legal limit (EU rules: home at least every four weeks)"
+            : $"a {st.IntervalDays}-day arrangement";
         st.Headline = st.Overdue
-            ? $"Home time is OVERDUE — {st.DaysOut:0.#} days out against a {st.IntervalDays}-day arrangement. " +
+            ? $"Home time is OVERDUE — {st.DaysOut:0.#} days out against {against}. " +
               (st.AtYard ? "You are at the yard — take it now."
                   : st.AtHome ? "You are close; bring it in to {0} and report in at the yard.".Replace("{0}", st.TerminalLabel)
                   : $"{cap}, and getting you back outranks the rate.")
             : st.DueSoon
                 ? $"Home time due in {st.DaysUntilDue:0.#} days. {cap}, and freight that closes the " +
                   $"distance to {st.TerminalLabel} scores ahead of freight that does not."
-                : $"{st.DaysOut:0.#} days out, home time in {st.DaysUntilDue:0.#} days.";
+                : $"{st.DaysOut:0.#} days out, home time in {st.DaysUntilDue:0.#} days" +
+                  (st.LegalCeiling ? " — EU rules bring you home at least every four weeks." : ".");
 
         return st;
     }

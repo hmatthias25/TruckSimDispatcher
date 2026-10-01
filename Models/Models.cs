@@ -3430,6 +3430,13 @@ public class EuHosRules
     /// <summary>Whether the planner may use a reduced weekly rest where the rules allow one.</summary>
     public bool AllowReducedWeeklyRest { get; set; } = true;
 
+    /// <summary>
+    /// What a hotel night costs the company, in the career's currency. A regular weekly rest away from home
+    /// may not be taken in the cab (the Mobility Package), so it is a hotel — see Services.MobilityPackage.
+    /// Zero switches the cost off; the rule is still said.
+    /// </summary>
+    public decimal HotelPerNight { get; set; } = 90m;
+
     /// <summary>The spread a regular daily rest leaves: 24 hours less the rest.</summary>
     public double Spread => 24 - RegularDailyRest;
     /// <summary>The spread a reduced daily rest leaves.</summary>
@@ -3899,6 +3906,9 @@ public class FeasibilityResult
     public int ReducedDailyRests { get; set; }
     /// <summary>EU only: weekly-rest hours still owed when the plan ends.</summary>
     public double CompensationOwedAfter { get; set; }
+    /// <summary>EU only: hotel nights for regular weekly rests the plan takes away from home, and their cost.</summary>
+    public int HotelNights { get; set; }
+    public decimal HotelCost { get; set; }
     public double CycleRemainingAfter { get; set; }
     /// <summary>
     /// The 14-hour window left once the driver is empty at the receiver. Thin here means a dock that

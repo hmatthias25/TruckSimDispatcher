@@ -112,7 +112,9 @@ public static class Probation
     /// needs to ask for one or the review will simply wait. Nothing is lost by waiting — the period is
     /// served whenever they come in, and the day they come in is the day it closes.</para>
     /// </summary>
-    public static int EffectiveIntervalDays(AppState s) => s.Driver.HomeTimeIntervalDays;
+    public static int EffectiveIntervalDays(AppState s) =>
+        // EU: home at least every four weeks, whatever was arranged (the Mobility Package).
+        MobilityPackage.CapInterval(s, s.Driver.HomeTimeIntervalDays);
 
     /// <summary>Passes standing right now. Reset by any fail, which is the point of them being in a row.</summary>
     public static int ConsecutivePasses(AppState s)

@@ -342,6 +342,16 @@ public static class Restart
                     : "Your last weekly rest was reduced, so this one has to be a full 45 hours" +
                       (s.Hos.EuCompensationOwed > 0.01 ? $", plus the {Hhmm.Of(s.Hos.EuCompensationOwed)} still owed." : "."));
                 lines.Add("A daily rest will not do: only a weekly rest starts the six days again.");
+                if (!reduced && !order.AtHomeTerminal)
+                {
+                    var cost = MobilityPackage.HotelCost(s, order.RequiredHours);
+                    lines.Add("A full weekly rest away from home may not be taken in the cab — EU rules (the Mobility " +
+                              "Package). Take it in a hotel; the company pays" +
+                              (cost > 0 ? $", about {Units.Money0(cost)} for {MobilityPackage.HotelNights(order.RequiredHours)} night(s), " +
+                                          "booked when you report it done." : "."));
+                }
+                else if (reduced)
+                    lines.Add("A reduced weekly rest may be taken in the cab, parked, with a proper bunk.");
             }
             else
             {
@@ -417,6 +427,7 @@ public static class Restart
             else s.Hos.EuCompensationOwed = Math.Max(0, s.Hos.EuCompensationOwed - (elapsed - r.RegularWeeklyRest));
             s.Hos.EuLastWeeklyRestReduced = reduced;
             s.Hos.EuHoursSinceWeeklyRest = 0;
+            var hotel = MobilityPackage.BookHotel(s, elapsed, reduced, order.AtHomeTerminal, order.Number);
             s.Hos.EuReducedRestsUsed = 0;
             s.Hos.DriveRemaining = r.DailyDriving;
             s.Hos.ShiftRemaining = r.Spread;
@@ -429,6 +440,7 @@ public static class Restart
             order.CycleAfter = s.Hos.CycleRemaining;
             var said = $"{order.Number} complete — {Hhmm.Of(elapsed)} of weekly rest" +
                        (reduced ? $", reduced: {Hhmm.Of(r.RegularWeeklyRest - elapsed)} owed back." : ".") +
+                       (hotel > 0 ? $" {Units.Money0(hotel)} of hotel booked to the company." : "") +
                        " The six days start again now. You are clear for freight.";
             if (order.AtHomeTerminal) said += " That counted as your home time as well.";
             return (order, true, said);

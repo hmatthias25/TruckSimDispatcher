@@ -620,10 +620,22 @@ public static class HosEngine
             var len = reduced ? euR.ReducedWeeklyRest : euR.RegularWeeklyRest + owed;
             len = Math.Max(len, atLeast);
             var label = reduced
-                ? $"{len:0.#}-hour reduced weekly rest — {why}; {euR.RegularWeeklyRest - euR.ReducedWeeklyRest:0.#} h owed back"
+                ? $"{len:0.#}-hour reduced weekly rest — {why}; {euR.RegularWeeklyRest - euR.ReducedWeeklyRest:0.#} h owed back. The cab is allowed"
                 : owed > Eps
                     ? $"{len:0.#}-hour weekly rest — {why}, with {Hhmm.Of(owed)} of compensation paid back"
                     : $"{len:0.#}-hour weekly rest — {why}";
+            // The Mobility Package: a regular weekly rest away from home is not taken in the cab. The plan is a
+            // run away from home by definition, so this one is a hotel, and the company's bill.
+            if (!reduced)
+            {
+                var nights = MobilityPackage.HotelNights(len);
+                var cost = nights * Math.Max(0, euR.HotelPerNight);
+                label += cost > 0
+                    ? $". Not in the cab — a hotel, {nights} night(s) at about {Units.Money0(cost)}, on the company"
+                    : ". Not in the cab — a hotel, on the company";
+                result.HotelNights += nights;
+                result.HotelCost += cost;
+            }
             Step(label, "Restart", len, 0);
             if (reduced) { owed += euR.RegularWeeklyRest - euR.ReducedWeeklyRest; result.ReducedWeeklyRests++; }
             else owed = 0;
@@ -1138,6 +1150,11 @@ public static class HosEngine
             if (result.WeeklyRestsRequired > 0)
                 result.Warnings.Add($"This plan includes {result.WeeklyRestsRequired} weekly rest(s)" +
                                     (result.ReducedWeeklyRests > 0 ? $", {result.ReducedWeeklyRests} of them reduced to 24 hours" : "") + ".");
+            if (result.HotelNights > 0)
+                result.Warnings.Add($"A regular weekly rest on this run is away from home, so EU rules put it in a hotel, " +
+                                    $"not the cab — {result.HotelNights} night(s)" +
+                                    (result.HotelCost > 0 ? $", about {Units.Money0(result.HotelCost)} on the company's books" : "") +
+                                    ". A reduced one (24 hours) may be taken in the cab.");
             if (owed > Eps)
                 result.Warnings.Add($"{Hhmm.Of(owed)} of reduced weekly rest is still owed once this load is done. It " +
                                     "has to be paid back, attached to a rest of at least 9 hours, before the end of the " +
