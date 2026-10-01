@@ -207,9 +207,39 @@ Two related rules:
 - **A crossing is a new kind of trip event**, a span like a rest, with a start and end time, the two ports, the fare, and whether the driver had a **cabin**. The fare is a trip expense the company pays, like tolls, and the end time moves the app's clock the same way a rest does.
 - **The hours-of-service engine classifies each crossing** by its length and whether there was a cabin. It counts as one of: a regular daily rest (allowing the 1 hour of interruptions for driving on and off), a reduced weekly rest, a regular weekly rest (8 hours or more scheduled, with a cabin), or only a break. The driver is told when the game and the law disagree, for example: *"The game counts this 6-hour crossing as rest. The regulation does not: without 11 hours, it is a break, and your daily rest is still due."*
 - **A long crossing with a cabin solves the Mobility Package problem.** A regular weekly rest taken on an 8-hour-plus crossing with a cabin needs no hotel and costs no hotel night (section 3a). This is the real-world reason hauliers take long overnight ferries, and the planner should know it.
-- **The planner can route through ferries.** It needs the ferry network: port pairs, crossing times and fares. ETS2 defines its ferry routes in the game's own `def` files, and `ModCompanyNames.cs` already reads `.scs` def files for company names, so the routes might be readable straight from the game rather than typed in. Check this is practical. With the network, the planner can schedule a daily or weekly rest onto a crossing instead of a lay-by, which is often both faster and cheaper.
+- **The planner can route through ferries**, using the app's own table of real-world routes (below). With it, the planner can schedule a daily or weekly rest onto a crossing instead of a lay-by, which is often both faster and cheaper.
 - **Whether there is a cabin** cannot be read from the game. Default to **yes on overnight crossings** and **no on short ones and the Channel Tunnel**, with a setting or a per-route override.
 - **Cabotage and borders:** a crossing between two countries is part of an international load, so it does not change the cabotage counts in section 3b. A crossing to or from the UK starts or ends a UK entry for the UK cabotage rules.
+
+#### The ferry network: real-world routes and sailings
+
+**Decided: the app does not read ferry routes from the game's files.** The game's archives change with every update and DLC, and reading them would need a reader for SCS's own HashFS format. Instead the app carries its **own table of real-world ferry routes**, maintained like the freight market table in `Markets.cs`. It is the app's data, so it only changes when the app chooses to change it.
+
+**What each route holds:**
+- the two ports, and the ETS2 cities they correspond to;
+- the operator (for example DFDS, Stena Line, P&O Ferries, Tallink, Viking Line, Finnlines, TT-Line, Color Line, Grimaldi or Minoan Lines);
+- the real **crossing time**;
+- whether freight drivers get a **cabin**, which decides whether the crossing can be a daily or weekly rest (see the table above). Long overnight crossings usually include one; short hops usually do not;
+- a typical **freight fare**, used as the trip expense when the player has not entered the one the game charged;
+- the **sailings**: departure times by day of the week.
+
+**Matching game routes to real ones.** ETS2's map is compressed, and its ferry links do not all match a real route one for one. For each route the game offers, find the real-world counterpart, the same operator's route between the same or the nearest real ports. Where there is no real counterpart, fall back to the crossing time the game uses and no timetable, and mark the route as such in the table.
+
+**Bonus realism: wait for the real sailing (an optional setting).**
+With **Real ferry sailings** on (in Settings, on by default for EU careers, or off — a decision below), a driver who reaches the port is told when the next real sailing leaves and waits for it:
+1. The driver reports arriving at the port, the same way they report arriving at a receiver or a shipper.
+2. The app finds the **next departure** in that route's timetable after the arrival time, and the arrival time at the other side from the real crossing time.
+3. It answers the way `ShipperCall` and `ReceiverCall` do: *"The next DFDS sailing to Rosslare leaves 18:30 and arrives 08:00 the next day. Set the game clock to 18:30 and board then."* After the game's own crossing, a second instruction sets the clock to the real arrival time if the game's crossing was shorter.
+4. The wait at the port and the crossing go on the clocks where they really went. A long wait is often best used as part of a break or rest, and the planner should say so, because waiting at the terminal is not driving.
+
+With the setting **off**, the ferry leaves when the driver arrives, and the crossing takes the real crossing time (or the game's, if the route has no real counterpart). The rest classification and fares still apply either way.
+
+**The planner uses the timetable too.** When the setting is on, dispatch plans for the real departure, including the wait and the possibility of arriving just after one leaves. A load that only works by catching a particular sailing should say so: *"This only fits if you make the 22:00 out of Kiel. Miss it and the next is 22:00 tomorrow."*
+
+**Keeping the data honest:**
+- Real timetables change by season and year. Treat the table as a **typical weekly timetable**, record **when it was last checked**, and say so in the app and the manual. It is realism for a game, not a booking system.
+- Each operator's own timetable pages are the source. Build the first table from them, route by route, and re-check it when the app is updated.
+- The table should never be the reason a load is refused outright. If a sailing time is wrong, the driver can still take the crossing as it happened, the way they can correct any other time.
 
 ### 4. Map and market data (large but cleanly isolated)
 
@@ -263,7 +293,7 @@ City discovery, the learned dock times and planning speed (`FacilityLearning`, `
 4. **Build the EU hours-of-service engine**, with its own test suite. Expect this to be the largest step.
 5. **Add home time and weekly rest under the Mobility Package** ([section 3a](#3a-home-time-and-weekly-rest-the-mobility-package)): the 4-week (or 3-week) home ceiling in dispatch, the regular-or-reduced weekly rest choice with its location, hotel costs on the ledger, and the compensation counter. This builds on step 4's reduced-rest tracking.
 6. **Add cabotage** ([section 3b](#3b-cabotage-domestic-loads-in-someone-elses-country)): the company's home country, load classification, the per-vehicle cabotage state, enforcement in dispatch with the reason given, the board showing the remaining cabotage, and the dispatcher-fault rule. Start with EU and EEA home countries only, with the UK, Switzerland, Russia, Turkey and the West Balkans as hosts using the table in section 3b.
-7. **Add ferries and trains** ([section 3c](#3c-ferries-and-trains)): the crossing event with its fare and cabin flag, its classification as daily rest, weekly rest or a break in the hours-of-service engine, the warning when the game and the law disagree, and then ferry routing in the planner. Read the routes from the game's `def` files if that is practical.
+7. **Add ferries and trains** ([section 3c](#3c-ferries-and-trains)): the crossing event with its fare and cabin flag, its classification as daily rest, weekly rest or a break in the hours-of-service engine, the warning when the game and the law disagree, then the table of real-world routes and sailings, the optional real-sailing wait at the port, and ferry routing in the planner.
 8. **Handle pay and tax:** a pay-model choice (salary or hourly in place of per-mile), a flat deduction in place of W-2s, and optional detention.
 9. **Integrate the game and add the career choice to onboarding:** the ETS2 Steam app ID and paths, the AI prompts, the 24-hour window parsing, and the game choice on the new-career screen.
 10. **Write the manuals and the EU test suite**, and run both games' suites in the finishing routine.
@@ -283,7 +313,8 @@ City discovery, the learned dock times and planning speed (`FacilityLearning`, `
 - Swiss road rules (the night and Sunday bans, 40 tonnes, LSVA): model them in the planner, or leave them out.
 - Russia: follow the game's map as presented (recommended), or reflect the post-2022 sanctions.
 - Ferry cabins: assume a cabin on overnight crossings and none on short ones (recommended), or ask the driver on each crossing.
-- The ferry network: read it from the game's `def` files, or type it into a table like the markets.
+- Real ferry sailings: on by default for EU careers, or off by default, with the setting to change it either way.
+- Where the timetable data comes from and how often it is re-checked. The operators' own timetable pages are the source; a re-check with each app update is the suggestion.
 - Whether a reduced daily rest on a ferry may be interrupted for driving on and off. One source says no; settle it from the regulation text.
 
 ## Sources for the EU rules
