@@ -3131,9 +3131,13 @@ BoardDecision EvaluateBoard(AppState s)
     if (decision.OutOfHours && s.Board.Count > 0)
     {
         s.Board.Clear();
-        store.Log(s, "dispatch", decision.NeedsRestart
-            ? "Board cleared — out of cycle, 34-hour restart required."
-            : "Board cleared — out of hours, 10-hour reset required.");
+        store.Log(s, "dispatch", Restart.IsEu(s)
+            ? decision.NeedsRestart
+                ? "Board cleared — weekly rest required."
+                : "Board cleared — out of hours, daily rest required."
+            : decision.NeedsRestart
+                ? "Board cleared — out of cycle, 34-hour restart required."
+                : "Board cleared — out of hours, 10-hour reset required.");
 
         // Remember WHY it is empty. Clearing it is right — by the time the driver is legal these jobs
         // have turned over — but the reason used to die with the board: one read later the answer was

@@ -184,6 +184,34 @@ async function clocks(c) {
     `${hhmm(p.cycleRemainingAfter)} left after ${hhmm(p.driveHours)} driving and 6:00 at docks`);
   ok('and the dock advice says so', /none of your driving limits/.test(p.dockAdvice || ''), (p.dockAdvice || '').slice(0, 80));
 
+  head('9. What dispatch says and orders, on EU rules');
+  await clocks({ driveRemaining: 6, shiftRemaining: 9, breakRemaining: 2, euWeekDriven: 20, cycleRemaining: 36, euHoursSinceWeeklyRest: 40 });
+  let v = (await api('/bootstrap')).views;
+  ok('the clocks are read as EU', v.hos.ruleset === 'EU561', v.hos.ruleset);
+  ok('weekly driving left is the week\'s 56 less what was driven', Math.abs(v.hos.cycleRemaining - 36) < 0.01, hhmm(v.hos.cycleRemaining));
+  ok('and the weekly rest is due in the remaining six days', Math.abs(v.hos.weeklyRestDueInHours - 104) < 0.01, hhmm(v.hos.weeklyRestDueInHours));
+  ok('the next action is put in EU terms', /45-minute break|daily driving|spread/.test(v.hos.nextRequiredAction), v.hos.nextRequiredAction);
+  ok('nothing about a 34 or a 70', !/34|70-hour|14-hour/.test(JSON.stringify(v.hos)));
+
+  await clocks({ euHoursSinceWeeklyRest: 125 });
+  v = (await api('/bootstrap')).views;
+  const blockers = (v.dispatchBlockers || []).join(' || ');
+  ok('with the weekly rest nearly due, dispatch orders one', /weekly rest is due/.test(blockers), blockers.slice(0, 140));
+  ok('reduced to 24 hours, the last having been full', /24 hours/.test(blockers));
+  ok('and not a 34-hour restart', !/34|cycle restart/.test(blockers));
+  await api('/restart/arrived', 'POST', { gameTime: iso(MONDAY, '08:00'), city: 'Dallas', state: 'TX' });
+  let done = await api('/restart/complete', 'POST', { gameTime: iso(MONDAY, '20:00') }).catch((e) => ({ error: e.message }));
+  ok('finishing short of 24 hours is refused', !done.accepted, (done.message || done.error || '').slice(0, 100));
+  done = await api('/restart/complete', 'POST', { gameTime: iso(MONDAY + 1, '08:00') });
+  ok('24 hours later it is accepted', done.accepted === true, (done.message || '').slice(0, 120));
+  const after2 = (await api('/bootstrap')).views.hos;
+  ok('the six days start again', after2.weeklyRestDueInHours === 144, hhmm(after2.weeklyRestDueInHours));
+  ok('and the 21 short is owed', Math.abs(after2.compensationOwed - 21) < 0.01, hhmm(after2.compensationOwed));
+
+  await clocks({ euWeekDriven: 56, cycleRemaining: 0 });
+  const wk = ((await api('/bootstrap')).views.dispatchBlockers || []).join(' || ');
+  ok('a spent week waits for Monday', /until Monday/.test(wk) && !/70-hour/.test(wk), wk.slice(0, 120));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

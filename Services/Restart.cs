@@ -25,6 +25,29 @@ public static class Restart
     /// </summary>
     public static double StopDispatchAtCycleHours(AppState s) => s.Settings.Hos.StopDispatchAtCycleHours;
 
+    /// <summary>Whether this career runs on EU rules, where a "restart" is the weekly rest.</summary>
+    public static bool IsEu(AppState s) => GameProfile.For(s).HosRuleset == "EU561";
+
+    /// <summary>
+    /// EU: the weekly rest is due within a day — six 24-hour periods since the last one, less one more
+    /// working day and its rest. Unknown when the driver never reported when the last one ended.
+    /// </summary>
+    public static bool EuWeeklyRestDueSoon(AppState s)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        return s.Hos.EuHoursSinceWeeklyRest is { } since && since >= r.WeeklyRestDueAfterHours - 24;
+    }
+
+    /// <summary>EU: how long the next weekly rest has to be — 24 where the last was regular, 45 plus what
+    /// is owed where it was reduced.</summary>
+    public static double EuWeeklyRestHours(AppState s)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        return r.AllowReducedWeeklyRest && !s.Hos.EuLastWeeklyRestReduced
+            ? r.ReducedWeeklyRest
+            : r.RegularWeeklyRest + Math.Max(0, s.Hos.EuCompensationOwed);
+    }
+
     /// <summary>
     /// Reasons a carrier parks a driver that have nothing to do with their hours.
     ///
@@ -127,6 +150,9 @@ public static class Restart
     /// </summary>
     public static bool Needed(AppState s)
     {
+        // EU: there is no restart that refills weekly driving — that comes back on a Monday. What has to
+        // be ordered is the weekly rest, once the six days since the last one are nearly up.
+        if (IsEu(s)) return EuWeeklyRestDueSoon(s);
         if (s.Hos.CycleRemaining <= 0) return true;
         if (s.Hos.CycleRemaining > StopDispatchAtCycleHours(s)) return false;
         // Enough coming back soon enough to carry on? Then no restart.
@@ -280,7 +306,7 @@ public static class Restart
             TargetState = state,
             AtHomeTerminal = isHome,
             Reason = why,
-            RequiredHours = s.Settings.Hos.CycleRestartHours,
+            RequiredHours = IsEu(s) ? EuWeeklyRestHours(s) : s.Settings.Hos.CycleRestartHours,
             Status = "Ordered"
         };
         s.RestartOrders.Insert(0, order);
@@ -304,6 +330,18 @@ public static class Restart
                 lines.Add("Your clocks are fine. This is the company's call, not a mark against you, and " +
                           "nothing about it touches your record.");
                 lines.Add("No freight until it is sat, so you may as well be somewhere useful when it is over.");
+            }
+            else if (IsEu(s))
+            {
+                var reduced = order.RequiredHours < (s.Settings.EuHos ?? new EuHosRules()).RegularWeeklyRest - 0.01;
+                lines.Add($"{order.Number}: your weekly rest is due — six days since the last one are nearly up. " +
+                          $"No more freight until you have taken {order.RequiredHours:0.#} hours.");
+                lines.Add(reduced
+                    ? "Your last weekly rest was a full one, so this can be a reduced 24 hours — the 21 short is owed " +
+                      "back, attached to a rest of 9 hours or more, within three weeks."
+                    : "Your last weekly rest was reduced, so this one has to be a full 45 hours" +
+                      (s.Hos.EuCompensationOwed > 0.01 ? $", plus the {Hhmm.Of(s.Hos.EuCompensationOwed)} still owed." : "."));
+                lines.Add("A daily rest will not do: only a weekly rest starts the six days again.");
             }
             else
             {
@@ -363,6 +401,39 @@ public static class Restart
         var arrived = GameClock.TryParse(order.ArrivedGameTime)!.Value;
 
         var elapsed = (now - arrived).TotalHours;
+
+        // EU: the weekly rest does not refill weekly driving — Monday does — so there is no cycle to check.
+        // What it restores is the six days, the reduced-rest allowance and the day's clocks.
+        if (IsEu(s))
+        {
+            if (elapsed + 0.01 < order.RequiredHours)
+                return (order, false,
+                    $"That is {Hhmm.Of(elapsed)} since you parked at {GameClock.Pretty(arrived)}. This weekly rest is " +
+                    $"{order.RequiredHours:0.#} hours and you are {Hhmm.Of(order.RequiredHours - elapsed)} short — you are " +
+                    $"eligible at {GameClock.Pretty(order.EligibleGameTime)}. Sit the rest of it and report again.");
+            var r = s.Settings.EuHos ?? new EuHosRules();
+            var reduced = elapsed < r.RegularWeeklyRest - 0.01;
+            if (reduced) s.Hos.EuCompensationOwed = Math.Max(0, s.Hos.EuCompensationOwed) + (r.RegularWeeklyRest - elapsed);
+            else s.Hos.EuCompensationOwed = Math.Max(0, s.Hos.EuCompensationOwed - (elapsed - r.RegularWeeklyRest));
+            s.Hos.EuLastWeeklyRestReduced = reduced;
+            s.Hos.EuHoursSinceWeeklyRest = 0;
+            s.Hos.EuReducedRestsUsed = 0;
+            s.Hos.DriveRemaining = r.DailyDriving;
+            s.Hos.ShiftRemaining = r.Spread;
+            s.Hos.BreakRemaining = r.DrivingBeforeBreak;
+            s.Hos.AsOfGameTime = GameClock.Format(now);
+
+            order.Status = "Completed";
+            order.CompletedGameTime = GameClock.Format(now);
+            order.ElapsedHours = Math.Round(elapsed, 2);
+            order.CycleAfter = s.Hos.CycleRemaining;
+            var said = $"{order.Number} complete — {Hhmm.Of(elapsed)} of weekly rest" +
+                       (reduced ? $", reduced: {Hhmm.Of(r.RegularWeeklyRest - elapsed)} owed back." : ".") +
+                       " The six days start again now. You are clear for freight.";
+            if (order.AtHomeTerminal) said += " That counted as your home time as well.";
+            return (order, true, said);
+        }
+
         var cycle = s.Hos.CycleRemaining;
         var full = s.Settings.Hos.CycleLimit;
 

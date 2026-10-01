@@ -1261,6 +1261,67 @@ public static class HosEngine
 
     private static double Min(params double[] v) => v.Min();
 
+    /// <summary>The clocks under EU 561/2006: what is drivable now, which limit binds, what is due next.</summary>
+    private static HosStatusView DescribeEu(AppState state, Truck? truck)
+    {
+        var r = state.Settings.EuHos ?? new EuHosRules();
+        var h = state.Hos;
+        var week = h.EuWeekDriven ?? Math.Max(0, r.WeeklyDriving - h.CycleRemaining);
+        var last = h.EuLastWeekDriven ?? 0;
+        var fortnight = Math.Max(0, r.FortnightDriving - last - week);
+        var weekly = Math.Max(0, Math.Min(r.WeeklyDriving - week, fortnight));
+        var v = new HosStatusView
+        {
+            Ruleset = "EU561",
+            DriveRemaining = h.DriveRemaining,
+            ShiftRemaining = h.ShiftRemaining,
+            BreakRemaining = h.BreakRemaining,
+            CycleRemaining = weekly,
+            DriveLimit = r.DailyDriving,
+            ShiftLimit = r.Spread,
+            BreakLimit = r.DrivingBeforeBreak,
+            CycleLimit = r.WeeklyDriving,
+            EffectiveMph = EffectiveMph(state.Settings, truck),
+            AsOfGameTime = h.AsOfGameTime,
+            WeekDriven = week,
+            LastWeekDriven = last,
+            FortnightRemaining = fortnight,
+            ExtensionsLeft = Math.Max(0, r.ExtensionsPerWeek - h.EuExtensionsUsed),
+            ReducedRestsLeft = Math.Max(0, r.ReducedRestsBetweenWeekly - h.EuReducedRestsUsed),
+            WeeklyRestDueInHours = h.EuHoursSinceWeeklyRest is { } since ? Math.Max(0, r.WeeklyRestDueAfterHours - since) : null,
+            WeeklyRestHours = Restart.EuWeeklyRestHours(state),
+            CompensationOwed = Math.Max(0, h.EuCompensationOwed),
+            BreakEnforced = true,
+        };
+        v.DrivableNowHours = Math.Max(0, Min(h.DriveRemaining, h.ShiftRemaining, weekly));
+        v.StintBeforeBreakHours = Math.Max(0, Math.Min(v.DrivableNowHours, h.BreakRemaining));
+        v.ProjectedMilesNow = Math.Round(v.DrivableNowHours * v.EffectiveMph, 0);
+        v.StintMiles = Math.Round(v.StintBeforeBreakHours * v.EffectiveMph, 0);
+
+        var binding = "daily driving";
+        var min = h.DriveRemaining;
+        if (h.ShiftRemaining < min) { min = h.ShiftRemaining; binding = "spread"; }
+        if (weekly < min) binding = fortnight < r.WeeklyDriving - week ? "fortnight's driving" : "week's driving";
+        v.BindingClock = binding;
+
+        if (v.WeeklyRestDueInHours is <= 0.01)
+            v.NextRequiredAction = $"Weekly rest of {v.WeeklyRestHours:0.#} hours — six days since the last one are up.";
+        else if (weekly <= 0.01)
+            v.NextRequiredAction = "No driving until Monday 00:00 — the week's (or fortnight's) driving is spent.";
+        else if (v.DrivableNowHours <= 0.01)
+            v.NextRequiredAction = $"{r.RegularDailyRest:0.#}-hour daily rest (9 if you have a reduced one left) before any driving.";
+        else if (h.BreakRemaining < v.DrivableNowHours - 0.01)
+            v.NextRequiredAction = $"Clear to drive {Hhmm.Of(v.StintBeforeBreakHours)} before the 45-minute break.";
+        else
+            v.NextRequiredAction = $"Clear to drive {Hhmm.Of(v.DrivableNowHours)} — that is your {binding}, not the break.";
+
+        if (v.WeeklyRestDueInHours is { } due and > 0.01 and <= 24)
+            v.ResetWatch = $"Weekly rest due in {Hhmm.Of(due)}. Dispatch is selecting freight that ends somewhere you can take it.";
+        else if (weekly > 0 && weekly <= 18)
+            v.ResetWatch = $"{Hhmm.Of(weekly)} of the {binding} left. It comes back on Monday — no rest refills it.";
+        return v;
+    }
+
     /// <summary>00:00 on the Monday of the calendar week this moment falls in, on the game's own calendar
     /// (day 1 is a Monday). EU weekly driving runs Monday 00:00 to Sunday 24:00.</summary>
     internal static DateTime WeekStart(DateTime at)
@@ -1302,6 +1363,7 @@ public static class HosEngine
     /// <summary>Plain-language read of the driver's current clocks and what they can legally do now.</summary>
     public static HosStatusView Describe(AppState state, Truck? truck)
     {
+        if (GameProfile.For(state).HosRuleset == "EU561") return DescribeEu(state, truck);
         var r = state.Settings.Hos;
         var h = state.Hos;
         var v = new HosStatusView
@@ -1372,6 +1434,17 @@ public static class HosEngine
 
 public class HosStatusView
 {
+    /// <summary>"FMCSA" or "EU561" — which rules the figures below are under.</summary>
+    public string Ruleset { get; set; } = "FMCSA";
+    /// <summary>EU only: the counters a tachograph reading adds to the four clocks.</summary>
+    public double? WeekDriven { get; set; }
+    public double? LastWeekDriven { get; set; }
+    public double? FortnightRemaining { get; set; }
+    public int ExtensionsLeft { get; set; }
+    public int ReducedRestsLeft { get; set; }
+    public double? WeeklyRestDueInHours { get; set; }
+    public double? WeeklyRestHours { get; set; }
+    public double CompensationOwed { get; set; }
     public double DriveRemaining { get; set; }
     public double ShiftRemaining { get; set; }
     public double BreakRemaining { get; set; }

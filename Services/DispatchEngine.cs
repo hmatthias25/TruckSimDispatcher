@@ -953,7 +953,9 @@ public static class DispatchEngine
         if (string.IsNullOrWhiteSpace(s.Status.LocationCity))
             need.Add("Current truck location (city and state).");
         if (string.IsNullOrWhiteSpace(s.Hos.UpdatedUtc) && string.IsNullOrWhiteSpace(s.Hos.AsOfGameTime))
-            need.Add("Current HOS clocks from your HOS display (drive, shift, break, 70-hour).");
+            need.Add(Restart.IsEu(s)
+                ? "Current driving and rest times from your tachograph (daily driving, spread, break, week)."
+                : "Current HOS clocks from your HOS display (drive, shift, break, 70-hour).");
         if (Dedicated.AwaitingAccount(s))
             need.Add("Which customer you are dedicated to — set it on the Career tab so I can tell your freight from the rest of the board.");
         // A dedicated driver's shipper is how the account is recognised, so it stops being optional.
@@ -1073,7 +1075,10 @@ public static class DispatchEngine
         else if (Restart.Needed(s))
             stops.AddRange(Restart.Instructions(s, Restart.Order(s)));
 
-        if (s.Hos.CycleRemaining <= 0)
+        if (s.Hos.CycleRemaining <= 0 && Restart.IsEu(s))
+            stops.Add("Weekly driving is spent — 56 hours this week, or 90 over this week and last. No driving " +
+                      "until Monday 00:00; sit your weekly rest while you wait.");
+        else if (s.Hos.CycleRemaining <= 0)
             stops.Add($"70-hour cycle is exhausted. {s.Settings.Hos.CycleRestartHours:0.#}-hour restart required before any driving.");
         else if (Math.Min(s.Hos.DriveRemaining, s.Hos.ShiftRemaining) <= 0.01)
         {
@@ -1086,8 +1091,13 @@ public static class DispatchEngine
             // Only the absolute case belongs here, because a blocker refuses the whole board. A drive
             // clock that is merely SHORT is a judgement about each load, and OutOfHoursOnly makes it
             // against what is actually on offer — a twenty-mile hop on thirty minutes is a real day.
-            var binding = s.Hos.DriveRemaining <= s.Hos.ShiftRemaining ? "drive clock" : "14-hour window";
-            stops.Add($"Your {binding} is spent. {s.Settings.Hos.OffDutyReset:0.#}-hour reset before anything moves.");
+            var eu = Restart.IsEu(s);
+            var binding = s.Hos.DriveRemaining <= s.Hos.ShiftRemaining
+                ? (eu ? "daily driving" : "drive clock")
+                : (eu ? "spread" : "14-hour window");
+            stops.Add(eu
+                ? $"Your {binding} is spent. An {(s.Settings.EuHos ?? new EuHosRules()).RegularDailyRest:0.#}-hour daily rest before anything moves."
+                : $"Your {binding} is spent. {s.Settings.Hos.OffDutyReset:0.#}-hour reset before anything moves.");
         }
 
         var active = s.Trips.FirstOrDefault(t => t.Id == s.Status.ActiveTripId
