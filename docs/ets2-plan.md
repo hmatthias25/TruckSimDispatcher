@@ -246,6 +246,31 @@ With the setting **off**, the ferry leaves when the driver arrives, and the cros
 
 **The planner uses the timetable too.** When the setting is on, dispatch plans for the real departure, including the wait and the possibility of arriving just after one leaves. A load that only works by catching a particular sailing should say so: *"This only fits if you make the 22:00 out of Kiel. Miss it and the next is 22:00 tomorrow."*
 
+#### Crossings in the dispatch calculation
+
+A crossing has to be part of **feasibility**, not something the driver discovers at the port. Example: the plan gets the truck to Calais at **02:00**, but the next ferry to Dover is **06:00**. Those four hours are as real as a receiver's slot, and a plan that ignores them is four hours optimistic. That is exactly the kind of error the dock-time learning and the receiver's opening hours were built to remove.
+
+**A crossing is a wait the planner already knows how to handle.** `HosEngine.Plan` already holds a truck for a receiver's slot or a site's opening (`WaitUntilHours`, `SiteOpenHour`). A sailing is the same thing on the route instead of at the end of it:
+1. Drive to the port, on the clocks as now.
+2. Check in, and wait for the **next departure** after arrival, from the route's timetable or frequency. With **Real ferry sailings** off, there is no wait.
+3. The crossing itself, classified as rest or break as described above. This is where it can help: a long crossing with a cabin can **be** the daily rest the plan needed anyway, so the wait and the rest overlap instead of adding up.
+4. Drive on from the far port.
+
+The verdict, the slack against the buffer and the projected arrival all include the wait and the crossing, the same way they include the dock time.
+
+**Comparing ways across.** Many crossings have alternatives: the Dover ferries, the Dunkirk ferries and the Channel Tunnel all cross the Channel, and the North Sea and the Baltic each have several routes. The planner should **try each reasonable crossing** for the load and keep the best one, by the same measure it uses now: earliest feasible arrival with enough slack. It should then **say why**, when the best choice is not the obvious one:
+- *"The 06:00 ferry from Calais means four hours at the port. Drive on to the tunnel at Coquelles instead, 15 minutes further, and take the 02:30 shuttle: you reach the UK three and a half hours sooner."*
+- *"Take the overnight Hook of Holland to Harwich sailing instead of driving to Calais. It is a 7-hour crossing with a cabin, so it is your daily rest as well, and you arrive in England fresh at 08:00."*
+
+The choice is stored on the trip with the plan, like the dock time is now, so the close-out and the late-delivery fault judgement measure against the crossing the plan expected.
+
+**When the driver arrives at a different time.** The plan is an expectation. If the driver reaches the port earlier or later than planned, reporting the arrival at the port gets a fresh answer for the next departure, the way the receiver's call works now, and the app says when that changes the picture: *"You missed the 02:30. The next shuttle is 02:45, so nothing lost."* or *"The 22:00 has gone and the next sailing is tomorrow at 22:00. Take the tunnel instead: 3 hours' drive to Calais."*
+
+**What this needs that the app does not have:**
+- **Knowing a crossing is needed at all.** The app's distances come from straight lines between cities with a road factor (`Geo.cs`), which assumes the land is continuous. Europe has water in the way: Great Britain, Ireland, Scandinavia across the Baltic, Sardinia, Sicily and the Greek islands. The EU build needs a simple model of which areas are separated by water and which crossings join them. That can be a list of land areas with their crossings, without a full road map.
+- **Distances that depend on the crossing.** A load's distance comes from the job listing, which already assumes the game's route. Choosing a different crossing changes it. For a crossing other than the game's, the distance is the leg to the chosen port plus the leg from the far port, from `Geo`, against the listing's total as a check.
+- **Fault when a sailing is missed.** If the plan's crossing was reasonable and the driver missed it through their own delay, it is the driver's. If the sailing was not there, because the timetable was wrong or the setting was changed mid-trip, it is unavoidable. That follows the existing pattern of judging fault against the plan made at dispatch.
+
 **Keeping the data honest:**
 - Real timetables change by season and year. Treat the table as a **typical weekly timetable**, record **when it was last checked**, and say so in the app and the manual. It is realism for a game, not a booking system.
 - Each operator's own timetable pages are the source. Build the first table from them, route by route, and re-check it when the app is updated.
@@ -303,7 +328,7 @@ City discovery, the learned dock times and planning speed (`FacilityLearning`, `
 4. **Build the EU hours-of-service engine**, with its own test suite. Expect this to be the largest step.
 5. **Add home time and weekly rest under the Mobility Package** ([section 3a](#3a-home-time-and-weekly-rest-the-mobility-package)): the 4-week (or 3-week) home ceiling in dispatch, the regular-or-reduced weekly rest choice with its location, hotel costs on the ledger, and the compensation counter. This builds on step 4's reduced-rest tracking.
 6. **Add cabotage** ([section 3b](#3b-cabotage-domestic-loads-in-someone-elses-country)): the company's home country, load classification, the per-vehicle cabotage state, enforcement in dispatch with the reason given, the board showing the remaining cabotage, and the dispatcher-fault rule. Start with EU and EEA home countries only, with the UK, Switzerland, Russia, Turkey and the West Balkans as hosts using the table in section 3b.
-7. **Add ferries and trains** ([section 3c](#3c-ferries-and-trains)): the crossing event with its fare and cabin flag, its classification as daily rest, weekly rest or a break in the hours-of-service engine, the warning when the game and the law disagree, then the table of real-world routes and sailings, the optional real-sailing wait at the port, and ferry routing in the planner.
+7. **Add ferries and trains** ([section 3c](#3c-ferries-and-trains)): the crossing event with its fare and cabin flag, its classification as daily rest, weekly rest or a break in the hours-of-service engine, the warning when the game and the law disagree, then the table of real-world routes and sailings, the optional real-sailing wait at the port, crossings in the feasibility calculation (the wait for the next departure, comparing the ways across, and saying why one was chosen), and the model of which areas are separated by water.
 8. **Handle pay and tax:** a pay-model choice (salary or hourly in place of per-mile), a flat deduction in place of W-2s, and optional detention.
 9. **Integrate the game and add the career choice to onboarding:** the ETS2 Steam app ID and paths, the AI prompts, the 24-hour window parsing, and the game choice on the new-career screen.
 10. **Write the manuals and the EU test suite**, and run both games' suites in the finishing routine.
