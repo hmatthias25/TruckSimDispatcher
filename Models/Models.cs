@@ -1267,6 +1267,16 @@ public class HosSnapshot
 
     /// <summary>Driving so far this calendar week (Monday 00:00 to Sunday 24:00). Null where never reported.</summary>
     public double? EuWeekDriven { get; set; }
+    /// <summary>
+    /// Driving so far today, as an HOS companion shows it ("Daily Drive Used"). The drive clock is worked out
+    /// from it. Null where the driver typed the drive clock instead.
+    /// </summary>
+    public double? EuDayDriven { get; set; }
+    /// <summary>
+    /// The spread was not read off a display — the companion app does not show one — and was estimated from
+    /// the day's driving and the last daily rest in the trip log. Sent as true to ask for the estimate.
+    /// </summary>
+    public bool SpreadEstimated { get; set; }
     /// <summary>Driving last calendar week, for the 90-hour fortnight. Null where never reported.</summary>
     public double? EuLastWeekDriven { get; set; }
     /// <summary>10-hour days already used this week, of the two allowed.</summary>

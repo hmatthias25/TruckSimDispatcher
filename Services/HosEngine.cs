@@ -219,6 +219,38 @@ public class PlanRequest
 /// </summary>
 public static class HosEngine
 {
+    /// <summary>Whether a career plans on EU 561/2006.</summary>
+    public static bool Eu(AppState s) => GameProfile.For(s).HosRuleset == "EU561";
+
+    /// <summary>
+    /// The spread left, for a driver whose HOS app does not show one (the EC 561 page of the companion app
+    /// shows driving used today, this week, last week and two weeks left, and no spread). The spread is the
+    /// time since the last daily rest ended, against 13 hours. Two things bound it from below, and the larger
+    /// is used: the driving done today with the breaks it required, and — when the trip log has it — the
+    /// time since the last rest of nine hours or more ended. On-duty work that is not driving is only seen
+    /// through the second, so log your rests and the estimate is close.
+    /// </summary>
+    public static double EstimateEuSpread(AppState s, double? dayDriven, DateTime? at)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        var spread = r.Spread;
+        var driven = dayDriven ?? Math.Max(0, r.DailyDriving - s.Hos.DriveRemaining);
+        var breaks = Math.Floor(driven / Math.Max(0.1, r.DrivingBeforeBreak) - 1e-9) * r.BreakLength;
+        var used = driven + Math.Max(0, breaks);
+        if (at is { } now)
+        {
+            var lastRestEnd = s.Trips.SelectMany(t => t.Events)
+                .Where(e => e.Kind is "Rest" or "Restart" || (e.Kind == "Ferry" && e.Cabin))
+                .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
+                .Where(x => x.Start is { } a && x.End is { } b && (b - a).TotalHours >= r.ReducedDailyRest - 0.01 && b <= now)
+                .Select(x => x.End!.Value)
+                .DefaultIfEmpty(DateTime.MinValue).Max();
+            if (lastRestEnd > DateTime.MinValue && (now - lastRestEnd).TotalHours < 24)
+                used = Math.Max(used, (now - lastRestEnd).TotalHours);
+        }
+        return Math.Round(Math.Clamp(spread - used, 0, spread), 2);
+    }
+
     private const double Eps = 0.0005;
 
     /// <summary>

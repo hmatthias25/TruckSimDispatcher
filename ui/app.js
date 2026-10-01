@@ -2430,27 +2430,49 @@ function shipperCallOf(t) {
  * the week and the weekly rest need. Weekly driving left is worked out from the week and the fortnight
  * rather than typed, because those are the figures the tachograph shows.
  */
+/*
+ * The EU clocks, laid out the way an HOS companion's EC 561 page shows them (reported from play): Daily Drive
+ * Used, This Week Used, Previous Week, Two Weeks Left, and B | D | W | 2W on its status line — USED figures, and
+ * no spread at all. So they are typed as shown and the app works out what is left. The spread is optional: left
+ * blank, it is estimated from today's driving and the last rest in the trip log, and the panel says so.
+ */
 function euClocksHtml(h, v) {
   const r = S.settings.euHos || {};
+  const day = r.dailyDriving || 9, ext = r.extendedDailyDriving || 10;
+  const dayUsed = h.euDayDriven != null ? h.euDayDriven : Math.max(0, day - (+h.driveRemaining || 0));
+  const twoWeeksLeft = Math.max(0, (r.fortnightDriving || 90) - (h.euWeekDriven ?? 0) - (h.euLastWeekDriven ?? 0));
   return `
-    <div class="grid3">
-      <label>Daily driving left<input id="h-drive" inputmode="numeric" placeholder="7:30" value="${hhmm(h.driveRemaining)}"></label>
-      <label>Spread left<input id="h-shift" inputmode="numeric" placeholder="10:15" value="${hhmm(h.shiftRemaining)}"></label>
-      <label>Driving before break<input id="h-break" inputmode="numeric" placeholder="3:00" value="${hhmm(h.breakRemaining)}"></label>
-    </div>
-    <p class="hint">Daily driving is ${num(r.dailyDriving || 9, 0)} hours, ${num(r.extendedDailyDriving || 10, 0)} on two days a
-      week. The spread is the time left before your daily rest has to start: ${num(24 - (r.regularDailyRest || 11), 0)} hours
-      from the end of the last one, ${num(24 - (r.reducedDailyRest || 9), 0)} if tonight's will be reduced. The break is
-      ${num((r.breakLength || 0.75) * 60, 0)} minutes after ${num(r.drivingBeforeBreak || 4.5, 1)} hours of driving.</p>
     <div class="grid4">
-      <label>Driven this week<input id="he-week" inputmode="numeric" placeholder="0:00" value="${hhmm(h.euWeekDriven ?? 0)}"></label>
-      <label>Driven last week<input id="he-lastweek" inputmode="numeric" placeholder="0:00" value="${hhmm(h.euLastWeekDriven ?? 0)}"></label>
+      <label>Daily drive used <span class="sub">D</span><input id="he-dused" inputmode="numeric" placeholder="3:20" value="${hhmm(dayUsed)}"></label>
+      <label>This week used <span class="sub">W</span><input id="he-week" inputmode="numeric" placeholder="0:00" value="${hhmm(h.euWeekDriven ?? 0)}"></label>
+      <label>Previous week<input id="he-lastweek" inputmode="numeric" placeholder="from 2W if blank" value="${h.euLastWeekDriven == null ? '' : hhmm(h.euLastWeekDriven)}"></label>
+      <label>Two weeks left <span class="sub">2W</span><input id="he-2w" inputmode="numeric" placeholder="optional" value="${hhmm(twoWeeksLeft)}"></label>
+    </div>
+    <p class="hint">Type them as your HOS app shows them — <b>used</b> today and this week. Daily driving is ${num(day, 0)}
+      hours, ${num(ext, 0)} on two days a week, so <b>${hhmm(h.driveRemaining)}</b> is left today as it stands. The week is
+      ${num(r.weeklyDriving || 56, 0)} hours (Monday to Sunday) and ${num(r.fortnightDriving || 90, 0)} over this week and last —
+      <b>${hhmm(v.cycleRemaining)}</b> left. Leave Previous week blank and it is worked out from Two weeks left.</p>
+    <div class="grid3">
+      <label>Break <span class="sub">B</span><input id="h-break" inputmode="numeric" placeholder="3:00" value="${hhmm(h.breakRemaining)}"></label>
+      <label>B counts<select id="he-bmode">
+        <option value="left">driving left before the break</option>
+        <option value="done">driving done since the last break</option></select></label>
+      <label>Spread left <span class="sub">if your app shows it</span><input id="h-shift" inputmode="numeric"
+        placeholder="blank: I estimate it" value="${h.spreadEstimated ? '' : hhmm(h.shiftRemaining)}"></label>
+    </div>
+    <p class="hint">The break is ${num((r.breakLength || 0.75) * 60, 0)} minutes after ${num(r.drivingBeforeBreak || 4.5, 1)} hours
+      of driving. ${h.spreadEstimated
+        ? `<b>The spread is estimated: ${hhmm(h.shiftRemaining)} left.</b> Your HOS app does not show one, so it is worked out
+          from today's driving with its breaks, and from the last daily rest in your trip log when there is one. Log your
+          rests and it stays close; type a spread here if you know it.`
+        : `The spread is the ${num(24 - (r.regularDailyRest || 11), 0)} hours from the end of your last daily rest. Leave it
+          blank if your app does not show it and I will estimate it.`}</p>
+    <details style="margin:6px 0"><summary class="sub">More counters — 10-hour days, reduced rests, weekly rest</summary>
+    <div class="grid2">
       <label>10-hour days used<input id="he-ext" type="number" min="0" max="${r.extensionsPerWeek || 2}" step="1" value="${h.euExtensionsUsed || 0}"></label>
       <label>Reduced rests used<input id="he-red" type="number" min="0" max="${r.reducedRestsBetweenWeekly || 3}" step="1" value="${h.euReducedRestsUsed || 0}"></label>
     </div>
-    <p class="hint">${num(r.weeklyDriving || 56, 0)} hours of driving a week (Monday 00:00 to Sunday 24:00) and
-      ${num(r.fortnightDriving || 90, 0)} over this week and last — <b>${hhmm(v.cycleRemaining)}</b> left as it stands.
-      Reduced rests are the 9-hour daily rests since your last weekly rest, of ${r.reducedRestsBetweenWeekly || 3}.</p>
+    <p class="hint">Reduced rests are the 9-hour daily rests since your last weekly rest, of ${r.reducedRestsBetweenWeekly || 3}.</p>
     <div class="grid3">
       <label>Hours since weekly rest<input id="he-since" inputmode="numeric" placeholder="e.g. 52:00"
         value="${h.euHoursSinceWeeklyRest == null ? '' : hhmm(h.euHoursSinceWeeklyRest)}"></label>
@@ -2462,8 +2484,9 @@ function euClocksHtml(h, v) {
       last one ending${v.weeklyRestDueInHours != null ? ` — <b>${hhmm(v.weeklyRestDueInHours)}</b> from now` : ''}. It is
       ${num(r.regularWeeklyRest || 45, 0)} hours, or ${num(r.reducedWeeklyRest || 24, 0)} if the last was a full one, and the hours a
       reduced one is short are owed back within three weeks.</p>
+    </details>
     <div class="grid2">
-      <label>Source<input id="h-source" value="${esc(h.source)}" placeholder="e.g. tachograph display"></label>
+      <label>Source<input id="h-source" value="${esc(h.source)}" placeholder="e.g. HOS companion, EC 561"></label>
     </div>`;
 }
 
@@ -7573,8 +7596,22 @@ async function handleAction(act, d, ev) {
       // EU: the tachograph counters, and weekly driving left worked out from the week and the fortnight.
       const eu = S.views.hos.ruleset === 'EU561';
       const euR = S.settings.euHos || {};
+      // EU: typed as the HOS companion shows it — used, not left. Previous week comes from Two weeks left
+      // when it is blank, and the spread is estimated by the server when it is.
+      const euWeek = eu ? hv('he-week') : 0;
+      const euPrev = eu ? (hvn('he-lastweek') ?? (hvn('he-2w') != null
+        ? Math.max(0, (euR.fortnightDriving || 90) - hvn('he-2w') - euWeek) : 0)) : 0;
+      const dayUsed = eu ? hvn('he-dused') : null;
+      const extLeft = eu ? (euR.extensionsPerWeek || 2) - (parseInt(sv('he-ext'), 10) || 0) : 0;
+      const dayLimit = dayUsed != null && dayUsed > (euR.dailyDriving || 9) && extLeft >= 0
+        ? (euR.extendedDailyDriving || 10) : (euR.dailyDriving || 9);
+      const euDrive = eu ? (dayUsed != null ? Math.max(0, dayLimit - dayUsed) : (+S.hos.driveRemaining || 0)) : 0;
+      const bRaw = eu ? hv('h-break') : 0;
+      const euBreak = eu && sv('he-bmode') === 'done' ? Math.max(0, (euR.drivingBeforeBreak || 4.5) - bRaw) : bRaw;
+      const spreadBlank = eu && hvn('h-shift') == null;
       const euFields = eu ? {
-        euWeekDriven: hv('he-week'), euLastWeekDriven: hv('he-lastweek'),
+        euDayDriven: dayUsed, spreadEstimated: spreadBlank,
+        euWeekDriven: euWeek, euLastWeekDriven: euPrev,
         euExtensionsUsed: parseInt(sv('he-ext'), 10) || 0, euReducedRestsUsed: parseInt(sv('he-red'), 10) || 0,
         euHoursSinceWeeklyRest: hvn('he-since'), euLastWeeklyRestReduced: bv('he-lastred'),
         euCompensationOwed: hv('he-owed') || 0,
@@ -7586,8 +7623,8 @@ async function handleAction(act, d, ev) {
       return run(async () => {
         absorb(await api('/hos', 'POST', {
           ...euFields,
-          driveRemaining: hv('h-drive'), shiftRemaining: hv('h-shift'),
-          breakRemaining: eu ? hv('h-break') : breakLeft, cycleRemaining: cycleLeft,
+          driveRemaining: eu ? euDrive : hv('h-drive'), shiftRemaining: spreadBlank ? 0 : hv('h-shift'),
+          breakRemaining: eu ? euBreak : breakLeft, cycleRemaining: cycleLeft,
           recap, source: sv('h-source'), notes: sv('h-notes'), asOfGameTime: readDayTime('st-time') || S.status.gameTime,
         projected: false,
         }));

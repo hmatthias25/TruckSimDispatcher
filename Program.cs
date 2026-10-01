@@ -200,6 +200,12 @@ app.MapPost("/api/hos", (HosSnapshot h) => Results.Ok(store.Mutate(s =>
     s.Hos.EuHoursSinceWeeklyRest = h.EuHoursSinceWeeklyRest is { } sw ? Math.Max(0, sw) : null;
     s.Hos.EuLastWeeklyRestReduced = h.EuLastWeeklyRestReduced;
     s.Hos.EuCompensationOwed = Math.Max(0, h.EuCompensationOwed);
+    s.Hos.EuDayDriven = h.EuDayDriven is { } dd ? Math.Max(0, dd) : null;
+    // No spread on the display: worked out here, and said so. See HosEngine.EstimateEuSpread.
+    s.Hos.SpreadEstimated = h.SpreadEstimated && HosEngine.Eu(s);
+    if (s.Hos.SpreadEstimated)
+        s.Hos.ShiftRemaining = HosEngine.EstimateEuSpread(s, h.EuDayDriven,
+            GameClock.TryParse(string.IsNullOrWhiteSpace(h.AsOfGameTime) ? s.Status.GameTime : h.AsOfGameTime));
     // A reading typed in by the driver is a reading: not a projection, and not stale. Nothing here used
     // to set Confirmed, so once it went false it stayed false and the driver was told their clocks were
     // out of date however many times they reported them.
