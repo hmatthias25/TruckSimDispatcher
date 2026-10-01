@@ -99,7 +99,7 @@ public static class SpeedLearning
         r.Miles = miles;
         if (miles < MinMilesToLearn)
         {
-            r.Why = $"{miles:0} mi is under the {MinMilesToLearn:0}-mile floor — too short to be a highway average";
+            r.Why = $"{Units.Dist(miles):0} {Units.DistUnit} is under the {Units.Dist(MinMilesToLearn):0}-{Units.DistSingular} floor — too short to be a highway average";
             return r;
         }
 
@@ -170,13 +170,13 @@ public static class SpeedLearning
         if (r.Factor is < MinBelievableFactor or > MaxBelievableFactor)
         {
             r.Why = r.Factor > MaxBelievableFactor
-                ? $"{r.Mph:0.#} mph is past the truck's own governor — hours were spent and not logged, or the odometer is out"
-                : $"{r.Mph:0.#} mph is too slow to be driving — most of that run was something the log does not show";
+                ? $"{Units.Spd(r.Mph):0.#} {Units.SpeedUnit} is past the truck's own governor — hours were spent and not logged, or the odometer is out"
+                : $"{Units.Spd(r.Mph):0.#} {Units.SpeedUnit} is too slow to be driving — most of that run was something the log does not show";
             return r;
         }
 
         r.Usable = true;
-        r.Why = $"{miles:0} mi in {Hhmm.Of(r.DriveHours)} of driving — {r.Mph:0.#} mph";
+        r.Why = $"{Units.Dist(miles):0} {Units.DistUnit} in {Hhmm.Of(r.DriveHours)} of driving — {Units.Spd(r.Mph):0.#} {Units.SpeedUnit}";
         return r;
     }
 
@@ -212,7 +212,7 @@ public static class SpeedLearning
         if (string.IsNullOrWhiteSpace(trip.ArrivedGameTime))
             return $"Nothing learned about driving speed from this one: there is no arrival time on it. " +
                    $"Press <b>I have arrived</b> when you reach the receiver and a run like this " +
-                   $"({miles:0} mi) teaches the planner what your roads actually average.";
+                   $"({Units.Dist(miles):0} {Units.DistUnit}) teaches the planner what your roads actually average.";
 
         return $"Nothing learned about driving speed from this one — {r.Why}.";
     }
@@ -232,8 +232,8 @@ public static class SpeedLearning
         var governed = truck?.GovernedMph > 0 ? truck.GovernedMph : s.Settings.GovernedMph;
         if (governed <= 0) governed = 65;
 
-        return $"{trip.Number} ran {r.Miles:0} mi in {Hhmm.Of(r.DriveHours)} of driving — {r.Mph:0.#} mph. " +
-               $"Planning speed is now {governed * s.Settings.SpeedFactor:0.#} mph over " +
+        return $"{trip.Number} ran {Units.Dist(r.Miles):0} {Units.DistUnit} in {Hhmm.Of(r.DriveHours)} of driving — {Units.Spd(r.Mph):0.#} {Units.SpeedUnit}. " +
+               $"Planning speed is now {Units.Spd(governed * s.Settings.SpeedFactor):0.#} {Units.SpeedUnit} over " +
                $"{s.Settings.SpeedFactorSamples} run(s), from {governed * before:0.#}.";
     }
 

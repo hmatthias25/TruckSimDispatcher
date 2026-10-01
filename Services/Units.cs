@@ -82,6 +82,16 @@ public static class Units
     public static double ToMiles(double shown) => shown / Current.DistancePerMile;
 
     public static string DistUnit => Current.Distance;
+    /// <summary>"miles" or "km", for running text: "Loaded miles 1,200".</summary>
+    public static string DistWord => Current.Metric ? "km" : "miles";
+    /// <summary>"mile" or "km", for "a 40-mile floor" or "per mile".</summary>
+    public static string DistSingular => Current.Metric ? "km" : "mile";
+    /// <summary>"mph" or "km/h".</summary>
+    public static string SpeedUnit => Current.Speed;
+    /// <summary>A speed stored in mph, as the number shown.</summary>
+    public static double Spd(double mph) => mph * Current.DistancePerMile;
+    /// <summary>"gal" or "L".</summary>
+    public static string VolUnit => Current.Volume;
 
     // ------------------------------------------------------------------ money
 

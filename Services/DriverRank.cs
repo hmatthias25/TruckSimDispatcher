@@ -295,11 +295,11 @@ public static class DriverRank
         // enough to hang a tighter judgement on.
         if (d.Grade >= 3 && ratio < 0.75)
             return $"{d.Name} is a {rung.Name.ToLowerInvariant()} on {rung.Share * 100:0}% and turning in " +
-                   $"{Units.Money(latest.PerMile)}/mi against the fleet's {Units.Money(avg)}. The grade is earned on time and " +
+                   $"{Units.PerDistance(latest.PerMile, "N2")} against the fleet's {Units.PerDist(avg, "N2")}. The grade is earned on time and " +
                    "distance, not on takings — but a senior hand producing under the average is worth a look.";
 
         if (d.Grade <= 1 && ratio > 1.3)
-            return $"{d.Name} is only a {rung.Name.ToLowerInvariant()} and turning in {Units.Money(latest.PerMile)}/mi " +
+            return $"{d.Name} is only a {rung.Name.ToLowerInvariant()} and turning in {Units.PerDistance(latest.PerMile, "N2")} " +
                    $"against the fleet's {Units.Money(avg)}. They are outproducing their rung — worth remembering when " +
                    "a better carrier comes asking.";
 

@@ -1146,7 +1146,7 @@ public static class CareerService
         foreach (var line in briefing.Gained)
             s.Events.Insert(0, new LogEvent { Channel = "career", GameTime = s.Status.GameTime, Message = line });
 
-        return $"{s.Driver.Name} promoted to {target.Title}: {Units.PerDist(target.LoadedCpm, "0.000")}/loaded {Units.DistUnit}, {Units.Money(target.DeadheadCpm, "0.000")}/empty mi. {target.Note}";
+        return $"{s.Driver.Name} promoted to {target.Title}: {Units.PerDist(target.LoadedCpm, "0.000")}/loaded {Units.DistUnit}, {Units.PerDist(target.DeadheadCpm, "0.000")}/empty {Units.DistUnit}. {target.Note}";
     }
 
     // ---------------------------------------------------------------- terminal transfers
@@ -1558,7 +1558,7 @@ public static class CareerService
 
         var up = s.Driver.Pay.LoadedCpm - prevLoaded;
         n.Detail.Add(up > 0
-            ? $"Loaded rate goes from {Units.Money(prevLoaded, "0.000")} to {Units.Money(s.Driver.Pay.LoadedCpm, "0.000")} a mile — up {up:0.000}. " +
+            ? $"Loaded rate goes from {Units.PerDist(prevLoaded, "0.000")} to {Units.PerDist(s.Driver.Pay.LoadedCpm, "0.000")} a {Units.DistSingular} — up {Units.PerDist(up):0.000}. " +
               $"Empty from {Units.Money(prevDeadhead, "0.000")} to {Units.Money(s.Driver.Pay.DeadheadCpm, "0.000")}."
             : $"{Units.Money(s.Driver.Pay.LoadedCpm, "0.000")}/loaded mile, {Units.Money(s.Driver.Pay.DeadheadCpm, "0.000")}/empty.");
 

@@ -254,7 +254,7 @@ public static class HosEngine
         if (req.DeadheadMiles > 0)
             tasks.Add(new HosTask
             {
-                Label = $"Deadhead {req.DeadheadMiles:0} mi{(req.DeadheadIsEstimate ? " (estimated)" : "")}",
+                Label = $"Deadhead {Units.Dist(req.DeadheadMiles):0} {Units.DistUnit}{(req.DeadheadIsEstimate ? " (estimated)" : "")}",
                 Kind = "Drive",
                 Hours = driveHours * dhShare,
                 Miles = req.DeadheadMiles
@@ -297,7 +297,7 @@ public static class HosEngine
         {
             tasks.Add(new HosTask
             {
-                Label = $"Line haul {req.LoadedMiles:0} mi",
+                Label = $"Line haul {Units.Dist(req.LoadedMiles):0} {Units.DistUnit}",
                 Kind = "Drive",
                 Hours = loadedDrive,
                 Miles = req.LoadedMiles

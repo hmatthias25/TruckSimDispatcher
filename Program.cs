@@ -871,7 +871,7 @@ app.MapPost("/api/moves/book-empty", () => Results.Ok(store.Mutate<object>(s =>
     trip.Pay = PayEngine.ComputeTripPay(s, trip);
 
     store.Log(s, "dispatch",
-        $"{trip.Number} — {leg.Miles:N0} empty mi from {DispatchEngine.Place(from.DestCity, from.DestState)} " +
+        $"{trip.Number} — {Units.Dist(leg.Miles):N0} empty {Units.DistUnit} from {DispatchEngine.Place(from.DestCity, from.DestState)} " +
         $"booked off the odometer ({leg.FromOdometer:N0} → {leg.ToOdometer:N0}).", trip.Number);
 
     return new { trip, miles = leg.Miles, snapshot = Snapshot(s) };

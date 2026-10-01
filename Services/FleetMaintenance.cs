@@ -164,7 +164,7 @@ public static class FleetMaintenance
             headline = gdc
                 ? $"Unit {t.Ref} has {checkpoints.Count} checkpoint(s) due" +
                   (past > 0 ? $", worst {Units.Distance(past)} over." : ".")
-                : $"Unit {t.Ref} is {Units.Distance(past)} past its {t.ServiceIntervalMiles:N0}-mile PM.",
+                : $"Unit {t.Ref} is {Units.Distance(past)} past its {Units.Dist(t.ServiceIntervalMiles):N0}-{Units.DistSingular} PM.",
             detail = (gdc && work.Length > 0 ? $"Due: {work}. " : "") +
                      $"The yard will do it at the next fleet report — about {Units.Money0(cost)}. " +
                      (driver != null ? $"{driver.Name} keeps running; " : "") +

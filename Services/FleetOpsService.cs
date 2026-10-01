@@ -260,7 +260,7 @@ public static class FleetOpsService
                 if (line.PerMile > 0 && line.Miles > 0)
                 {
                     line.Contribution = Math.Round(line.PerMile * (decimal)line.Miles, 2);
-                    line.RevenueBasis = $"{Units.Money(line.PerMile)}/mi net × {Units.Distance(line.Miles)}";
+                    line.RevenueBasis = $"{Units.PerDistance(line.PerMile, "N2")} net × {Units.Distance(line.Miles)}";
                 }
                 else if (line.PerDay > 0 && periodDays > 0)
                 {
@@ -722,7 +722,7 @@ public static class FleetOpsService
                     d.ProbationReason = why;
                     d.ProbationTarget = fleetPerDay > 0
                         ? $"$/day back above the {Units.Money0(fleetPerDay)} fleet average by the next report."
-                        : $"$/mi back above the {Units.Money(fleetPerMile, "0.00")} fleet average by the next report.";
+                        : $"{Units.Symbol}/{Units.DistUnit} back above the {Units.PerDist(fleetPerMile, "0.00")} fleet average by the next report.";
                     report.Personnel.Add(new PersonnelChange
                     {
                         DriverId = d.Id, DriverName = d.Name, Kind = "Probation", Pending = false,
@@ -758,7 +758,7 @@ public static class FleetOpsService
                         d.ProbationReason = why;
                         d.ProbationTarget = fleetPerDay > 0
                             ? $"$/day back above the {Units.Money0(fleetPerDay)} fleet average by the next report."
-                            : $"$/mi back above the {Units.Money(fleetPerMile, "0.00")} fleet average by the next report.";
+                            : $"{Units.Symbol}/{Units.DistUnit} back above the {Units.PerDist(fleetPerMile, "0.00")} fleet average by the next report.";
 
                         report.Personnel.Add(new PersonnelChange
                         {
@@ -1258,7 +1258,7 @@ public static class FleetOpsService
             var wornOut = !isMine && t.Stars > 0 && t.Stars <= starLimit;
             var beaten = isMine && t.DamagePct >= s.Settings.Maintenance.MandatoryReviewPct;
 
-            if (high) evidence.Add($"{t.ServiceMiles:N0} company-service miles.");
+            if (high) evidence.Add($"{Units.Dist(t.ServiceMiles):N0} company-service {Units.DistWord}.");
             if (costly) evidence.Add($"{Units.Money0(t.LifetimeRepairCost)} in repairs against it.");
             if (beaten) evidence.Add($"Sitting at {t.DamagePct:0.#}% damage.");
             if (wornOut) evidence.Add($"Down to {t.Stars:0.#} stars — at or under our {starLimit:0.#}-star replacement line.");

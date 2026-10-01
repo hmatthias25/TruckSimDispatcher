@@ -62,7 +62,7 @@ public static class PayEngine
         b.LinehaulPay = Math.Round(payLoaded * p.LoadedCpm, 2);
         b.DeadheadPay = Math.Round(payDh * p.DeadheadCpm, 2);
         if (trip.RepositionMiles > 0)
-            b.Lines.Add($"Repositioning: {trip.RepositionMiles:N0} empty mi before this load, " +
+            b.Lines.Add($"Repositioning: {Units.Dist(trip.RepositionMiles):N0} empty {Units.DistUnit} before this load, " +
                         $"paid at the empty rate. {trip.RepositionNote}");
 
         var premium = PremiumCpm(s, p, trip.Division, trip.IsHazmat, trip.IsOversize);
@@ -86,9 +86,9 @@ public static class PayEngine
         var multNote = Math.Abs(mult - 1.0) > 0.001 ? $" (×{mult:0.##} pay-mile factor)" : "";
 
         if (b.LinehaulPay > 0)
-            b.Lines.Add($"Loaded miles {loadedMiles:N0}{multNote} @ {Units.PerDistance(p.LoadedCpm, "0.000")} = {Units.Money(b.LinehaulPay)}");
+            b.Lines.Add($"Loaded {Units.DistWord} {Units.Dist(loadedMiles):N0}{multNote} @ {Units.PerDistance(p.LoadedCpm, "0.000")} = {Units.Money(b.LinehaulPay)}");
         if (b.DeadheadPay > 0)
-            b.Lines.Add($"Empty miles {dhMiles:N0}{multNote} @ {Units.PerDistance(p.DeadheadCpm, "0.000")} = {Units.Money(b.DeadheadPay)}");
+            b.Lines.Add($"Empty {Units.DistWord} {Units.Dist(dhMiles):N0}{multNote} @ {Units.PerDistance(p.DeadheadCpm, "0.000")} = {Units.Money(b.DeadheadPay)}");
         if (b.DivisionPremium > 0)
             b.Lines.Add($"{trip.Division}/endorsement premium @ {Units.PerDistance(premium, "0.000")} = {Units.Money(b.DivisionPremium)}");
         if (b.StopPay > 0) b.Lines.Add($"{trip.ExtraStops} extra stop(s) @ {Units.Money(p.ExtraStopPay)} = {Units.Money(b.StopPay)}");
@@ -228,8 +228,8 @@ public static class PayEngine
             st.Lines.Add($"Weekly guarantee make-up to {Units.Money(p.WeeklyGuarantee)}: {Units.Money(st.GuaranteeMakeup)}");
         }
 
-        st.Lines.Insert(0, $"Loaded miles {st.LoadedMiles:N0} — {Units.Money(st.LinehaulPay)}");
-        if (st.DeadheadPay > 0) st.Lines.Insert(1, $"Empty miles {st.DeadheadMiles:N0} — {Units.Money(st.DeadheadPay)}");
+        st.Lines.Insert(0, $"Loaded {Units.DistWord} {Units.Dist(st.LoadedMiles):N0} — {Units.Money(st.LinehaulPay)}");
+        if (st.DeadheadPay > 0) st.Lines.Insert(1, $"Empty {Units.DistWord} {Units.Dist(st.DeadheadMiles):N0} — {Units.Money(st.DeadheadPay)}");
         if (st.DivisionPremium > 0) st.Lines.Add($"Division / endorsement premium — {Units.Money(st.DivisionPremium)}");
         if (st.Accessorials > 0) st.Lines.Add($"Accessorials (stops, tarps, detention, layover, breakdown) — {Units.Money(st.Accessorials)}");
         if (st.Chargebacks > 0) st.Lines.Add($"Chargebacks — -{Units.Money(st.Chargebacks)}");

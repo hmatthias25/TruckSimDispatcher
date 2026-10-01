@@ -1232,7 +1232,7 @@ public static class HomeTime
             {
                 var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
                 if (sinceService >= truck.ServiceIntervalMiles * 0.85)
-                    jobs.Add($"Unit {truck.Ref} is {Units.Distance(sinceService)} into a {truck.ServiceIntervalMiles:N0}-mile PM cycle — do the service now rather than on the road.");
+                    jobs.Add($"Unit {truck.Ref} is {Units.Distance(sinceService)} into a {Units.Dist(truck.ServiceIntervalMiles):N0}-{Units.DistSingular} PM cycle — do the service now rather than on the road.");
             }
         }
         // Nothing to book in for a trailer we do not own. Whatever was hooked went back to the shipper.
@@ -1417,7 +1417,7 @@ public static class HomeTime
             {
                 var since = truck.ServiceMiles - truck.LastServiceMiles;
                 if (since >= truck.ServiceIntervalMiles)
-                    b.Shop.Add($"Unit {truck.Ref} is {Units.Distance(since - truck.ServiceIntervalMiles)} PAST its {truck.ServiceIntervalMiles:N0}-mile PM. Do it now.");
+                    b.Shop.Add($"Unit {truck.Ref} is {Units.Distance(since - truck.ServiceIntervalMiles)} PAST its {Units.Dist(truck.ServiceIntervalMiles):N0}-{Units.DistSingular} PM. Do it now.");
                 else if (since >= truck.ServiceIntervalMiles * 0.85)
                     b.Shop.Add($"PM due on unit {truck.Ref} in {Units.Distance(truck.ServiceIntervalMiles - since)}. Cheaper to do it here than on the road.");
             }

@@ -200,7 +200,7 @@ public static class LedgerService
 
         if (trip.FuelCost > 0)
             Post(s, Operating, -trip.FuelCost, "Fuel",
-                $"{trip.FuelGallons:0.#} gal{(trip.FuelGallons > 0 ? $" @ {Units.FuelPrice(trip.FuelCost / (decimal)trip.FuelGallons, "0.000")}" : "")}", trip.Number);
+                $"{Units.Vol(trip.FuelGallons):0.#} {Units.VolUnit}{(trip.FuelGallons > 0 ? $" @ {Units.FuelPrice(trip.FuelCost / (decimal)trip.FuelGallons, "0.000")}" : "")}", trip.Number);
 
         if (trip.Tolls > 0)
             Post(s, Operating, -trip.Tolls, "Tolls", "Tolls and scales", trip.Number);

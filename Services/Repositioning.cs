@@ -129,7 +129,7 @@ public static class Repositioning
         }
 
         leg.Miles = Math.Round(delta, 0);
-        leg.Explanation = $"{leg.Miles:N0} empty mi repositioning after {previous.Number} " +
+        leg.Explanation = $"{Units.Dist(leg.Miles):N0} empty {Units.DistUnit} repositioning after {previous.Number} " +
                           $"(odometer {previous.EndOdometer:N0} → {odometerAtDispatch:N0}).";
         return leg;
     }
@@ -172,7 +172,7 @@ public static class Repositioning
             FromOdometer = previous.EndOdometer,
             ToOdometer = odometer,
             AfterTrip = previous.Number,
-            Explanation = $"{Math.Round(delta, 0):N0} empty mi since {previous.Number} closed in " +
+            Explanation = $"{Units.Dist(Math.Round(delta, 0)):N0} empty {Units.DistUnit} since {previous.Number} closed in " +
                           $"{previous.DestCity}, {previous.DestState} (odometer {previous.EndOdometer:N0} → " +
                           $"{odometer:N0}). Nothing has been dispatched against it, so none of it is paid yet.",
         };

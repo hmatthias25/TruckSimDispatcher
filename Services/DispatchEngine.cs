@@ -316,7 +316,7 @@ public static class DispatchEngine
                         $"against {pickHome:N0} on this one, with home time due in {hs.DaysUntilDue:0.#} days.");
             }
 
-            decision.DispatchNotes.Add($"Run it at {Units.PerDistance(pick.AllInRpm, "0.00")} all-in on {pick.Load.LoadedMiles + pick.Load.DeadheadMiles:0} total miles.");
+            decision.DispatchNotes.Add($"Run it at {Units.PerDistance(pick.AllInRpm, "0.00")} all-in on {Units.Dist(pick.Load.LoadedMiles + pick.Load.DeadheadMiles):0} total {Units.DistWord}.");
             decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
             if (pick.Feasibility.RestsRequired > 0)
                 decision.DispatchNotes.Add($"Plan on {pick.Feasibility.RestsRequired} × {s.Settings.Hos.OffDutyReset:0.#}-hour reset and {pick.Feasibility.BreaksRequired} required break(s) en route.");
@@ -1502,7 +1502,7 @@ public static class DispatchEngine
 
         var dhPts = -Math.Clamp(e.DeadheadRatio / Math.Max(0.05, w.MaxDeadheadRatio), 0, 2.0) * w.DeadheadPenalty;
         score += dhPts;
-        detail.Add($"Deadhead {load.DeadheadMiles:0} mi ({e.DeadheadRatio * 100:0}% of loaded): {dhPts:+0.00;-0.00}");
+        detail.Add($"Deadhead {Units.Dist(load.DeadheadMiles):0} {Units.DistUnit} ({e.DeadheadRatio * 100:0}% of loaded): {dhPts:+0.00;-0.00}");
 
         // Already parked on it. The deadhead penalty above is meant to cover this and only does where a
         // deadhead figure is known — pasted boards carry none, so a job across town scored identically
@@ -1513,7 +1513,7 @@ public static class DispatchEngine
         {
             if (guessedDeadhead is { } dh && dh > 0.5)
                 e.Cons.Add($"The listing quotes no deadhead and you are not at the shipper. I have planned " +
-                           $"about {dh:0} mi to {Place(load.OriginCity, load.OriginState)} — that is an estimate " +
+                           $"about {Units.Dist(dh):0} {Units.DistUnit} to {Place(load.OriginCity, load.OriginState)} — that is an estimate " +
                            $"off the city coordinates, not a figure from the game, and it is in the hours and " +
                            "the clocks above. Your odometer decides what actually gets paid.");
             else if (staleLooking)
@@ -1685,11 +1685,11 @@ public static class DispatchEngine
         score += utilPts;
         if (runRadius > 0 && destFromHome is { } outMiles)
         {
-            detail.Add($"Finishes {outMiles:0} mi from {Place(yard!.City, yard.State)} against the "
-                       + $"{runRadius:0} mi {runKey} box they run you in: {utilPts:+0.00;-0.00}");
+            detail.Add($"Finishes {Units.Dist(outMiles):0} {Units.DistUnit} from {Place(yard!.City, yard.State)} against the "
+                       + $"{Units.Dist(runRadius):0} {Units.DistUnit} {runKey} box they run you in: {utilPts:+0.00;-0.00}");
             if (outMiles > runRadius * 1.25)
-                e.Cons.Add($"This finishes {outMiles:0} miles from your yard. {s.Company.Name} runs you "
-                           + $"{runKey} — about {runRadius:0} miles out — so taking it puts you somewhere "
+                e.Cons.Add($"This finishes {Units.Dist(outMiles):0} {Units.DistWord} from your yard. {s.Company.Name} runs you "
+                           + $"{runKey} — about {Units.Dist(runRadius):0} {Units.DistWord} out — so taking it puts you somewhere "
                            + "they do not normally have freight to bring you back from.");
         }
         else if (runRadius > 0)
@@ -1699,7 +1699,7 @@ public static class DispatchEngine
         }
         else
         {
-            detail.Add($"{load.LoadedMiles:0} loaded miles against over-the-road work, which has no "
+            detail.Add($"{Units.Dist(load.LoadedMiles):0} loaded {Units.DistWord} against over-the-road work, which has no "
                        + $"radius: {utilPts:+0.00;-0.00}");
         }
 
@@ -1742,7 +1742,7 @@ public static class DispatchEngine
         else if (e.AllInRpm < targetRpm)
             e.Cons.Add($"{Units.PerDistance(e.AllInRpm, "0.00")} clears break-even but is below our {Units.Money(targetRpm, "0.00")} target.");
         if (e.DeadheadRatio > w.MaxDeadheadRatio)
-            e.Cons.Add($"{load.DeadheadMiles:0} mi of deadhead is {e.DeadheadRatio * 100:0}% of the loaded miles — over our {w.MaxDeadheadRatio * 100:0}% limit.");
+            e.Cons.Add($"{Units.Dist(load.DeadheadMiles):0} {Units.DistUnit} of deadhead is {e.DeadheadRatio * 100:0}% of the loaded miles — over our {w.MaxDeadheadRatio * 100:0}% limit.");
         if (e.DestTier == 3)
             e.Cons.Add($"{Place(load.DestCity, load.DestState)} is a thin market — expect deadhead or a cheap reload getting out.");
         if (e.EstimatedMargin <= 0)
@@ -1975,8 +1975,8 @@ public static class DispatchEngine
             ? $"the best of them loses about {Units.Money0(Math.Abs(best.EstimatedMargin))} after fuel, wages and overhead"
             : underFloor
                 ? $"the best of them is {Units.PerDistance(best.AllInRpm, "0.00")} all-in, under our {Units.Money(floor, "0.00")} floor"
-                : $"the best of them works out at ${perHour:0} an hour for as long as the truck is tied up, " +
-                  $"against the ${perHourFloor:0} we would want";
+                : $"the best of them works out at {Units.Money(perHour, "0")} an hour for as long as the truck is tied up, " +
+                  $"against the {Units.Money(perHourFloor, "0")} we would want";
 
         return
             $"That is {s.Board.Count} load(s) off one dock and {what}. Before I tie the truck up on " +
@@ -2132,7 +2132,7 @@ public static class DispatchEngine
         }
 
         if (pick.Load.DeadheadMiles > 0)
-            parts.Add($"{pick.Load.DeadheadMiles:0} mi of deadhead is acceptable to get under this freight.");
+            parts.Add($"{Units.Dist(pick.Load.DeadheadMiles):0} {Units.DistUnit} of deadhead is acceptable to get under this freight.");
 
         return string.Join(" ", parts);
     }
@@ -2321,7 +2321,7 @@ public static class DispatchEngine
             TarpsUsed = load.RequiresTarp ? 1 : 0,
             FeasibilityAtDispatch = eval.Feasibility,
             AuthorizationRationale = string.IsNullOrWhiteSpace(rationaleOverride)
-                ? $"{Units.PerDistance(eval.AllInRpm, "0.00")} all-in on {load.LoadedMiles + load.DeadheadMiles:N0} total miles, " +
+                ? $"{Units.PerDistance(eval.AllInRpm, "0.00")} all-in on {Units.Dist(load.LoadedMiles + load.DeadheadMiles):N0} total {Units.DistWord}, " +
                   $"{Hhmm.Of(eval.Feasibility.SlackHours)} of slack against a {Hhmm.Of(eval.Feasibility.RequiredBufferHours)} buffer, " +
                   $"tier-{eval.DestTier} destination{(eval.DestResetFriendly ? " with restart capability" : "")}."
                 : rationaleOverride

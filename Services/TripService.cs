@@ -485,7 +485,7 @@ public static class TripService
                       $"({from:N0} → {loadedOdometer:N0}), against {Units.Distance(quoted)} on the listing. " +
                       "Going with yours — you drove it, the listing guessed it.");
         else
-            notes.Add($"Empty miles since you closed out: {trip.DeadheadMiles:N0}, measured " +
+            notes.Add($"Empty {Units.DistWord} since you closed out: {Units.Dist(trip.DeadheadMiles):N0}, measured " +
                       $"({from:N0} → {loadedOdometer:N0}) and paid at the empty rate.");
 
         return notes;
@@ -708,7 +708,7 @@ public static class TripService
         {
             var variance = trip.ActualMiles - trip.DispatchedMiles;
             var pct = variance / trip.DispatchedMiles * 100;
-            audit.MileageFindings.Add($"Dispatched {Units.Distance(trip.DispatchedMiles)}, ran {Units.Distance(trip.ActualMiles)} ({variance:+0;-0;0} mi, {pct:+0.#;-0.#;0}%).");
+            audit.MileageFindings.Add($"Dispatched {Units.Distance(trip.DispatchedMiles)}, ran {Units.Distance(trip.ActualMiles)} ({Units.Dist(variance):+0;-0;0} {Units.DistUnit}, {pct:+0.#;-0.#;0}%).");
             if (pct > 12)
                 audit.MileageFindings.Add("Out-of-route miles are high. Either the routing was wrong or you took a detour — either way it costs fuel and hours.");
         }
@@ -750,7 +750,7 @@ public static class TripService
         if (trip.ActualMiles + trip.DeadheadMiles > 0)
         {
             var allIn = trip.CompanyRevenue / (decimal)(trip.ActualMiles + trip.DeadheadMiles);
-            audit.MoneyFindings.Add($"{Units.PerDistance(allIn, "0.00")} all-in on {trip.ActualMiles + trip.DeadheadMiles:N0} total miles.");
+            audit.MoneyFindings.Add($"{Units.PerDistance(allIn, "0.00")} all-in on {Units.Dist(trip.ActualMiles + trip.DeadheadMiles):N0} total {Units.DistWord}.");
 
             // Through the cost model, like dispatch. This read Scoring.FloorAllInRpm raw — the manual
             // override, which nobody has switched on — so the audit judged a delivered load against
@@ -1986,7 +1986,7 @@ public static class TripService
             {
                 var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
                 if (sinceService >= truck.ServiceIntervalMiles)
-                    audit.Directives.Add($"Unit {truck.Ref} is {Units.Distance(sinceService - truck.ServiceIntervalMiles)} past its {truck.ServiceIntervalMiles:N0}-mile PM. Schedule the service at the next terminal.");
+                    audit.Directives.Add($"Unit {truck.Ref} is {Units.Distance(sinceService - truck.ServiceIntervalMiles)} past its {Units.Dist(truck.ServiceIntervalMiles):N0}-{Units.DistSingular} PM. Schedule the service at the next terminal.");
                 else if (sinceService >= truck.ServiceIntervalMiles * 0.9)
                     audit.EquipmentFindings.Add($"PM due in {Units.Distance(truck.ServiceIntervalMiles - sinceService)} on unit {truck.Ref}.");
             }

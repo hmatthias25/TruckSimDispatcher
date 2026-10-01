@@ -155,9 +155,9 @@ public static class TruckGrade
         var parts = new List<string>();
 
         if (candidate.ServiceMiles < mine.ServiceMiles * 0.85)
-            parts.Add($"{mine.ServiceMiles - candidate.ServiceMiles:N0} fewer miles on it.");
+            parts.Add($"{Units.Dist(mine.ServiceMiles - candidate.ServiceMiles):N0} fewer {Units.DistWord} on it.");
         else if (candidate.ServiceMiles > mine.ServiceMiles)
-            parts.Add($"It has {candidate.ServiceMiles - mine.ServiceMiles:N0} more miles than yours, " +
+            parts.Add($"It has {Units.Dist(candidate.ServiceMiles - mine.ServiceMiles):N0} more {Units.DistWord} than yours, " +
                       "and is still the better truck.");
 
         var cg = GradeOf(candidate.Make, candidate.Model);

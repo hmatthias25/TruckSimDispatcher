@@ -1199,7 +1199,7 @@ public static class EquipmentService
                   (over > 0 ? $" Worst is {Units.Distance(over)} over." : "")
                 : $"Unit {truck.Ref} is due its {next!.Name.ToLowerInvariant()} in {Units.Distance(advice.MilesRemaining)}."
             : advice.Due
-                ? $"Unit {truck.Ref} is {Units.Distance(over)} past its {truck.ServiceIntervalMiles:N0}-mile PM."
+                ? $"Unit {truck.Ref} is {Units.Distance(over)} past its {Units.Dist(truck.ServiceIntervalMiles):N0}-{Units.DistSingular} PM."
                 : $"Unit {truck.Ref} is due a PM in {Units.Distance(advice.MilesRemaining)}.";
         if (shops.Count > 0)
             advice.Message += $" Our own shops: {string.Join("; ", advice.ShopYards)}.";

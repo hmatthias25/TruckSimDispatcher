@@ -252,8 +252,8 @@ public static class Migrations
             Channel = "system",
             GameTime = s.Status.GameTime,
             Message =
-                $"Planning speed reset to the starting assumption of {shipped * governed:0.#} mph. It was "
-                + $"{was * governed:0.#} mph off {samples} run(s), and any run whose rest was not logged "
+                $"Planning speed reset to the starting assumption of {Units.Spd(shipped * governed):0.#} {Units.SpeedUnit}. It was "
+                + $"{Units.Spd(was * governed):0.#} {Units.SpeedUnit} off {samples} run(s), and any run whose rest was not logged "
                 + "as a trip event had that sleep counted as driving — which taught it the map was far "
                 + "slower than it is. There is no way to tell which of those runs were sound, so all of "
                 + "them go. It measures itself again over your next few deliveries, and a run with hours "
@@ -306,7 +306,7 @@ public static class Migrations
             Channel = "pay",
             GameTime = s.Status.GameTime,
             Message =
-                $"Your loaded rate is corrected from {Units.Money(was, "0.000")} to {Units.Money(s.Driver.Pay.LoadedCpm, "0.000")} a mile, " +
+                $"Your loaded rate is corrected from {Units.PerDist(was, "0.000")} to {Units.PerDist(s.Driver.Pay.LoadedCpm, "0.000")} a {Units.DistSingular}, " +
                 $"and empty from {Units.Money(wasDh, "0.000")} to {Units.Money(s.Driver.Pay.DeadheadCpm, "0.000")}. You were on " +
                 $"{s.Company.Name}'s full company rate while still serving probation — that is the figure a " +
                 "cleared company driver earns, and it meant clearing probation was worth nothing at all. " +

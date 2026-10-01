@@ -157,9 +157,9 @@ public static class CostModel
         if (be.OverheadDominates)
             c.Recommendations.Add(
                 $"Overhead is {Units.PerDistance(be.OverheadPerMile, "0.000")} of a {Units.Money(be.BreakEvenRpm, "0.00")} break-even — more than half " +
-                $"your per-mile cost, purely because ${s.Settings.OverheadPerLoad:0} is spread over " +
-                $"{be.LoadedMiles:N0} scaled miles. Drop overhead per load to about " +
-                $"${Math.Max(5, Math.Round((double)s.Settings.OverheadPerLoad * 0.25 / 5) * 5):0} — that is the single " +
+                $"your per-mile cost, purely because {Units.Money(s.Settings.OverheadPerLoad, "0")} is spread over " +
+                $"{Units.Dist(be.LoadedMiles):N0} scaled {Units.DistWord}. Drop overhead per load to about " +
+                $"{Units.Money(Math.Max(5, Math.Round((double)s.Settings.OverheadPerLoad * 0.25 / 5) * 5), "0")} — that is the single " +
                 "biggest lever on short ATS freight.");
 
         if (c.ProfitableShare < 70)
