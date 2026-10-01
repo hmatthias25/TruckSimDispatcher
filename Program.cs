@@ -3048,6 +3048,8 @@ object Snapshot(AppState? given = null)
             // The states and provinces the driver runs, for the settings picker — and the note for when
             // the truck is standing in one they have switched off.
             mapCoverage = MapCoverage.View(s),
+            // The truck's cabotage period and days off, on an EU career. Null on ATS.
+            cabotage = Cabotage.View(s),
             // What fuel costs where, so a route can be planned around it rather than paid for after.
             fuel = Fuel.PlanningView(s),
             // Said before the state line, which is the only time it is any use. Null when the run does

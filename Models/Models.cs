@@ -75,6 +75,12 @@ public class AppState
     public string CareerName { get; set; } = "";
 
     /// <summary>
+    /// Cabotage counters for each truck, keyed by unit — the law is about the vehicle. See
+    /// <see cref="Services.Cabotage"/>. Empty on every ATS career, which has no cabotage.
+    /// </summary>
+    public Dictionary<string, CabotageState> CabotageByTruck { get; set; } = new();
+
+    /// <summary>
     /// Which game this career is played in: "ATS", or "ETS2" once it exists. See
     /// <see cref="Services.GameProfile"/>.
     ///
@@ -3468,6 +3474,25 @@ public class EuHosRules
         OffDutyExtendsShift = false,
         DriveDisplayCaps = "no",
     };
+}
+
+/// <summary>One truck's cabotage: the period it is in, what it has used, and where it is on its days off.</summary>
+public class CabotageState
+{
+    /// <summary>The country the open period is in, or empty.</summary>
+    public string Host { get; set; } = "";
+    /// <summary>When the international load that opened it was unloaded there.</summary>
+    public string WindowOpenedGameTime { get; set; } = "";
+    /// <summary>Cabotage loads delivered in this period, the country entered empty included.</summary>
+    public int OperationsUsed { get; set; }
+    /// <summary>Countries entered empty that have had their one load in this period.</summary>
+    public List<string> UnladenUsed { get; set; } = new();
+    /// <summary>The last unloading in the host — the four days off count from the day after it.</summary>
+    public string LastUnloadInHostGameTime { get; set; } = "";
+    /// <summary>The last unloading anywhere — a country entered empty has three days from it.</summary>
+    public string LastUnloadGameTime { get; set; } = "";
+    /// <summary>Country to the end of its four days off.</summary>
+    public Dictionary<string, string> CoolingOffUntil { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public class FacilityTimeSample

@@ -740,6 +740,9 @@ public static class TripService
         // ---- ledger
         trip.Status = "Delivered";
         trip.ClosedUtc = DateTime.UtcNow.ToString("o");
+        // The truck's cabotage, on an EU career: an international delivery abroad opens a period, a domestic
+        // load abroad spends one, a delivery home ends it.
+        Cabotage.Record(s, trip);
         LedgerService.PostTripFinancials(s, trip);
 
         var costs = trip.FuelCost + trip.Tolls + trip.RepairCost + trip.OtherExpense

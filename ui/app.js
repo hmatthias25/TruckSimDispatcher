@@ -1475,6 +1475,25 @@ function bannerHtml() {
 }
 
 /* ============================================================ DISPATCH */
+/**
+ * Cabotage on an EU career (#272): the truck's open period — how many domestic loads are left in the host
+ * country and until when — and the countries it is on its four days off in. Dispatch refuses anything that
+ * breaks the rule, with the reason on the card; this is what the driver needs to choose between local work
+ * and the next international load out.
+ */
+function cabotageHtml() {
+  const c = S.views && S.views.cabotage;
+  if (!c || (!c.note && !(c.cooling || []).length)) return '';
+  return `<div class="callout info" style="margin-bottom:12px">
+    <h4>Cabotage</h4>
+    ${c.note ? `<p style="margin:0 0 4px">${esc(c.note)}</p>` : ''}
+    ${(c.cooling || []).map((x) => `<p class="hint" style="margin:0">No domestic loads in ${esc(x.name)} until
+      ${esc(gt(x.until))} — four days off after the last cabotage period there.</p>`).join('')}
+    <p class="hint" style="margin:4px 0 0">Home country ${esc(c.homeName || c.home || '—')}. Loads at home and loads between
+      countries are never limited; only domestic loads inside another country are.</p>
+  </div>`;
+}
+
 function viewDispatch() {
   const v = S.views, st = S.status, h = S.hos;
   const t = v.truck, tr = v.trailer;
@@ -1482,6 +1501,7 @@ function viewDispatch() {
   return `
   ${rerigHtml()}
   ${unbookedEmptyHtml()}
+  ${cabotageHtml()}
   <div class="cols">
     <div>
       <div class="panel">

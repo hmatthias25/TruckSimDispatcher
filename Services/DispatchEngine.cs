@@ -1150,6 +1150,14 @@ public static class DispatchEngine
         // roads, and a guess about the route is not a thing to refuse a load on.
         if (MapCoverage.RejectionFor(s, load) is { } offMap) e.HardFails.Add(offMap);
 
+        // Cabotage, on an EU career: a domestic load inside a foreign country is refused unless the truck's
+        // cabotage period there allows it, and said either way. Refused rather than scored, because a breach
+        // is not a worse load, it is one the company may not run — and refusing it is how it is never the
+        // dispatcher's fault on anybody's record.
+        var cabotage = Cabotage.Check(s, load);
+        if (cabotage.Refusal is { } notCabotage) e.HardFails.Add(notCabotage);
+        else if (cabotage.Note is { } cabotageNote) e.Pros.Add(cabotageNote);
+
         e.HardFails.AddRange(QualificationFails(s, load, trailer));
 
         // The listing's own clock, which is not the load's. A row can be entered with fifty minutes on
