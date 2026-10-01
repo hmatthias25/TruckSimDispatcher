@@ -53,6 +53,8 @@ public class ExtractedLoad
     /// a measured road distance is close but not identical to what ATS quotes.
     /// </summary>
     public bool MilesDerived { get; set; }
+    /// <summary>ETS2: kilometres and kilograms already turned into the app's miles and pounds.</summary>
+    public bool MetricConverted { get; set; }
 
     public double WeightLbs { get; set; }
 
@@ -274,6 +276,78 @@ public static class AiService
         - Use "notes" to mention anything the operator should know: rows you skipped, a column you
           could not find, units that looked like kilometres rather than miles, and so on.
         """;
+
+    /// <summary>
+    /// The same reader for Euro Truck Simulator 2 (#275). The schema is shared — its field names are the
+    /// app's, so "loadedMiles" and "weightLbs" are what the reader fills — but ETS2 prints kilometres,
+    /// euros, kilograms or tonnes, country codes, ADR classes and 24-hour times, and the reader is told to
+    /// copy those as shown. <see cref="InterpretLoad"/> converts them, so the arithmetic stays ours.
+    /// </summary>
+    private static readonly string Ets2ExtractPrompt = Lf(ExtractPrompt)
+        .Swap("""
+        You are reading screenshots of the freight/cargo market board from the game American Truck
+        Simulator. Extract every job row you can see, across all the images provided.
+        """, """
+        You are reading screenshots of the freight/cargo market board from the game Euro Truck
+        Simulator 2. Extract every job row you can see, across all the images provided.
+        """)
+        .Swap("- originCity / originState: the pickup city and its two-letter US state code.",
+                 "- originCity / originState: the pickup city, spelt as the game spells it, and its two-letter\n" +
+                 "  country code (DE, FR, PL, NL, UK for the United Kingdom, CH, NO and so on).")
+        .Swap("- destCity / destState: the delivery city and its two-letter US state code.",
+                 "- destCity / destState: the delivery city, spelt as the game spells it, and its two-letter\n" +
+                 "  country code.")
+        .Swap("- loadedMiles: the trip distance in miles, as a plain number.",
+                 "- loadedMiles: the trip distance IN KILOMETRES, exactly as shown, as a plain number. The field\n" +
+                 "  name is the app's; do not convert to miles, the app does that.")
+        .Swap("""
+        - gameRevenue: the payout in dollars, as a plain number with no currency symbol,
+          commas or decimals.
+        """, """
+        - gameRevenue: the payout in euros, as a plain number with no currency symbol, no thousands
+          separator (ETS2 may print "12 345 €" or "12.345 €" — that is 12345) and no decimals.
+        """)
+        .Swap("ATS usually shows this as a TIME RANGE", "ETS2 usually shows this as a TIME RANGE")
+        .Swap("for example \"Mon 11:14 pm - Tue 5:54 am\" or \"Expected Tue 2:47 pm -\n  Tue 9:27 pm CDT\".",
+                 "for example \"Mon 23:14 - Tue 05:54\", in 24-hour time.")
+        .Swap("\"Mon 11:14 pm - Tue 5:54 am\" and \"11:14 pm - 5:54 am\" are completely different windows:",
+                 "\"Mon 23:14 - Tue 05:54\" and \"23:14 - 05:54\" are completely different windows:")
+        .Swap("Copy \"Mon 11:14 pm - Tue 5:54 am\". Do NOT copy \"11:14 pm - 5:54 am\".",
+                 "Copy \"Mon 23:14 - Tue 05:54\". Do NOT copy \"23:14 - 05:54\". Copy the time exactly as\n    printed, 24-hour or not.")
+        .Swap("Keep \"Expected\", a time zone such as CDT,", "Keep \"Expected\", a time zone such as CET,")
+        .Swap("- weightLbs: cargo weight in pounds. If shown in tons, convert (1 ton = 2000 lb).",
+                 "- weightLbs: the cargo mass IN KILOGRAMS. ETS2 usually shows tonnes: 18 t is 18000. Do not\n" +
+                 "  convert to pounds; the field name is the app's and it converts.")
+        .Swap("""
+        - hazmatClass: the ATS HazMat class the job needs, as a bare digit: "1" explosives,
+          "2" gases, "3" flammable liquids, "4" flammable solids, "6" toxic, "8" corrosive. A
+          subclass like 2.1 or 2.3 collapses to its parent ("2"). Leave empty when the listing
+          shows no hazard placard or class.
+        """, """
+        - hazmatClass: the ADR class the job needs, as a bare digit: "1" explosives, "2" gases,
+          "3" flammable liquids, "4" flammable solids, "6" toxic, "8" corrosive. A subclass such as
+          2.1 or 6.1 collapses to its parent. Leave empty when the listing shows no ADR placard or class.
+        """)
+        .Swap("""
+        - trailerType: the trailer needed, using one of exactly these words where it is clear:
+          Dry Van, Reefer, Flatbed, Step Deck, Tanker, Lowboy, Car Hauler, Livestock, Log, Hopper,
+          Dump. Use an empty string if you cannot tell.
+        """, """
+        - trailerType: the trailer needed, in the app's words — use exactly one of these where it is clear:
+          Dry Van (a curtainsider, box or dry freight trailer), Reefer (refrigerated or insulated),
+          Flatbed (flatbed or container carrier), Step Deck, Tanker (fuel, chemical, gas or food tank),
+          Lowboy (low loader), Car Hauler (car transporter), Livestock, Log (timber), Hopper (silo or
+          grain), Dump (dumper or tipper). Use an empty string if you cannot tell.
+        """)
+        .Swap("units that looked like kilometres rather than miles", "units that looked like miles rather than kilometres");
+
+    // The prompt's line endings are the source file's, so both sides are put on LF before matching.
+    private static string Lf(string x) => x.Replace("\r\n", "\n");
+    private static string Swap(this string s, string from, string to) => s.Replace(Lf(from), Lf(to));
+
+    /// <summary>The reader's instructions for the career's game. Public so the tests can read what it says.</summary>
+    public static string ExtractPromptFor(AppState s) =>
+        GameProfile.For(s).Id == GameProfile.Ets2.Id ? Ets2ExtractPrompt : ExtractPrompt;
 
     private static readonly Dictionary<string, JsonElement> ExtractSchema = BuildExtractSchema();
 
@@ -549,6 +623,15 @@ public static class AiService
     public static ExtractedLoad InterpretLoad(AppState state, ExtractedLoad l)
     {
         l.Unreadable ??= new List<string>();
+
+        // ETS2: the reader copied kilometres and kilograms as printed. The app stores miles and pounds.
+        // Once only — a row interpreted twice must not shrink twice.
+        if (GameProfile.For(state).Id == GameProfile.Ets2.Id && !l.MetricConverted)
+        {
+            if (l.LoadedMiles > 0) l.LoadedMiles = Math.Round(l.LoadedMiles / 1.609344, 1);
+            if (l.WeightLbs > 0) l.WeightLbs = Math.Round(l.WeightLbs * 2.2046226, 0);
+            l.MetricConverted = true;
+        }
 
         // The reader reports what it saw; the subtraction is ours, because we have the clock.
         //
@@ -955,7 +1038,7 @@ public static class AiService
                 },
                 System = new List<TextBlockParam>
                 {
-                    new() { Text = ExtractPrompt, CacheControl = new CacheControlEphemeral() }
+                    new() { Text = ExtractPromptFor(state), CacheControl = new CacheControlEphemeral() }
                 },
                 Messages = [new() { Role = Role.User, Content = content }]
             }, cancellationToken: ct);

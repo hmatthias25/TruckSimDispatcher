@@ -288,12 +288,21 @@ public class StateStore
     /// wrong answer waiting at the end of it. Same reasoning as Start over, which has always kept
     /// them.</para>
     /// </summary>
-    public AppState CreateCareer(string? name, bool inheritSettings = true)
+    public AppState CreateCareer(string? name, bool inheritSettings = true, string? game = null)
     {
         lock (_gate)
         {
             var fresh = Fresh();
-            if (inheritSettings)
+            // The new career's game: the one asked for, or the one being played now. A career in the other
+            // game starts on that game's defaults — the settings are facts about one game's install.
+            var chosen = GameSetup.Normalise(game) ?? _state.Game;
+            fresh.Game = chosen;
+            if (!string.Equals(chosen, _state.Game, StringComparison.OrdinalIgnoreCase))
+            {
+                GameSetup.Choose(fresh, chosen);
+                fresh.Settings = GameSetup.DefaultsFor(fresh, _state.Settings);
+            }
+            else if (inheritSettings)
             {
                 // Round-tripped rather than assigned, so the new career cannot end up sharing objects
                 // with the old one and writing through to it.
@@ -574,8 +583,12 @@ public class StateStore
 
             var settings = _state.Settings;
             var markets = _state.MarketExtras;
+            // Starting over is starting over in the same game.
+            var game = _state.Game;
 
-            _state = Fresh();
+            var restarted = Fresh();
+            restarted.Game = game;
+            _state = restarted;
 
             if (keepSettings)
             {

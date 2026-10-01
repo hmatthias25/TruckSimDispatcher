@@ -658,8 +658,9 @@ function careersModal() {
     <div class="row-actions">
       <button class="btn" data-act="career-new">Start another career</button>
     </div>
-    <p class="hint">A new career keeps your settings — HOS rules, fuel and economy, the regions you run,
-      your API key. Those describe your game, not the career that just ended.</p>`);
+    <p class="hint">A new career in the same game keeps your settings — HOS rules, fuel and economy, the
+      regions you run, your API key. Those describe your game, not the career that just ended. A career in
+      the other game starts on that game's defaults.</p>`);
 }
 
 function modal(html) { $('modal-body').innerHTML = html; $('modal').classList.remove('hidden'); }
@@ -676,6 +677,15 @@ function closeModal() { $('modal').classList.add('hidden'); $('modal-body').inne
     if (!S.onboarded) {
       $('onboarding').classList.remove('hidden');
       $('ap-gameday').value = 1; $('ap-gametod').value = '06:00';
+      onboardingForGame();
+      // Choosing the game puts the career on it, with that game's defaults, before anything is applied for.
+      $('ap-game').addEventListener('change', async () => {
+        try {
+          S = await api('/career/game', 'POST', { game: $('ap-game').value });
+          onboardingForGame();
+          toast(`This career is ${S.game.name}.`, 'ok');
+        } catch (e) { toast(e.message, 'bad'); $('ap-game').value = S.game.id; }
+      });
       document.title = 'Driver Application — TruckSim Dispatcher';
     } else {
       $('appshell').classList.remove('hidden');
@@ -696,6 +706,29 @@ function closeModal() { $('modal').classList.add('hidden'); $('modal-body').inne
 })();
 
 /* ============================================================ onboarding */
+
+/**
+ * The parts of the application that depend on the game (#275): which game is picked, and the dangerous-
+ * goods classes — HazMat on ATS, ADR on ETS2, both from the career's own list.
+ */
+function onboardingForGame() {
+  const g = S.game || { id: 'ATS', shortName: 'ATS' };
+  $('ap-game').value = g.id;
+  const eu = g.id === 'ETS2';
+  const classes = ((S.views && S.views.endorsements && S.views.endorsements.all) || []);
+  const was = new Set(ticked('ap-hazclasses'));
+  $('ap-hazclasses').innerHTML = `
+    <legend>${eu ? 'ADR' : 'HazMat'} classes you already hold</legend>
+    ${classes.map((c) => `<label class="chk"><input type="checkbox" value="${esc(c.key)}" ${was.has(c.key) ? 'checked' : ''}>
+      ${esc(c.label)}</label>`).join('')}
+    <p class="hint"><b>Starting a fresh ${esc(g.shortName)} profile? Leave these alone.</b> The game gives you no
+      ADR to begin with &mdash; you unlock the classes as you level, and you tell the app on the Career tab as
+      you do. Tick them here only if you are bringing a profile that already has them.</p>
+    <p class="hint">Classes, not a licence endorsement, because that is what the game actually gates freight on.
+      A tanker is a trailer and what gates it is what is inside &mdash; a fuel tanker is class 3, a gas tanker
+      class 2, a food-grade tanker nothing at all. Class 3 is most fuel haulage and class 8 most chemicals, so
+      those two open the most freight.</p>`;
+}
 function readApplication() {
   return {
     driverName: sv('ap-name'),
@@ -1641,10 +1674,10 @@ function viewDispatch() {
                 be loaded. Wrong: in ATS you unload, and if you take a load from the same facility you go
                 and load it whatever is on the back. There was no question to ask. */ ''}
           ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead ${DU()}<input id="b-dh" data-u="dist" type="number" step="1" min="0" value="0"></label>`}
-          <label>Job revenue ${SYM()}<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
-          <label>Delivery window, as ATS shows it
-            <input id="b-window" placeholder="6:15 AM to 12:55 PM"
-              title="Type the window straight off the listing — both times, AM/PM and all. The app knows the game clock and does the arithmetic. This is the better way to give it.">
+          <label>Job revenue ${SYM()}<input id="b-rev" type="number" step="1" min="0" placeholder="${esc(S.game.shortName)} payout"></label>
+          <label>Delivery window, as ${esc(S.game.shortName)} shows it
+            <input id="b-window" placeholder="${S.game.id === 'ETS2' ? 'Mon 06:15 - Mon 12:55' : '6:15 AM to 12:55 PM'}"
+              title="Type the window straight off the listing — both times, with the day and AM/PM if shown. The app knows the game clock and does the arithmetic. This is the better way to give it.">
           </label>
           <label>Time to deliver<input id="b-deadline" inputmode="numeric" placeholder="h:mm — only if no window shown"></label>
           <label>Receiver opens in<input id="b-opens" inputmode="numeric" placeholder="h:mm from now"></label>
@@ -3183,10 +3216,10 @@ function modPickModal(r) {
                  The stock names still work.</p>`}
          </div>`).join('')}`
       : `<div class="callout warn"><p style="margin:0">No mod archives found. Steam keeps them under
-          <b>steamapps\\workshop\\content\\270880</b>, and anything installed by hand lives in
-          <b>Documents\\American Truck Simulator\\mod</b>. Point me at one below.</p></div>`}
+          <b>steamapps\\workshop\\content\\${esc(S.game.steamAppId)}</b>, and anything installed by hand lives in
+          <b>Documents\\${esc(S.game.folder)}\\mod</b>. Point me at one below.</p></div>`}
     <label style="margin-top:10px">Or type the path to a .scs
-      <input id="mod-path" placeholder="D:\\SteamLibrary\\steamapps\\workshop\\content\\270880\\...\\mod.scs"></label>
+      <input id="mod-path" placeholder="D:\\SteamLibrary\\steamapps\\workshop\\content\\${esc(S.game.steamAppId)}\\...\\mod.scs"></label>
     <div class="row-actions"><div style="flex:1"></div>
       <button class="btn" data-act="mod-read-typed">Read that one</button></div>`);
 }
@@ -4094,7 +4127,7 @@ function viewEquipment() {
         actually own, keep the one truck you bought, and add things here as you buy them in the game.
         Every system in this app works the same for a one-truck operation.</li>
       <li><b>Seed your game with a save editor or mods.</b> Money lives in
-        <span class="mono">Documents\\American Truck Simulator\\profiles\\&lt;profile&gt;\\save\\&lt;slot&gt;\\game.sii</span>
+        <span class="mono">Documents\\${esc(S.game.folder)}\\profiles\\&lt;profile&gt;\\save\\&lt;slot&gt;\\game.sii</span>
         (encrypted — SII_Decrypt opens it; TS SE Tool is a dedicated editor). Mods can unlock all
         dealerships, garages, cities and recruiting agencies, which ATS otherwise hides until you drive
         to them.</li>
@@ -8844,10 +8877,24 @@ async function handleAction(act, d, ev) {
     }, 'Switched career.');
 
     case 'career-new': {
-      const name = prompt('Name for the new career (the carrier gets picked when you apply):', '');
-      if (name === null) return;
+      const g = (S.game && S.game.id) || 'ATS';
+      return modal(`<h2>Start another career</h2>
+        <label>Name<input id="cn-name" placeholder="optional — the carrier gets picked when you apply"></label>
+        <label>Game<select id="cn-game">
+          <option value="ATS" ${g === 'ATS' ? 'selected' : ''}>American Truck Simulator</option>
+          <option value="ETS2" ${g === 'ETS2' ? 'selected' : ''}>Euro Truck Simulator 2</option></select></label>
+        <p class="hint">The same game keeps your settings — hours rules, fuel and economy, the regions you run.
+          The other game starts on its own defaults, because those settings describe one game's install; only
+          your API key comes across. The game is fixed for the career once you are hired.</p>
+        <div class="row-actions"><div style="flex:1"></div>
+          <button class="btn ghost" data-act="close-modal">Cancel</button>
+          <button class="btn primary" data-act="career-new-go">Start it</button></div>`);
+    }
+    case 'career-new-go': {
+      const name = sv('cn-name');
+      const game = sv('cn-game');
       return run(async () => {
-        const r = await api('/careers/new', 'POST', { name, inheritSettings: true });
+        const r = await api('/careers/new', 'POST', { name, game, inheritSettings: true });
         CAREERS = r.careers || CAREERS;
         absorb(r);
         closeModal();

@@ -317,6 +317,13 @@ City discovery (`DiscoveryService.cs`) is game-neutral: SCS's rule that an undis
 - `DeliveryWindow` parses times like "Mon 11:14 pm - Tue 5:54 am". ETS2 screens are likely in 24-hour time; check the parser handles it.
 - Terms that both SCS games use (Freight Market, Cargo Market, Trailer Manager, company screen, loads from this location) carry over, but the text around them says "ATS".
 
+**Built (#275):**
+- **The game, chosen for a career.** The application asks "Which game is this career in?" first, and "Start another career" asks for the name and the game. The game is fixed once hired (`POST /api/career/game` refuses after that), and Start over stays in the same game. A career in the other game starts on that game's defaults (`GameSetup.DefaultsFor`) and keeps only the AI key and model. On ETS2 that means European diesel, a 56 mph (90 km/h) limiter, every country to run, no US medical premium and no time-zone option. The same game inherits settings as before.
+- **The screenshot reader** on ETS2 is told the game, country codes, kilometres, euros (with European thousands separators), kilograms or tonnes, ADR classes, the EU trailer names mapped onto the app's, and 24-hour windows with their days. `InterpretLoad` converts km to miles and kg to pounds, once only.
+- **Delivery windows:** 24-hour times already parse, including ranges across midnight; tested. Dotted times ("14.30") and calendar dates are not read, and ETS2 does not print them on the job list.
+- **Folders:** the mod and save-path help names the career's game folder and Steam app ID.
+- **Not done:** the hours-of-service screenshot reader reads the GDC Companion app's US recap page, so it stays an ATS feature. Update 1.60's fatigue system could not be checked against the app from here; nothing the app reads from the game changed, but re-check once 1.60 ships.
+
 ### 7. Wording, manuals and tests (lots of volume, all mechanical)
 
 - "ATS" appears about 700 times across `Services`, `Models`, `Program.cs` and `ui/app.js`. The product name, "TruckSim Dispatcher", is already neutral.

@@ -20,6 +20,15 @@
     <div class="panel">
       <div class="panel-head"><h2>Application</h2></div>
       <div class="grid2">
+        <!-- Which game, first: the carriers, the map, the money and the rules all follow from it. Fixed
+             once hired; a career in the other game is a new career. See Services/GameSetup.cs. -->
+        <label class="span2">Which game is this career in?
+          <select id="ap-game">
+            <option value="ATS">American Truck Simulator</option>
+            <option value="ETS2">Euro Truck Simulator 2</option>
+          </select>
+          <span class="hint" id="ap-game-hint">Pick it first: the carriers, the map, pay and the hours rules
+            all follow from it. It is fixed once you are hired — a career in the other game is a new career.</span></label>
         <label>Driver name<input id="ap-name" placeholder="e.g. Heath Matthias"></label>
         <!-- Zero, because that is what most people starting a career actually are. It defaulted to 3,
              which quietly put every new player past the bar at carriers that would have turned a rookie
@@ -86,23 +95,8 @@
             is governed by the hazmat classes you hold, below.</p>
         </fieldset>
 
-        <fieldset class="span2" id="ap-hazclasses">
-          <legend>HazMat classes you already hold</legend>
-          <label class="chk"><input type="checkbox" value="1"> Class 1 &mdash; Explosives</label>
-          <label class="chk"><input type="checkbox" value="2"> Class 2 &mdash; Gases</label>
-          <label class="chk"><input type="checkbox" value="3"> Class 3 &mdash; Flammable liquids</label>
-          <label class="chk"><input type="checkbox" value="4"> Class 4 &mdash; Flammable solids</label>
-          <label class="chk"><input type="checkbox" value="6"> Class 6 &mdash; Toxic substances</label>
-          <label class="chk"><input type="checkbox" value="8"> Class 8 &mdash; Corrosives</label>
-          <p class="hint"><b>Starting a fresh ATS profile? Leave these alone.</b> ATS gives you no ADR to
-            begin with &mdash; you unlock the classes as you level, and you tell the app on the Career tab
-            as you do. Tick them here only if you are bringing a profile that already has them.</p>
-          <p class="hint">Classes, not a CDL endorsement, because that is what ATS actually gates freight
-            on. A tanker is a trailer and what gates it is what is inside &mdash; a fuel tanker is class 3,
-            a gas tanker class 2, a food-grade tanker nothing at all. Doubles and triples are a trailer
-            configuration, not a licence. Class 3 is most fuel haulage and class 8 most chemicals, so those
-            two open the most freight.</p>
-        </fieldset>
+        <!-- Filled in by onboardingForGame() from the career's game: HazMat for ATS, ADR for ETS2. -->
+        <fieldset class="span2" id="ap-hazclasses"></fieldset>
 
         <fieldset class="span2">
           <legend>Probation</legend>
@@ -116,8 +110,8 @@
             <input id="ap-gameday" type="number" min="1" step="1" class="spin" value="1" style="flex:0 0 92px" title="Game day">
             <input id="ap-gametod" type="time" step="60" value="06:00" style="flex:1" title="Time of day">
           </span>
-          <span class="hint">ATS has no calendar — just count days from wherever your profile is now.
-            Day 1 is fine for a new driver.</span>
+          <span class="hint">The game has no calendar the app can read — just count days from wherever your
+            profile is now. Day 1 is fine for a new driver.</span>
         </label>
         <label>Notes for recruiting<input id="ap-notes" placeholder="optional"></label>
       </div>

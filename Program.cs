@@ -259,6 +259,21 @@ app.MapPost("/api/settings", (AppSettings incoming) => Results.Ok(store.Mutate(s
 
 // ---------------------------------------------------------------- onboarding
 
+/// Which game this career is: chosen on the application, before the first hire, and fixed from then on.
+/// Choosing the other game starts the settings from that game's defaults. See GameSetup.
+/// What the screenshot reader is told, for the career's game. Read-only; the tests check the ETS2 one
+/// asks for kilometres, euros and country codes rather than miles, dollars and states.
+app.MapGet("/api/ai/extract-prompt", () => Results.Text(AiService.ExtractPromptFor(store.State)));
+
+app.MapPost("/api/career/game", (CareerGameRequest r) => Results.Ok(store.Mutate(s =>
+{
+    if (s.Onboarded)
+        throw new InvalidOperationException(
+            $"This career is {GameProfile.For(s).Name}, and that is fixed once you are hired. Start a new career for the other game.");
+    GameSetup.Choose(s, r.Game ?? "");
+    return Snapshot(s);
+})));
+
 app.MapPost("/api/onboarding/screen", (DriverApplication a) => Results.Ok(Seed.Screen(a)));
 
 /// The job market. Records the application, then shows every carrier and whether they would take
@@ -2697,7 +2712,7 @@ app.MapPost("/api/careers/switch", (CareerSwitchRequest r) =>
 // Same ordering trap as the switch above: create, then list.
 app.MapPost("/api/careers/new", (CareerNewRequest r) =>
 {
-    var created = Snapshot(store.CreateCareer(r.Name, r.InheritSettings ?? true));
+    var created = Snapshot(store.CreateCareer(r.Name, r.InheritSettings ?? true, r.Game));
     return Results.Ok(new { careers = store.ListCareers(), snapshot = created });
 });
 
@@ -2781,7 +2796,14 @@ object Snapshot(AppState? given = null)
         careerName = s.CareerName,
         // Which game this career is played in. Named here for the same reason as the career name: a new
         // field on AppState does not reach the browser until the snapshot says so. See GameProfile.
-        game = new { id = GameProfile.For(s).Id, name = GameProfile.For(s).Name, shortName = GameProfile.For(s).ShortName },
+        game = new
+        {
+            id = GameProfile.For(s).Id, name = GameProfile.For(s).Name, shortName = GameProfile.For(s).ShortName,
+            // For the help text that names folders: where mods and saves live for this game.
+            steamAppId = GameProfile.For(s).SteamAppId, folder = GameProfile.For(s).GameFolder,
+            // Fixed once hired; the application offers the choice until then.
+            canChoose = !s.Onboarded,
+        },
         // How figures are shown and typed, so the browser converts at its edges the same way. See Units.
         units = Units.View(s),
         // The terms your employer sets, so the Career tab can show what is actually on offer instead of
@@ -3317,7 +3339,8 @@ record AdoptRequest(string Path);
 record DomicileRequest(string City, string State);
 record CareerSwitchRequest(string Slug);
 /// <summary>InheritSettings defaults to true where it is not sent — see StateStore.CreateCareer.</summary>
-record CareerNewRequest(string? Name, bool? InheritSettings);
+record CareerNewRequest(string? Name, bool? InheritSettings, string? Game = null);
+record CareerGameRequest(string? Game);
 /// <summary>A blank slug is the career being played; anything else names one sitting idle.</summary>
 record CareerRenameRequest(string? Slug, string Name);
 record CareerDeleteRequest(string Slug, string Confirm);

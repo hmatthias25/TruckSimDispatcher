@@ -1826,7 +1826,7 @@ public static class Carriers
                 "somewhere new the app tells you a garage is for sale there and whether the freight is worth " +
                 "it. Buy it in game, add it on the Terminals tab, and base trucks there.\n\n" +
                 "For seeding cash: saves live in " +
-                "Documents\\American Truck Simulator\\profiles\\<profile>\\save\\<slot>\\game.sii and are " +
+                $"Documents\\{GameProfile.Current.GameFolder}\\profiles\\<profile>\\save\\<slot>\\game.sii and are " +
                 "encrypted — SII_Decrypt decrypts them for editing, and TS SE Tool is a purpose-built " +
                 "editor. Money sits in the economy section of game.sii. Mods can also unlock all dealerships " +
                 "and recruiting agencies, which ATS otherwise hides until you drive past them.",
