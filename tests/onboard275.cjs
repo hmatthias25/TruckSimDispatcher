@@ -55,9 +55,15 @@ const app = { driverName: 'A. Rossi', preferredDivision: 'Dry Van', transmission
   const carriers = market.market || [];
   ok('the job market is European carriers', carriers.length > 0 && carriers.every((c) => c.hqState.length === 2 && c.hqState !== 'TX')
     && carriers.some((c) => /Girteka|DSV|Dachser|Schenker|Waberer/.test(c.name)), carriers.slice(0, 3).map((c) => c.name).join(', '));
-  await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(8) });
+  const hired = await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(8) });
   S = await api('/bootstrap');
   ok('hired, on ETS2', S.onboarded && S.game.id === 'ETS2' && S.game.canChoose === false);
+  // The snapshot and the hire's setup checklist, which is where the trailer-buying advice is.
+  const raw = JSON.stringify(S) + JSON.stringify(hired);
+  ok('trailers are European: 13.6 m, not 53 feet', (S.trailers || []).length > 0 && S.trailers.every((t) => /13\.6 m|chassis|low loader|—/.test(t.length)),
+    (S.trailers || []).map((t) => t.length).join(', '));
+  ok('nothing tells a European driver about California', !/California/.test(raw), (raw.match(/.{60}California.{60}/) || [''])[0]);
+  ok('the trailer advice is Europe\'s', /13\.6 m semi-trailer/.test(raw));
   threw = null;
   try { await api('/career/game', 'POST', { game: 'ATS' }); } catch (e) { threw = e.message; }
   ok('the game is fixed once hired', /fixed once you are hired/.test(threw || ''), threw);

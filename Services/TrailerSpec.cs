@@ -104,15 +104,37 @@ public static class TrailerSpec
         + "48' or shorter is fine whatever the axles are doing. One trailer: no doubles or triples.";
 
     /// <summary>
+    /// The European version. There is no state axle rule in ETS2: a semi-trailer is the standard 13.6 m on
+    /// three axles, and the only way to get it wrong is to come back with a set.
+    /// </summary>
+    public const string EuropeRule =
+        "In Europe the trailer is the standard 13.6 m semi-trailer on three axles, and there is no axle rule "
+        + "to watch for at a border. Take the single trailer: one behind the truck, no doubles.";
+
+    /// <summary>The axle advice for the career's game: California's rule on ATS, none on ETS2.</summary>
+    public static string AxleRule => GameProfile.Current.Id == GameProfile.Ets2.Id ? EuropeRule : CaliforniaRule;
+
+    /// <summary>
     /// The length this trailer type is issued in. <b>One source, because the advice quotes it.</b>
     ///
     /// This table lived inside <see cref="ForCarrier"/> while <see cref="LengthAdvice"/> wrote the same
     /// lengths out again in prose — two places holding the same fact, free to drift.
     /// </summary>
-    public static string LengthFor(string? type)
+    public static string LengthFor(string? type) => LengthFor(type, GameProfile.Current.Id);
+
+    /// <summary>The same, for a named game — for a career read before its profile is the active one.</summary>
+    public static string LengthFor(string? type, string game)
     {
         var t = (type ?? "").Trim();
         if (DropHook.Is(t)) return "—";
+        // Europe: one length for a semi-trailer, a container on its 40-foot chassis, and a low loader.
+        if (game == GameProfile.Ets2.Id)
+            return t switch
+            {
+                "Container" => "40' chassis",
+                "Lowboy" => "low loader",
+                _ => "13.6 m",
+            };
         return t switch
         {
             "Flatbed" or "Step Deck" => "48'",
@@ -159,8 +181,10 @@ public static class TrailerSpec
                 $"At the trailer dealer that is the {len} flatbed. A drop deck is a different trailer, "
                 + "not a longer flatbed — do not come back with one.",
             "Step Deck" =>
-                $"At the trailer dealer that is the {len} drop deck. Not the flatbed, and not the 53' "
-                + "drop deck.",
+                GameProfile.Current.Id == GameProfile.Ets2.Id
+                    ? $"At the trailer dealer that is the {len} drop deck. Not the flatbed."
+                    : $"At the trailer dealer that is the {len} drop deck. Not the flatbed, and not the 53' "
+                      + "drop deck.",
             "Lowboy" => $"At the trailer dealer that is the {len} lowboy, for heavy haul.",
             "Log" => $"At the trailer dealer that is the {len} log trailer. Logs only; nothing else "
                      + "loads on it.",

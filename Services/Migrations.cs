@@ -78,12 +78,29 @@ public static class Migrations
         // no-op. This is a standing tidy-up rather than a one-off correction.
         CloseOrdersForTrailersAlreadyGone(s);
         CloseRepositionsNothingPointsAt(s);
+        PutEuropeanTrailersInMetres(s);
 
         // LAST, and it has to be. It stamps the current schema version, so anything gated on a lower
         // one would read as already applied and skip itself.
         PutTheFirstDayBackOnDayOne(s);
         ReReadWindowsThatNamedTheirDay(s);
         LearnDockTimesWithTheWaitIn(s);
+    }
+
+    /// <summary>
+    /// ETS2: trailers issued before the game knew its lengths were written down in American feet — a "53'" dry
+    /// van in Europe, where a semi-trailer is 13.6 m. Put back to the European length for their type. Standing
+    /// and idempotent: a trailer already in metres, or a container chassis, is left alone, and ATS is untouched.
+    /// </summary>
+    private static void PutEuropeanTrailersInMetres(AppState s)
+    {
+        if (GameProfile.For(s).Id != GameProfile.Ets2.Id) return;
+        foreach (var t in s.Trailers)
+        {
+            var len = (t.Length ?? "").Trim();
+            if (len.Length == 0 || len.Contains("chassis") || !len.Contains('\'')) continue;
+            t.Length = TrailerSpec.LengthFor(t.Type, GameProfile.Ets2.Id);
+        }
     }
 
     /// <summary>

@@ -35,7 +35,7 @@ function loadClient() {
   };
   const win = { addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) };
   const make = new Function('document', 'window', 'location', 'navigator', 'fetch',
-    src + '\nreturn { gw, setS: (x) => { S = x; } };');
+    src + '\nreturn { gw, gwLabel, setS: (x) => { S = x; } };');
   return make(doc, win, { hash: '' }, {}, () => new Promise(() => {}));
 }
 
@@ -57,6 +57,14 @@ function loadClient() {
   ok('a possessive reads right', UI.gw("ATS's map") === "ETS2's map");
   ok('straight out of CDL school is driving school', /driving school/.test(UI.gw('straight out of CDL school')));
   ok('anything that is not text passes through', UI.gw(null) === null && UI.gw(42) === 42);
+
+  head('2b. Field labels: a state is a country');
+  ok('Destination state is Destination country', UI.gwLabel('Destination state') === 'Destination country', UI.gwLabel('Destination state'));
+  ok('State and ST headings', UI.gwLabel('State') === 'Country' && UI.gwLabel('ST') === 'CC');
+  ok('running text is left alone: a state can be a condition', UI.gw('waiting for an authoritative state') === 'waiting for an authoritative state');
+  UI.setS({ game: { id: 'ATS' } });
+  ok('on ATS a state is a state', UI.gwLabel('Destination state') === 'Destination state');
+  UI.setS({ game: { id: 'ETS2' } });
 
   head('3. The server tells the browser which game');
   const S = await api('/bootstrap');

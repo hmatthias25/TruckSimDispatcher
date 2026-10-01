@@ -1362,7 +1362,8 @@ app.MapPost("/api/fleet/stock", (StockRequest req) => Results.Ok(store.Mutate<ob
         buyTrailers,
         limiter = Carriers.LimitsSpeed(s.Company.Code),
         yardLabel = yard == null ? "" : $"{yard.City}, {yard.State}",
-        californiaRule = TrailerSpec.CaliforniaRule,
+        // The axle advice for the career's game — California's rule on ATS, none in Europe.
+        californiaRule = TrailerSpec.AxleRule,
     };
 })));
 

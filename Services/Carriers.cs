@@ -1912,8 +1912,8 @@ public static class Carriers
                              ? $"That is {TrailerSpec.BuyingAdvice(s, trailer.Type, trailer.Subtype)}\n\n"
                              : "")
                          + (TrailerSpec.LengthAdvice(trailer.Type, trailer.Length) is { Length: > 0 } which
-                             ? which + "\n\n" + TrailerSpec.CaliforniaRule
-                             : TrailerSpec.CaliforniaRule)
+                             ? which + "\n\n" + TrailerSpec.AxleRule
+                             : TrailerSpec.AxleRule)
                          // Not "if you would rather own one" — that is the owner-operator framing this
                          // step was rewritten to get rid of. What is assigned is the type and the
                          // length; whether the company has bought the box yet is bookkeeping, and the

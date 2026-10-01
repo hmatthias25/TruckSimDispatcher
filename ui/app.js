@@ -163,7 +163,17 @@ const GAME_WORDS = [
   [/\bHazMat\b/g, 'ADR'], [/\bHAZMAT\b/g, 'ADR'], [/\bhazmat\b/g, 'ADR'],
   [/\bCDL school\b/g, 'driving school'], [/\bClass A CDL\b/g, 'C+E licence'], [/\bCDL\b/g, 'licence'],
 ];
+/* Field labels and column headings only: a US state is a country in Europe. Kept off running text, where
+   "state" is as likely to mean a condition ("waiting for an authoritative state") as a place. */
+const LABEL_WORDS = [[/\bStates\b/g, 'Countries'], [/\bstates\b/g, 'countries'], [/\bState\b/g, 'Country'],
+  [/\bstate\b/g, 'country'], [/\bST\b/g, 'CC']];
 const inEts2 = () => !!(S && S.game && S.game.id === 'ETS2');
+/** A field label or column heading in the career's game's words: gw, and a state is a country. */
+function gwLabel(text) {
+  let t = gw(text);
+  if (inEts2() && typeof t === 'string') for (const [re, to] of LABEL_WORDS) t = t.replace(re, to);
+  return t;
+}
 /** A string in the career's game's words. */
 function gw(text) {
   if (!inEts2() || typeof text !== 'string' || !text) return text;
@@ -180,8 +190,11 @@ function gameWordsIn(root) {
   if (root.nodeType !== 1 || root.closest('[data-keep-game]')) return;
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-    if (!/ATS|American Truck|HazMat|HAZMAT|hazmat|CDL/.test(n.nodeValue) || keep(n)) continue;
-    n.nodeValue = gw(n.nodeValue);
+    const isLabel = n.parentElement && n.parentElement.closest('label,th,legend');
+    if (!/ATS|American Truck|HazMat|HAZMAT|hazmat|CDL/.test(n.nodeValue) && !(isLabel && /\b(states?|States?|ST)\b/.test(n.nodeValue))) continue;
+    if (keep(n)) continue;
+    const t = isLabel ? gwLabel(n.nodeValue) : gw(n.nodeValue);
+    if (t !== n.nodeValue) n.nodeValue = t;
   }
   for (const el of [root, ...root.querySelectorAll('[placeholder],[title],[aria-label]')]) {
     if (el.closest('[data-keep-game]')) continue;
@@ -1029,12 +1042,18 @@ function renderMarket(market, { onboarding }) {
         <p><b>Clear your probation first.</b> It costs you a few reviews and it is the single thing
           standing between you and being taken seriously here.</p></div>` : ''}
       ${anyReal ? `<div class="callout mute">
-        <p><b>About these companies.</b> These are real US carriers, and their headquarters and the
+        ${S.game.id === 'ETS2'
+          ? `<p><b>About these companies.</b> These are real European hauliers, and their head offices and
+          the freight they are known for are factual. Where a head office is somewhere the game has no city,
+          the home yard is the nearest one it does. The <b>salary, the hiring standards and the star ratings
+          are this game's numbers, not offers</b>. Nothing here describes a real employer's equipment, safety
+          or treatment of drivers. Prefer invented companies? Switch the roster in Settings.</p>`
+          : `<p><b>About these companies.</b> These are real US carriers, and their headquarters and the
           freight they haul are factual. The rates are on the <b>real 2026 mileage band</b> for the
           sector, and a few are the carrier's own published figures — but a rate here is still
           <b>this game's number, not an offer</b>, and the hiring standards and star ratings are made
           up entirely. Nothing here describes a real employer's equipment, safety or treatment of
-          drivers. Prefer invented carriers? Switch the roster in Settings.</p></div>` : ''}
+          drivers. Prefer invented carriers? Switch the roster in Settings.</p>`}</div>` : ''}
       ${shown.length === 0 && narrowed
         ? `<div class="callout warn"><h4>No carrier matches that</h4>
             <p>Nothing on the roster hauls that behind that from there. Widen one of the three and try
@@ -1720,7 +1739,7 @@ function viewDispatch() {
             : `<label>Origin city<input id="b-ocity" value="${esc(st.locationCity)}"></label>
                <label>Origin state<input id="b-ostate" class="up" maxlength="2" value="${esc(st.locationState)}"></label>`}
           <label>Destination city<input id="b-dcity" placeholder="e.g. Boise"></label>
-          <label>Destination state<input id="b-dstate" class="up" maxlength="2" placeholder="ID"></label>
+          <label>Destination state<input id="b-dstate" class="up" maxlength="2" placeholder="${S.game.id === 'ETS2' ? 'FR' : 'ID'}"></label>
           <label>Loaded ${DU()}<input id="b-miles" data-u="dist" type="number" step="1" min="0" placeholder="${esc(S.game.shortName)} distance"></label>
           ${/* The "trailer already loaded" tick is gone. It said a dry van or reefer off a facility's own
                 board came hooked to a loaded trailer and cost no loading time, and only a flatbed had to
@@ -2454,21 +2473,30 @@ function euClocksHtml(h, v) {
       hours, Monday to Sunday, and ${num(fortnight, 0)} over this week and last — <b>${hhmm(v.cycleRemaining)}</b> left as it stands.</p>
     ${h.euDriveCapped ? `<div class="callout warn"><p style="margin:0">Both 10-hour days are used this week, so today is
       <b>${num(r.dailyDriving || 9, 0)} hours</b>. The D you typed was over that and is taken as ${hhmm(h.driveRemaining)}.</p></div>` : ''}
-    <h4 class="sect" style="margin:10px 0 4px">Worked out for you <span class="sub">from your reports and the trip log</span></h4>
-    <dl class="kv">
-      <dt>Today's limit</dt><dd>${num(h.euDailyLimit || r.extendedDailyDriving || 10, 0)} h${(h.euDailyLimit || 10) <= (r.dailyDriving || 9)
-        ? ' — both 10-hour days used' : ''}</dd>
-      <dt>10-hour days used</dt><dd>${h.euExtensionsUsed || 0} of ${r.extensionsPerWeek || 2} this week</dd>
-      <dt>Spread left</dt><dd>${hhmm(h.shiftRemaining)} <span class="sub">estimated — today's driving with its breaks, or the
-        time since your last logged daily rest</span></dd>
-      <dt>Reduced daily rests</dt><dd>${h.euReducedRestsUsed || 0} of ${r.reducedRestsBetweenWeekly || 3} since the weekly rest</dd>
-      <dt>Since the weekly rest</dt><dd>${h.euHoursSinceWeeklyRest == null ? 'none logged — counted from Monday'
-        : hhmm(h.euHoursSinceWeeklyRest)}${h.euLastWeeklyRestReduced ? ' — it was reduced' : ''}${v.weeklyRestDueInHours != null
-        ? `; the next is due in <b>${hhmm(v.weeklyRestDueInHours)}</b>` : ''}</dd>
-      <dt>Owed back</dt><dd>${hhmm(h.euCompensationOwed || 0)}</dd>
-    </dl>
-    <p class="hint">Log your rests on the trip — a daily rest, a weekly rest, a ferry with a cabin — and these stay right.
-      The 10-hour days are counted from how much W falls on each day.</p>
+    <h4 class="sect" style="margin:12px 0 6px">Worked out for you <span class="sub">from your reports and the trip log</span></h4>
+    ${(() => {
+      const limit = h.euDailyLimit || r.extendedDailyDriving || 10;
+      const nine = limit <= (r.dailyDriving || 9);
+      const extUsed = h.euExtensionsUsed || 0, extMax = r.extensionsPerWeek || 2;
+      const redUsed = h.euReducedRestsUsed || 0, redMax = r.reducedRestsBetweenWeekly || 3;
+      const owed = +h.euCompensationOwed || 0;
+      const since = h.euHoursSinceWeeklyRest;
+      const tile = (label, big, sub, cls = '') =>
+        `<div class="meter ${cls}"><div class="lbl">${label}</div><div class="big">${big}</div><div class="of">${sub}</div></div>`;
+      return `<div class="meters" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+        ${tile("Today's limit", `${num(limit, 0)}:00`, nine ? 'both 10-hour days used' : 'a 10-hour day is allowed', nine ? 'warn' : '')}
+        ${tile('10-hour days', `${extUsed} of ${extMax}`, 'used this week', extUsed >= extMax ? 'warn' : '')}
+        ${tile('Spread left', hhmm(h.shiftRemaining), 'estimated', (+h.shiftRemaining || 0) < 2 ? 'warn' : '')}
+        ${tile('Reduced rests', `${redUsed} of ${redMax}`, 'since the weekly rest', redUsed >= redMax ? 'warn' : '')}
+        ${tile('Since weekly rest', since == null ? '—' : hhmm(since),
+          since == null ? 'none logged · counted from Monday'
+            : v.weeklyRestDueInHours != null ? `next due in ${hhmm(v.weeklyRestDueInHours)}` : (h.euLastWeeklyRestReduced ? 'it was reduced' : 'a full rest'))}
+        ${tile('Owed back', hhmm(owed), owed > 0 ? 'from a reduced rest' : 'nothing owed', owed > 0 ? 'warn' : '')}
+      </div>`;
+    })()}
+    <p class="hint" style="margin-top:8px">The spread is today's driving with its breaks, or the time since your last logged
+      daily rest, whichever is more. The 10-hour days are counted from how much W falls each day. Log your rests on the trip —
+      daily, weekly, or a ferry with a cabin — and these stay right.</p>
     <div class="grid2">
       <label>Source<input id="h-source" value="${esc(h.source)}" placeholder="e.g. HOS companion, EC 561"></label>
     </div>`;
@@ -6151,7 +6179,7 @@ function towHtml() {
       <label>Where it stopped<input id="tow-from" value="${esc(S.status.locationCity)}"></label>
       <label>State<input id="tow-fromst" class="up" maxlength="2" value="${esc(S.status.locationState)}"></label>
       <label>Towed to<input id="tow-to" placeholder="city the wrecker took it to"></label>
-      <label>State<input id="tow-tost" class="up" maxlength="2" placeholder="ST"></label>
+      <label>State<input id="tow-tost" class="up" maxlength="2" placeholder="${S.game.id === 'ETS2' ? 'CC' : 'ST'}"></label>
       <label>Towed ${DU() === 'km' ? 'kilometres' : 'miles'}<input id="tow-miles" data-u="dist" type="number" step="1" min="0"
         placeholder="blank = work it out"></label>
       <label>Tractor damage after %<input id="tow-dmg" type="number" step="0.1" min="0" max="100"
@@ -6941,7 +6969,7 @@ function viewSettings() {
       <div class="panel-head"><h2>Carrier roster</h2></div>
       <label>Which carriers appear in the job market
         <select id="se-roster">
-          <option value="Real" ${s.carrierRoster !== 'Fictional' ? 'selected' : ''}>Real US carriers</option>
+          <option value="Real" ${s.carrierRoster !== 'Fictional' ? 'selected' : ''}>${S.game.id === 'ETS2' ? 'Real European hauliers' : 'Real US carriers'}</option>
           <option value="Fictional" ${s.carrierRoster === 'Fictional' ? 'selected' : ''}>Invented carriers</option>
         </select></label>
       <p class="hint">Real carriers use actual company names, headquarters and freight specialities —
