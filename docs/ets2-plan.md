@@ -123,13 +123,58 @@ There is no US equivalent at all. **Cabotage** is a haulier from one EU country 
 - **Fault and penalties:** a cabotage breach is the **dispatcher's** fault, never the driver's, because operations chooses the loads, the same as booking a load too tight. Real fines vary by country, roughly €5,000 to €30,000 per offence. The app can either refuse breaching loads outright (simplest) or book a fine; refusing outright fits how the app already treats loads it should not authorise.
 - **Hired drivers** need the same check on whatever the fleet runs, but their loads are not run load by load in the app. This may only be practical as a warning on the fleet report.
 
-**Places that are not straightforward EU members** (verify each before building):
-- **UK.** Since Brexit, UK hauliers in the EU and EU hauliers in the UK work under the EU-UK Trade and Cooperation Agreement. It sets its own, tighter limits on cabotage and cross-trade, and they differ from the EU rules above.
-- **Switzerland.** Not in the EU. Cabotage there by foreign hauliers is believed to be banned outright.
-- **Norway.** EEA, not EU. It has its own cabotage arrangements.
-- **Other non-EU countries ETS2 includes.** Check against the current map and its DLC; any such country would need its own rule or a plain "no cabotage".
+#### Outside the EU
 
-The simplest first version applies the EU rules above to EU countries only, and blocks cabotage everywhere else until each case is checked.
+ETS2's map includes countries outside the EU. The base game has the **UK** and **Switzerland**. The DLC adds **Norway** (Scandinavia, Nordic Horizons), **Russia** (Beyond the Baltic Sea), European **Turkey** (Road to the Black Sea), and **Serbia, Bosnia and Herzegovina, Montenegro, Albania, North Macedonia and Kosovo** (West Balkans). Iceland is announced, and it is EEA like Norway. The rules depend on both ends: **where the truck is based** (the company's home country) and **where the load is**. Researched on 2026-10-01; sources at the end.
+
+**Norway: the same as the EU, for EU and EEA trucks.**
+Norway is in the EEA, so it applies the EU cabotage regulation. A truck from another EU or EEA country may do **3 cabotage loads within 7 days** of unloading an international load in Norway, with the same vehicle, then must leave, with a **4-day cooling-off** before more cabotage there. Norway adopted the Mobility Package version, with the cooling-off, from **1 November 2022**. A Norwegian-based company is treated like an EU one when working in the EU.
+- For the app, Norway behaves exactly like an EU country, both as a host and as a home country.
+
+**United Kingdom: its own, tighter rules, which differ by direction** (the EU-UK Trade and Cooperation Agreement):
+
+| Who | What they may do |
+|---|---|
+| **EU truck in the UK** | Up to **2 cabotage loads within 7 days** of unloading a **laden** international load into the UK, with the same vehicle. Arriving **empty** and picking up a domestic load is **not** allowed. Sources disagree on whether a 4-day cooling-off follows; check before building. |
+| **UK truck in the EU** | Up to **2 jobs inside the EU** after dropping off a load from the UK, of which **at most 1 may be cabotage**. The other is cross-trade, meaning a load between two EU countries. The cabotage job must be in the **same EU country** the UK load was dropped in, within **7 days** of that drop. |
+| **UK truck with an ECMT permit** | One extra cross-trade job, so 3 jobs in total, before returning to the UK. |
+| **Northern Ireland truck in Ireland** | Up to **2 cabotage jobs in Ireland** within 7 days of dropping off a load brought from Northern Ireland. Ireland is announced for ETS2, so this may matter later. |
+
+- For the app, the UK is a host country with its own limits (2 loads, no empty entry). A **UK-based** company also needs a different rule set in the EU: a combined limit of 2 jobs per trip from the UK, with cross-trade counted too, not just cabotage. That second part is the bigger change, because the EU rules put no limit on cross-trade at all.
+
+**Switzerland: no cabotage, plus driving rules of its own** (the EU-Switzerland Land Transport Agreement, kept in the 2026 "Bilaterals III" update):
+- **No foreign truck may do cabotage in Switzerland.** Zurich to Lausanne on a German truck is illegal. EU trucks may still carry international loads into, out of and through Switzerland.
+- A **Swiss-based** truck may carry loads **between EU countries** (Germany to France, for example, which the Swiss authority calls "cabotage" but the EU calls cross-trade). It may **not** do domestic loads inside an EU country. Check this point against the agreement's text before building, because the Swiss page uses the word differently.
+- For the app, Switzerland as a host is a hard "no cabotage". It also has Swiss road rules worth modelling, because they shape routes and timing, not just cabotage:
+  - a **night driving ban** for lorries (22:00 to 05:00) and a **Sunday ban**;
+  - a **40-tonne** gross weight limit;
+  - a distance-based heavy vehicle charge (**LSVA**). The Swiss authority quotes CHF 325 for a frontier-to-frontier transit as an example.
+
+  The night and Sunday bans in particular work like a facility's opening hours: the planner has to hold the truck at the border or plan the route around them.
+
+**Russia, Turkey and the West Balkans: no cabotage for foreign trucks.**
+None of these give foreign hauliers cabotage rights. International work there runs on bilateral agreements and **ECMT multilateral permits**, and ECMT permits **do not allow cabotage**. Serbia, Turkey, Russia and Bosnia and Herzegovina also limit ECMT trucks to **3 loaded journeys** that do not involve the truck's home country before it must go back home. Montenegro, Albania, North Macedonia and Kosovo were not checked one by one, but nothing found suggests they allow foreign cabotage.
+- For the app, these are hard "no cabotage" countries. International loads into and out of them are allowed.
+- **Russia is a design choice, not just a rule.** EU sanctions since 2022 restrict road haulage between the EU and Russia: Russian-registered hauliers have been banned from carrying goods in the EU. ETS2 still has Russia on its map. Decide whether the app reflects this or treats the map as the game presents it. The game-world option is probably right for a game, but say so in the manual.
+
+#### What this means for the app
+
+The EU rules above become **one rule set among several**, chosen by two things: the company's home country and the host country. In outline:
+
+| Home country | Host country | Rule |
+|---|---|---|
+| EU or EEA | another EU or EEA country | 3 loads in 7 days, 1 per country after an empty entry, 4 days cooling-off |
+| EU or EEA | UK | 2 loads in 7 days after a laden entry, no empty entry |
+| UK | EU | 2 jobs per trip from the UK, at most 1 cabotage (in the drop country, within 7 days) |
+| any | Switzerland | no cabotage |
+| Switzerland | EU | cross-trade only, no domestic loads |
+| any | Russia, Turkey, West Balkans | no cabotage |
+| any | its own country | unrestricted domestic work |
+
+Recommendation for the first version:
+- Allow **only EU and EEA home countries** for a new career at first. Every rule set then lives in the first five rows, and the hard ones (a UK-based or Swiss-based company) wait until later.
+- Treat the UK, Switzerland, Russia, Turkey and the West Balkans as hosts using the rows above. Only the UK row is more than a flat "no".
+- Add the Swiss night and Sunday bans as planner rules, separately from cabotage.
 
 ### 4. Map and market data (large but cleanly isolated)
 
@@ -182,7 +227,7 @@ City discovery, the learned dock times and planning speed (`FacilityLearning`, `
 3. **Build the European data** behind the profile: cities and tiers, coordinates, countries and regions, time zones, fuel prices, ETS2 companies, carriers, trucks, trailers, ADR.
 4. **Build the EU hours-of-service engine**, with its own test suite. Expect this to be the largest step.
 5. **Add home time and weekly rest under the Mobility Package** ([section 3a](#3a-home-time-and-weekly-rest-the-mobility-package)): the 4-week (or 3-week) home ceiling in dispatch, the regular-or-reduced weekly rest choice with its location, hotel costs on the ledger, and the compensation counter. This builds on step 4's reduced-rest tracking.
-6. **Add cabotage** ([section 3b](#3b-cabotage-domestic-loads-in-someone-elses-country)): the company's home country, load classification, the per-vehicle cabotage state, enforcement in dispatch with the reason given, the board showing the remaining cabotage, and the dispatcher-fault rule. Start with EU countries only, and block cabotage elsewhere.
+6. **Add cabotage** ([section 3b](#3b-cabotage-domestic-loads-in-someone-elses-country)): the company's home country, load classification, the per-vehicle cabotage state, enforcement in dispatch with the reason given, the board showing the remaining cabotage, and the dispatcher-fault rule. Start with EU and EEA home countries only, with the UK, Switzerland, Russia, Turkey and the West Balkans as hosts using the table in section 3b.
 7. **Handle pay and tax:** a pay-model choice (salary or hourly in place of per-mile), a flat deduction in place of W-2s, and optional detention.
 8. **Integrate the game and add the career choice to onboarding:** the ETS2 Steam app ID and paths, the AI prompts, the 24-hour window parsing, and the game choice on the new-career screen.
 9. **Write the manuals and the EU test suite**, and run both games' suites in the finishing routine.
@@ -197,7 +242,10 @@ City discovery, the learned dock times and planning speed (`FacilityLearning`, `
 - Career storage: one store that records each career's game, or a folder per game.
 - Hotel costs for a regular weekly rest away from home: one flat figure, or a figure per country.
 - Cabotage breaches: refuse the load outright (simplest, and it matches how dispatch treats other loads it should not authorise), or allow it and book a fine.
-- Cabotage outside the EU: block it everywhere outside the EU at first, or research and build the UK, Swiss and Norwegian rules from the start.
+- Home countries for a new career: EU and EEA only at first (recommended), or the UK and Switzerland as well, each of which needs its own rules for working in the EU.
+- Whether the EU truck in the UK has a 4-day cooling-off after its 2 cabotage loads. Sources disagree; settle it from the agreement's text.
+- Swiss road rules (the night and Sunday bans, 40 tonnes, LSVA): model them in the planner, or leave them out.
+- Russia: follow the game's map as presented (recommended), or reflect the post-2022 sanctions.
 
 ## Sources for the EU rules
 
@@ -206,3 +254,8 @@ These were checked on 2026-10-01. Laws and their interpretation change, so re-ch
 - Cabotage, the 3 operations in 7 days, unladen entry and cooling-off: Regulation (EC) 1072/2009 as amended by (EU) 2020/1055, on [EUR-Lex](https://eur-lex.europa.eu/legal-content/en/ALL/?uri=CELEX:32009R1072); the IRU's summary, [Market access for road freight transport](https://www.irumobilitypackages.org/access-to-market); the European Commission's [Q&A on the cabotage regime](https://transport.ec.europa.eu/system/files/2016-09/qa_the_new_cabotage_regime_2011.pdf); and [Hansatic's cabotage guide](https://hansatic.com/en/guides/eu-cabotage-rules-guide), for what counts as one operation and the evidence required.
 - Vehicle return within 8 weeks, and its annulment: the European Commission's [Rule on the return of the vehicle](https://transport.ec.europa.eu/transport-modes/road/mobility-package-i/market-rules/rule-return-vehicle_en), and the IRU's report of the [Court of Justice ruling of 4 October 2024](https://www.iru.org/news-resources/newsroom/eus-highest-court-weighs-road-transport-mobility-package).
 - Driver return home and weekly rest outside the cab: Regulation (EU) 2020/1054, amending 561/2006, on EUR-Lex.
+- ETS2's map and its non-EU countries: [Steam guide to all ETS2 DLCs](https://steamcommunity.com/sharedfiles/filedetails/?id=3514929302) and [ETS2 Hub's map DLC guide](https://www.ets2hub.com/guides/ets2-map-dlc-roadmap-global).
+- UK: GOV.UK, [Jobs inside an EU country or between EU countries](https://www.gov.uk/guidance/international-road-haulage-jobs-inside-an-eu-country-or-between-eu-countries), for UK trucks in the EU; the FTC's [Cabotage in the UK: rules for EU operators](https://www.theftc.co.uk/cabotage-in-the-uk/) and FleetRadar's [post-Brexit cabotage guide](https://fleetradar.co.uk/blog/posts/cabotage-rules-uk-eu-haulage-post-brexit-2026-guide/), for EU trucks in the UK; the European Parliament's [briefing on the Trade and Cooperation Agreement](https://www.europarl.europa.eu/RegData/etudes/IDAN/2021/679071/EPRS_IDA(2021)679071_EN.pdf).
+- Switzerland: the Federal Office of Transport's [Land Transport Agreement](https://www.bav.admin.ch/en/land-transport-agreement) page, and Trans.info's [EU-Switzerland deal: road cabotage still banned](https://trans.info/en/eu-switzerland-deal-459089).
+- Norway: the Norwegian Public Roads Administration's [International transport, cabotage and penalties](https://www.vegvesen.no/en/vehicles/professional-transport/international-transport-and-cabotage-by-road/international-transport-cabotage-and-penalties/), and Trans.info's [Norway adopts Mobility Package rules from 1 November](https://trans.info/en/norway-adopts-mobility-package-rules-november-2022-309759).
+- Russia, Turkey and the West Balkans: the ITF's [ECMT multilateral quota user guide, January 2026](https://www.itf-oecd.org/sites/default/files/docs/user_guide_2026_e.pdf).
