@@ -342,10 +342,18 @@ public static class HosEngine
     /// </summary>
     private static void InsertCrossing(List<HosTask> tasks, Func<HosTask, bool> isLeg, CrossingLeg leg)
     {
-        var route = Ferries.Find(leg.Route);
+        InsertCrossing(tasks, isLeg, leg.Route, leg.FromA, leg.MilesBefore);
+        // Two crossings on one leg (Malta by way of Sicily): the second where the road between the ports ends.
+        if (!string.IsNullOrEmpty(leg.Route2))
+            InsertCrossing(tasks, isLeg, leg.Route2, leg.FromA2, leg.MilesBefore + leg.MilesBetween);
+    }
+
+    private static void InsertCrossing(List<HosTask> tasks, Func<HosTask, bool> isLeg, string id, bool fromA, double at)
+    {
+        var route = Ferries.Find(id);
         if (route == null) return;
-        var total = leg.MilesBefore + leg.MilesAfter;
-        var at = total > 0 ? leg.MilesBefore : 0;
+        at = Math.Max(0, at);
+        var leg = (FromA: fromA, Route: id);
         var crossing = new HosTask
         {
             Label = $"{(route.Train ? "Channel Tunnel" : "Ferry")} {(leg.FromA ? route.A : route.B)} – {(leg.FromA ? route.B : route.A)}",
@@ -359,8 +367,10 @@ public static class HosEngine
             if (run + t.Miles + 1e-6 < at) { run += t.Miles; continue; }
             var into = Math.Max(0, at - run);
             var share = t.Miles > 0 ? into / t.Miles : 0;
-            var first = new HosTask { Label = t.Label + " (to the port)", Kind = "Drive", Hours = t.Hours * share, Miles = into };
-            var second = new HosTask { Label = t.Label + " (from the port)", Kind = "Drive", Hours = t.Hours * (1 - share), Miles = t.Miles - into };
+            var name = t.Label.Replace(" (to the port)", "").Replace(" (from the port)", "").Replace(" (between the ports)", "");
+            var wasFrom = t.Label.EndsWith(" (from the port)") || t.Label.EndsWith(" (between the ports)");
+            var first = new HosTask { Label = name + (wasFrom ? " (between the ports)" : " (to the port)"), Kind = "Drive", Hours = t.Hours * share, Miles = into };
+            var second = new HosTask { Label = name + " (from the port)", Kind = "Drive", Hours = t.Hours * (1 - share), Miles = t.Miles - into };
             tasks.RemoveAt(i);
             var insert = new List<HosTask>();
             if (first.Miles > 0.01) insert.Add(first);

@@ -5,6 +5,7 @@
  *   - a crossing logged on the trip: its fare on the tolls, and what it counts as under EU rules - the game
  *     counts any ferry time as rest, the law only with a cabin and long enough
  *   - crossings in the dispatch calculation (the second half of this suite)
+ *   - sailings on named days only, ProMods' crossings, two crossings on one leg, and a ferry as a shortcut
  */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5981}/api`;
 async function api(p, m = 'GET', b) {
@@ -20,7 +21,7 @@ const iso = (day, hm = '06:00') => {
   const d = new Date(Date.UTC(2000, 0, 1) + day * 86400000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}T${hm}`;
 };
-const DAY = 7;
+const DAY = 7;   // a Monday: day 1 is a Monday, and this is day 8
 const atPort = (route, fromA, hm) => api('/ferries/at-port', 'POST', { route, fromA, gameTime: iso(DAY, hm) }).then((r) => r.call);
 async function sailings(on) {
   const cur = (await api('/bootstrap')).settings;
@@ -45,20 +46,20 @@ async function sailings(on) {
 
   head('1. Every crossing ETS2 has, matched to a real one where there is one');
   const f = (await api('/bootstrap')).views.ferries;
-  ok('the table is there on ETS2', f && f.routes.length >= 64, `${f?.routes.length} crossings`);
+  ok('the table is there on ETS2', f && f.routes.length >= 90, `${f?.routes.length} crossings`);
   ok('the Channel Tunnel is one of them, as a train', f.routes.some((r) => r.train && /Folkestone/.test(r.label)));
   ok('real sailings are on by default', f.realSailings === true);
   const hull = f.routes.find((r) => r.id === 'hull-rotterdam');
-  ok('a real route carries its real operator and crossing time', hull?.operator === 'P&O Ferries' && hull.hours === 12, `${hull?.operator}, ${hull?.hours} h`);
+  ok('a real route carries its real operator and crossing time', hull?.operator === 'P&O Ferries' && hull.hours === 11.25, `${hull?.operator}, ${hull?.hours} h`);
   const esb = f.routes.find((r) => r.id === 'hull-esbjerg');
   ok('one the game invented keeps the game\'s time, and says so', esb?.confidence === 'game' && esb.hours === esb.gameHours, esb?.note);
 
   head('2. At a port: the next real sailing, and what to set the clock to');
   let c = await atPort('harwich-hook', true, '07:00');
   ok('Harwich at 07:00, with an hour to check in, makes the 09:00', c.departs.endsWith('T09:00'), c.departs);
-  ok('and lands seven hours later', c.lands.endsWith('T16:00'), c.lands);
+  ok('and lands eight and a half hours later', c.lands.endsWith('T17:30'), c.lands);
   ok('two hours waiting, said', Math.abs(c.waitHours - 2) < 0.01 && /Set the game clock to/.test(c.instruction), `${c.waitHours} h`);
-  ok('seven hours with a cabin is still only a break: a daily rest is nine at least', /45-minute break/.test(c.restValue), c.restValue);
+  ok('eight and a half hours with a cabin is still only a break: a daily rest is nine at least', /45-minute break/.test(c.restValue), c.restValue);
   c = await atPort('harwich-hook', true, '22:30');
   ok('too late for the 23:00 with check-in: the 09:00 next day', c.departs === iso(DAY + 1, '09:00'), c.departs);
   c = await atPort('tunnel', true, '10:07');
@@ -103,7 +104,7 @@ async function sailings(on) {
     usableFuelRangeMiles: 99999, startGameTime: iso(DAY, '07:00'), loadedMiles: 100, ...c });
   await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 13, breakRemaining: 4.5, cycleRemaining: 56, asOfGameTime: iso(DAY, '07:00'),
     euWeekDriven: 0, euLastWeekDriven: 0, euHoursSinceWeeklyRest: 0 });
-  let p = await plan({ loadedCrossing: { route: 'harwich-hook', fromA: true, milesBefore: 0, milesAfter: 100 } });
+  let p = await plan({ startGameTime: iso(DAY, '07:30'), loadedCrossing: { route: 'harwich-hook', fromA: true, milesBefore: 0, milesAfter: 100 } });
   const wait = p.timeline.find((t) => /for the .*sailing/.test(t.label));
   ok('Harwich after loading and check-in misses the 09:00, so it is the 23:00', /23:00 sailing/.test(wait?.label || ''), wait?.label);
   ok('and a wait that long is taken as the daily rest, at the terminal', wait?.kind === 'Rest', `${wait?.kind}, ${wait?.hours} h`);
@@ -131,6 +132,45 @@ async function sailings(on) {
   p = await plan({ originCity: 'Paris', originState: 'FR', destCity: 'London', destState: 'UK', loadedMiles: 300 });
   ok('Paris to London crosses the Channel', p.crossings.length === 1, p.crossings.join(' | '));
   ok('and for a short hop the tunnel or Dover wins', /Channel Tunnel|Dover/.test(p.crossings[0] || ''), p.crossings[0]);
+
+  head('6. Sailings on named days only');
+  c = await atPort('plymouth-santander', true, '12:00');
+  ok('Plymouth to Santander on a Monday: the next is Wednesday 16:00', c.departs === iso(DAY + 2, '16:00'), c.departs);
+  c = await atPort('plymouth-santander', false, '12:00');
+  ok('and back from Santander on Monday the same day, at 17:00', c.departs === iso(DAY, '17:00'), c.departs);
+  c = await atPort('kapellskar-paldiski', true, '08:00');
+  ok('Kapellskär on a Monday at 08:00 waits for the 22:00 that night', c.departs === iso(DAY, '22:00'), c.departs);
+  c = (await api('/ferries/at-port', 'POST', { route: 'kapellskar-paldiski', fromA: true, gameTime: iso(DAY + 3, '08:00') })).call;
+  ok('but on a Thursday the morning one, 10:30', c.departs === iso(DAY + 3, '10:30'), c.departs);
+  c = (await api('/ferries/at-port', 'POST', { route: 'hull-rotterdam', fromA: true, gameTime: iso(DAY + 5, '12:00') })).call;
+  ok('Hull on a Saturday sails at 20:00, not the weekday 20:30', c.departs === iso(DAY + 5, '20:00'), c.departs);
+  c = (await api('/ferries/at-port', 'POST', { route: 'cagliari-palermo', fromA: true, gameTime: iso(DAY + 5, '17:00') })).call;
+  ok('a weekly sailing just missed is a week away', c.departs === iso(DAY + 12, '17:00'), c.departs);
+
+  head('7. ProMods\' crossings');
+  const holy = f.routes.find((r) => r.id === 'holyhead-dublin');
+  ok('Holyhead to Dublin is there, marked as not yet checked against ProMods', holy?.confidence === 'promods', holy?.operator);
+  ok('so is Iceland, by way of the Faroes', f.routes.some((r) => r.id === 'hirtshals-seydisfjordur'));
+  p = await plan({ originCity: 'Liverpool', originState: 'UK', destCity: 'Dublin', destState: 'IE', loadedMiles: 180 });
+  ok('Great Britain to Ireland crosses the Irish Sea, whichever sailing gets there first', p.crossings.length === 1 && /Dublin|Belfast|Larne|Rosslare/.test(p.crossings[0]), p.crossings.join(' | '));
+  p = await plan({ originCity: 'Inverness', originState: 'UK', destCity: 'Stornoway', destState: 'UK', loadedMiles: 90 });
+  ok('Inverness to Stornoway: Lewis and Harris is an island, over the Minch from Ullapool or Uig', /Ullapool|Uig/.test(p.crossings[0] || ''), p.crossings.join(' | '));
+  p = await plan({ originCity: 'Inverness', originState: 'UK', destCity: 'Kirkwall', destState: 'UK', loadedMiles: 140 });
+  ok('and Orkney is an island too', p.crossings.length === 1 && /Stromness/.test(p.crossings[0]), p.crossings.join(' | '));
+  p = await plan({ originCity: 'Tallinn', originState: 'EE', destCity: 'Kuressaare', destState: 'EE', loadedMiles: 140 });
+  ok('Tallinn to Kuressaare: Saaremaa is across from Virtsu', /Virtsu/.test(p.crossings[0] || ''), p.crossings.join(' | '));
+
+  head('8. Two crossings on one leg');
+  p = await plan({ originCity: 'Napoli', originState: 'IT', destCity: 'Valletta', destState: 'MT', loadedMiles: 420 });
+  ok('Napoli to Malta: over to Sicily, then Pozzallo to Valletta', p.crossings.length === 2 && /Pozzallo/.test(p.crossings[1]), p.crossings.join(' | '));
+  ok('and the road across Sicily between them', p.timeline.some((t) => /between the ports/.test(t.label)));
+
+  head('9. A ferry as a shortcut where a road exists');
+  p = await plan({ originCity: 'Aalborg', originState: 'DK', destCity: 'Oslo', destState: 'NO', loadedMiles: 620, deadlineHours: 200 });
+  ok('Aalborg to Oslo is a long way round by road; a ferry over the Skagerrak is quicker', p.crossings.length === 1, p.crossings.join(' | ') || 'none');
+  ok('and the plan says why', p.warnings.some((w) => /ferry rather than driving round/.test(w)), p.warnings.find((w) => /ferry/.test(w)));
+  p = await plan({ originCity: 'Aalborg', originState: 'DK', destCity: 'Oslo', destState: 'NO', loadedMiles: 280 });
+  ok('but where the listing says the road is short, it is the road', p.crossings.length === 0, p.crossings.join(' | '));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

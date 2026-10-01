@@ -271,6 +271,12 @@ The choice is stored on the trip with the plan, like the dock time is now, so th
 - **Distances that depend on the crossing.** A load's distance comes from the job listing, which already assumes the game's route. Choosing a different crossing changes it. For a crossing other than the game's, the distance is the leg to the chosen port plus the leg from the far port, from `Geo`, against the listing's total as a check.
 - **Fault when a sailing is missed.** If the plan's crossing was reasonable and the driver missed it through their own delay, it is the driver's. If the sailing was not there, because the timetable was wrong or the setting was changed mid-trip, it is unavoidable. That follows the existing pattern of judging fault against the plan made at dispatch.
 
+**Built since (#273, follow-up):**
+- **Sailings on named days.** Timetable entries take days ("Sun,Wed 16:00", "Mon-Fri 20:30") read on the game's calendar, where day 1 is a Monday, and the wait looks up to a week ahead. The main routes were checked against the operators' current timetables (marked "checked"); the rest are marked "estimate" or "game".
+- **ProMods' crossings.** Real ferries serving ProMods' regions are in the table: Iceland and the Faroes, the Irish Sea, the Scottish islands (Outer Hebrides, Orkney, Shetland), Åland, Saaremaa and Hiiumaa, Malta, the Channel Islands, plus Puttgarden – Rødby, Hirtshals – Larvik and Stockholm – Turku. They are marked "promods" because ProMods' own route list could not be read; the in-game ferry list is the authority.
+- **Two crossings on one leg** where no single crossing joins the two areas (Malta by way of Sicily, Jersey by way of Guernsey).
+- **Ferries as shortcuts.** On a leg with no water in the way, a ferry whose road either side is under 75% of the listing's distance is tried against the road and kept only when it arrives sooner (Aalborg to Oslo over the Skagerrak, against driving round through Sweden). The plan says so.
+
 **Keeping the data honest:**
 - Real timetables change by season and year. Treat the table as a **typical weekly timetable**, record **when it was last checked**, and say so in the app and the manual. It is realism for a game, not a booking system.
 - Each operator's own timetable pages are the source. Build the first table from them, route by route, and re-check it when the app is updated.
