@@ -1,6 +1,6 @@
 # Euro Truck Simulator 2 support: plan
 
-Status: **not started**. This is the reference for building it later. It was written on 2026-10-01 against v0.73 (`2c8c2b6`), and the same day gained the Mobility Package home-time and weekly-rest rules (section 3a) and cabotage (section 3b). The counts below are approximate and came from a read-through of the code. Re-check any file or symbol named here before relying on it, because the code will have moved on.
+Status: **not started**. This is the reference for building it later. It was written on 2026-10-01 against v0.73 (`2c8c2b6`), and the same day gained the Mobility Package home-time and weekly-rest rules (section 3a), cabotage inside and outside the EU (section 3b), and ferries and trains (section 3c). The counts below are approximate and came from a read-through of the code. Re-check any file or symbol named here before relying on it, because the code will have moved on.
 
 ## The decision
 
@@ -176,6 +176,41 @@ Recommendation for the first version:
 - Treat the UK, Switzerland, Russia, Turkey and the West Balkans as hosts using the rows above. Only the UK row is more than a flat "no".
 - Add the Swiss night and Sunday bans as planner rules, separately from cabotage.
 
+### 3c. Ferries and trains
+
+ETS2 has many ferry routes (UK to the continent, Scandinavia, the Baltic, the Mediterranean) and the Channel Tunnel train. ATS has none, so the US build has no equivalent. EU law has specific rules for resting on a ferry or train (Regulation 561/2006, Article 9, as amended by 2020/1054). The game handles ferry time differently from the law, so this is another place where the app enforces something the game does not. Researched on 2026-10-01; sources at the end.
+
+**The law:**
+
+| Rest taken on the crossing | Allowed? | Conditions |
+|---|---|---|
+| **Regular daily rest** (11 h) | Yes | The driver must have access to a **sleeper cabin, bunk or couchette**. The rest may be interrupted **no more than twice**, for **no more than 1 hour in total**, for other activities such as driving on and off and border checks. The total rest must still reach 11 hours. |
+| **Split daily rest** (3 h + 9 h) | Yes | The 9-hour part can be on the crossing, with the same cabin and interruption rules. |
+| **Reduced daily rest** (9 h) | On board, yes; interrupted, no | One source says a reduced daily rest cannot be interrupted, so the drive on and drive off would break it. Check this against the regulation text before building. |
+| **Reduced weekly rest** (24 h+) | Yes | Same as a regular daily rest: a sleeper cabin, bunk or couchette, and at most 2 interruptions totalling 1 hour. |
+| **Regular weekly rest** (45 h+) | Only on long crossings | Only where the crossing is **scheduled for 8 hours or more** and the driver has access to a **sleeper cabin**. A ferry cabin then counts as proper accommodation, so the "no regular weekly rest in the cab" rule in section 3a is satisfied for that part. Once ashore, the rest of it cannot continue in the truck. |
+| **No cabin** (for example on a short crossing or the Channel Tunnel) | Not as rest | The crossing does not count as daily or weekly rest. It can usually be logged as a **break**, because the driver is not driving or working, but check how a break on board is treated before building. |
+
+Two related rules:
+- **Travel to or from a vehicle** that is not at the driver's home or the employer's base does not count as rest, unless the driver is on a ferry or train with a cabin, bunk or couchette. This matters little in the game, where the driver is always with the truck.
+- The tachograph has a ferry/train marker for crossings. The app records crossings itself, so it does not need to model the tachograph.
+
+**The Channel Tunnel** (Le Shuttle Freight) takes about **35 minutes**, and drivers ride in a separate carriage with no cabins. It is never daily rest. At most it can count toward a break, such as the 30-minute half of a split 15 + 30 break. In ETS2 it costs **€300 or £240**.
+
+**How ETS2 itself handles ferries** (as reported by players; check against the current game version):
+- Taking a ferry or train skips the game clock forward by the crossing's scheduled time, and the fare comes out of the player's money.
+- A crossing of **9 hours or more** leaves the driver **fully rested**. A shorter one gives **partial rest, minute for minute**: an hour left on the sleep timer plus a 9-hour crossing leaves 10 hours.
+- The game has **no cabins**, no rule about interruptions, and no difference between daily and weekly rest. Any time on a ferry is rest as far as the game is concerned.
+- **Update 1.60** (first shown in May 2026) changes the game's own fatigue and rest system. ETS2 gets a 10-hour driving limit and a 9-hour rest, sleep of a chosen length, a rest indicator, and stricter break warnings with penalties. Nothing was said about ferries, so re-check how crossings behave after 1.60.
+
+**How it maps to the app:**
+- **A crossing is a new kind of trip event**, a span like a rest, with a start and end time, the two ports, the fare, and whether the driver had a **cabin**. The fare is a trip expense the company pays, like tolls, and the end time moves the app's clock the same way a rest does.
+- **The hours-of-service engine classifies each crossing** by its length and whether there was a cabin. It counts as one of: a regular daily rest (allowing the 1 hour of interruptions for driving on and off), a reduced weekly rest, a regular weekly rest (8 hours or more scheduled, with a cabin), or only a break. The driver is told when the game and the law disagree, for example: *"The game counts this 6-hour crossing as rest. The regulation does not: without 11 hours, it is a break, and your daily rest is still due."*
+- **A long crossing with a cabin solves the Mobility Package problem.** A regular weekly rest taken on an 8-hour-plus crossing with a cabin needs no hotel and costs no hotel night (section 3a). This is the real-world reason hauliers take long overnight ferries, and the planner should know it.
+- **The planner can route through ferries.** It needs the ferry network: port pairs, crossing times and fares. ETS2 defines its ferry routes in the game's own `def` files, and `ModCompanyNames.cs` already reads `.scs` def files for company names, so the routes might be readable straight from the game rather than typed in. Check this is practical. With the network, the planner can schedule a daily or weekly rest onto a crossing instead of a lay-by, which is often both faster and cheaper.
+- **Whether there is a cabin** cannot be read from the game. Default to **yes on overnight crossings** and **no on short ones and the Channel Tunnel**, with a setting or a per-route override.
+- **Cabotage and borders:** a crossing between two countries is part of an international load, so it does not change the cabotage counts in section 3b. A crossing to or from the UK starts or ends a UK entry for the UK cabotage rules.
+
 ### 4. Map and market data (large but cleanly isolated)
 
 | US table | Where | EU replacement |
@@ -228,9 +263,10 @@ City discovery, the learned dock times and planning speed (`FacilityLearning`, `
 4. **Build the EU hours-of-service engine**, with its own test suite. Expect this to be the largest step.
 5. **Add home time and weekly rest under the Mobility Package** ([section 3a](#3a-home-time-and-weekly-rest-the-mobility-package)): the 4-week (or 3-week) home ceiling in dispatch, the regular-or-reduced weekly rest choice with its location, hotel costs on the ledger, and the compensation counter. This builds on step 4's reduced-rest tracking.
 6. **Add cabotage** ([section 3b](#3b-cabotage-domestic-loads-in-someone-elses-country)): the company's home country, load classification, the per-vehicle cabotage state, enforcement in dispatch with the reason given, the board showing the remaining cabotage, and the dispatcher-fault rule. Start with EU and EEA home countries only, with the UK, Switzerland, Russia, Turkey and the West Balkans as hosts using the table in section 3b.
-7. **Handle pay and tax:** a pay-model choice (salary or hourly in place of per-mile), a flat deduction in place of W-2s, and optional detention.
-8. **Integrate the game and add the career choice to onboarding:** the ETS2 Steam app ID and paths, the AI prompts, the 24-hour window parsing, and the game choice on the new-career screen.
-9. **Write the manuals and the EU test suite**, and run both games' suites in the finishing routine.
+7. **Add ferries and trains** ([section 3c](#3c-ferries-and-trains)): the crossing event with its fare and cabin flag, its classification as daily rest, weekly rest or a break in the hours-of-service engine, the warning when the game and the law disagree, and then ferry routing in the planner. Read the routes from the game's `def` files if that is practical.
+8. **Handle pay and tax:** a pay-model choice (salary or hourly in place of per-mile), a flat deduction in place of W-2s, and optional detention.
+9. **Integrate the game and add the career choice to onboarding:** the ETS2 Steam app ID and paths, the AI prompts, the 24-hour window parsing, and the game choice on the new-career screen.
+10. **Write the manuals and the EU test suite**, and run both games' suites in the finishing routine.
 
 ## Decisions to make before starting
 
@@ -246,6 +282,9 @@ City discovery, the learned dock times and planning speed (`FacilityLearning`, `
 - Whether the EU truck in the UK has a 4-day cooling-off after its 2 cabotage loads. Sources disagree; settle it from the agreement's text.
 - Swiss road rules (the night and Sunday bans, 40 tonnes, LSVA): model them in the planner, or leave them out.
 - Russia: follow the game's map as presented (recommended), or reflect the post-2022 sanctions.
+- Ferry cabins: assume a cabin on overnight crossings and none on short ones (recommended), or ask the driver on each crossing.
+- The ferry network: read it from the game's `def` files, or type it into a table like the markets.
+- Whether a reduced daily rest on a ferry may be interrupted for driving on and off. One source says no; settle it from the regulation text.
 
 ## Sources for the EU rules
 
@@ -258,4 +297,6 @@ These were checked on 2026-10-01. Laws and their interpretation change, so re-ch
 - UK: GOV.UK, [Jobs inside an EU country or between EU countries](https://www.gov.uk/guidance/international-road-haulage-jobs-inside-an-eu-country-or-between-eu-countries), for UK trucks in the EU; the FTC's [Cabotage in the UK: rules for EU operators](https://www.theftc.co.uk/cabotage-in-the-uk/) and FleetRadar's [post-Brexit cabotage guide](https://fleetradar.co.uk/blog/posts/cabotage-rules-uk-eu-haulage-post-brexit-2026-guide/), for EU trucks in the UK; the European Parliament's [briefing on the Trade and Cooperation Agreement](https://www.europarl.europa.eu/RegData/etudes/IDAN/2021/679071/EPRS_IDA(2021)679071_EN.pdf).
 - Switzerland: the Federal Office of Transport's [Land Transport Agreement](https://www.bav.admin.ch/en/land-transport-agreement) page, and Trans.info's [EU-Switzerland deal: road cabotage still banned](https://trans.info/en/eu-switzerland-deal-459089).
 - Norway: the Norwegian Public Roads Administration's [International transport, cabotage and penalties](https://www.vegvesen.no/en/vehicles/professional-transport/international-transport-and-cabotage-by-road/international-transport-cabotage-and-penalties/), and Trans.info's [Norway adopts Mobility Package rules from 1 November](https://trans.info/en/norway-adopts-mobility-package-rules-november-2022-309759).
+- Ferries and trains, the law: the European Commission's [Driving and rest times](https://transport.ec.europa.eu/transport-modes/road/mobility-package-i/driving-rest-times_en) page; Regulation (EU) 2020/1054 on [EUR-Lex](https://eur-lex.europa.eu/eli/reg/2020/1054/oj/eng); Tachogram's [Rests on trains and ferries](https://tachogram.com/en/blog/2021/01/28/mobility-package-regulation-rests-on-trains-ferries); and Truck Mobility Info's [Sleeping on the ferry](https://truckmobility-info.com/sleeping-on-the-ferry-rest-rules/). The last one describes the rules from before the 2020 amendment, so take the weekly rest rules from the others.
+- Ferries and trains, in the game: the Steam discussion [Time to sleep](https://steamcommunity.com/app/227300/discussions/0/1644292444647278764/) on ferry time and the sleep timer; the Truck Simulator wiki's [Channel Tunnel](https://truck-simulator.fandom.com/wiki/Channel_Tunnel) page; and iXBT's [first look at update 1.60](https://ixbt.games/en/news/2026/05/30/euro-truck-simulator-2-i-ats-izmeniat-mexaniku-ustalosti-i-otdyxa-pervyi-vzgliad-na-obnovlenie-160.html).
 - Russia, Turkey and the West Balkans: the ITF's [ECMT multilateral quota user guide, January 2026](https://www.itf-oecd.org/sites/default/files/docs/user_guide_2026_e.pdf).
