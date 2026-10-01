@@ -819,6 +819,7 @@ public static class HosEngine
                 Step($"{task.Label} — {Hhmm.Of(h)}{(route.Cabin ? "" : ", no cabin")}", "Crossing", h, 0);
             }
             atFacility = null;
+            result.CrossingRoutes.Add(route.Id);
             result.Crossings.Add($"{task.Label}: the {GameClock.Pretty(departs)} {what}, {Hhmm.Of(h)} across" +
                                  (wait > 0.01 ? $" after {Hhmm.Of(wait)} at the port" : "") +
                                  (cabinRest ? ", which is the daily rest" : "") + ".");

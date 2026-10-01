@@ -3323,6 +3323,14 @@ public class AppSettings
     /// </summary>
     public bool RealFerrySailings { get; set; } = true;
 
+    /// <summary>
+    /// ETS2: crossings switched off because this player's game does not have them — a map mod's ferry the
+    /// app lists and the install lacks, or one taken out of the game. Stored as the ones that are off, so a
+    /// route added to the app later is on. The planner never uses one, and the port panel never offers it.
+    /// See Services.Ferries.IsOn.
+    /// </summary>
+    public List<string> FerriesOff { get; set; } = new();
+
     // --- optional AI hookup (blank = fully offline; nothing is sent anywhere)
     public string AnthropicApiKey { get; set; } = "";
     public string AnthropicModel { get; set; } = "claude-sonnet-5";
@@ -3943,6 +3951,8 @@ public class FeasibilityResult
     public double CompensationOwedAfter { get; set; }
     /// <summary>ETS2: the crossings the plan takes, said in words, and the hours spent waiting at ports.</summary>
     public List<string> Crossings { get; set; } = new();
+    /// <summary>The same crossings by route id (Services.Ferries), so the board can offer "not in my game".</summary>
+    public List<string> CrossingRoutes { get; set; } = new();
     public double FerryWaitHours { get; set; }
     /// <summary>EU only: hotel nights for regular weekly rests the plan takes away from home, and their cost.</summary>
     public int HotelNights { get; set; }

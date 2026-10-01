@@ -276,6 +276,7 @@ The choice is stored on the trip with the plan, like the dock time is now, so th
 - **ProMods' crossings.** Real ferries serving ProMods' regions are in the table: Iceland and the Faroes, the Irish Sea, the Scottish islands (Outer Hebrides, Orkney, Shetland), Åland, Saaremaa and Hiiumaa, Malta, the Channel Islands, plus Puttgarden – Rødby, Hirtshals – Larvik and Stockholm – Turku. They are marked "promods" because ProMods' own route list could not be read; the in-game ferry list is the authority.
 - **Two crossings on one leg** where no single crossing joins the two areas (Malta by way of Sicily, Jersey by way of Guernsey).
 - **Ferries as shortcuts.** On a leg with no water in the way, a ferry whose road either side is under 75% of the listing's distance is tried against the road and kept only when it arrives sooner (Aalborg to Oslo over the Skagerrak, against driving round through Sweden). The plan says so.
+- **The ferries list.** Settings → Ferries lists every crossing, grouped, all on by default (stored as the ones switched off, so new routes arrive on). A crossing switched off is never planned on or offered at a port, and "Not in my game" on a load's plan switches it off and re-plans the board. With every crossing to somewhere off, a load there is refused with the reason.
 
 **Keeping the data honest:**
 - Real timetables change by season and year. Treat the table as a **typical weekly timetable**, record **when it was last checked**, and say so in the app and the manual. It is realism for a game, not a booking system.

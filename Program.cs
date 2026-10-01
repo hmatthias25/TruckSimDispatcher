@@ -253,6 +253,7 @@ app.MapPost("/api/settings", (AppSettings incoming) => Results.Ok(store.Mutate(s
     // anything else in it came from a hand-edited file. Kept in the order the picker shows them, which
     // is the order anybody reading the career file would expect to find them.
     s.Settings.RunnableStates = MapCoverage.Clean(s.Settings.RunnableStates);
+    s.Settings.FerriesOff = Ferries.Clean(s.Settings.FerriesOff);
     return Snapshot(s);
 })));
 
@@ -1837,6 +1838,18 @@ app.MapGet("/api/ferries", () => Results.Ok(Ferries.View(store.State)));
 
 /// The driver is at a port, ready to board. Which sailing they make, and what to set the clock to — the same
 /// answer the shipper and the receiver give. Nothing is stored: the crossing is logged as a Ferry event.
+/// "Not in my game": one crossing switched off (or back on) without a trip to Settings. The board is
+/// re-planned by the browser straight after, so the load that offered it is planned without it.
+app.MapPost("/api/ferries/switch", (FerrySwitchRequest req) => Results.Ok(store.Mutate(s =>
+{
+    var route = Ferries.Find(req.Route) ?? throw new InvalidOperationException("Which crossing? Pick it from the list.");
+    var off = s.Settings.FerriesOff ?? new();
+    off.RemoveAll(x => x.Equals(route.Id, StringComparison.OrdinalIgnoreCase));
+    if (!req.On) off.Add(route.Id);
+    s.Settings.FerriesOff = Ferries.Clean(off);
+    return Snapshot(s);
+})));
+
 app.MapPost("/api/ferries/at-port", (FerryAtPortRequest req) =>
 {
     var s = store.State;
@@ -3259,6 +3272,7 @@ record LoadedReportRequest(double? WeightLbs, double? TrailerDamagePct, double? 
 record DisciplineRequest(string Level, string Reason, string CorrectiveAction, string IncidentNumber, int ExpiresAfterLoads);
 record ArrivedRequest(string? GameTime);
 record FerryAtPortRequest(string? Route, bool FromA, string? GameTime);
+record FerrySwitchRequest(string? Route, bool On);
 record ReportTrailerRequest(string? TrailerUnit, string? Type, string? Subtype, string? GameId, string? Length);
 record WhereaboutsBulkRequest(List<WhereaboutsRequest>? Trailers, int? HomeDays);
 record ReconcileRequest(string? Account, decimal Amount, string Memo, decimal? FixUnsettledPay, int? FixFreightCounter);

@@ -172,6 +172,33 @@ async function sailings(on) {
   p = await plan({ originCity: 'Aalborg', originState: 'DK', destCity: 'Oslo', destState: 'NO', loadedMiles: 280 });
   ok('but where the listing says the road is short, it is the road', p.crossings.length === 0, p.crossings.join(' | '));
 
+  head('10. The ferries list: a crossing not in your game');
+  let fv = (await api('/bootstrap')).views.ferries;
+  ok('every crossing starts on, each in a group', fv.offCount === 0 && fv.routes.every((r) => r.on && fv.groups.some((g) => g.key === r.group)),
+    fv.groups.map((g) => g.key).join(', '));
+  ok('ProMods\' are a group of their own', fv.routes.filter((r) => r.group === 'promods').every((r) => r.confidence === 'promods'));
+  p = await plan({ originCity: 'Paris', originState: 'FR', destCity: 'London', destState: 'UK', loadedMiles: 300 });
+  ok('the plan names its crossings by route, for "not in my game"', p.crossingRoutes.length === 1, p.crossingRoutes.join(', '));
+  const first = p.crossingRoutes[0];
+  let snap = await api('/ferries/switch', 'POST', { route: first, on: false });
+  ok('one press switches it off', snap.settings.ferriesOff.includes(first) && snap.views.ferries.offCount === 1, snap.settings.ferriesOff.join(', '));
+  p = await plan({ originCity: 'Paris', originState: 'FR', destCity: 'London', destState: 'UK', loadedMiles: 300 });
+  ok('and the plan crosses some other way', p.crossingRoutes.length === 1 && p.crossingRoutes[0] !== first, p.crossings.join(' | '));
+  snap = await api('/ferries/switch', 'POST', { route: first, on: true });
+  ok('and back on', !snap.settings.ferriesOff.includes(first));
+
+  const toMalta = fv.routes.filter((r) => /Valletta/.test(r.label)).map((r) => r.id);
+  const cur = (await api('/bootstrap')).settings;
+  snap = await api('/settings', 'POST', { ...cur, ferriesOff: [...toMalta, 'no-such-ferry'] });
+  ok('Settings keeps only crossings it knows', snap.settings.ferriesOff.length === toMalta.length, snap.settings.ferriesOff.join(', '));
+  p = await plan({ originCity: 'Napoli', originState: 'IT', destCity: 'Valletta', destState: 'MT', loadedMiles: 420 });
+  ok('with every crossing to Malta off there is no way across, and the load is not deliverable', p.verdict === 'Infeasible'
+    && /No way across/.test(p.warnings[0]) && /switched off/.test(p.warnings[0]), p.warnings[0]);
+  c = await api('/ferries/at-port', 'POST', { route: toMalta[0], fromA: true, gameTime: iso(DAY, '08:00') }).catch((e) => e);
+  ok('a crossing switched off is still known by id (a trip logged before stays readable)', !(c instanceof Error));
+  snap = await api('/settings', 'POST', { ...cur, ferriesOff: [] });
+  ok('switched back on in Settings', snap.settings.ferriesOff.length === 0);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

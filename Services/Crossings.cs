@@ -86,24 +86,28 @@ public static class Crossings
     }
 
     /// <summary>Every crossing that joins the two ends of a leg, when they are in different areas — two in a row where none does it alone.</summary>
-    public static List<Option> Options(string? fromCity, string? fromCc, string? toCity, string? toCc)
+    public static List<Option> Options(string? fromCity, string? fromCc, string? toCity, string? toCc) =>
+        Options(Ferries.All, fromCity, fromCc, toCity, toCc);
+
+    public static List<Option> Options(IEnumerable<Ferries.Route> routes, string? fromCity, string? fromCc, string? toCity, string? toCc)
     {
+        var table = routes as IReadOnlyList<Ferries.Route> ?? routes.ToList();
         var a = Area(fromCity, fromCc);
         var b = Area(toCity, toCc);
         var list = new List<Option>();
         if (a == b) return list;
-        foreach (var (r, fromA) in Joining(a, b))
+        foreach (var (r, fromA) in Joining(table, a, b))
             list.Add(Leg(r, fromA, fromCity, fromCc, toCity, toCc));
         if (list.Count > 0) return list;
 
-        foreach (var (r1, fromA1) in Ferries.All.SelectMany(r => new[] { (r, true), (r, false) }))
+        foreach (var (r1, fromA1) in table.SelectMany(r => new[] { (r, true), (r, false) }))
         {
             var (nc, ncc) = Near(r1, fromA1);
             var (fc, fcc) = Far(r1, fromA1);
             if (Area(nc, ncc) != a) continue;
             var mid = Area(fc, fcc);
             if (mid == a || mid == b) continue;
-            foreach (var (r2, fromA2) in Joining(mid, b))
+            foreach (var (r2, fromA2) in Joining(table, mid, b))
             {
                 var (n2, n2cc) = Near(r2, fromA2);
                 var (f2, f2cc) = Far(r2, fromA2);
@@ -119,12 +123,12 @@ public static class Crossings
     /// Ferries that could cut a road leg short: both ports in the leg's own area, and the road to and from them
     /// well under the drive. Fjord and river ferries on the road itself never qualify — their ports are on it.
     /// </summary>
-    public static List<Option> Shortcuts(string? fromCity, string? fromCc, string? toCity, string? toCc, double listedMiles)
+    public static List<Option> Shortcuts(IEnumerable<Ferries.Route> routes, string? fromCity, string? fromCc, string? toCity, string? toCc, double listedMiles)
     {
         var list = new List<Option>();
         var a = Area(fromCity, fromCc);
         if (listedMiles <= 0 || a != Area(toCity, toCc)) return list;
-        foreach (var r in Ferries.All)
+        foreach (var r in routes)
         {
             if (Area(r.ACity, r.ACc) != a || Area(r.BCity, r.BCc) != a) continue;
             foreach (var fromA in new[] { true, false })
@@ -136,9 +140,9 @@ public static class Crossings
         return list;
     }
 
-    private static IEnumerable<(Ferries.Route Route, bool FromA)> Joining(string a, string b)
+    private static IEnumerable<(Ferries.Route Route, bool FromA)> Joining(IEnumerable<Ferries.Route> routes, string a, string b)
     {
-        foreach (var r in Ferries.All)
+        foreach (var r in routes)
         {
             var ra = Area(r.ACity, r.ACc);
             var rb = Area(r.BCity, r.BCc);
@@ -163,14 +167,35 @@ public static class Crossings
     /// The ways to run one leg, the plain one first: every way across when there is water in the way (the
     /// shortest first), or the road (null) and any ferry that might be quicker when there is not.
     /// </summary>
-    private static List<Option?> Ways(string? fromCity, string? fromCc, string? toCity, string? toCc, double listedMiles)
+    private static List<Option?> Ways(AppState s, string? fromCity, string? fromCc, string? toCity, string? toCc,
+                                      double listedMiles, List<string> noWay)
     {
-        var across = Scale(Options(fromCity, fromCc, toCity, toCc), listedMiles);
+        var have = Ferries.Available(s).ToList();
+        var across = Scale(Options(have, fromCity, fromCc, toCity, toCc), listedMiles);
         if (across.Count > 0) return across.OrderBy(o => o.RoadMiles).Select(o => (Option?)o).ToList();
+        var a = Area(fromCity, fromCc);
+        var b = Area(toCity, toCc);
+        if (a != b)
+        {
+            // Water in the way and no crossing the player has joins the two. Said, not driven through.
+            noWay.Add(Options(fromCity, fromCc, toCity, toCc).Count > 0
+                ? $"No way across from {fromCity} to {toCity}: every crossing that joins {Name(a)} and {Name(b)} is switched off " +
+                  "in Settings → Ferries. Switch one back on if your game has it."
+                : $"No way across from {fromCity} to {toCity}: no crossing the app knows joins {Name(a)} and {Name(b)}.");
+            return new List<Option?> { null };
+        }
         var ways = new List<Option?> { null };
-        ways.AddRange(Shortcuts(fromCity, fromCc, toCity, toCc, listedMiles));
+        ways.AddRange(Shortcuts(have, fromCity, fromCc, toCity, toCc, listedMiles));
         return ways;
     }
+
+    /// <summary>A land area in words.</summary>
+    private static string Name(string area) => area switch
+    {
+        "Continent" => "the mainland", "GB" => "Great Britain", "Ireland" => "the island of Ireland",
+        _ when area.Length == 2 => Ets2Data.Regions.FirstOrDefault(r => r.Code == area)?.Name ?? area,
+        _ => area,
+    };
 
     /// <summary>
     /// The plan for a load with its crossings chosen: every way across tried, the best kept. A career not on
@@ -184,16 +209,24 @@ public static class Crossings
 
         var fromCity = string.IsNullOrWhiteSpace(req.FromCity) ? s.Status.LocationCity : req.FromCity;
         var fromCc = string.IsNullOrWhiteSpace(req.FromState) ? s.Status.LocationState : req.FromState;
+        var noWay = new List<string>();
         var dh = req.DeadheadMiles > 0 && !string.IsNullOrWhiteSpace(req.OriginCity)
-            ? Ways(fromCity, fromCc, req.OriginCity, req.OriginState, req.DeadheadMiles)
+            ? Ways(s, fromCity, fromCc, req.OriginCity, req.OriginState, req.DeadheadMiles, noWay)
             : new List<Option?> { null };
         // Only where both ends of the leg are known: an empty destination is not "the Continent".
         var ld = !string.IsNullOrWhiteSpace(req.DestCity) && !string.IsNullOrWhiteSpace(req.DestState)
                  && (!string.IsNullOrWhiteSpace(req.OriginCity) || !string.IsNullOrWhiteSpace(fromCity))
-            ? Ways(string.IsNullOrWhiteSpace(req.OriginCity) ? fromCity : req.OriginCity,
+            ? Ways(s, string.IsNullOrWhiteSpace(req.OriginCity) ? fromCity : req.OriginCity,
                    string.IsNullOrWhiteSpace(req.OriginState) ? fromCc : req.OriginState,
-                   req.DestCity, req.DestState, req.LoadedMiles)
+                   req.DestCity, req.DestState, req.LoadedMiles, noWay)
             : new List<Option?> { null };
+        if (noWay.Count > 0)
+        {
+            var stuck = HosEngine.Plan(s, req, truck);
+            stuck.Verdict = "Infeasible";
+            stuck.Warnings.InsertRange(0, noWay);
+            return stuck;
+        }
         if (dh.All(x => x == null) && ld.All(x => x == null)) return HosEngine.Plan(s, req, truck);
 
         var tried = new List<(FeasibilityResult Plan, Option? Dh, Option? Ld)>();

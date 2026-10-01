@@ -393,14 +393,54 @@ public static class Ferries
         };
     }
 
-    /// <summary>The table, for the browser: every route and what the app knows about it.</summary>
+    /// <summary>Whether the player has this crossing — on unless switched off in Settings.</summary>
+    public static bool IsOn(AppState s, Route r) =>
+        !(s.Settings.FerriesOff ?? new()).Contains(r.Id, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The crossings the planner may use: every one the player has not switched off.</summary>
+    public static IEnumerable<Route> Available(AppState s) => All.Where(r => IsOn(s, r));
+
+    /// <summary>The switched-off list tidied on the way in: known ids only, once each, in table order.</summary>
+    public static List<string> Clean(IEnumerable<string>? off)
+    {
+        var set = new HashSet<string>(off ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        return All.Where(r => set.Contains(r.Id)).Select(r => r.Id).ToList();
+    }
+
+    /// <summary>The groups the Settings list shows, in order.</summary>
+    public static readonly (string Key, string Title)[] Groups =
+    {
+        ("channel", "The Channel and the North Sea"),
+        ("baltic", "The Baltic and Scandinavia"),
+        ("fjords", "Norway's fjords"),
+        ("med", "The Mediterranean and Italy"),
+        ("adriatic", "The Adriatic and Greece"),
+        ("promods", "ProMods"),
+    };
+
+    /// <summary>Which group a crossing is listed under.</summary>
+    public static string Group(Route r)
+    {
+        if (r.Confidence == "promods") return "promods";
+        var cc = new[] { r.ACc, r.BCc };
+        if (cc.Contains("UK")) return "channel";
+        if (r.ACc == "NO" && r.BCc == "NO") return "fjords";
+        if (cc.Any(c => c is "DK" or "SE" or "NO" or "FI" or "EE" or "LV" or "LT" or "PL") || (r.ACc == "DE" && r.BCc == "DE")) return "baltic";
+        if (cc.Any(c => c is "GR" or "AL" or "HR" or "ME")) return "adriatic";
+        return "med";
+    }
+
+    /// <summary>The table, for the browser: every route, what the app knows about it, and whether it is on.</summary>
     public static object View(AppState s) => new
     {
         realSailings = RealSailings(s),
+        offCount = All.Count(r => !IsOn(s, r)),
+        groups = Groups.Select(g => new { key = g.Key, title = g.Title }),
         routes = All.Select(r => new
         {
             id = r.Id, label = r.Label, a = r.A, b = r.B, train = r.Train, dlc = r.Dlc, @operator = r.Operator,
             hours = r.Hours, gameHours = r.GameHours, cabin = r.Cabin, confidence = r.Confidence, note = r.Note,
+            group = Group(r), on = IsOn(s, r),
         }),
     };
 }

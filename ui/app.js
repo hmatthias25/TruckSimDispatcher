@@ -2236,6 +2236,7 @@ function loadCardHtml(e, d) {
         ? `<span>window <b>${gt(e.feasibility.appointmentOpensGameTime)} → ${gt(e.feasibility.dueGameTime)}</b></span>`
         : `<span>due <b>${gt(e.feasibility.dueGameTime)}</b></span>`}
       <span>cycle after <b>${hhmm(e.feasibility.cycleRemainingAfter)}</b></span></div>
+    ${crossingsHtml(e.feasibility)}
     ${e.hardFails.length ? `<ul class="reasons bad">${e.hardFails.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${e.pros.length ? `<ul class="reasons good">${e.pros.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${e.cons.length ? `<ul class="reasons bad">${e.cons.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
@@ -2373,11 +2374,65 @@ function euClocksHtml(h, v) {
     </div>`;
 }
 
+/**
+ * The crossings a load's plan takes, on the board, each with "Not in my game": the app's ferry table is
+ * real-world routes, and a map mod's ferry may not be in this install. One press switches it off and the
+ * board is planned again without it. Also what the planner said about the way across.
+ */
+function crossingsHtml(f) {
+  const ids = f.crossingRoutes || [];
+  const said = (f.warnings || []).filter((w) => /^No way across|ferry rather than driving round|^Cross /.test(w));
+  if (!ids.length && !said.length) return '';
+  const routes = (S.views.ferries || {}).routes || [];
+  return `<div class="kv" style="flex-wrap:wrap">${ids.map((id) => {
+    const r = routes.find((x) => x.id === id);
+    return `<span>${r && r.train ? 'tunnel' : 'ferry'} <b>${esc(r ? r.label : id)}</b>
+      <button class="btn tiny" data-act="ferry-off" data-route="${esc(id)}"
+        title="Switch this crossing off and plan the board again without it">Not in my game</button></span>`;
+  }).join('')}</div>
+    ${said.length ? `<ul class="reasons">${said.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}`;
+}
+
+/**
+ * Settings → Ferries: every crossing the app knows, on unless switched off. The table is real-world routes
+ * matched to the game's, and ProMods' are the mod's real counterparts — so a player whose install lacks
+ * one switches it off here and dispatch never plans on it.
+ */
+function ferriesPanel() {
+  const f = S.views.ferries;
+  if (!f) return '';
+  const group = (g) => {
+    const rows = f.routes.filter((r) => r.group === g.key);
+    if (!rows.length) return '';
+    const on = rows.filter((r) => r.on).length;
+    return `
+      <h4 class="sect" style="margin:14px 0 4px">${esc(g.title)} <span class="sub">${on} of ${rows.length}</span>
+        <button class="btn tiny ghost" data-act="fy-group" data-group="${g.key}" data-on="1">All on</button>
+        <button class="btn tiny ghost" data-act="fy-group" data-group="${g.key}" data-on="0">All off</button></h4>
+      <div class="mapgrid">${rows.map((r) => `
+        <label class="chk" title="${esc([r.operator, r.note].filter(Boolean).join(' — '))}"><input type="checkbox" data-fy="${esc(r.id)}"
+          data-fg="${g.key}" ${r.on ? 'checked' : ''}> ${esc(r.label)}${r.train ? ' <span class="sub">train</span>' : ''}
+          <span class="sub">${hhmm(r.hours)}</span></label>`).join('')}</div>`;
+  };
+  return `
+    <div class="panel" style="grid-column:1/-1">
+      <div class="panel-head"><h2>Ferries</h2>
+        <span class="sub">${f.routes.length - f.offCount} of ${f.routes.length} on</span></div>
+      <p class="hint">Every crossing dispatch may plan on. They are real-world routes matched to the game's, so if
+        one is not in your game — a map mod you do not run, or one your version lacks — switch it off and it is
+        never planned on or offered at a port. "Not in my game" on a load does the same in one press. With every
+        crossing to somewhere switched off, a load there is refused: there is no road across the sea.</p>
+      <p class="hint">The ProMods group is the real ferries serving the countries ProMods adds, not yet checked
+        against the mod's own map. If you do not run ProMods, switch the whole group off.</p>
+      ${f.groups.map(group).join('')}
+    </div>`;
+}
+
 /** The crossings, for a select: the game's route names, with the train marked. */
 function ferryOptions() {
   const f = S.views.ferries;
   if (!f) return '';
-  return f.routes.map((r) => `<option value="${esc(r.id)}">${esc(r.label)}${r.train ? ' (train)' : ''}${r.dlc ? ` — ${esc(r.dlc)}` : ''}</option>`).join('');
+  return f.routes.filter((r) => r.on !== false).map((r) => `<option value="${esc(r.id)}">${esc(r.label)}${r.train ? ' (train)' : ''}${r.dlc ? ` — ${esc(r.dlc)}` : ''}</option>`).join('');
 }
 
 /**
@@ -6794,6 +6849,7 @@ function viewSettings() {
     </div>
 
     ${mapCoveragePanel()}
+    ${ferriesPanel()}
 
     <div class="panel">
       <div class="panel-head"><h2>HOS rule set</h2>
@@ -8800,6 +8856,14 @@ async function handleAction(act, d, ev) {
       }
       return toast('Ticked — press Save settings to apply it.', 'ok');
     }
+    case 'fy-group': {
+      for (const box of document.querySelectorAll(`input[data-fg="${d.group}"]`)) box.checked = d.on === '1';
+      return toast('Ticked — press Save settings to apply it.', 'ok');
+    }
+    case 'ferry-off': return run(async () => {
+      absorb(await api('/ferries/switch', 'POST', { route: d.route, on: false }));
+      DECISION = await api('/board/evaluate');
+    }, 'Switched off — the board is planned again without it. Switch it back on under Settings → Ferries.');
     case 'save-settings': return run(async () => absorb(await api('/settings', 'POST', collectSettings())), 'Settings saved.');
     case 'snapshot': return run(async () => {
       const r = await api('/backups/snapshot', 'POST', { notes: 'manual' });
@@ -8892,6 +8956,10 @@ function collectSettings() {
     },
     displayUnits: sv('op-units'),
     realFerrySailings: $('op-ferries') ? bv('op-ferries') : s.realFerrySailings,
+    // As with the map: the boxes if the panel is on screen, the career's own list if it is not.
+    ferriesOff: document.querySelector('input[data-fy]')
+      ? [...document.querySelectorAll('input[data-fy]')].filter((b) => !b.checked).map((b) => b.dataset.fy)
+      : (s.ferriesOff || []),
     governedMph: fv('op-gov'), speedFactor: fv('op-factor'),
     safetyBufferHours: hv('op-buffer'), parkingBufferHours: hv('op-park'),
     strandedMarginHours: hv('op-strand'),
