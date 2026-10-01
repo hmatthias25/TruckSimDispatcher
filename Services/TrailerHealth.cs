@@ -186,7 +186,7 @@ public static class TrailerHealth
                                   "That is not a trailer working badly, it is money parked on a yard.");
                 if (t.LoadsTransported >= 0)
                     line.Evidence.Add($"{t.LoadsTransported:N0} load(s) and " +
-                                      $"{t.DistanceOnJobMi:N0} mi in its whole life.");
+                                      $"{Units.Distance(t.DistanceOnJobMi)} in its whole life.");
 
                 var swap = BestEarningType(s, t);
                 if (!string.IsNullOrWhiteSpace(swap.Type)
@@ -210,14 +210,14 @@ public static class TrailerHealth
                 line.Verdict = "Worn";
                 line.Headline = $"{t.Ref} has had a working life — time to plan its replacement.";
                 if (t.DistanceOnJobMi >= 0)
-                    line.Evidence.Add($"{t.DistanceOnJobMi:N0} mi on the job, {t.LoadsTransported:N0} load(s), " +
+                    line.Evidence.Add($"{Units.Distance(t.DistanceOnJobMi)} on the job, {t.LoadsTransported:N0} load(s), " +
                                       $"{t.WeightTransportedLbs / 2000.0:N0} ton(s) moved.");
 
                 // Say the working, because "worn out" on a box showing 180,000 mi reads as wrong unless
                 // the loads and the weight behind it are on the page too.
                 var avg = t.LoadsTransported > 0 ? t.WeightTransportedLbs / t.LoadsTransported : 0;
-                line.Evidence.Add($"That is about {effective:N0} mi of wear once the load cycles and an " +
-                                  $"average trip of {avg:N0} lb are counted — our line is " +
+                line.Evidence.Add($"That is about {Units.Distance(effective)} of wear once the load cycles and an " +
+                                  $"average trip of {Units.Weight(avg)} are counted — our line is " +
                                   $"{WornDistanceMi:N0}.");
                 line.Evidence.Add($"It is still working at {t.UtilisationPct:0}%, so replace it with the " +
                                   $"same thing — a {TrailerSpec.Describe(t.Type, t.Subtype)} is what this " +

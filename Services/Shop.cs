@@ -143,8 +143,8 @@ public static class Shop
         var miles = truck.ServiceMiles;
         var line = TotalLossPctFor(s, truck);
         if (line >= m.TotalLossPct - 0.05)
-            return $"Unit {truck.Ref} has {miles:N0} mi on it, so it is worth fixing right up to {line:0.#}%.";
-        return $"Unit {truck.Ref} has {miles:N0} mi on it. We write that unit off at {line:0.#}%, not the " +
+            return $"Unit {truck.Ref} has {Units.Distance(miles)} on it, so it is worth fixing right up to {line:0.#}%.";
+        return $"Unit {truck.Ref} has {Units.Distance(miles)} on it. We write that unit off at {line:0.#}%, not the " +
                $"{m.TotalLossPct:0.#}% a fresh one gets — past a certain mileage the repair is worth more than the truck.";
     }
 
@@ -273,10 +273,10 @@ public static class Shop
             order.Quote = Quote(s, td, rd, true, truck);
             order.Headline = $"{what} — no more loads. Run it home to {order.HomeLabel} and fix it there.";
             order.Instructions.Add(homeIsClose && driveHours is { } dhr
-                ? $"{order.HomeLabel} is {miles:N0} mi out, about {Hhmm.Of(dhr)} of driving. That is inside a day, " +
+                ? $"{order.HomeLabel} is {Units.Distance(miles)} out, about {Hhmm.Of(dhr)} of driving. That is inside a day, " +
                   "and the damage is light enough to make it — so you take it to our own shop rather than the first dealer " +
                   "you pass. Cheaper labour, and the truck ends up where it needs to be."
-                : $"{order.HomeLabel} is {miles:N0} mi out — further than a day, and you are going anyway. At {worst:0.#}% " +
+                : $"{order.HomeLabel} is {Units.Distance(miles)} out — further than a day, and you are going anyway. At {worst:0.#}% " +
                   "this is not something we patch up at a dealer on the road: our shop is cheaper, the truck ends up where " +
                   "it is needed, and every mile you spend hunting a bay is a mile it might get worse.");
             if (!homeIsClose)
@@ -317,13 +317,13 @@ public static class Shop
             order.Instructions.Add($"Recovered to {at}. Nothing is running home on a hook, however light the " +
                                    "damage reads — the truck is already where it is going to be worked on.");
             if (s.Tow.Cost > 0)
-                order.Instructions.Add($"Recovery billed at ${s.Tow.Cost:N0}. That is the company's, not yours; " +
+                order.Instructions.Add($"Recovery billed at {Units.Money0(s.Tow.Cost)}. That is the company's, not yours; " +
                                        "it goes on the claim if this unit does not come back.");
         }
         if (home != null && miles is { } mi)
             order.Instructions.Add(td >= runHomeCap || rd >= m.RunHomeMaxDamagePct
-                ? $"{DispatchEngine.Place(home.City, home.State)} is {mi:N0} mi out, but past {runHomeCap:0.#}% I am not gambling another day's driving on it. Nearest shop."
-                : $"{DispatchEngine.Place(home.City, home.State)} is {mi:N0} mi out — about {Hhmm.Of(driveHours ?? 0)}, which is more than a day. " +
+                ? $"{DispatchEngine.Place(home.City, home.State)} is {Units.Distance(mi)} out, but past {runHomeCap:0.#}% I am not gambling another day's driving on it. Nearest shop."
+                : $"{DispatchEngine.Place(home.City, home.State)} is {Units.Distance(mi)} out — about {Hhmm.Of(driveHours ?? 0)}, which is more than a day. " +
                   $"Past {m.MandatoryReviewPct:0.#}% that is too far to nurse it. Nearest shop.");
         order.Instructions.AddRange(order.Quote.Lines);
         if (runHomeCap < m.RunHomeMaxDamagePct && td >= runHomeCap)
@@ -432,10 +432,10 @@ public static class Shop
         var home = HomeTime.HomeTerminal(s);
         r.Instructions.Add($"Unit {truck.Ref} ({truck.Year} {truck.Make} {truck.Model}) is off the fleet as a total loss.");
         r.Instructions.Add(r.InsurancePayout > 0
-            ? $"Insurance settled ${r.InsurancePayout:N2} against a ${r.Deductible:N2} deductible" +
+            ? $"Insurance settled {Units.Money(r.InsurancePayout)} against a {Units.Money(r.Deductible)} deductible" +
               (driverFault ? " — the higher one, because the damage was down to the driver." : ".")
             : "No book value on file for that unit, so there is nothing for insurance to settle against.");
-        if (r.ScrapRecovery > 0) r.Instructions.Add($"Scrap brought ${r.ScrapRecovery:N2}, which is booked as recovery.");
+        if (r.ScrapRecovery > 0) r.Instructions.Add($"Scrap brought {Units.Money(r.ScrapRecovery)}, which is booked as recovery.");
         else r.Instructions.Add("Sell the wreck for scrap in your game and report what it fetched — I will book it as recovery.");
         r.Instructions.Add($"Buy the replacement: {r.ReplacementSpec}");
         if (wasMine && home != null)
@@ -446,7 +446,7 @@ public static class Shop
         s.Events.Insert(0, new LogEvent
         {
             Channel = "Maintenance",
-            Message = $"Unit {truck.Ref} written off as a total loss. Net recovery ${r.NetRecovery:N2}.",
+            Message = $"Unit {truck.Ref} written off as a total loss. Net recovery {Units.Money(r.NetRecovery)}.",
             Ref = truck.Unit,
             GameTime = s.Status.GameTime
         });
@@ -501,7 +501,7 @@ public static class Shop
         SyncDamageClock(s, DispatchEngine.AssignedTruck(s), DispatchEngine.AssignedTrailer(s));
 
         LedgerService.Post(s, LedgerService.Operating, -tow.Cost, "Repairs",
-            $"Recovery — {DispatchEngine.Place(tow.FromCity, tow.FromState)}, {tow.Miles:N0} mi", "");
+            $"Recovery — {DispatchEngine.Place(tow.FromCity, tow.FromState)}, {Units.Distance(tow.Miles)}", "");
         return tow;
     }
 

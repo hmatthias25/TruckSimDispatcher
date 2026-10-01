@@ -108,7 +108,7 @@ public static class Whereabouts
 
             e.Text = miles is { } pmi
                 ? $"{label} is parked at {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} with nobody " +
-                  $"on it — {pmi:N0} mi from the yard. Nobody is out with it, so the game will not charge you " +
+                  $"on it — {Units.Distance(pmi)} from the yard. Nobody is out with it, so the game will not charge you " +
                   "days for it: straight swap in the trailer manager."
                 : $"{label} is parked and nobody is on it. No driver to be days out, so the game will not " +
                   "charge you anything for taking it — straight swap in the trailer manager.";
@@ -126,7 +126,7 @@ public static class Whereabouts
             // from play as one message saying both things at once.
             e.Text = miles is { } mi
                 ? $"{label} is heading in, last seen making for {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} " +
-                  $"— about {mi:N0} mi from the yard, so the game will likely charge about {e.Days:0.#} day(s) to take it."
+                  $"— about {Units.Distance(mi)} from the yard, so the game will likely charge about {e.Days:0.#} day(s) to take it."
                 : $"{label} is heading in, but I do not know where from — call it a day or two of skipped " +
                   "time to take it.";
             return e;
@@ -137,7 +137,7 @@ public static class Whereabouts
         e.Days = miles is { } om ? Math.Max(2, Math.Round(om / milesPerDay * 2, 1)) : 4;
         e.Text = miles is { } omi
             ? $"{label} is running the other way, out toward {DispatchEngine.Place(t.WhereaboutsCity, t.WhereaboutsState)} " +
-              $"— {omi:N0} mi from the yard and still going. Reckon the game charges {e.Days:0.#} day(s) to take it " +
+              $"— {Units.Distance(omi)} from the yard and still going. Reckon the game charges {e.Days:0.#} day(s) to take it " +
               "off them, since it has to turn round first."
             : $"{label} is heading away from the yard, so it has to turn round before any of it helps — days " +
               "rather than hours of skipped time to take it.";

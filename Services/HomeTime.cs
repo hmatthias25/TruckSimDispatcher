@@ -375,7 +375,7 @@ public static class HomeTime
         // Asked in exactly those terms: "I get a warning that dispatch is routing me toward home. But
         // is it?" A driver reading a promise bigger than the protection will plan against the promise.
         var cap = st.OutboundAllowance is { } miles
-            ? $"Nothing gets authorised that leaves you more than {miles:N0} mi further out than you are now"
+            ? $"Nothing gets authorised that leaves you more than {Units.Distance(miles)} further out than you are now"
             : "Freight that closes the distance is scored ahead of freight that does not";
 
         st.Headline = st.Overdue
@@ -869,18 +869,18 @@ public static class HomeTime
                     ? $"Finishes AT {st.TerminalLabel} with home time " +
                       $"{(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")} — that is your home " +
                       $"time taken, not a short run from it: {pts:+0.00;-0.00}"
-                    : $"Finishes {destMiles.Value:N0} mi from {st.TerminalLabel}, inside our {radius:N0} mi home radius" +
+                    : $"Finishes {Units.Distance(destMiles.Value)} from {st.TerminalLabel}, inside our {Units.Distance(radius)} home radius" +
                       $" and home time is {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}: {pts:+0.00;-0.00}",
                 atYard
                     ? $"Takes you home — this one finishes at {st.TerminalLabel} itself."
-                    : $"Gets you home — {destMiles.Value:N0} mi from {st.TerminalLabel}.", null);
+                    : $"Gets you home — {Units.Distance(destMiles.Value)} from {st.TerminalLabel}.", null);
         }
 
         if (closes > deadBand)
         {
             var pts = 0.5 * w * urgency;
             return (pts,
-                $"Closes {closes:N0} mi toward {st.TerminalLabel} ({nowMiles:N0} → {destMiles.Value:N0} mi out): {pts:+0.00;-0.00}",
+                $"Closes {Units.Distance(closes)} toward {st.TerminalLabel} ({nowMiles:N0} → {Units.Distance(destMiles.Value)} out): {pts:+0.00;-0.00}",
                 $"Works you back toward {st.TerminalLabel}.", null);
         }
 
@@ -896,17 +896,17 @@ public static class HomeTime
             var severity = 1.0 + Math.Clamp((wrongWay - deadBand) / 500.0, 0, 1.0);
             var pts = -1.0 * w * urgency * severity;
             return (pts,
-                $"Runs {wrongWay:N0} mi further from {st.TerminalLabel} ({nowMiles:N0} → {destMiles.Value:N0} mi out) with home time {(st.Overdue ? "overdue" : "close")}: {pts:+0.00;-0.00}",
+                $"Runs {Units.Distance(wrongWay)} further from {st.TerminalLabel} ({nowMiles:N0} → {Units.Distance(destMiles.Value)} out) with home time {(st.Overdue ? "overdue" : "close")}: {pts:+0.00;-0.00}",
                 null,
                 st.Overdue
-                    ? $"Takes you {Math.Abs(closes):N0} mi further out and your home time is already {st.DaysOut - st.IntervalDays:0.#} days late. That is the company breaking its word."
-                    : $"Takes you {Math.Abs(closes):N0} mi further from {st.TerminalLabel} with home time due in {st.DaysUntilDue:0.#} days.");
+                    ? $"Takes you {Units.Distance(Math.Abs(closes))} further out and your home time is already {st.DaysOut - st.IntervalDays:0.#} days late. That is the company breaking its word."
+                    : $"Takes you {Units.Distance(Math.Abs(closes))} further from {st.TerminalLabel} with home time due in {st.DaysUntilDue:0.#} days.");
         }
 
         // The band is quoted, because "roughly neutral" is the one verdict here with no number in it and
         // it is the verdict a driver is most likely to want to argue with.
-        return (0, $"Roughly neutral on home time ({nowMiles:N0} → {destMiles.Value:N0} mi from " +
-                   $"{st.TerminalLabel}, inside the {deadBand:N0} mi either way I treat as lateral).", null, null);
+        return (0, $"Roughly neutral on home time ({nowMiles:N0} → {Units.Distance(destMiles.Value)} from " +
+                   $"{st.TerminalLabel}, inside the {Units.Distance(deadBand)} either way I treat as lateral).", null, null);
     }
 
     /// <summary>
@@ -971,8 +971,8 @@ public static class HomeTime
         if (st.Overdue && st.AtHome && further > -MinOutboundWhenOverdueMiles)
         {
             var where0 = DispatchEngine.Place(load.DestCity, load.DestState);
-            return $"You are already {nowMiles:N0} mi from {st.TerminalLabel} and {st.DaysLate:0.#} days late. " +
-                   $"{where0} leaves you {destMiles.Value:N0} mi out, which is no nearer — so it is another day " +
+            return $"You are already {Units.Distance(nowMiles)} from {st.TerminalLabel} and {st.DaysLate:0.#} days late. " +
+                   $"{where0} leaves you {Units.Distance(destMiles.Value)} out, which is no nearer — so it is another day " +
                    "on the road to end up where you are. Run it in empty and take your home time; if something " +
                    "turns up that actually finishes near the yard, show me and I will put you under it.";
         }
@@ -986,21 +986,21 @@ public static class HomeTime
         if (damageIsTighter)
         {
             var days = Shop.DamageDaysOverdue(s) ?? 0;
-            return $"{where} is {further:N0} mi FURTHER from {st.TerminalLabel}, and the truck is over the " +
+            return $"{where} is {Units.Distance(further)} FURTHER from {st.TerminalLabel}, and the truck is over the " +
                    $"damage line — {(days < 1 ? "as of today" : $"{days:0.#} day(s) now")}. It is going to our shop " +
-                   $"and I am not sending it the wrong way to get there: about {allowance:N0} mi out is the limit, " +
+                   $"and I am not sending it the wrong way to get there: about {Units.Distance(allowance)} out is the limit, " +
                    "and it tightens for every day this takes. Nothing to do with your home time — that stands where " +
                    "it was.";
         }
 
         return st.Overdue
-            ? $"{where} is {further:N0} mi FURTHER from {st.TerminalLabel} and your home time is already " +
-              $"{st.DaysLate:0.#} days late. At that point I will not take you more than about {allowance:N0} mi " +
+            ? $"{where} is {Units.Distance(further)} FURTHER from {st.TerminalLabel} and your home time is already " +
+              $"{st.DaysLate:0.#} days late. At that point I will not take you more than about {Units.Distance(allowance)} " +
               "further out, and that shrinks every day we keep you — no rate on this board buys back a promise " +
               "we have already broken."
-            : $"{where} runs {further:N0} mi further from {st.TerminalLabel} with home time due in " +
+            : $"{where} runs {Units.Distance(further)} further from {st.TerminalLabel} with home time due in " +
               $"{st.DaysUntilDue:0.#} days. I will take you out of the way to keep the truck earning, but not by " +
-              $"more than about {allowance:N0} mi this close to your date — that is a different week, not a detour.";
+              $"more than about {Units.Distance(allowance)} this close to your date — that is a different week, not a detour.";
     }
 
     /// <summary>
@@ -1183,7 +1183,7 @@ public static class HomeTime
 
         lines.Add(destMiles.Value <= 1
             ? $"This load is your ride home — it delivers at {st.TerminalLabel}. Once you are empty, park it at the yard and take your home time."
-            : $"This load is being run to get you home: it drops {destMiles.Value:N0} mi from {st.TerminalLabel}. " +
+            : $"This load is being run to get you home: it drops {Units.Distance(destMiles.Value)} from {st.TerminalLabel}. " +
               $"Once you are empty, deadhead to the {st.TerminalLabel} yard and report in — then take your home time.");
 
         lines.Add(st.Overdue
@@ -1226,13 +1226,13 @@ public static class HomeTime
                              ". Do them now rather than on the road, and record it as a Preventive work " +
                              "order on the Maintenance tab — that is what clears the schedule.");
                 else if (soon != null && soon.MilesUntilDue <= soon.IntervalMiles * 0.15)
-                    jobs.Add($"Unit {truck.Ref} is {soon.MilesUntilDue:N0} mi off its {soon.Name.ToLowerInvariant()} — do it now rather than on the road.");
+                    jobs.Add($"Unit {truck.Ref} is {Units.Distance(soon.MilesUntilDue)} off its {soon.Name.ToLowerInvariant()} — do it now rather than on the road.");
             }
             else
             {
                 var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
                 if (sinceService >= truck.ServiceIntervalMiles * 0.85)
-                    jobs.Add($"Unit {truck.Ref} is {sinceService:N0} mi into a {truck.ServiceIntervalMiles:N0}-mile PM cycle — do the service now rather than on the road.");
+                    jobs.Add($"Unit {truck.Ref} is {Units.Distance(sinceService)} into a {truck.ServiceIntervalMiles:N0}-mile PM cycle — do the service now rather than on the road.");
             }
         }
         // Nothing to book in for a trailer we do not own. Whatever was hooked went back to the shipper.
@@ -1407,19 +1407,19 @@ public static class HomeTime
                 if (owing.Count > 0)
                     b.Shop.Add($"Unit {truck.Ref} is due {owing.Count} service checkpoint(s) — " +
                                string.Join(", ", owing.Select(d => d.Name.ToLowerInvariant())) +
-                               $". Do them now; the yard reckons ${ServicePlan.EstimateFor(s, truck):N0}. " +
+                               $". Do them now; the yard reckons {Units.Money0(ServicePlan.EstimateFor(s, truck))}. " +
                                "Record it as a Preventive work order on the Maintenance tab and the " +
                                "checkpoints clear.");
                 else if (soon != null && soon.MilesUntilDue <= soon.IntervalMiles * 0.15)
-                    b.Shop.Add($"{soon.Name} due on unit {truck.Ref} in {soon.MilesUntilDue:N0} mi. Cheaper to do it here than on the road.");
+                    b.Shop.Add($"{soon.Name} due on unit {truck.Ref} in {Units.Distance(soon.MilesUntilDue)}. Cheaper to do it here than on the road.");
             }
             else
             {
                 var since = truck.ServiceMiles - truck.LastServiceMiles;
                 if (since >= truck.ServiceIntervalMiles)
-                    b.Shop.Add($"Unit {truck.Ref} is {since - truck.ServiceIntervalMiles:N0} mi PAST its {truck.ServiceIntervalMiles:N0}-mile PM. Do it now.");
+                    b.Shop.Add($"Unit {truck.Ref} is {Units.Distance(since - truck.ServiceIntervalMiles)} PAST its {truck.ServiceIntervalMiles:N0}-mile PM. Do it now.");
                 else if (since >= truck.ServiceIntervalMiles * 0.85)
-                    b.Shop.Add($"PM due on unit {truck.Ref} in {truck.ServiceIntervalMiles - since:N0} mi. Cheaper to do it here than on the road.");
+                    b.Shop.Add($"PM due on unit {truck.Ref} in {Units.Distance(truck.ServiceIntervalMiles - since)}. Cheaper to do it here than on the road.");
             }
 
             // Past servicing it. The yard is where a swap actually happens — the driver is standing on
@@ -1481,7 +1481,7 @@ public static class HomeTime
             b.BetterUnit = spare.Ref;
             TruckGrade.IsUpgrade(s, truck, spare, out var spareWhy);
             b.Equipment.Add($"There is a better unit sitting here: {spare.Ref} ({spare.Year} {spare.Make} {spare.Model}, " +
-                            $"{spare.ServiceMiles:N0} mi) against your {truck!.Year} {truck.Make}. {spareWhy} " +
+                            $"{Units.Distance(spare.ServiceMiles)}) against your {truck!.Year} {truck.Make}. {spareWhy} " +
                             "Put in for it below and operations will answer while you are standing here.");
         }
 
@@ -1528,7 +1528,7 @@ public static class HomeTime
         {
             var rate = s.Driver.Pay.DeadheadCpm;
             b.Paperwork.Add($"{empty.Explanation} Book it on the Dispatch tab in one press" +
-                            (rate > 0 ? $" — about ${empty.Miles * (double)rate:N0}" : "") + ".");
+                            (rate > 0 ? $" — about {Units.Money0(empty.Miles * (double)rate)}" : "") + ".");
         }
 
         // What the company decided about the trailer, whichever way it went.
@@ -1649,7 +1649,7 @@ public static class HomeTime
             {
                 City = c.c.City, State = c.c.State, Miles = Math.Round(c.out_, 0),
                 Reason = $"Empty to {DispatchEngine.Place(c.c.City, c.c.State)} to pull a board closer to " +
-                         $"{st.TerminalLabel} — tier-{c.c.Tier} market, {c.home_:N0} mi from the yard."
+                         $"{st.TerminalLabel} — tier-{c.c.Tier} market, {Units.Distance(c.home_)} from the yard."
             });
 
         return offers;
@@ -1742,7 +1742,7 @@ public static class HomeTime
         if (toHome is { } miles && miles <= reach * HomeRunShifts)
             return $"Nothing on this board goes home and your home time is " +
                    $"{(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}. " +
-                   $"{DispatchEngine.Place(home.City, home.State)} is {miles:N0} mi — " +
+                   $"{DispatchEngine.Place(home.City, home.State)} is {Units.Distance(miles)} — " +
                    (miles <= reach
                        ? $"inside what you can drive on {Hhmm.Of(drivable)}. "
                        : $"further than the {Hhmm.Of(drivable)} you have, so take your " +
@@ -1774,7 +1774,7 @@ public static class HomeTime
                    "pulling a board in. Take your rest, and show me the board again when the clocks are back.";
 
         var named = string.Join(", ", options.Select(x =>
-            $"{DispatchEngine.Place(x.c.City, x.c.State)} ({x.out_:N0} mi out, {x.home_:N0} from the yard)"));
+            $"{DispatchEngine.Place(x.c.City, x.c.State)} ({Units.Distance(x.out_)} out, {x.home_:N0} from the yard)"));
 
         return $"Nothing here works and home time is {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}. " +
                $"Rather than sit on this board, check what is loading out of {named}. All of those are inside the " +

@@ -776,7 +776,7 @@ public static class EquipmentService
             RestoreAfterLoads = restoreAfterLoads,
             Instruction =
                 $"Report to {label} and turn in {current?.Ref}. You are going into unit {worst.Ref} — " +
-                $"a {worst.Year} {worst.Make} {worst.Model} with {worst.ServiceMiles:N0} miles on it. " +
+                $"a {worst.Year} {worst.Make} {worst.Model} with {Units.DistanceWords(worst.ServiceMiles)} on it. " +
                 $"Run {restoreAfterLoads} clean loads and we will talk about putting you back in something better."
         });
     }
@@ -1023,7 +1023,7 @@ public static class EquipmentService
             TerminalId = yard?.Id ?? "",
             TerminalLabel = label,
             AvailableFromGameTime = s.Status.GameTime,
-            Instruction = $"{freed.Ref} — a {freed.Year} {freed.Make} {freed.Model} with {freed.ServiceMiles:N0} mi — " +
+            Instruction = $"{freed.Ref} — a {freed.Year} {freed.Make} {freed.Model} with {Units.Distance(freed.ServiceMiles)} — " +
                           $"is standing at {label} with nobody in it. {freedWhy} " +
                           "It is yours: do not hire for that seat. " +
                           "No rush and no empty running — I will work freight back that way, and you swap over " +
@@ -1065,12 +1065,12 @@ public static class EquipmentService
                 $"Puts you at {label} for {order.Number} — pick the unit up when you drop.", null);
 
         if (closer > 50)
-            return (pts, $"{closer:N0} mi closer to {label} for {order.Number}: {pts:+0.00;-0.00}",
+            return (pts, $"{Units.Distance(closer)} closer to {label} for {order.Number}: {pts:+0.00;-0.00}",
                 $"Works you toward {label}, where {order.Number} is standing.", null);
 
         if (closer < -50)
-            return (pts, $"{-closer:N0} mi further from {label} for {order.Number}: {pts:+0.00;-0.00}", null,
-                $"Takes you {-closer:N0} mi further from {label}, and {order.Number} is waiting there.");
+            return (pts, $"{Units.Distance(-closer)} further from {label} for {order.Number}: {pts:+0.00;-0.00}", null,
+                $"Takes you {Units.Distance(-closer)} further from {label}, and {order.Number} is waiting there.");
 
         return (0, null, null, null);
     }
@@ -1186,7 +1186,7 @@ public static class EquipmentService
         advice.FindChancePct = FleetMaintenance.FindChance(s, truck);
         if (advice.Due && advice.FindChancePct >= 25)
             advice.Warning =
-                $"At {over:N0} mi over and {ServicePlan.WearMiles(truck):N0} on the " +
+                $"At {Units.Distance(over)} over and {ServicePlan.WearMiles(truck):N0} on the " +
                 "clock, you are not booking a service any more — you are booking whatever they find. " +
                 "Expect it well above the usual, and do not let it go further.";
 
@@ -1196,11 +1196,11 @@ public static class EquipmentService
             ? advice.Due
                 ? $"Unit {truck.Ref} is due {due.Count} service checkpoint(s): " +
                   string.Join(", ", due.Select(d => d.Name.ToLowerInvariant())) + "." +
-                  (over > 0 ? $" Worst is {over:N0} mi over." : "")
-                : $"Unit {truck.Ref} is due its {next!.Name.ToLowerInvariant()} in {advice.MilesRemaining:N0} mi."
+                  (over > 0 ? $" Worst is {Units.Distance(over)} over." : "")
+                : $"Unit {truck.Ref} is due its {next!.Name.ToLowerInvariant()} in {Units.Distance(advice.MilesRemaining)}."
             : advice.Due
-                ? $"Unit {truck.Ref} is {over:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM."
-                : $"Unit {truck.Ref} is due a PM in {advice.MilesRemaining:N0} mi.";
+                ? $"Unit {truck.Ref} is {Units.Distance(over)} past its {truck.ServiceIntervalMiles:N0}-mile PM."
+                : $"Unit {truck.Ref} is due a PM in {Units.Distance(advice.MilesRemaining)}.";
         if (shops.Count > 0)
             advice.Message += $" Our own shops: {string.Join("; ", advice.ShopYards)}.";
         else

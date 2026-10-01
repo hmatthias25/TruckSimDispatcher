@@ -122,7 +122,7 @@ public static class Repositioning
 
         if (delta > ImplausibleMiles)
         {
-            leg.Warning = $"That is {delta:N0} mi between {previous.Number} closing and this dispatch. Too far to " +
+            leg.Warning = $"That is {Units.Distance(delta)} between {previous.Number} closing and this dispatch. Too far to " +
                           "be repositioning — if you really ran that empty it wants dispatching as an empty move. " +
                           "Nothing paid on it here.";
             return leg;

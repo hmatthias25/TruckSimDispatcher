@@ -145,7 +145,7 @@ public static class WearReview
 
         if (a.Heavy)
             a.Concern = $"{a.WearPoints:0.#} points of damage on the tractor that nothing explains, over " +
-                        $"{a.MilesDriven:N0} miles — {a.WearPer1000:0.0}% per thousand against the " +
+                        $"{Units.DistanceWords(a.MilesDriven)} — {a.WearPer1000:0.0}% per thousand against the " +
                         $"{HeavyPer1000:0.0} we expect. Nothing was reported, so this is wear. " +
                         "Ease up on the equipment: docks, curbs and trailers do not have to cost this much.";
 

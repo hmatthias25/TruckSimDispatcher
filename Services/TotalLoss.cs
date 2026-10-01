@@ -58,7 +58,7 @@ public static class TotalLoss
         var line = Shop.TotalLossPctFor(s, truck);
 
         steps.Add($"Unit {truck.Ref} is at {truck.DamagePct:0.#}%, past the {line:0.#}% write-off line for a " +
-                  $"{truck.Year} {truck.Make} {truck.Model} with {truck.ServiceMiles:N0} mi on it. That tractor is " +
+                  $"{truck.Year} {truck.Make} {truck.Model} with {Units.Distance(truck.ServiceMiles)} on it. That tractor is " +
                   "finished — it does not go through a shop.");
 
         if (openTrip != null)

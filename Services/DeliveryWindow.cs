@@ -464,12 +464,12 @@ public static class DeliveryWindow
         if (needed <= 0) return null;
 
         if (deadlineHours < needed)
-            return $"{Hhmm.Of(deadlineHours)} to deliver, but {totalMiles:N0} mi needs about {Hhmm.Of(needed)} " +
+            return $"{Hhmm.Of(deadlineHours)} to deliver, but {Units.Distance(totalMiles)} needs about {Hhmm.Of(needed)} " +
                    "with the dock at both ends. Check the window — as read, this load cannot be run.";
 
         // Ten times what the run needs, and at least half a day clear of it, before we say anything.
         if (deadlineHours > needed * 10 && deadlineHours - needed > 12)
-            return $"{Hhmm.Of(deadlineHours)} to deliver on a {totalMiles:N0} mi run that needs about " +
+            return $"{Hhmm.Of(deadlineHours)} to deliver on a {Units.Distance(totalMiles)} run that needs about " +
                    $"{Hhmm.Of(needed)}. That may well be what the board said, but check it — a window read " +
                    "wrong becomes the appointment you are judged against.";
 

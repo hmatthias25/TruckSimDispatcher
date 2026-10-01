@@ -191,7 +191,7 @@ public static class Fuel
 
         var over = (there - here) / Math.Max(here, 0.01) * 100;
         return $"Diesel in {to} runs about {over:0}% over what you pay in {from} " +
-               $"(${ExpectedPrice(s, to):N2} against ${ExpectedPrice(s, from):N2} a gallon, {source}). " +
+               $"({Units.Money(ExpectedPrice(s, to))} against {Units.Money(ExpectedPrice(s, from))} a gallon, {source}). " +
                "Fill before you cross if the tanks will take it.";
     }
 
@@ -270,10 +270,10 @@ public static class Fuel
             note = here == null
                 ? "Report in and I will tell you what fuel costs where you are standing."
                 : here.Index >= ExpensiveStateIndex
-                    ? $"You are in {here.State}, which is dear — ${here.PerGallon:N2} a gallon " +
+                    ? $"You are in {here.State}, which is dear — {Units.Money(here.PerGallon)} a gallon " +
                       $"({here.Source}). Buy what you need to get out, not a full pair of tanks."
                     : $"{here.State} is {(here.Index <= 0.95 ? "cheap" : "about average")} at " +
-                      $"${here.PerGallon:N2} a gallon ({here.Source}). " +
+                      $"{Units.Money(here.PerGallon)} a gallon ({here.Source}). " +
                       (here.Index <= 0.95 ? "Worth filling before you leave." : ""),
             learning = $"A state switches from the typical figure to your own once you have logged " +
                        $"{StopsToLearnAState} stops there, and only counts receipts from the last " +
@@ -342,12 +342,12 @@ public static class Fuel
             var share = Math.Clamp(over / FullEfficiencyAt, 0, 1);
             var loaded = trips.Sum(t => t.DispatchedMiles) * Math.Clamp(s.Settings.PayMileMultiplier, 0.1, 20.0);
             r.EfficiencyBonus = Math.Round((decimal)loaded * cfg.FuelEfficiencyBonusCpm * (decimal)share, 2);
-            r.Lines.Add($"Fuel economy: {r.Mpg:0.00} mpg against {r.RatedMpg:0.0} rated — " +
-                        $"{over * 100:0.#}% better. Bonus ${r.EfficiencyBonus:N2}.");
+            r.Lines.Add($"Fuel economy: {Units.Economy(r.Mpg, "0.00")} against {r.RatedMpg:0.0} rated — " +
+                        $"{over * 100:0.#}% better. Bonus {Units.Money(r.EfficiencyBonus)}.");
         }
         else
         {
-            r.Lines.Add($"Fuel economy: {r.Mpg:0.00} mpg against {r.RatedMpg:0.0} rated. " +
+            r.Lines.Add($"Fuel economy: {Units.Economy(r.Mpg, "0.00")} against {r.RatedMpg:0.0} rated. " +
                         "No economy bonus this period.");
         }
 
@@ -378,8 +378,8 @@ public static class Fuel
                                     .GroupBy(f => f.State.ToUpperInvariant()))
             {
                 var overpaid = g.Sum(x => (x.PricePerGal - best) * (decimal)x.Gallons);
-                stranded.Add($"{g.Sum(x => x.Gallons):N0} gal bought in {g.Key} on {trip.Number} at over " +
-                             $"the odds — about ${overpaid:N0} more than the same fill earlier on that run. " +
+                stranded.Add($"{Units.Volume(g.Sum(x => x.Gallons), "N0")} bought in {g.Key} on {trip.Number} at over " +
+                             $"the odds — about {Units.Money0(overpaid)} more than the same fill earlier on that run. " +
                              "Not charged for; worth planning around.");
             }
         }
@@ -387,8 +387,8 @@ public static class Fuel
         if (r.Saved > 0 && cfg.FuelSavingShare > 0)
         {
             r.BuyingBonus = Math.Round(r.Saved * cfg.FuelSavingShare, 2);
-            r.Lines.Add($"Fuel buying: ${r.Saved:N2} saved against the cheapest state each run passed " +
-                        $"through, across {r.Gallons:N0} gal. Your share ${r.BuyingBonus:N2}.");
+            r.Lines.Add($"Fuel buying: {Units.Money(r.Saved)} saved against the cheapest state each run passed " +
+                        $"through, across {Units.Volume(r.Gallons, "N0")}. Your share {Units.Money(r.BuyingBonus)}.");
         }
 
         r.Overpaid = stranded;

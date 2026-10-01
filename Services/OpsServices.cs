@@ -176,13 +176,13 @@ public static class MaintenanceService
                             + (due.Count > 3 ? $", and {due.Count - 3} more" : "");
                 alerts.Add(
                     $"Unit {t.Ref} is due {due.Count} service checkpoint(s) — {named}." +
-                    (over > 0 ? $" Worst is {over:N0} mi over." : "") + Yard(t));
+                    (over > 0 ? $" Worst is {Units.Distance(over)} over." : "") + Yard(t));
                 continue;
             }
 
             var since = t.ServiceMiles - t.LastServiceMiles;
             if (since < t.ServiceIntervalMiles) continue;
-            alerts.Add($"Unit {t.Ref} PM overdue by {since - t.ServiceIntervalMiles:N0} mi." + Yard(t));
+            alerts.Add($"Unit {t.Ref} PM overdue by {Units.Distance(since - t.ServiceIntervalMiles)}." + Yard(t));
         }
         foreach (var t in s.Trailers.Where(t => Tracked(t.Unit, t.InGameGarage)))
         {
@@ -1021,8 +1021,8 @@ public static class CareerService
             if (review.NextRankMet)
             {
                 review.Findings.Add(IsChoice(next.Key)
-                    ? $"{next.Title} is on the table: ${next.LoadedCpm:0.000}/loaded mi. {next.Note} That one is yours to accept or leave."
-                    : $"Earned {next.Title}: ${next.LoadedCpm:0.000}/loaded mi. {next.Note} It goes through at your next report-in.");
+                    ? $"{next.Title} is on the table: {Units.PerDist(next.LoadedCpm, "0.000")}/loaded {Units.DistUnit}. {next.Note} That one is yours to accept or leave."
+                    : $"Earned {next.Title}: {Units.PerDist(next.LoadedCpm, "0.000")}/loaded {Units.DistUnit}. {next.Note} It goes through at your next report-in.");
                 if (IsChoice(next.Key)) review.AvailableActions.Add("accept-offer");
             }
             else if (!s.Driver.Probation.Active)
@@ -1074,7 +1074,7 @@ public static class CareerService
         s.Driver.Probation.ClearedGameDate = s.Status.GameTime;
         s.Driver.Status = "Active";
         Promote(s, "company", note, force: true);
-        return $"Probation cleared. {s.Driver.Name} moves to {s.Driver.RankTitle} at ${s.Driver.Pay.LoadedCpm:0.000}/loaded mile.";
+        return $"Probation cleared. {s.Driver.Name} moves to {s.Driver.RankTitle} at {Units.Money(s.Driver.Pay.LoadedCpm, "0.000")}/loaded mile.";
     }
 
     public static string Promote(AppState s, string? targetRank, string note, bool force)
@@ -1146,7 +1146,7 @@ public static class CareerService
         foreach (var line in briefing.Gained)
             s.Events.Insert(0, new LogEvent { Channel = "career", GameTime = s.Status.GameTime, Message = line });
 
-        return $"{s.Driver.Name} promoted to {target.Title}: ${target.LoadedCpm:0.000}/loaded mi, ${target.DeadheadCpm:0.000}/empty mi. {target.Note}";
+        return $"{s.Driver.Name} promoted to {target.Title}: {Units.PerDist(target.LoadedCpm, "0.000")}/loaded {Units.DistUnit}, {Units.Money(target.DeadheadCpm, "0.000")}/empty mi. {target.Note}";
     }
 
     // ---------------------------------------------------------------- terminal transfers
@@ -1515,7 +1515,7 @@ public static class CareerService
             Headline = $"{review.CeilingTitle} is the top of the ladder at {employer}.",
         };
 
-        n.Detail.Add($"You are on ${s.Driver.Pay.LoadedCpm:0.000} a loaded mile and ${s.Driver.Pay.DeadheadCpm:0.000} " +
+        n.Detail.Add($"You are on {Units.Money(s.Driver.Pay.LoadedCpm, "0.000")} a loaded mile and {Units.Money(s.Driver.Pay.DeadheadCpm, "0.000")} " +
                      "empty, which is as far as their scale goes. More loads will not move it.");
         n.Detail.Add("Higher rungs exist — they are just not on offer here. Carriers set their own scale, " +
                      "and a better one pays more at every rank, not only at the top.");
@@ -1558,9 +1558,9 @@ public static class CareerService
 
         var up = s.Driver.Pay.LoadedCpm - prevLoaded;
         n.Detail.Add(up > 0
-            ? $"Loaded rate goes from ${prevLoaded:0.000} to ${s.Driver.Pay.LoadedCpm:0.000} a mile — up {up:0.000}. " +
-              $"Empty from ${prevDeadhead:0.000} to ${s.Driver.Pay.DeadheadCpm:0.000}."
-            : $"${s.Driver.Pay.LoadedCpm:0.000}/loaded mile, ${s.Driver.Pay.DeadheadCpm:0.000}/empty.");
+            ? $"Loaded rate goes from {Units.Money(prevLoaded, "0.000")} to {Units.Money(s.Driver.Pay.LoadedCpm, "0.000")} a mile — up {up:0.000}. " +
+              $"Empty from {Units.Money(prevDeadhead, "0.000")} to {Units.Money(s.Driver.Pay.DeadheadCpm, "0.000")}."
+            : $"{Units.Money(s.Driver.Pay.LoadedCpm, "0.000")}/loaded mile, {Units.Money(s.Driver.Pay.DeadheadCpm, "0.000")}/empty.");
 
         n.Detail.Add("It applies from your next settlement — work already paid stays paid at the old rate.");
 

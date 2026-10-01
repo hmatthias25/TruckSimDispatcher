@@ -86,22 +86,22 @@ public static class PayEngine
         var multNote = Math.Abs(mult - 1.0) > 0.001 ? $" (×{mult:0.##} pay-mile factor)" : "";
 
         if (b.LinehaulPay > 0)
-            b.Lines.Add($"Loaded miles {loadedMiles:N0}{multNote} @ ${p.LoadedCpm:0.000}/mi = ${b.LinehaulPay:N2}");
+            b.Lines.Add($"Loaded miles {loadedMiles:N0}{multNote} @ {Units.PerDistance(p.LoadedCpm, "0.000")} = {Units.Money(b.LinehaulPay)}");
         if (b.DeadheadPay > 0)
-            b.Lines.Add($"Empty miles {dhMiles:N0}{multNote} @ ${p.DeadheadCpm:0.000}/mi = ${b.DeadheadPay:N2}");
+            b.Lines.Add($"Empty miles {dhMiles:N0}{multNote} @ {Units.PerDistance(p.DeadheadCpm, "0.000")} = {Units.Money(b.DeadheadPay)}");
         if (b.DivisionPremium > 0)
-            b.Lines.Add($"{trip.Division}/endorsement premium @ ${premium:0.000}/mi = ${b.DivisionPremium:N2}");
-        if (b.StopPay > 0) b.Lines.Add($"{trip.ExtraStops} extra stop(s) @ ${p.ExtraStopPay:N2} = ${b.StopPay:N2}");
-        if (b.TarpPay > 0) b.Lines.Add($"{trip.TarpsUsed} tarp(s) @ ${p.TarpPay:N2} = ${b.TarpPay:N2}");
+            b.Lines.Add($"{trip.Division}/endorsement premium @ {Units.PerDistance(premium, "0.000")} = {Units.Money(b.DivisionPremium)}");
+        if (b.StopPay > 0) b.Lines.Add($"{trip.ExtraStops} extra stop(s) @ {Units.Money(p.ExtraStopPay)} = {Units.Money(b.StopPay)}");
+        if (b.TarpPay > 0) b.Lines.Add($"{trip.TarpsUsed} tarp(s) @ {Units.Money(p.TarpPay)} = {Units.Money(b.TarpPay)}");
         if (b.DetentionPay > 0)
             // Two windows now, so naming only the work one on the stub would misdescribe a figure that
             // came mostly out of the other. The trip audit has the breakdown; this says which two.
             b.Lines.Add($"Detention {Hhmm.Of(billableDetention)} billable, beyond {Hhmm.Of(p.DetentionFreeHours)} free " +
                         $"on the work and {Hhmm.Of(p.QueueFreeHours)} on waiting, per stop " +
-                        $"@ ${p.DetentionPerHour:N2}/h = ${b.DetentionPay:N2}");
-        if (b.LayoverPay > 0) b.Lines.Add($"Layover {trip.LayoverDays:0.#} day(s) @ ${p.LayoverPerDay:N2} = ${b.LayoverPay:N2}");
-        if (b.BreakdownPay > 0) b.Lines.Add($"Breakdown {trip.BreakdownDays:0.#} day(s) @ ${p.BreakdownPerDay:N2} = ${b.BreakdownPay:N2}");
-        if (b.Chargebacks > 0) b.Lines.Add($"Chargeback: {b.ChargebackMemo} = -${b.Chargebacks:N2}");
+                        $"@ {Units.Money(p.DetentionPerHour)}/h = {Units.Money(b.DetentionPay)}");
+        if (b.LayoverPay > 0) b.Lines.Add($"Layover {trip.LayoverDays:0.#} day(s) @ {Units.Money(p.LayoverPerDay)} = {Units.Money(b.LayoverPay)}");
+        if (b.BreakdownPay > 0) b.Lines.Add($"Breakdown {trip.BreakdownDays:0.#} day(s) @ {Units.Money(p.BreakdownPerDay)} = {Units.Money(b.BreakdownPay)}");
+        if (b.Chargebacks > 0) b.Lines.Add($"Chargeback: {b.ChargebackMemo} = -{Units.Money(b.Chargebacks)}");
 
         return b;
     }
@@ -153,7 +153,7 @@ public static class PayEngine
         if (freight.Count > 0 && onTime == freight.Count && p.OnTimeBonusCpm > 0)
         {
             st.OnTimeBonus = Math.Round((decimal)(st.LoadedMiles * Math.Clamp(s.Settings.PayMileMultiplier, 0.1, 20.0)) * p.OnTimeBonusCpm, 2);
-            st.Lines.Add($"On-time service bonus: {freight.Count}/{freight.Count} loads @ ${p.OnTimeBonusCpm:0.000}/loaded mi = ${st.OnTimeBonus:N2}");
+            st.Lines.Add($"On-time service bonus: {freight.Count}/{freight.Count} loads @ {Units.PerDist(p.OnTimeBonusCpm, "0.000")}/loaded {Units.DistUnit} = {Units.Money(st.OnTimeBonus)}");
         }
         else if (freight.Count > 0)
         {
@@ -184,9 +184,9 @@ public static class PayEngine
         {
             st.SafetyBonus = Math.Round(p.SafetyBonusPerSettlement * (decimal)share, 2);
             st.Lines.Add(share >= 0.999
-                ? $"Safety bonus (no driver-fault incidents): ${st.SafetyBonus:N2}"
+                ? $"Safety bonus (no driver-fault incidents): {Units.Money(st.SafetyBonus)}"
                 : $"Safety bonus pro-rated: {periodDays:0.#} of {fullPeriod} day(s) run clean — " +
-                  $"{share * 100:0}% of ${p.SafetyBonusPerSettlement:N2} = ${st.SafetyBonus:N2}. " +
+                  $"{share * 100:0}% of {Units.Money(p.SafetyBonusPerSettlement)} = {Units.Money(st.SafetyBonus)}. " +
                   "Settle a full period to earn all of it.");
         }
 
@@ -225,14 +225,14 @@ public static class PayEngine
         {
             st.GuaranteeMakeup = Math.Round(p.WeeklyGuarantee - st.Gross, 2);
             st.Gross = p.WeeklyGuarantee;
-            st.Lines.Add($"Weekly guarantee make-up to ${p.WeeklyGuarantee:N2}: ${st.GuaranteeMakeup:N2}");
+            st.Lines.Add($"Weekly guarantee make-up to {Units.Money(p.WeeklyGuarantee)}: {Units.Money(st.GuaranteeMakeup)}");
         }
 
-        st.Lines.Insert(0, $"Loaded miles {st.LoadedMiles:N0} — ${st.LinehaulPay:N2}");
-        if (st.DeadheadPay > 0) st.Lines.Insert(1, $"Empty miles {st.DeadheadMiles:N0} — ${st.DeadheadPay:N2}");
-        if (st.DivisionPremium > 0) st.Lines.Add($"Division / endorsement premium — ${st.DivisionPremium:N2}");
-        if (st.Accessorials > 0) st.Lines.Add($"Accessorials (stops, tarps, detention, layover, breakdown) — ${st.Accessorials:N2}");
-        if (st.Chargebacks > 0) st.Lines.Add($"Chargebacks — -${st.Chargebacks:N2}");
+        st.Lines.Insert(0, $"Loaded miles {st.LoadedMiles:N0} — {Units.Money(st.LinehaulPay)}");
+        if (st.DeadheadPay > 0) st.Lines.Insert(1, $"Empty miles {st.DeadheadMiles:N0} — {Units.Money(st.DeadheadPay)}");
+        if (st.DivisionPremium > 0) st.Lines.Add($"Division / endorsement premium — {Units.Money(st.DivisionPremium)}");
+        if (st.Accessorials > 0) st.Lines.Add($"Accessorials (stops, tarps, detention, layover, breakdown) — {Units.Money(st.Accessorials)}");
+        if (st.Chargebacks > 0) st.Lines.Add($"Chargebacks — -{Units.Money(st.Chargebacks)}");
 
         foreach (var t in unsettled) t.SettlementNumber = st.Number;
 

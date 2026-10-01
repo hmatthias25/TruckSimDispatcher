@@ -179,7 +179,7 @@ public static class ProbationPlanner
 
         var miles = runs.Sum(t => t.ActualMiles > 0 ? t.ActualMiles : t.DispatchedMiles);
         if (miles < plan.RequiredMiles)
-            gaps.Add($"{miles:N0} mi run against {plan.RequiredMiles:N0}.");
+            gaps.Add($"{Units.Distance(miles)} run against {plan.RequiredMiles:N0}.");
 
         // Weeks with a delivery in them. Parking up for two months and running the totals in a fortnight
         // passes on loads and miles and should not pass here.

@@ -41,6 +41,8 @@ public sealed class GameProfile
     /// <summary>Miles, gallons and pounds ("US"), or metric. Only "US" is implemented.</summary>
     public string Units { get; }
     public string Currency { get; }
+    /// <summary>What goes in front of an amount: "$" for USD.</summary>
+    public string CurrencySymbol => Currency switch { "EUR" => "€", "GBP" => "£", "CHF" => "CHF ", _ => "$" };
     /// <summary>How pay is taxed. "US" is federal brackets, FICA, state rates and W-2s.</summary>
     public string TaxModel { get; }
 

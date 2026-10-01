@@ -91,7 +91,7 @@ public static class CompanyHealth
                : v.NetPerReport < ThrivingPerReport / 3 ? "Tight"
                : "Steady";
 
-        var per = $"${v.NetPerReport:N0} a report across {reports.Count}";
+        var per = $"{Units.Money0(v.NetPerReport)} a report across {reports.Count}";
         v.Headline = v.Band switch
         {
             "Thriving" => $"The company is making money — {per}.",
@@ -100,7 +100,7 @@ public static class CompanyHealth
             _ => $"The company is losing money — {per}.",
         };
 
-        v.Evidence.Add($"Net {(v.NetOverWindow < 0 ? "-" : "")}${Math.Abs(v.NetOverWindow):N0} over the " +
+        v.Evidence.Add($"Net {(v.NetOverWindow < 0 ? "-" : "")}{Units.Money0(Math.Abs(v.NetOverWindow))} over the " +
                        $"last {reports.Count} report(s), after wages and repairs.");
         v.Evidence.Add(v.Improving
             ? "And the trend is upward — the recent reports are better than the older ones."

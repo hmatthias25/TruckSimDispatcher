@@ -344,8 +344,8 @@ public static class TripService
             {
                 var diff = weightLbs.Value - booked;
                 trip.WeightVarianceNote =
-                    $"scaled {Math.Abs(diff):N0} lb {(diff > 0 ? "heavier" : "lighter")} than the {booked:N0} lb on the board";
-                notes.Add($"Weight came in at {weightLbs.Value:N0} lb against {booked:N0} lb booked — {trip.WeightVarianceNote}. " +
+                    $"scaled {Units.Weight(Math.Abs(diff))} {(diff > 0 ? "heavier" : "lighter")} than the {Units.Weight(booked)} on the board";
+                notes.Add($"Weight came in at {Units.Weight(weightLbs.Value)} against {Units.Weight(booked)} booked — {trip.WeightVarianceNote}. " +
                           (diff > 0
                               ? "Heavier freight costs fuel and hill time; it is on the record."
                               : "Lighter than billed. Worth knowing if it repeats on this lane."));
@@ -353,7 +353,7 @@ public static class TripService
             else
             {
                 trip.WeightVarianceNote = "";
-                notes.Add($"Weight confirmed at {weightLbs.Value:N0} lb.");
+                notes.Add($"Weight confirmed at {Units.Weight(weightLbs.Value)}.");
             }
         }
 
@@ -449,7 +449,7 @@ public static class TripService
 
         if (ran < 0)
         {
-            notes.Add($"That reading is {Math.Abs(ran):N0} mi BELOW the {from:N0} you closed out on. " +
+            notes.Add($"That reading is {Units.Distance(Math.Abs(ran))} BELOW the {from:N0} you closed out on. " +
                       "Keeping the quoted deadhead and leaving it alone — check the number.");
             return notes;
         }
@@ -457,21 +457,21 @@ public static class TripService
         // Miles run before the load was even booked. Legitimate — repositioning, a run at a truck stop —
         // but they should be on an empty move rather than folded into a load's deadhead unnoticed.
         if (bookedAt > 0 && bookedAt - from >= 25)
-            notes.Add($"{bookedAt - from:N0} mi of that was run before this load was booked. It is being paid as " +
+            notes.Add($"{Units.Distance(bookedAt - from)} of that was run before this load was booked. It is being paid as " +
                       "deadhead, but if it was a repositioning run it belongs on an empty move of its own — " +
                       "that is what keeps the record straight about where the truck actually went.");
 
         if (ran > ImplausibleDeadheadMiles)
         {
-            notes.Add($"That is {ran:N0} mi between closing out and loading, which is too far to be a run " +
-                      $"to the shipper. Keeping the {quoted:N0} mi quoted — if you really ran that empty it wants " +
+            notes.Add($"That is {Units.Distance(ran)} between closing out and loading, which is too far to be a run " +
+                      $"to the shipper. Keeping the {Units.Distance(quoted)} quoted — if you really ran that empty it wants " +
                       "dispatching as an empty move.");
             return notes;
         }
 
         if (ran < 0.5 && quoted >= 1)
         {
-            notes.Add($"The odometer has not moved since you closed out, but the listing quoted {quoted:N0} mi " +
+            notes.Add($"The odometer has not moved since you closed out, but the listing quoted {Units.Distance(quoted)} " +
                       "of deadhead to the shipper. I am keeping the quoted figure rather than paying you nothing — " +
                       "report the reading from the shipper if you want it exact.");
             return notes;
@@ -481,8 +481,8 @@ public static class TripService
         trip.DeadheadMeasured = true;
 
         if (quoted >= 1 && Math.Abs(ran - quoted) >= 5)
-            notes.Add($"Empty miles measured at {trip.DeadheadMiles:N0} mi from your own readings " +
-                      $"({from:N0} → {loadedOdometer:N0}), against {quoted:N0} mi on the listing. " +
+            notes.Add($"Empty miles measured at {Units.Distance(trip.DeadheadMiles)} from your own readings " +
+                      $"({from:N0} → {loadedOdometer:N0}), against {Units.Distance(quoted)} on the listing. " +
                       "Going with yours — you drove it, the listing guessed it.");
         else
             notes.Add($"Empty miles since you closed out: {trip.DeadheadMiles:N0}, measured " +
@@ -708,7 +708,7 @@ public static class TripService
         {
             var variance = trip.ActualMiles - trip.DispatchedMiles;
             var pct = variance / trip.DispatchedMiles * 100;
-            audit.MileageFindings.Add($"Dispatched {trip.DispatchedMiles:N0} mi, ran {trip.ActualMiles:N0} mi ({variance:+0;-0;0} mi, {pct:+0.#;-0.#;0}%).");
+            audit.MileageFindings.Add($"Dispatched {Units.Distance(trip.DispatchedMiles)}, ran {Units.Distance(trip.ActualMiles)} ({variance:+0;-0;0} mi, {pct:+0.#;-0.#;0}%).");
             if (pct > 12)
                 audit.MileageFindings.Add("Out-of-route miles are high. Either the routing was wrong or you took a detour — either way it costs fuel and hours.");
         }
@@ -732,7 +732,7 @@ public static class TripService
             trip.Pay.Chargebacks = req.Chargeback;
             trip.Pay.ChargebackMemo = req.ChargebackMemo;
             trip.Pay.Total = Math.Round(trip.Pay.Total - req.Chargeback, 2);
-            trip.Pay.Lines.Add($"Chargeback: {req.ChargebackMemo} = -${req.Chargeback:N2}");
+            trip.Pay.Lines.Add($"Chargeback: {req.ChargebackMemo} = -{Units.Money(req.Chargeback)}");
         }
         audit.DriverPay = trip.Pay.Total;
         s.Driver.UnsettledPay = Math.Round(s.Driver.UnsettledPay + trip.Pay.Total, 2);
@@ -746,11 +746,11 @@ public static class TripService
                     + (trip.Kind == "Freight" ? s.Settings.OverheadPerLoad : 0)
                     + (trip.FaultAttribution == "Driver" && trip.Pay.Chargebacks >= trip.Fines ? 0 : trip.Fines);
         audit.CompanyMargin = Math.Round(trip.CompanyRevenue - costs - trip.Pay.Total, 2);
-        audit.MoneyFindings.Add($"Revenue ${trip.CompanyRevenue:N2} (ATS paid ${trip.GameRevenue:N2}) less ${costs:N2} operating and ${trip.Pay.Total:N2} driver pay = ${audit.CompanyMargin:N2} contribution.");
+        audit.MoneyFindings.Add($"Revenue {Units.Money(trip.CompanyRevenue)} (ATS paid {Units.Money(trip.GameRevenue)}) less {Units.Money(costs)} operating and {Units.Money(trip.Pay.Total)} driver pay = {Units.Money(audit.CompanyMargin)} contribution.");
         if (trip.ActualMiles + trip.DeadheadMiles > 0)
         {
             var allIn = trip.CompanyRevenue / (decimal)(trip.ActualMiles + trip.DeadheadMiles);
-            audit.MoneyFindings.Add($"${allIn:0.00}/mi all-in on {trip.ActualMiles + trip.DeadheadMiles:N0} total miles.");
+            audit.MoneyFindings.Add($"{Units.PerDistance(allIn, "0.00")} all-in on {trip.ActualMiles + trip.DeadheadMiles:N0} total miles.");
 
             // Through the cost model, like dispatch. This read Scoring.FloorAllInRpm raw — the manual
             // override, which nobody has switched on — so the audit judged a delivered load against
@@ -758,12 +758,12 @@ public static class TripService
             // the driver hears about afterwards was the wrong one.
             var (floor, _, _) = CostModel.Thresholds(s, trip.ActualMiles);
             if (allIn < floor)
-                audit.MoneyFindings.Add($"That is under our ${floor:0.00} floor. My call to book it, not yours.");
+                audit.MoneyFindings.Add($"That is under our {Units.Money(floor, "0.00")} floor. My call to book it, not yours.");
         }
         if (trip.FuelGallons > 0 && trip.ActualMiles + trip.DeadheadMiles > 0)
         {
             var mpg = (trip.ActualMiles + trip.DeadheadMiles) / trip.FuelGallons;
-            audit.MoneyFindings.Add($"Fuel economy {mpg:0.0} mpg over the trip.");
+            audit.MoneyFindings.Add($"Fuel economy {Units.Economy(mpg, "0.0")} over the trip.");
         }
         if (audit.CompanyMargin < 0)
             audit.MoneyFindings.Add("Negative contribution. The company lost money on this load.");
@@ -939,17 +939,17 @@ public static class TripService
             {
                 audit.GotYouHome = true;
                 audit.HomeTimeNote =
-                    $"That load got you home. You are {homeNow.MilesFromHome:N0} mi from {homeNow.TerminalLabel} " +
+                    $"That load got you home. You are {Units.Distance(homeNow.MilesFromHome)} from {homeNow.TerminalLabel} " +
                     $"and {homeNow.DaysOut:0.#} days out on a {homeNow.IntervalDays}-day arrangement. " +
                     "Run in to the yard and report at the terminal to take it.";
             }
             else if (homeNow.Overdue)
                 audit.HomeTimeNote =
                     $"Home time is overdue — {homeNow.DaysOut:0.#} days out. You are still " +
-                    $"{homeNow.MilesFromHome:N0} mi from {homeNow.TerminalLabel}, so the next load is going that way.";
+                    $"{Units.Distance(homeNow.MilesFromHome)} from {homeNow.TerminalLabel}, so the next load is going that way.";
             else if (homeNow.DueSoon)
                 audit.HomeTimeNote =
-                    $"Home time is due in {homeNow.DaysUntilDue:0.#} days and you are {homeNow.MilesFromHome:N0} mi " +
+                    $"Home time is due in {homeNow.DaysUntilDue:0.#} days and you are {Units.Distance(homeNow.MilesFromHome)} " +
                     $"from {homeNow.TerminalLabel}. The next load will be the one that gets you back, which is why " +
                     "I may pass over something that pays better.";
             else
@@ -1071,7 +1071,7 @@ public static class TripService
             ? $"{trip.Number} closed — {trip.Cargo.ToLowerInvariant()} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}."
             : late
                 ? $"{trip.Number} delivered LATE — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}. Fault: {Humanize(fault)}."
-                : $"{trip.Number} delivered on time — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}. Driver pay ${trip.Pay.Total:N2}.";
+                : $"{trip.Number} delivered on time — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}. Driver pay {Units.Money(trip.Pay.Total)}.";
 
         // ---- what happens next
         audit.Directives.Add("Show me the jobs available here at the receiver before I order you anywhere empty.");
@@ -1605,25 +1605,25 @@ public static class TripService
                 m.Warnings.Add($"The odometer has not moved off {start:N0}. Either it was not updated after the run, " +
                                "or this reading came from before you rolled.");
             else if (planned > 0 && delta > Math.Max(planned * 2.5, planned + 250))
-                m.Warnings.Add($"The odometer says {delta:N0} mi against a routing of {planned:N0} mi. That is far more than the run — " +
+                m.Warnings.Add($"The odometer says {Units.Distance(delta)} against a routing of {Units.Distance(planned)}. That is far more than the run — " +
                                "a stray digit puts an odometer out by a factor of ten.");
             else if (planned > 0 && delta < planned * 0.5 && planned - delta > 50)
-                m.Warnings.Add($"The odometer says {delta:N0} mi against a routing of {planned:N0} mi. That is well short of the run — " +
+                m.Warnings.Add($"The odometer says {Units.Distance(delta)} against a routing of {Units.Distance(planned)}. That is well short of the run — " +
                                "check the reading before I post it.");
             else
             {
                 m.Derived = true;
                 m.LoadedMiles = Math.Round(Math.Max(0, delta - deadhead), 0);
                 m.Explain.Add(deadhead > 0
-                    ? $"Miles from the odometer: {start:N0} → {endOdometer:N0} = {delta:N0} mi, less {deadhead:N0} mi deadhead = {m.LoadedMiles:N0} loaded."
-                    : $"Miles from the odometer: {start:N0} → {endOdometer:N0} = {delta:N0} mi.");
+                    ? $"Miles from the odometer: {start:N0} → {endOdometer:N0} = {Units.Distance(delta)}, less {Units.Distance(deadhead)} deadhead = {m.LoadedMiles:N0} loaded."
+                    : $"Miles from the odometer: {start:N0} → {endOdometer:N0} = {Units.Distance(delta)}.");
             }
         }
 
         if (typedMiles > 0)
         {
             if (m.Derived && Math.Abs(typedMiles - m.LoadedMiles) > Math.Max(20, m.LoadedMiles * 0.05))
-                m.Explain.Add($"You overrode the odometer with {typedMiles:N0} mi; it works out to {m.LoadedMiles:N0}. Using yours.");
+                m.Explain.Add($"You overrode the odometer with {Units.Distance(typedMiles)}; it works out to {m.LoadedMiles:N0}. Using yours.");
             m.LoadedMiles = typedMiles;
             m.Derived = false;
         }
@@ -1631,7 +1631,7 @@ public static class TripService
         {
             m.LoadedMiles = trip.DispatchedMiles;
             if (endOdometer > 0 || start > 0)
-                m.Explain.Add($"Falling back to the dispatched {trip.DispatchedMiles:N0} mi — the odometer could not settle it and nothing was typed.");
+                m.Explain.Add($"Falling back to the dispatched {Units.Distance(trip.DispatchedMiles)} — the odometer could not settle it and nothing was typed.");
         }
 
         return m;
@@ -1686,14 +1686,14 @@ public static class TripService
         {
             var blended = trip.FuelGallons > 0 ? trip.FuelCost / (decimal)trip.FuelGallons : 0;
             audit.MoneyFindings.Add(
-                $"{trip.FuelStops.Count} fuel stops: {trip.FuelGallons:N1} gal for ${trip.FuelCost:N2}, blended ${blended:0.000}/gal.");
+                $"{trip.FuelStops.Count} fuel stops: {Units.Volume(trip.FuelGallons, "N1")} for {Units.Money(trip.FuelCost)}, blended {Units.FuelPrice(blended, "0.000")}.");
 
             var dear = trip.FuelStops.Where(f => f.PricePerGal > 0).OrderByDescending(f => f.PricePerGal).FirstOrDefault();
             var cheap = trip.FuelStops.Where(f => f.PricePerGal > 0).OrderBy(f => f.PricePerGal).FirstOrDefault();
             if (dear != null && cheap != null && dear != cheap && dear.PricePerGal - cheap.PricePerGal >= 0.25m)
                 audit.MoneyFindings.Add(
-                    $"Spread of ${dear.PricePerGal - cheap.PricePerGal:0.00}/gal between {Where(cheap)} (${cheap.PricePerGal:0.000}) and " +
-                    $"{Where(dear)} (${dear.PricePerGal:0.000}). Worth planning fuel stops around on this lane.");
+                    $"Spread of {Units.FuelPrice(dear.PricePerGal - cheap.PricePerGal, "0.00")} between {Where(cheap)} ({Units.Money(cheap.PricePerGal, "0.000")}) and " +
+                    $"{Where(dear)} ({Units.Money(dear.PricePerGal, "0.000")}). Worth planning fuel stops around on this lane.");
         }
     }
 
@@ -1953,7 +1953,7 @@ public static class TripService
                     audit.EquipmentFindings.Add(
                         $"Unit {truck.Ref}: the game reads {trip.EndOdometer:N0} against {truck.AtsOdometer:N0} last " +
                         "time. Taking that as a replacement unit and starting the reading again — our own odometer " +
-                        $"carries on at {truck.ServiceMiles:N0} mi.");
+                        $"carries on at {Units.Distance(truck.ServiceMiles)}.");
                 }
                 truck.AtsOdometer = trip.EndOdometer;
             }
@@ -1966,7 +1966,7 @@ public static class TripService
             truck.DamagePct = trip.TruckDamageAfter;
             s.Status.TruckDamagePct = trip.TruckDamageAfter;
             s.Status.AtsOdometer = truck.AtsOdometer;
-            audit.EquipmentFindings.Add($"Unit {truck.Ref}: {truck.DamagePct:0.#}% damage, {truck.ServiceMiles:N0} mi on our books" +
+            audit.EquipmentFindings.Add($"Unit {truck.Ref}: {truck.DamagePct:0.#}% damage, {Units.Distance(truck.ServiceMiles)} on our books" +
                                         (Math.Abs(truck.ServiceMiles - truck.AtsOdometer) > 1
                                             ? $" (your game reads {truck.AtsOdometer:N0} — the books are what we judge on)."
                                             : "."));
@@ -1980,15 +1980,15 @@ public static class TripService
                                          string.Join(", ", owing.Select(d => d.Name.ToLowerInvariant())) +
                                          ". Schedule them at the next terminal.");
                 else if (soon != null && soon.MilesUntilDue <= soon.IntervalMiles * 0.1)
-                    audit.EquipmentFindings.Add($"{soon.Name} due in {soon.MilesUntilDue:N0} mi on unit {truck.Ref}.");
+                    audit.EquipmentFindings.Add($"{soon.Name} due in {Units.Distance(soon.MilesUntilDue)} on unit {truck.Ref}.");
             }
             else
             {
                 var sinceService = truck.ServiceMiles - truck.LastServiceMiles;
                 if (sinceService >= truck.ServiceIntervalMiles)
-                    audit.Directives.Add($"Unit {truck.Ref} is {sinceService - truck.ServiceIntervalMiles:N0} mi past its {truck.ServiceIntervalMiles:N0}-mile PM. Schedule the service at the next terminal.");
+                    audit.Directives.Add($"Unit {truck.Ref} is {Units.Distance(sinceService - truck.ServiceIntervalMiles)} past its {truck.ServiceIntervalMiles:N0}-mile PM. Schedule the service at the next terminal.");
                 else if (sinceService >= truck.ServiceIntervalMiles * 0.9)
-                    audit.EquipmentFindings.Add($"PM due in {truck.ServiceIntervalMiles - sinceService:N0} mi on unit {truck.Ref}.");
+                    audit.EquipmentFindings.Add($"PM due in {Units.Distance(truck.ServiceIntervalMiles - sinceService)} on unit {truck.Ref}.");
             }
         }
 
@@ -2103,7 +2103,7 @@ public static class TripService
             trip.Pay.Total = s.Driver.Pay.BreakdownPerDay;
             trip.Pay.Lines.Add(
                 $"Cancelled by the company — no linehaul on a load that was not run, but one day of " +
-                $"breakdown/detention pay = ${trip.Pay.Total:N2}. Empty miles come back on the next dispatch.");
+                $"breakdown/detention pay = {Units.Money(trip.Pay.Total)}. Empty miles come back on the next dispatch.");
             s.Driver.UnsettledPay = Math.Round(s.Driver.UnsettledPay + trip.Pay.Total, 2);
         }
 

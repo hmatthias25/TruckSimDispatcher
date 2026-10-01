@@ -103,11 +103,11 @@ public static class FuelReview
         // ---- how it was driven
         var over = (f.Mpg - f.RatedMpg) / Math.Max(f.RatedMpg, 0.1);
         if (over > 0)
-            a.EconomyStrength = $"{f.Mpg:0.00} mpg against {f.RatedMpg:0.0} rated — {over * 100:0.#}% better " +
+            a.EconomyStrength = $"{Units.Economy(f.Mpg, "0.00")} against {f.RatedMpg:0.0} rated — {over * 100:0.#}% better " +
                                 "than the truck is supposed to do." +
                                 (a.PaysForEconomy ? " That is what the economy bonus is for." : "");
         else if (over < -PoorEconomyShortfall)
-            a.EconomyConcern = $"{f.Mpg:0.00} mpg against {f.RatedMpg:0.0} rated — {-over * 100:0.#}% under " +
+            a.EconomyConcern = $"{Units.Economy(f.Mpg, "0.00")} against {f.RatedMpg:0.0} rated — {-over * 100:0.#}% under " +
                                "what the truck should return. Steady throttle and staying off the top of " +
                                "the speed limiter is most of it.";
 
@@ -115,8 +115,8 @@ public static class FuelReview
         if (f.Overpaid.Count > 0)
             a.BuyingConcern = f.Overpaid[0];
         else if (f.Saved >= WorthMentioning)
-            a.BuyingStrength = $"${f.Saved:N0} saved buying fuel where it was cheapest on the run, across " +
-                               $"{f.Gallons:N0} gal." +
+            a.BuyingStrength = $"{Units.Money0(f.Saved)} saved buying fuel where it was cheapest on the run, across " +
+                               $"{Units.Volume(f.Gallons, "N0")}." +
                                (a.PaysForBuying ? " A share of that is yours." : "");
 
         // ---- and what the scale does about any of it

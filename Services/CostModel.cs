@@ -134,21 +134,21 @@ public static class CostModel
         if (c.ProfitableShare >= 70)
         {
             c.Verdict = "Healthy";
-            c.Summary = $"Your market pays a median ${c.MedianRpm:0.00}/mi against a ${be.BreakEvenRpm:0.00} " +
+            c.Summary = $"Your market pays a median {Units.PerDistance(c.MedianRpm, "0.00")} against a {Units.Money(be.BreakEvenRpm, "0.00")} " +
                         $"break-even — {c.ProfitableShare:0}% of the freight you have shown me covers its costs. " +
                         "These settings are survivable.";
         }
         else if (c.ProfitableShare >= 35)
         {
             c.Verdict = "Marginal";
-            c.Summary = $"Median ${c.MedianRpm:0.00}/mi against a ${be.BreakEvenRpm:0.00} break-even — only " +
+            c.Summary = $"Median {Units.PerDistance(c.MedianRpm, "0.00")} against a {Units.Money(be.BreakEvenRpm, "0.00")} break-even — only " +
                         $"{c.ProfitableShare:0}% of this freight pays for itself. Workable, but you will be " +
                         "turning a lot of loads down.";
         }
         else
         {
             c.Verdict = "Unsustainable";
-            c.Summary = $"Median ${c.MedianRpm:0.00}/mi against a ${be.BreakEvenRpm:0.00} break-even — only " +
+            c.Summary = $"Median {Units.PerDistance(c.MedianRpm, "0.00")} against a {Units.Money(be.BreakEvenRpm, "0.00")} break-even — only " +
                         $"{c.ProfitableShare:0}% of this freight covers its costs. Something in the cost model " +
                         "is wrong for your game, not the freight.";
         }
@@ -156,7 +156,7 @@ public static class CostModel
         // Concrete, ranked advice. Overhead first, because it is the usual culprit on a scaled map.
         if (be.OverheadDominates)
             c.Recommendations.Add(
-                $"Overhead is ${be.OverheadPerMile:0.000}/mi of a ${be.BreakEvenRpm:0.00} break-even — more than half " +
+                $"Overhead is {Units.PerDistance(be.OverheadPerMile, "0.000")} of a {Units.Money(be.BreakEvenRpm, "0.00")} break-even — more than half " +
                 $"your per-mile cost, purely because ${s.Settings.OverheadPerLoad:0} is spread over " +
                 $"{be.LoadedMiles:N0} scaled miles. Drop overhead per load to about " +
                 $"${Math.Max(5, Math.Round((double)s.Settings.OverheadPerLoad * 0.25 / 5) * 5):0} — that is the single " +
@@ -167,13 +167,13 @@ public static class CostModel
             var fuelNeeded = be.FuelPerMile > 0 ? (double)c.MedianRpm * 0.35 : 0;
             if (be.FuelPerMile > fuelNeeded && fuelNeeded > 0)
                 c.Recommendations.Add(
-                    $"Fuel is ${be.FuelPerMile:0.000}/mi at ${s.Settings.FuelPricePerGal:0.00}/gal and " +
-                    $"{(DispatchEngine.AssignedTruck(s)?.AvgMpg ?? 6.5):0.0} mpg. Set the fuel price to what your game " +
+                    $"Fuel is {Units.PerDistance(be.FuelPerMile, "0.000")} at {Units.FuelPrice(s.Settings.FuelPricePerGal, "0.00")} and " +
+                    $"{Units.Economy((DispatchEngine.AssignedTruck(s)?.AvgMpg ?? 6.5), "0.0")}. Set the fuel price to what your game " +
                     "actually charges at the pump, and check the truck's mpg on the Equipment tab.");
 
             if (be.DriverPayPerMile > (double)c.MedianRpm * 0.45)
                 c.Recommendations.Add(
-                    $"Your own pay is ${be.DriverPayPerMile:0.000}/mi against a ${c.MedianRpm:0.00} market rate. " +
+                    $"Your own pay is {Units.PerDistance(be.DriverPayPerMile, "0.000")} against a {Units.Money(c.MedianRpm, "0.00")} market rate. " +
                     "That is a large share of revenue — expected on a scaled map. Lower the pay-mile multiplier " +
                     "in Settings if you would rather the company stayed solvent than see big settlements.");
         }

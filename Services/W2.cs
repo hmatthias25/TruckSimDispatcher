@@ -235,7 +235,7 @@ public static class W2Service
             notes.Add($"{noStub} settlement(s) in this year predate pay stubs, so their gross is in box 1 " +
                       "but no withholding was ever computed for them. The tax boxes are short by that much.");
         if (form.Box5MedicareWages > form.Box3SocialSecurityWages)
-            notes.Add($"Box 3 stops at the ${PayrollTax.SocialSecurityWageBase:N0} Social Security wage " +
+            notes.Add($"Box 3 stops at the {Units.Money0(PayrollTax.SocialSecurityWageBase)} Social Security wage " +
                       "base. Box 5 does not — Medicare is uncapped, which is why the two differ.");
         form.Note = string.Join(" ", notes);
 

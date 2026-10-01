@@ -141,7 +141,7 @@ public static class FleetOpsService
         if (previous == null)
         {
             report.Findings.Add(
-                $"Bank read ${report.BankBalance:N0} at the end of this period. Nothing to compare it " +
+                $"Bank read {Units.Money0(report.BankBalance)} at the end of this period. Nothing to compare it " +
                 "against yet — from the next report on, the difference says what the game charged that " +
                 "I never saw.");
             return;
@@ -151,8 +151,8 @@ public static class FleetOpsService
         report.BooksExpected = LedgerService.ExpectedBankMovement(s, previous.PeriodEndGame, report.PeriodEndGame);
         report.Unseen = Math.Round(report.BankMoved - report.BooksExpected, 2);
 
-        var moved = report.BankMoved >= 0 ? $"up ${report.BankMoved:N0}" : $"down ${Math.Abs(report.BankMoved):N0}";
-        var books = report.BooksExpected >= 0 ? $"up ${report.BooksExpected:N0}" : $"down ${Math.Abs(report.BooksExpected):N0}";
+        var moved = report.BankMoved >= 0 ? $"up {Units.Money0(report.BankMoved)}" : $"down {Units.Money0(Math.Abs(report.BankMoved))}";
+        var books = report.BooksExpected >= 0 ? $"up {Units.Money0(report.BooksExpected)}" : $"down {Units.Money0(Math.Abs(report.BooksExpected))}";
 
         // A few hundred either way is ordinary — a ferry, a scale ticket, a splash of fuel. It is only
         // worth remarking on when it is large enough to mean the estimates are off rather than the map is.
@@ -163,9 +163,9 @@ public static class FleetOpsService
             (Math.Abs(report.Unseen) < 1m
                 ? " They agree — what I am told about is very nearly all of it."
                 : report.Unseen < 0
-                    ? $" ${Math.Abs(report.Unseen):N0} went out that I never saw: tolls, ferries, fines, " +
+                    ? $" {Units.Money0(Math.Abs(report.Unseen))} went out that I never saw: tolls, ferries, fines, " +
                       "fuel bought off a trip, anything picked up in game without mentioning it."
-                    : $" ${report.Unseen:N0} came in that I never saw. Worth knowing where from — the " +
+                    : $" {Units.Money0(report.Unseen)} came in that I never saw. Worth knowing where from — the " +
                       "figures above are estimates and this is the check on them."));
 
         if (notable && report.Unseen < 0)
@@ -260,12 +260,12 @@ public static class FleetOpsService
                 if (line.PerMile > 0 && line.Miles > 0)
                 {
                     line.Contribution = Math.Round(line.PerMile * (decimal)line.Miles, 2);
-                    line.RevenueBasis = $"${line.PerMile:N2}/mi net × {line.Miles:N0} mi";
+                    line.RevenueBasis = $"{Units.Money(line.PerMile)}/mi net × {Units.Distance(line.Miles)}";
                 }
                 else if (line.PerDay > 0 && periodDays > 0)
                 {
                     line.Contribution = Math.Round(line.PerDay * (decimal)periodDays, 2);
-                    line.RevenueBasis = $"${line.PerDay:N2}/day net × {periodDays:0.#} days";
+                    line.RevenueBasis = $"{Units.Money(line.PerDay)}/day net × {periodDays:0.#} days";
                 }
             }
 
@@ -344,7 +344,7 @@ public static class FleetOpsService
                         report.Findings.Add(
                             $"Unit {truck.Ref}: the game reads {line.TruckOdometer:N0} against {truck.AtsOdometer:N0} " +
                             "last time. Taking that as a replacement unit and starting the reading again — " +
-                            $"our own odometer stays at {truck.ServiceMiles:N0} mi.");
+                            $"our own odometer stays at {Units.Distance(truck.ServiceMiles)}.");
                     }
                     else
                     {
@@ -498,7 +498,7 @@ public static class FleetOpsService
         // nothing but our own fiction.
         if (yardBill > 0)
             report.Findings.Add(
-                $"${yardBill:N0} of yard work on the fleet this period. That is the company's own cost — " +
+                $"{Units.Money0(yardBill)} of yard work on the fleet this period. That is the company's own cost — " +
                 "ATS does not bill you for a hired driver's servicing, so there is nothing to take out " +
                 "of the game for it.");
         ResolvePersonnel(s, report);
@@ -568,7 +568,7 @@ public static class FleetOpsService
             report.TotalContribution - report.TotalRepairs - report.TotalCapital, 2);
 
         if (report.TotalCapital > 0)
-            report.Findings.Add($"${report.TotalCapital:N0} went on equipment and property this period.");
+            report.Findings.Add($"{Units.Money0(report.TotalCapital)} went on equipment and property this period.");
 
         ReadTheBankAgainstTheBooks(s, report);
         // No wages to check. ATS pays a hired driver before it reports their profit, so there has never
@@ -583,18 +583,18 @@ public static class FleetOpsService
             // culture, and on a box that is not set to en-US it prints the generic currency sign: the
             // first run of this said "¤500 brought in against ¤14,000 of repairs".
             var against = new List<string>();
-            if (report.TotalRepairs > 0) against.Add($"${report.TotalRepairs:N0} of repairs");
-            if (report.TotalCapital > 0) against.Add($"${report.TotalCapital:N0} on equipment and property");
+            if (report.TotalRepairs > 0) against.Add($"{Units.Money0(report.TotalRepairs)} of repairs");
+            if (report.TotalCapital > 0) against.Add($"{Units.Money0(report.TotalCapital)} on equipment and property");
 
             report.Findings.Add(
-                $"The hired fleet lost money this period: ${report.TotalContribution:N0} brought in" +
+                $"The hired fleet lost money this period: {Units.Money0(report.TotalContribution)} brought in" +
                 (against.Count > 0 ? $" against {string.Join(" and ", against)}" : "") + ". " +
                 (report.TotalRepairs > 0
                     ? "Look at what went through the shop, and at whether anything is worth keeping on the road."
                     : "Nothing went through the shop, so it is what they are bringing in that is the problem."));
         }
         if (report.TotalMiles > 0 && report.TotalContribution > 0)
-            report.Findings.Add($"Fleet netted ${report.TotalContribution / (decimal)report.TotalMiles:0.00}/mi over {report.TotalMiles:N0} mi, after what ATS took.");
+            report.Findings.Add($"Fleet netted {Units.PerDistance(report.TotalContribution / (decimal)report.TotalMiles, "0.00")} over {Units.Distance(report.TotalMiles)}, after what ATS took.");
 
         // How the company is doing, and what it does about it. Last, so the verdict includes everything
         // this report decided — a tractor written off this period is part of the picture, not a surprise
@@ -641,7 +641,7 @@ public static class FleetOpsService
 
             report.Findings.Add(moved.Index > before
                 ? $"{d.Name} is now {moved.Name} — {DriverRank.TenureDays(s, d)} day(s) with us, " +
-                  $"{d.LifetimeMiles:N0} mi, level {d.Level}. Their share goes to " +
+                  $"{Units.Distance(d.LifetimeMiles)}, level {d.Level}. Their share goes to " +
                   $"{moved.Share * 100:0}%."
                 : $"{d.Name} drops to {moved.Name}. " +
                   $"{DriverRank.RecentPreventables(s, d)} preventable(s) in the last " +
@@ -721,8 +721,8 @@ public static class FleetOpsService
                     d.ProbationCount++;
                     d.ProbationReason = why;
                     d.ProbationTarget = fleetPerDay > 0
-                        ? $"$/day back above the ${fleetPerDay:N0} fleet average by the next report."
-                        : $"$/mi back above the ${fleetPerMile:0.00} fleet average by the next report.";
+                        ? $"$/day back above the {Units.Money0(fleetPerDay)} fleet average by the next report."
+                        : $"$/mi back above the {Units.Money(fleetPerMile, "0.00")} fleet average by the next report.";
                     report.Personnel.Add(new PersonnelChange
                     {
                         DriverId = d.Id, DriverName = d.Name, Kind = "Probation", Pending = false,
@@ -746,7 +746,7 @@ public static class FleetOpsService
                         evidence.Add($"They did recover once before, on {GameClock.Pretty(d.LastClearedProbationGameTime)}.");
                     var repairs = d.Periods.Take(3).Sum(x => x.Repairs);
                     if (repairs >= 3000m)
-                        evidence.Add($"Also put ${repairs:N0} through the shop over the last three periods.");
+                        evidence.Add($"Also put {Units.Money0(repairs)} through the shop over the last three periods.");
 
                     // Kept on. The target is restated against this period's figures, because a second
                     // chance carrying the old number on it is not a second chance.
@@ -757,8 +757,8 @@ public static class FleetOpsService
                         d.ProbationSince = report.PeriodEndGame;
                         d.ProbationReason = why;
                         d.ProbationTarget = fleetPerDay > 0
-                            ? $"$/day back above the ${fleetPerDay:N0} fleet average by the next report."
-                            : $"$/mi back above the ${fleetPerMile:0.00} fleet average by the next report.";
+                            ? $"$/day back above the {Units.Money0(fleetPerDay)} fleet average by the next report."
+                            : $"$/mi back above the {Units.Money(fleetPerMile, "0.00")} fleet average by the next report.";
 
                         report.Personnel.Add(new PersonnelChange
                         {
@@ -808,7 +808,7 @@ public static class FleetOpsService
                 TruckUnit = d.AssignedTruckUnit, TrailerUnit = d.AssignedTrailerUnit
             };
             change.Evidence.Add(ResignationReason(s, d, report));
-            change.Evidence.Add($"{d.ReportsFiled} period(s) with us, {d.LifetimeMiles:N0} mi, ${d.LifetimeContribution:N0} brought in." +
+            change.Evidence.Add($"{d.ReportsFiled} period(s) with us, {Units.Distance(d.LifetimeMiles)}, {Units.Money0(d.LifetimeContribution)} brought in." +
                                 (d.Level > 0 ? $" Level {d.Level}." : ""));
             report.Personnel.Add(change);
             report.Findings.Add($"{d.Name} has handed their notice in. {change.Evidence[0]}");
@@ -901,27 +901,27 @@ public static class FleetOpsService
         if (p.PerMile < 0 || p.PerDay < 0)
         {
             why = p.PerMile < 0 && p.PerDay < 0
-                ? $"${p.PerMile:0.00}/mi and ${p.PerDay:N0}/day — that unit is losing money every time it moves."
+                ? $"{Units.PerDistance(p.PerMile, "0.00")} and {Units.Money0(p.PerDay)}/day — that unit is losing money every time it moves."
                 : p.PerMile < 0
-                    ? $"${p.PerMile:0.00}/mi. Every loaded mile costs the company money."
-                    : $"${p.PerDay:N0}/day. The unit costs more to run than it brings in.";
+                    ? $"{Units.PerDistance(p.PerMile, "0.00")}. Every loaded mile costs the company money."
+                    : $"{Units.Money0(p.PerDay)}/day. The unit costs more to run than it brings in.";
             return true;
         }
 
         if (dayShort && mileShort)
         {
-            why = $"${p.PerDay:N0}/day and ${p.PerMile:0.00}/mi against fleet averages of " +
-                  $"${fleetPerDay:N0} and ${fleetPerMile:0.00}{levelNote}.";
+            why = $"{Units.Money0(p.PerDay)}/day and {Units.PerDistance(p.PerMile, "0.00")} against fleet averages of " +
+                  $"{Units.Money0(fleetPerDay)} and {Units.Money(fleetPerMile, "0.00")}{levelNote}.";
             return true;
         }
         if (dayShort)
         {
-            why = $"${p.PerDay:N0}/day against a fleet average of ${fleetPerDay:N0}{levelNote}.";
+            why = $"{Units.Money0(p.PerDay)}/day against a fleet average of {Units.Money0(fleetPerDay)}{levelNote}.";
             return true;
         }
         if (mileShort)
         {
-            why = $"${p.PerMile:0.00}/mi against a fleet average of ${fleetPerMile:0.00}{levelNote}.";
+            why = $"{Units.PerDistance(p.PerMile, "0.00")} against a fleet average of {Units.Money(fleetPerMile, "0.00")}{levelNote}.";
             return true;
         }
         return false;
@@ -929,8 +929,8 @@ public static class FleetOpsService
 
     /// <summary>How the period's production reads, for saying why probation was lifted.</summary>
     private static string ProductionLine(DriverPeriodResult p, decimal fleetPerDay, decimal fleetPerMile) =>
-        $"${p.PerDay:N0}/day and ${p.PerMile:0.00}/mi this period, against fleet averages of " +
-        $"${fleetPerDay:N0} and ${fleetPerMile:0.00}.";
+        $"{Units.Money0(p.PerDay)}/day and {Units.PerDistance(p.PerMile, "0.00")} this period, against fleet averages of " +
+        $"{Units.Money0(fleetPerDay)} and {Units.Money(fleetPerMile, "0.00")}.";
 
     /// <summary>
     /// The chance in a thousand that a driver quits this period.
@@ -1101,9 +1101,9 @@ public static class FleetOpsService
 
         report.Instructions.Add(spendable >= 15_000m
             ? $"**Hire a driver for unit {label}** in ATS — look for **level {min}-{max}**: {how}. " +
-              $"Add them on the Fleet tab once you have. ${spendable:N0} spendable; the real price is " +
+              $"Add them on the Fleet tab once you have. {Units.Money0(spendable)} spendable; the real price is " +
               "in the game. It earns nothing standing at the yard."
-            : $"Leave unit {label} standing for now — only ${spendable:N0} spendable after earmarks and " +
+            : $"Leave unit {label} standing for now — only {Units.Money0(spendable)} spendable after earmarks and " +
               "wages owed, and the company cannot carry another driver on that.");
     }
 
@@ -1185,7 +1185,7 @@ public static class FleetOpsService
                 d.ProbationCount++;
                 d.ProbationSince = s.Status.GameTime;
                 d.ProbationTarget = fleetPerDay > 0
-                    ? $"$/day back above the ${fleetPerDay:N0} fleet average by the next report."
+                    ? $"$/day back above the {Units.Money0(fleetPerDay)} fleet average by the next report."
                     : "Production back up to the fleet average by the next report.";
 
                 report.Findings.Add(
@@ -1259,7 +1259,7 @@ public static class FleetOpsService
             var beaten = isMine && t.DamagePct >= s.Settings.Maintenance.MandatoryReviewPct;
 
             if (high) evidence.Add($"{t.ServiceMiles:N0} company-service miles.");
-            if (costly) evidence.Add($"${t.LifetimeRepairCost:N0} in repairs against it.");
+            if (costly) evidence.Add($"{Units.Money0(t.LifetimeRepairCost)} in repairs against it.");
             if (beaten) evidence.Add($"Sitting at {t.DamagePct:0.#}% damage.");
             if (wornOut) evidence.Add($"Down to {t.Stars:0.#} stars — at or under our {starLimit:0.#}-star replacement line.");
 
@@ -1272,7 +1272,7 @@ public static class FleetOpsService
                 if (t.AtsOdometer > 0) evidence.Add($"Odometer reads {t.AtsOdometer:N0}.");
                 if (!high && !costly)
                     evidence.Add(t.LifetimeRepairCost > 0
-                        ? $"${t.LifetimeRepairCost:N0} spent on it so far — replace it before that climbs."
+                        ? $"{Units.Money0(t.LifetimeRepairCost)} spent on it so far — replace it before that climbs."
                         : "Nothing serious spent on it yet, and that is the point of going now.");
             }
             var spare = BestSpare(s, t);
@@ -1287,7 +1287,7 @@ public static class FleetOpsService
             if (isMine)
                 evidence.Add(spare != null
                     ? $"There is a spare on the property: unit {spare.Ref} ({spare.Year} {spare.Make} {spare.Model}, " +
-                      $"{spare.ServiceMiles:N0} mi). Report to the yard and we will move you into it."
+                      $"{Units.Distance(spare.ServiceMiles)}). Report to the yard and we will move you into it."
                     : $"Nothing spare on the property. Buy the replacement in ATS: {Seed.RecommendedTruck(s)}");
             else if (spare == null)
                 evidence.Add($"No spare to replace it with. What to buy: {Seed.RecommendedTruck(s)}");
@@ -1361,7 +1361,7 @@ public static class FleetOpsService
                     report.Findings.Add(
                         $"Unit {truck.Ref}: the game reads {line.TruckOdometer:N0} against {truck.AtsOdometer:N0} " +
                         "last time. Taking that as a replacement unit and starting the reading again — " +
-                        $"our own odometer stays at {truck.ServiceMiles:N0} mi.");
+                        $"our own odometer stays at {Units.Distance(truck.ServiceMiles)}.");
                 else
                     truck.ServiceMiles = Math.Round(truck.ServiceMiles + moved, 0);
                 truck.AtsOdometer = line.TruckOdometer;
@@ -1370,7 +1370,7 @@ public static class FleetOpsService
             {
                 truck.DamagePct = Math.Clamp(line.TruckDamagePct, 0, 100);
                 report.Findings.Add($"Unit {truck.Ref} (yours): {truck.DamagePct:0.#}% damage, " +
-                                    $"{truck.ServiceMiles:N0} mi on our books.");
+                                    $"{Units.Distance(truck.ServiceMiles)} on our books.");
             }
         }
 
@@ -1486,7 +1486,7 @@ public static class FleetOpsService
         {
             var old = s.Trucks.FirstOrDefault(t => t.Unit == trade.Unit);
             if (old == null) continue;
-            var oldLabel = $"{old.Ref} ({old.Year} {old.Make} {old.Model}, {old.ServiceMiles:N0} mi on our books)";
+            var oldLabel = $"{old.Ref} ({old.Year} {old.Make} {old.Model}, {Units.Distance(old.ServiceMiles)} on our books)";
 
             if (trade.IsPlayerUnit)
             {
@@ -1985,8 +1985,8 @@ public static class FleetOpsService
 
         if (best.Paid > 0)
             why += minePaid > 0
-                ? $" They also bring in ${best.Paid:N0} a period against ${minePaid:N0}."
-                : $" They also bring in ${best.Paid:N0} a period.";
+                ? $" They also bring in {Units.Money0(best.Paid)} a period against {Units.Money0(minePaid)}."
+                : $" They also bring in {Units.Money0(best.Paid)} a period.";
 
         return (best.Type, why);
     }
@@ -2021,7 +2021,7 @@ public static class FleetOpsService
         // filters on it. A trailer with no yard is invisible to the changeover planner.
         if (rep != null && string.IsNullOrWhiteSpace(rep.HomeTerminalId)) rep.HomeTerminalId = tr.HomeTerminalId;
 
-        var messages = new List<string> { $"Trailer {tr.Ref} ({tr.Type}) retired at {tr.ServiceMiles:N0} mi." };
+        var messages = new List<string> { $"Trailer {tr.Ref} ({tr.Type}) retired at {Units.Distance(tr.ServiceMiles)}." };
 
         // What the game gave back for it. Selling equipment used to move no money at all, which made a
         // trade look like a pure loss of an asset — and since nothing about equipment reached the
@@ -2030,7 +2030,7 @@ public static class FleetOpsService
         {
             LedgerService.Post(s, LedgerService.Operating, soldFor, "Equipment",
                 $"Trailer {tr.Ref} ({tr.Type}) sold");
-            messages.Add($"${soldFor:N0} back on the sale.");
+            messages.Add($"{Units.Money0(soldFor)} back on the sale.");
         }
 
         // Whoever was on it moves across, driver or hired hand. Left hooked to a retired box, the next
@@ -2153,11 +2153,11 @@ public static class FleetOpsService
         if (soldFor > 0)
         {
             LedgerService.Post(s, LedgerService.Operating, soldFor, "Equipment", $"Unit {t.Ref} sold");
-            messages.Add($"${soldFor:N0} back on the sale.");
+            messages.Add($"{Units.Money0(soldFor)} back on the sale.");
         }
 
-        messages.Insert(0, $"Unit {t.Ref} retired at {t.ServiceMiles:N0} mi" +
-                           (t.LifetimeRepairCost > 0 ? $" and ${t.LifetimeRepairCost:N0} of repairs" : "") + ".");
+        messages.Insert(0, $"Unit {t.Ref} retired at {Units.Distance(t.ServiceMiles)}" +
+                           (t.LifetimeRepairCost > 0 ? $" and {Units.Money0(t.LifetimeRepairCost)} of repairs" : "") + ".");
         if (!string.IsNullOrWhiteSpace(driverName) && string.IsNullOrWhiteSpace(replacementUnit))
             messages.Add($"{driverName} has no unit — assign one or they are stood down.");
         return string.Join(" ", messages);
@@ -2260,8 +2260,8 @@ public static class FleetOpsService
                     ? "Do not hire for this seat — operations has already put you in it. Report to the yard and make the swap."
                     : canAfford
                         ? $"Look for level {hireBand.Min}-{hireBand.Max}: {hireBand.How}. Spendable cash " +
-                          $"is ${position.Spendable:N0} — hire in ATS and add them on this tab."
-                        : $"Only ${position.Spendable:N0} spendable after earmarks and wages owed — the company cannot really carry another driver yet.",
+                          $"is {Units.Money0(position.Spendable)} — hire in ATS and add them on this tab."
+                        : $"Only {Units.Money0(position.Spendable)} spendable after earmarks and wages owed — the company cannot really carry another driver yet.",
                 hireLevelMin = hireBand.Min,
                 hireLevelMax = hireBand.Max,
                 takeNote = better

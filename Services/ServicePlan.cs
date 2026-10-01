@@ -213,8 +213,8 @@ public static class ServicePlan
             var since = t.ServiceMiles - t.LastServiceMiles;
             var left = t.ServiceIntervalMiles - since;
             return left <= 0
-                ? $"PM overdue by {-left:N0} mi — every {t.ServiceIntervalMiles:N0} mi"
-                : $"PM in {left:N0} mi — every {t.ServiceIntervalMiles:N0} mi";
+                ? $"PM overdue by {Units.Distance(-left)} — every {Units.Distance(t.ServiceIntervalMiles)}"
+                : $"PM in {Units.Distance(left)} — every {Units.Distance(t.ServiceIntervalMiles)}";
         }
 
         var due = DueNow(s, t);
@@ -223,13 +223,13 @@ public static class ServicePlan
             var worst = due.OrderByDescending(d => d.MilesSince - d.IntervalMiles).First();
             var over = worst.MilesSince - worst.IntervalMiles;
             return $"{due.Count} checkpoint(s) due — {worst.Name.ToLowerInvariant()}" +
-                   (over > 0 ? $", {over:N0} mi over" : "");
+                   (over > 0 ? $", {Units.Distance(over)} over" : "");
         }
 
         var next = Next(s, t);
         return next == null
             ? "Every checkpoint on the GDC schedule is behind this unit."
-            : $"{next.Name} in {next.MilesUntilDue:N0} mi";
+            : $"{next.Name} in {Units.Distance(next.MilesUntilDue)}";
     }
 
     /// <summary>

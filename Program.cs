@@ -287,7 +287,7 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     var finalPay = PayEngine.SettleOnLeaving(s);
     if (finalPay != null)
         store.Log(s, "pay", $"{finalPay.Number} — final settlement from {s.Company.Name}, " +
-                            $"${finalPay.Gross:N2} gross, ${finalPay.Stub?.Net ?? finalPay.Gross:N2} net.", finalPay.Number);
+                            $"{Units.Money(finalPay.Gross)} gross, {Units.Money(finalPay.Stub?.Net ?? finalPay.Gross)} net.", finalPay.Number);
 
     // Close out the stint that is ending.
     var stats = CareerService.Compute(s);
@@ -828,7 +828,7 @@ app.MapPost("/api/moves", (MoveRequest req) => Results.Ok(store.Mutate(s =>
     var trip = req.Kind == "Maintenance"
         ? DispatchEngine.CreateMaintenanceMove(s, req.DestCity, req.DestState, miles, req.Reason)
         : DispatchEngine.CreateEmptyMove(s, req.DestCity, req.DestState, miles, req.Reason);
-    store.Log(s, "dispatch", $"{trip.Number} — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)} ({miles:N0} mi): {req.Reason}", trip.Number);
+    store.Log(s, "dispatch", $"{trip.Number} — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)} ({Units.Distance(miles)}): {req.Reason}", trip.Number);
     return new { trip, snapshot = Snapshot(s) };
 })));
 
@@ -917,18 +917,18 @@ List<Settlement> SettleDue(AppState s)
     // garages paid nothing to keep any of them. Property costs money whether or not anybody worked.
     // ChargeUpkeep stamps each yard and bills only whole unbilled weeks, so calling it often is safe.
     var rent = Yards.ChargeUpkeep(s, s.Status.GameTime);
-    if (rent > 0) store.Log(s, "ledger", $"Yard upkeep — ${rent:N2} across the company's garages.");
+    if (rent > 0) store.Log(s, "ledger", $"Yard upkeep — {Units.Money(rent)} across the company's garages.");
 
     var due = PayEngine.RunDuePaydays(s);
     foreach (var st in due)
-        store.Log(s, "pay", $"{st.Number} paid — ${st.Gross:N2} gross, ${st.Stub?.Net ?? st.Gross:N2} net.", st.Number);
+        store.Log(s, "pay", $"{st.Number} paid — {Units.Money(st.Gross)} gross, {Units.Money(st.Stub?.Net ?? st.Gross)} net.", st.Number);
 
     // The year closes on the 365th day. Issued here rather than on its own timer because the last
     // cheque of the year has just run, and a W-2 that is a week behind the stubs is no use to anyone.
     foreach (var w2 in W2Service.IssueDue(s))
         store.Log(s, "pay",
-            $"{w2.Number} issued — year {w2.TaxYear} at {w2.EmployerName}: ${w2.Box1Wages:N2} in box 1, " +
-            $"${w2.Box2FederalWithheld:N2} federal withheld.", w2.Number);
+            $"{w2.Number} issued — year {w2.TaxYear} at {w2.EmployerName}: {Units.Money(w2.Box1Wages)} in box 1, " +
+            $"{Units.Money(w2.Box2FederalWithheld)} federal withheld.", w2.Number);
 
     return due;
 }
@@ -1483,7 +1483,7 @@ app.MapPost("/api/economics/apply", (ApplyCalibration req) => Results.Ok(store.M
 
     var after = CostModel.Compute(s, CostModel.AverageLoadedMiles(s));
     store.Log(s, "ledger",
-        $"Cost model adjusted — break-even ${before.BreakEvenRpm:0.00}/mi → ${after.BreakEvenRpm:0.00}/mi.");
+        $"Cost model adjusted — break-even {Units.PerDistance(before.BreakEvenRpm, "0.00")} → {Units.PerDistance(after.BreakEvenRpm, "0.00")}.");
     return new { before, after, calibration = CostModel.Calibrate(s), snapshot = Snapshot(s) };
 })));
 
@@ -1548,7 +1548,7 @@ app.MapPost("/api/fleetops/yard-request/confirm", (YardBoughtRequest req) => Res
     var yard = Yards.Confirm(s, req.RequestId, req.PaidPrice, req.GameTime ?? "");
     var where = DispatchEngine.Place(yard.City, yard.State);
     var message = req.PaidPrice > 0
-        ? $"{where} on the books as a {yard.Level.ToLowerInvariant()} yard — ${req.PaidPrice:N0}."
+        ? $"{where} on the books as a {yard.Level.ToLowerInvariant()} yard — {Units.Money0(req.PaidPrice)}."
         : $"{where} on the books as a {yard.Level.ToLowerInvariant()} yard.";
     store.Log(s, "ledger", message);
     return new { snapshot = Snapshot(s), message };
@@ -1834,7 +1834,7 @@ app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mut
 {
     var filed = FleetOpsService.FileReport(s, report);
     store.Log(s, "ledger",
-        $"{filed.Number} filed — {filed.Lines.Count} driver(s), contribution ${filed.TotalContribution:N2}, net ${filed.NetContribution:N2}.",
+        $"{filed.Number} filed — {filed.Lines.Count} driver(s), contribution {Units.Money(filed.TotalContribution)}, net {Units.Money(filed.NetContribution)}.",
         filed.Number);
     return new { report = filed, snapshot = Snapshot(s) };
 })));
@@ -2061,7 +2061,7 @@ app.MapPost("/api/terminals/{id}/level", (string id, LevelRequest req) => Result
     }
 
     store.Log(s, "system", $"{t.City} yard re-tiered to {t.Level} ({t.TruckCapacity} tractors)."
-                           + (req.CostPaid is > 0 ? $" Cost ${req.CostPaid.Value:N0}, booked to Property." : ""));
+                           + (req.CostPaid is > 0 ? $" Cost {Units.Money0(req.CostPaid.Value)}, booked to Property." : ""));
     return Snapshot(s);
 })));
 
@@ -2102,7 +2102,7 @@ app.MapPost("/api/maintenance/workorder", (WorkOrder wo) => Results.Ok(store.Mut
 app.MapPost("/api/maintenance/workorder/{number}/complete", (string number, CompleteWoRequest req) => Results.Ok(store.Mutate(s =>
 {
     var wo = MaintenanceService.CompleteWorkOrder(s, number, req.Cost, req.DamageAfter, req.Vendor, req.PaidBy, req.Notes);
-    store.Log(s, "maintenance", $"{wo.Number} closed — ${wo.Cost:N2} paid by {wo.PaidBy}, damage now {wo.DamageAfter:0.#}%.", wo.Number);
+    store.Log(s, "maintenance", $"{wo.Number} closed — {Units.Money(wo.Cost)} paid by {wo.PaidBy}, damage now {wo.DamageAfter:0.#}%.", wo.Number);
     return new { workOrder = wo, snapshot = Snapshot(s) };
 })));
 
@@ -2114,7 +2114,7 @@ app.MapPost("/api/maintenance/tow", (TowReport tow) => Results.Ok(store.Mutate(s
 {
     var t = Shop.RecordTow(s, tow);
     store.Log(s, "maintenance",
-        $"Recovered from {DispatchEngine.Place(t.FromCity, t.FromState)}, {t.Miles:N0} mi, ${t.Cost:N0}.");
+        $"Recovered from {DispatchEngine.Place(t.FromCity, t.FromState)}, {Units.Distance(t.Miles)}, {Units.Money0(t.Cost)}.");
     return new { tow = t, order = Shop.Assess(s, DispatchEngine.AssignedTruck(s), DispatchEngine.AssignedTrailer(s)), snapshot = Snapshot(s) };
 })));
 
@@ -2136,8 +2136,8 @@ app.MapPost("/api/maintenance/writeoff", (WriteOffRequest req) => Results.Ok(sto
 {
     var result = Shop.WriteOff(s, req.Unit, req.DriverFault, req.ScrapRecovery, req.Notes ?? "");
     store.Log(s, "maintenance",
-        $"Unit {Equip.Label(s, result.Unit)} written off — insurance ${result.InsurancePayout:N2} less ${result.Deductible:N2} deductible, " +
-        $"scrap ${result.ScrapRecovery:N2}, net ${result.NetRecovery:N2}.", result.Unit);
+        $"Unit {Equip.Label(s, result.Unit)} written off — insurance {Units.Money(result.InsurancePayout)} less {Units.Money(result.Deductible)} deductible, " +
+        $"scrap {Units.Money(result.ScrapRecovery)}, net {Units.Money(result.NetRecovery)}.", result.Unit);
     return new { writeOff = result, snapshot = Snapshot(s) };
 })));
 
@@ -2241,7 +2241,7 @@ app.MapPost("/api/settlements/run", (NoteRequest _) =>
 app.MapPost("/api/settlements/legacy-run", (NoteRequest req) => Results.Ok(store.Mutate(s =>
 {
     var settlement = PayEngine.RunSettlement(s, req.Notes);
-    store.Log(s, "pay", $"{settlement.Number} issued — gross ${settlement.Gross:N2} over {settlement.TripNumbers.Count} trip(s).", settlement.Number);
+    store.Log(s, "pay", $"{settlement.Number} issued — gross {Units.Money(settlement.Gross)} over {settlement.TripNumbers.Count} trip(s).", settlement.Number);
     return new { settlement, snapshot = Snapshot(s) };
 })));
 
@@ -2264,7 +2264,7 @@ app.MapPost("/api/finance/balance", (BalanceRequest req) => Results.Ok(store.Mut
 
     s.Status.AtsBankBalance = req.Balance.Value;
     s.Status.AtsBalanceGameTime = string.IsNullOrWhiteSpace(req.GameTime) ? s.Status.GameTime : req.GameTime;
-    store.Log(s, "ledger", $"ATS bank balance reported: ${req.Balance.Value:N2}.");
+    store.Log(s, "ledger", $"ATS bank balance reported: {Units.Money(req.Balance.Value)}.");
     return Snapshot(s);
 })));
 
@@ -2276,7 +2276,7 @@ app.MapPost("/api/finance/balance", (BalanceRequest req) => Results.Ok(store.Mut
 app.MapPost("/api/finance/entry", (LedgerEntry e) => Results.Ok(store.Mutate(s =>
 {
     var posted = LedgerService.Post(s, e.AccountKey, e.Amount, e.Category, e.Memo, e.TripNumber);
-    store.Log(s, "ledger", $"{posted.Category} ${posted.Amount:N2} — {posted.Memo}");
+    store.Log(s, "ledger", $"{posted.Category} {Units.Money(posted.Amount)} — {posted.Memo}");
     return new { entry = posted, snapshot = Snapshot(s) };
 })));
 
@@ -2441,7 +2441,7 @@ app.MapPost("/api/career/trip-length", (TripLengthRequest req) => Results.Ok(sto
                            "from the next load" +
                            (Probation.IsOn(s)
                                ? $", and your probation targets move with it — now {s.Driver.Probation.RequiredLoads} " +
-                                 $"load(s) and {s.Driver.Probation.RequiredMiles:N0} mi."
+                                 $"load(s) and {Units.Distance(s.Driver.Probation.RequiredMiles)}."
                                : "."));
     return Snapshot(s);
 })));
@@ -2747,6 +2747,8 @@ object Snapshot(AppState? given = null)
         // Which game this career is played in. Named here for the same reason as the career name: a new
         // field on AppState does not reach the browser until the snapshot says so. See GameProfile.
         game = new { id = GameProfile.For(s).Id, name = GameProfile.For(s).Name, shortName = GameProfile.For(s).ShortName },
+        // How figures are shown and typed, so the browser converts at its edges the same way. See Units.
+        units = Units.View(s),
         // The terms your employer sets, so the Career tab can show what is actually on offer instead of
         // a free dropdown the endpoint then refuses. Reported from play: both pickers still read as the
         // driver's choice after the carrier became the one who decides.
@@ -3147,7 +3149,7 @@ static string BuildFirstDispatch(AppState s, Truck? truck, Trailer? trailer)
 {
     var terminal = DispatchEngine.Place(s.Company.TerminalCity, s.Company.TerminalState);
     return $"Welcome aboard, {s.Driver.Name}. You are {s.Driver.RankTitle} at {s.Company.Name}, employee {s.Driver.EmployeeId}, " +
-           $"on a {s.Driver.Probation.DurationDays}-day probation at ${s.Driver.Pay.LoadedCpm:0.000} per loaded mile.\n\n" +
+           $"on a {s.Driver.Probation.DurationDays}-day probation at {Units.Money(s.Driver.Pay.LoadedCpm, "0.000")} per loaded mile.\n\n" +
            $"Your equipment is unit {truck?.Ref} — {truck?.Year} {truck?.Make} {truck?.Model}, {truck?.Transmission} — " +
            $"pulling trailer {trailer?.Ref}, a {trailer?.Length} {trailer?.Type}. It is not the newest truck on the property; " +
            $"that is how probation works. Take care of it and we will talk about equipment again when your probation clears.\n\n" +

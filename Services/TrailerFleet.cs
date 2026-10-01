@@ -94,8 +94,8 @@ public static class TrailerFleet
                      $"{s.Settings.Maintenance.TrailerBusyPct:0}% where we start looking for another one" +
                      (pick.Drivers > 0 ? $" — {pick.Drivers} driver(s) based there" : "") + ". " + type.Why;
         req.Instruction = req.Unaffordable
-            ? $"Buy {what} for {label} when the money is there — spendable cash is ${spendable:N0} and a trailer runs " +
-              $"around ${TypicalTrailerCost:N0}. I am not going to pretend this is free."
+            ? $"Buy {what} for {label} when the money is there — spendable cash is {Units.Money0(spendable)} and a trailer runs " +
+              $"around {Units.Money0(TypicalTrailerCost)}. I am not going to pretend this is free."
             : $"Buy {what} in ATS and base it at {label}, then confirm it here with what you paid.";
 
         // The box goes on the books now, as backdrop. It is the company's decision and the company has

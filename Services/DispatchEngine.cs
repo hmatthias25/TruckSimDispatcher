@@ -312,11 +312,11 @@ public static class DispatchEngine
                                         HomeTerminalCity(s), HomeTerminalState(s)) is { } pickHome
                     && pickHome - beatenHome > 100)
                     decision.DispatchNotes.Add(
-                        $"For what it is worth, it would have finished {beatenHome:N0} mi from {hs.TerminalLabel} " +
+                        $"For what it is worth, it would have finished {Units.Distance(beatenHome)} from {hs.TerminalLabel} " +
                         $"against {pickHome:N0} on this one, with home time due in {hs.DaysUntilDue:0.#} days.");
             }
 
-            decision.DispatchNotes.Add($"Run it at ${pick.AllInRpm:0.00}/mi all-in on {pick.Load.LoadedMiles + pick.Load.DeadheadMiles:0} total miles.");
+            decision.DispatchNotes.Add($"Run it at {Units.PerDistance(pick.AllInRpm, "0.00")} all-in on {pick.Load.LoadedMiles + pick.Load.DeadheadMiles:0} total miles.");
             decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
             if (pick.Feasibility.RestsRequired > 0)
                 decision.DispatchNotes.Add($"Plan on {pick.Feasibility.RestsRequired} × {s.Settings.Hos.OffDutyReset:0.#}-hour reset and {pick.Feasibility.BreaksRequired} required break(s) en route.");
@@ -460,7 +460,7 @@ public static class DispatchEngine
             AskAboutTrailersHome(s, decision);
             decision.Headline = $"Every load here runs further from {homeSt.TerminalLabel}, and you are " +
                                 $"{homeSt.DaysLate:0.#} days late for home.";
-            decision.Rationale = $"Nothing on this board finishes any nearer the yard than {homeSt.MilesFromHome:N0} mi, " +
+            decision.Rationale = $"Nothing on this board finishes any nearer the yard than {Units.Distance(homeSt.MilesFromHome)}, " +
                                  "which is where you are standing. I am not taking freight that makes it worse.";
             decision.DispatchNotes.Add(decision.Rationale);
             foreach (var e in decision.Evaluations) e.Recommendation = "Reject";
@@ -1492,13 +1492,13 @@ public static class DispatchEngine
         var rpmScore = rpmRatio <= 2.0 ? rpmRatio : 2.0 + Math.Log2(rpmRatio / 2.0);
         var rpmPts = Math.Clamp(rpmScore, 0, 3.0) * w.AllInRpm;
         score += rpmPts;
-        detail.Add($"All-in RPM ${e.AllInRpm:0.00} vs ${targetRpm:0.00} target (break-even ${breakEven.BreakEvenRpm:0.00})"
+        detail.Add($"All-in RPM {Units.Money(e.AllInRpm, "0.00")} vs {Units.Money(targetRpm, "0.00")} target (break-even {Units.Money(breakEven.BreakEvenRpm, "0.00")})"
                    + (rpmRatio > 2.0 ? $" — {rpmRatio:0.0}x target, still counting" : "")
                    + $": {rpmPts:+0.00;-0.00}");
 
         var revPts = Math.Clamp((double)load.GameRevenue / 2500.0, 0, 1.5) * w.TotalRevenue;
         score += revPts;
-        detail.Add($"Gross ${load.GameRevenue:N0}: {revPts:+0.00;-0.00}");
+        detail.Add($"Gross {Units.Money0(load.GameRevenue)}: {revPts:+0.00;-0.00}");
 
         var dhPts = -Math.Clamp(e.DeadheadRatio / Math.Max(0.05, w.MaxDeadheadRatio), 0, 2.0) * w.DeadheadPenalty;
         score += dhPts;
@@ -1566,7 +1566,7 @@ public static class DispatchEngine
             var razor = cycleLeft <= Math.Max(2.0, e.Feasibility.DriveHours * 0.10);
             e.Cons.Add(razor
                 ? $"This finishes you with about {Hhmm.Of(cycleLeft)} left on the {s.Settings.Hos.CycleLimit:0}-hour cycle, " +
-                  $"against {Hhmm.Of(e.Feasibility.DriveHours)} of driving planned at {e.Feasibility.EffectiveMph:0} mph. " +
+                  $"against {Hhmm.Of(e.Feasibility.DriveHours)} of driving planned at {Units.Speed(e.Feasibility.EffectiveMph)}. " +
                   "That is a thinner margin than the estimate is worth — a slow stretch of road, weather or a " +
                   "queue and you are over. Take it knowing the 34 may start before you are unloaded."
                 : $"This finishes you with about {Hhmm.Of(cycleLeft)} left on the {s.Settings.Hos.CycleLimit:0}-hour cycle, " +
@@ -1723,7 +1723,7 @@ public static class DispatchEngine
         e.ScoreDetail = detail;
 
         // ---- pros / cons
-        if (e.AllInRpm >= targetRpm) e.Pros.Add($"${e.AllInRpm:0.00}/mi all-in beats our ${targetRpm:0.00} target.");
+        if (e.AllInRpm >= targetRpm) e.Pros.Add($"{Units.PerDistance(e.AllInRpm, "0.00")} all-in beats our {Units.Money(targetRpm, "0.00")} target.");
         // "No deadhead" is a claim about where the truck is, made from a number the driver typed on the
         // listing. It is only ever the QUOTE — the empty run is measured from the odometer at loading,
         // and a listing that quoted nothing can still turn out to be fifty miles up the road.
@@ -1735,18 +1735,18 @@ public static class DispatchEngine
             e.Pros.Add("Destination can hold a restart.");
         if (e.Feasibility.Verdict == "Feasible" && e.Feasibility.SlackHours >= s.Settings.SafetyBufferHours * 2)
             e.Pros.Add($"Comfortable window — {Hhmm.Of(e.Feasibility.SlackHours)} of slack.");
-        if (e.EstimatedMargin > 0) e.Pros.Add($"Contributes ~${e.EstimatedMargin:N0} after fuel, wages and overhead.");
+        if (e.EstimatedMargin > 0) e.Pros.Add($"Contributes ~{Units.Money0(e.EstimatedMargin)} after fuel, wages and overhead.");
 
         if (e.AllInRpm < floorRpm)
-            e.Cons.Add($"${e.AllInRpm:0.00}/mi all-in is under our ${floorRpm:0.00} break-even — fuel, wages and overhead come to more than the load pays.");
+            e.Cons.Add($"{Units.PerDistance(e.AllInRpm, "0.00")} all-in is under our {Units.Money(floorRpm, "0.00")} break-even — fuel, wages and overhead come to more than the load pays.");
         else if (e.AllInRpm < targetRpm)
-            e.Cons.Add($"${e.AllInRpm:0.00}/mi clears break-even but is below our ${targetRpm:0.00} target.");
+            e.Cons.Add($"{Units.PerDistance(e.AllInRpm, "0.00")} clears break-even but is below our {Units.Money(targetRpm, "0.00")} target.");
         if (e.DeadheadRatio > w.MaxDeadheadRatio)
             e.Cons.Add($"{load.DeadheadMiles:0} mi of deadhead is {e.DeadheadRatio * 100:0}% of the loaded miles — over our {w.MaxDeadheadRatio * 100:0}% limit.");
         if (e.DestTier == 3)
             e.Cons.Add($"{Place(load.DestCity, load.DestState)} is a thin market — expect deadhead or a cheap reload getting out.");
         if (e.EstimatedMargin <= 0)
-            e.Cons.Add($"Loses ~${Math.Abs(e.EstimatedMargin):N0} after fuel, wages and overhead.");
+            e.Cons.Add($"Loses ~{Units.Money0(Math.Abs(e.EstimatedMargin))} after fuel, wages and overhead.");
         foreach (var b in e.Feasibility.Blockers) e.Cons.Add(b);
         foreach (var wn in e.Feasibility.Warnings) e.Cons.Add(wn);
         if (load.IsUrgent) e.Cons.Add("Urgent freight — no room for error on the clock.");
@@ -1771,7 +1771,7 @@ public static class DispatchEngine
                 "Cheap, but it gets you home and we are already late doing it. The alternative is running " +
                 "you in empty over the same miles, so anything on the trailer is better than nothing.");
             else if (resetsUs) e.Pros.Add("Cheap, but it parks the truck where we can restart the cycle.");
-            else e.HardFails.Add($"Under the ${floorRpm:0.00}/mi break-even with no positioning justification — this load loses money.");
+            else e.HardFails.Add($"Under the {Units.PerDistance(floorRpm, "0.00")} break-even with no positioning justification — this load loses money.");
         }
 
         e.Recommendation = e.HardFails.Count > 0 || e.HomeTimeFails.Count > 0
@@ -1972,9 +1972,9 @@ public static class DispatchEngine
 
         var where = Place(s.Status.LocationCity, s.Status.LocationState);
         var what = losesMoney
-            ? $"the best of them loses about ${Math.Abs(best.EstimatedMargin):N0} after fuel, wages and overhead"
+            ? $"the best of them loses about {Units.Money0(Math.Abs(best.EstimatedMargin))} after fuel, wages and overhead"
             : underFloor
-                ? $"the best of them is ${best.AllInRpm:0.00}/mi all-in, under our ${floor:0.00} floor"
+                ? $"the best of them is {Units.PerDistance(best.AllInRpm, "0.00")} all-in, under our {Units.Money(floor, "0.00")} floor"
                 : $"the best of them works out at ${perHour:0} an hour for as long as the truck is tied up, " +
                   $"against the ${perHourFloor:0} we would want";
 
@@ -2114,7 +2114,7 @@ public static class DispatchEngine
         if (runnerUp != null)
         {
             var better = pick.AllInRpm >= runnerUp.AllInRpm
-                ? $"It also out-earns the {Place(runnerUp.Load.DestCity, runnerUp.Load.DestState)} option at ${pick.AllInRpm:0.00} vs ${runnerUp.AllInRpm:0.00} all-in."
+                ? $"It also out-earns the {Place(runnerUp.Load.DestCity, runnerUp.Load.DestState)} option at {Units.Money(pick.AllInRpm, "0.00")} vs {Units.Money(runnerUp.AllInRpm, "0.00")} all-in."
                 : $"The {Place(runnerUp.Load.DestCity, runnerUp.Load.DestState)} load pays more per mile, but this one positions the truck better and I am taking the position.";
             parts.Add(better);
         }
@@ -2321,7 +2321,7 @@ public static class DispatchEngine
             TarpsUsed = load.RequiresTarp ? 1 : 0,
             FeasibilityAtDispatch = eval.Feasibility,
             AuthorizationRationale = string.IsNullOrWhiteSpace(rationaleOverride)
-                ? $"${eval.AllInRpm:0.00}/mi all-in on {load.LoadedMiles + load.DeadheadMiles:N0} total miles, " +
+                ? $"{Units.PerDistance(eval.AllInRpm, "0.00")} all-in on {load.LoadedMiles + load.DeadheadMiles:N0} total miles, " +
                   $"{Hhmm.Of(eval.Feasibility.SlackHours)} of slack against a {Hhmm.Of(eval.Feasibility.RequiredBufferHours)} buffer, " +
                   $"tier-{eval.DestTier} destination{(eval.DestResetFriendly ? " with restart capability" : "")}."
                 : rationaleOverride

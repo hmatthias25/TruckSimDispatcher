@@ -180,7 +180,7 @@ public static class TruckGrade
     }
 
     private static string Describe(AppState s, Truck t) =>
-        $"{t.Year} {t.Make} {t.Model}, {t.ServiceMiles:N0} mi.";
+        $"{t.Year} {t.Make} {t.Model}, {Units.Distance(t.ServiceMiles)}.";
 
     /// <summary>The best of a set on the same scale everything else uses. Null when the set is empty.</summary>
     public static Truck? Best(AppState s, IEnumerable<Truck> candidates) =>

@@ -3272,6 +3272,16 @@ public class AppSettings
     /// </summary>
     public string CarrierRoster { get; set; } = "Real";
 
+    /// <summary>
+    /// Miles or kilometres, overriding what the career's game would show. Empty means the game's own:
+    /// US units for ATS, metric for ETS2. "US" or "metric" otherwise. See <see cref="Services.Units"/>.
+    ///
+    /// Display only. The career is stored in miles, gallons and pounds either way, so changing this
+    /// changes nothing on disk and can be undone at any time. ATS can itself be set to kilometres, and a
+    /// player who drives that way should read the same figures here as on their dashboard.
+    /// </summary>
+    public string DisplayUnits { get; set; } = "";
+
     // --- optional AI hookup (blank = fully offline; nothing is sent anywhere)
     public string AnthropicApiKey { get; set; } = "";
     public string AnthropicModel { get; set; } = "claude-sonnet-5";

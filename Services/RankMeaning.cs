@@ -65,7 +65,7 @@ public static class RankMeaning
 
         // ---- money
         if (s.Driver.Pay.WeeklyGuarantee > 0)
-            b.Gained.Add($"There is a weekly guarantee behind you now: ${s.Driver.Pay.WeeklyGuarantee:N0}, " +
+            b.Gained.Add($"There is a weekly guarantee behind you now: {Units.Money0(s.Driver.Pay.WeeklyGuarantee)}, " +
                          "whatever the freight does.");
 
         // ---- dedicated work, where the ladder reaches it

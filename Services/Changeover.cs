@@ -227,7 +227,7 @@ public static class Changeover
                 Kind = Buy,
                 Title = $"Buy your new tractor — {truck.Year} {truck.Make} {truck.Model}",
                 Detail =
-                    $"Spec it with a {truck.Transmission} and governed around {truck.GovernedMph} mph if the " +
+                    $"Spec it with a {truck.Transmission} and governed around {Units.Speed(truck.GovernedMph)} if the " +
                     "dealer has it. An exact match is not required: buy what the money runs to, then open " +
                     $"Fleet → unit {truck.Ref} → Edit and set the make, model, transmission and governed speed " +
                     "to what you actually bought. Those numbers are what every drive time is worked out from.",

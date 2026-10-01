@@ -141,7 +141,7 @@ public static class TrailerSwap
         };
 
         order.Instruction =
-            $"Take {mine?.Ref ?? "what you are on"} to the {label} yard — {miles:N0} mi — drop it there and " +
+            $"Take {mine?.Ref ?? "what you are on"} to the {label} yard — {Units.Distance(miles)} — drop it there and " +
             $"hook {box.Ref}, {what}. " +
             (near
                 ? $"You are down to {s.Hos.CycleRemaining:0.#} hours of cycle, so take your 34 there while you are at it."

@@ -163,14 +163,14 @@ public static class FleetMaintenance
             findChancePct = chance,
             headline = gdc
                 ? $"Unit {t.Ref} has {checkpoints.Count} checkpoint(s) due" +
-                  (past > 0 ? $", worst {past:N0} mi over." : ".")
-                : $"Unit {t.Ref} is {past:N0} mi past its {t.ServiceIntervalMiles:N0}-mile PM.",
+                  (past > 0 ? $", worst {Units.Distance(past)} over." : ".")
+                : $"Unit {t.Ref} is {Units.Distance(past)} past its {t.ServiceIntervalMiles:N0}-mile PM.",
             detail = (gdc && work.Length > 0 ? $"Due: {work}. " : "") +
-                     $"The yard will do it at the next fleet report — about ${cost:N0}. " +
+                     $"The yard will do it at the next fleet report — about {Units.Money0(cost)}. " +
                      (driver != null ? $"{driver.Name} keeps running; " : "") +
                      "nothing is being parked for it.",
             risk = chance >= 25
-                ? $"At {ServicePlan.WearMiles(t):N0} mi and {past:N0} past due, there is a real chance they find " +
+                ? $"At {Units.Distance(ServicePlan.WearMiles(t))} and {past:N0} past due, there is a real chance they find " +
                   "something worth more than the service. Better found in the bay than on the road."
                 : "Routine, on the numbers we have.",
             deferNote = t.PmDeferrals > 0
@@ -209,7 +209,7 @@ public static class FleetMaintenance
                 t.PmDeferrals++;
                 report.Findings.Add(
                     $"Unit {t.Ref} was due {(gdc ? $"{owed.Count} checkpoint(s)" : "a PM")} and it is being " +
-                    $"held over — ${balance:N0} in operating will not carry a ${cost:N0} service this " +
+                    $"held over — {Units.Money0(balance)} in operating will not carry a {Units.Money0(cost)} service this " +
                     $"period. That is {t.PmDeferrals} time(s) on this unit, and the shop is now " +
                     $"{FindChance(s, t)}% to find something when it does go in.");
                 continue;
@@ -234,10 +234,10 @@ public static class FleetMaintenance
                 LedgerService.Post(s, LedgerService.Operating, -cost, "FleetMaintenance",
                     $"PM — unit {t.Ref}", report.Number, gameTime: report.PeriodEndGame);
                 report.Findings.Add(checkpoints.Count > 0
-                    ? $"Unit {t.Ref} went through the shop, ${cost:N0} — " +
+                    ? $"Unit {t.Ref} went through the shop, {Units.Money0(cost)} — " +
                       string.Join(", ", checkpoints.Select(c => c.Name.ToLowerInvariant())) + "."
-                    : $"Unit {t.Ref} was due a PM. Done at the yard, ${cost:N0}. " +
-                      $"Next one at {t.ServiceMiles + t.ServiceIntervalMiles:N0} mi on our books.");
+                    : $"Unit {t.Ref} was due a PM. Done at the yard, {Units.Money0(cost)}. " +
+                      $"Next one at {Units.Distance(t.ServiceMiles + t.ServiceIntervalMiles)} on our books.");
                 spent[t.Unit] = spent.GetValueOrDefault(t.Unit) + cost;
                 continue;
             }
@@ -254,18 +254,18 @@ public static class FleetMaintenance
                          && d.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
 
                 report.Findings.Add(
-                    $"Unit {t.Ref} went in for a PM and is not coming out. At {ServicePlan.WearMiles(t):N0} mi " +
-                    $"the shop will not put it back on the road. Billed ${billed:N0} for the strip-down.");
+                    $"Unit {t.Ref} went in for a PM and is not coming out. At {Units.Distance(ServicePlan.WearMiles(t))} " +
+                    $"the shop will not put it back on the road. Billed {Units.Money0(billed)} for the strip-down.");
 
                 // The existing retirement path takes it from here: trade instructions by make and spec.
                 report.Retirements.Add(new RetirementRecommendation
                 {
                     Unit = t.Unit,
                     UnitKind = "Truck",
-                    Headline = $"Unit {t.Ref} condemned at PM — {ServicePlan.WearMiles(t):N0} mi.",
+                    Headline = $"Unit {t.Ref} condemned at PM — {Units.Distance(ServicePlan.WearMiles(t))}.",
                     Evidence =
                     {
-                        $"Went in for a routine service at {ServicePlan.WearMiles(t):N0} mi.",
+                        $"Went in for a routine service at {Units.Distance(ServicePlan.WearMiles(t))}.",
                         "The shop stopped rather than rebuilding it.",
                         "Wear, not a wreck — there is no insurance claim here.",
                     },
@@ -282,7 +282,7 @@ public static class FleetMaintenance
             LedgerService.Post(s, LedgerService.Operating, -major, "Maintenance",
                 $"PM — unit {t.Ref} (major repair)", report.Number);
             report.Findings.Add(
-                $"Unit {t.Ref} needed more than a service — ${major:N0} all in. Found in the bay rather " +
+                $"Unit {t.Ref} needed more than a service — {Units.Money0(major)} all in. Found in the bay rather " +
                 "than on the shoulder, which is the whole argument for PM.");
             spent[t.Unit] = spent.GetValueOrDefault(t.Unit) + major;
         }

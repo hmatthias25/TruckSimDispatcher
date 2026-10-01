@@ -357,7 +357,7 @@ public static class Probation
 
         var missing = new List<string>();
         if (delivered < plan.RequiredLoads) missing.Add($"{delivered} of {plan.RequiredLoads} loads");
-        if (miles < plan.RequiredMiles) missing.Add($"{miles:N0} of {plan.RequiredMiles:N0} mi");
+        if (miles < plan.RequiredMiles) missing.Add($"{miles:N0} of {Units.Distance(plan.RequiredMiles)}");
         // Counted like the career ladder counts them: driver-fault only, inside a recent window, so
         // clean work walks them off. A percentage over the whole period never forgave anything.
         var lateStrikes = SafetyService.LateStrikes(s);

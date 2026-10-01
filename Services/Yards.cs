@@ -57,8 +57,8 @@ public static class Yards
               "and I will put the yard on the books.";
 
         if (req.Unaffordable)
-            req.Instruction += $" No rush — spendable cash is ${spendable:N0} and a garage runs somewhere " +
-                               $"around ${TypicalGarageCost:N0}. This is what the figures say we could use, " +
+            req.Instruction += $" No rush — spendable cash is {Units.Money0(spendable)} and a garage runs somewhere " +
+                               $"around {Units.Money0(TypicalGarageCost)}. This is what the figures say we could use, " +
                                "not what we can put our hands on today.";
 
         s.YardRequests.Insert(0, req);

@@ -109,7 +109,7 @@ public static class LedgerService
             ? "No ATS balance reported yet. Type what your game shows when you want to know what the " +
               "company can put its hands on."
             : p.WagesOwed > 0
-                ? $"ATS keeps one bank, and that balance is the company's. ${p.WagesOwed:N2} of it is owed " +
+                ? $"ATS keeps one bank, and that balance is the company's. {Units.Money(p.WagesOwed)} of it is owed " +
                   "to you and is not the company's to spend. Your own pay is the settlement figures — a " +
                   "different thing from this number."
                 : "ATS keeps one bank, and that balance is the company's. Your own pay is the settlement " +
@@ -194,13 +194,13 @@ public static class LedgerService
         {
             var memo = $"Linehaul {trip.Cargo} {DispatchEngine.Place(trip.OriginCity, trip.OriginState)} → {DispatchEngine.Place(trip.DestCity, trip.DestState)}";
             if (Math.Abs(cfg.RevenueFactor - 1.0) > 0.001)
-                memo += $" (ATS paid ${trip.GameRevenue:N2}; booked at ×{cfg.RevenueFactor:0.##} realism factor)";
+                memo += $" (ATS paid {Units.Money(trip.GameRevenue)}; booked at ×{cfg.RevenueFactor:0.##} realism factor)";
             Post(s, Operating, trip.CompanyRevenue, "FreightRevenue", memo, trip.Number);
         }
 
         if (trip.FuelCost > 0)
             Post(s, Operating, -trip.FuelCost, "Fuel",
-                $"{trip.FuelGallons:0.#} gal{(trip.FuelGallons > 0 ? $" @ ${trip.FuelCost / (decimal)trip.FuelGallons:0.000}/gal" : "")}", trip.Number);
+                $"{trip.FuelGallons:0.#} gal{(trip.FuelGallons > 0 ? $" @ {Units.FuelPrice(trip.FuelCost / (decimal)trip.FuelGallons, "0.000")}" : "")}", trip.Number);
 
         if (trip.Tolls > 0)
             Post(s, Operating, -trip.Tolls, "Tolls", "Tolls and scales", trip.Number);
@@ -215,7 +215,7 @@ public static class LedgerService
                 Post(s, Operating, -trip.Fines, "Fines", $"Fines/citations ({trip.FaultAttribution} fault)", trip.Number);
             else
                 Post(s, Operating, 0, "Fines",
-                    $"Fines ${trip.Fines:N2} charged back to driver — no company expense", trip.Number);
+                    $"Fines {Units.Money(trip.Fines)} charged back to driver — no company expense", trip.Number);
         }
 
         if (trip.OtherExpense > 0)
@@ -269,7 +269,7 @@ public static class LedgerService
         if (wo.PaidBy == "Driver")
         {
             Post(s, Operating, 0, "Repairs",
-                $"{wo.Number} ${wo.Cost:N2} charged to driver — no company expense", wo.Number);
+                $"{wo.Number} {Units.Money(wo.Cost)} charged to driver — no company expense", wo.Number);
             return;
         }
 
@@ -415,7 +415,7 @@ public static class LedgerService
                 Opening = a.OpeningBalance, Balance = computed
             });
             if (a.Kind == "Asset" && computed < 0)
-                r.Findings.Add($"{a.Name} is overdrawn at ${computed:N2}. Move money in or stop spending against it.");
+                r.Findings.Add($"{a.Name} is overdrawn at {Units.Money(computed)}. Move money in or stop spending against it.");
         }
 
         foreach (var t in s.Trips.Where(t => t.Status == "Delivered" && t.CompanyRevenue > 0))
@@ -423,14 +423,14 @@ public static class LedgerService
             var posted = s.Ledger.Where(e => e.TripNumber == t.Number && e.Category == "FreightRevenue")
                 .Sum(e => e.Amount);
             if (Math.Abs(posted - t.CompanyRevenue) > 0.01m)
-                r.Findings.Add($"{t.Number}: revenue ${t.CompanyRevenue:N2} on the trip record but ${posted:N2} posted to the ledger.");
+                r.Findings.Add($"{t.Number}: revenue {Units.Money(t.CompanyRevenue)} on the trip record but {Units.Money(posted)} posted to the ledger.");
         }
 
         foreach (var st in s.Settlements)
         {
             var posted = -s.Ledger.Where(e => e.TripNumber == st.Number && e.Category == "Payroll").Sum(e => e.Amount);
             if (Math.Abs(posted - st.Gross) > 0.01m)
-                r.Findings.Add($"{st.Number}: settlement gross ${st.Gross:N2} but ${posted:N2} posted as payroll.");
+                r.Findings.Add($"{st.Number}: settlement gross {Units.Money(st.Gross)} but {Units.Money(posted)} posted as payroll.");
         }
 
         var accrued = s.Trips
@@ -438,7 +438,7 @@ public static class LedgerService
             .Sum(t => t.Pay.Total);
         if (Math.Abs(accrued - s.Driver.UnsettledPay) > 0.01m)
         {
-            r.Findings.Add($"Unsettled driver pay is recorded as ${s.Driver.UnsettledPay:N2} but the open trips total ${accrued:N2}.");
+            r.Findings.Add($"Unsettled driver pay is recorded as {Units.Money(s.Driver.UnsettledPay)} but the open trips total {Units.Money(accrued)}.");
             r.SuggestedUnsettledPay = Math.Round(accrued, 2);
         }
 

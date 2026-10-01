@@ -188,7 +188,7 @@ public static class Restart
             if (closeEnough && dueEnough)
                 return (home.City, home.State, true,
                     $"Home time is {(homeStatus.Overdue ? "overdue" : $"due in {homeStatus.DaysUntilDue:0.#} days")} and " +
-                    $"{DispatchEngine.Place(home.City, home.State)} is {toHome:N0} mi out — about {Hhmm.Of(hoursHome)} " +
+                    $"{DispatchEngine.Place(home.City, home.State)} is {Units.Distance(toHome)} out — about {Hhmm.Of(hoursHome)} " +
                     "empty. Worth it to do both in one stop: sit the restart at the yard and take your home time while " +
                     "you are there, rather than thirty-four hours here and a run home a day later.");
 
@@ -197,7 +197,7 @@ public static class Restart
             if (homeStatus.Tracked && toHome is { } far)
             {
                 if (!dueEnough && !closeEnough)
-                    homeDeclined = $"The yard is {far:N0} mi out and home time is not due for " +
+                    homeDeclined = $"The yard is {Units.Distance(far)} out and home time is not due for " +
                                    $"{homeStatus.DaysUntilDue:0.#} days, so I am not running you there empty for this. " +
                                    "I will work you back with freight when it is closer.";
                 else if (!dueEnough)
@@ -206,11 +206,11 @@ public static class Restart
                                    "I will route you home with a load nearer the time.";
                 else if (hoursHome <= maxHop)
                     homeDeclined = $"Home time is {(homeStatus.Overdue ? "overdue" : "close")} and the yard is only " +
-                                   $"{far:N0} mi out, but you have {Hhmm.Of(drivable)} of driving left and cannot " +
+                                   $"{Units.Distance(far)} out, but you have {Hhmm.Of(drivable)} of driving left and cannot " +
                                    "legally get there. Sit the restart here; you will have a full clock for it after.";
                 else
                     homeDeclined = $"Home time is {(homeStatus.Overdue ? "overdue" : "close")}, but the yard is " +
-                                   $"{far:N0} mi out — about {Hhmm.Of(hoursHome)} empty, and that is too far to " +
+                                   $"{Units.Distance(far)} out — about {Hhmm.Of(hoursHome)} empty, and that is too far to " +
                                    "deadhead for a restart. Sit it here and I will get you home with freight.";
             }
         }
@@ -231,7 +231,7 @@ public static class Restart
 
         if (best != null)
             return (best.c.City, best.c.State, false,
-                $"{DispatchEngine.Place(best.c.City, best.c.State)} is {best.miles:N0} mi out and has the parking and " +
+                $"{DispatchEngine.Place(best.c.City, best.c.State)} is {Units.Distance(best.miles)} out and has the parking and " +
                 $"services to sit thirty-four hours. Tier-{best.c.Tier} freight market too, so you will not be " +
                 "starting from nowhere when you come back on the clock." +
                 (homeDeclined.Length > 0 ? " " + homeDeclined : ""));
@@ -245,7 +245,7 @@ public static class Restart
             var needHours = mphNow > 0 ? nearest.miles / mphNow : 0;
             return ("", "", false,
                 $"You have {Hhmm.Of(drivable)} of driving left and the nearest place I would choose — " +
-                $"{DispatchEngine.Place(nearest.c.City, nearest.c.State)}, {nearest.miles:N0} mi out — is about " +
+                $"{DispatchEngine.Place(nearest.c.City, nearest.c.State)}, {Units.Distance(nearest.miles)} out — is about " +
                 $"{Hhmm.Of(needHours)} away. That does not fit, so do not chase it. Park at the first safe place " +
                 "you can reach inside your hours, report in from there, and I will start the clock on it. A truck " +
                 "stop you can get to beats a better one you cannot." +

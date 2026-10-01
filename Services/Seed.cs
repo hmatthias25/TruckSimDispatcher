@@ -419,7 +419,7 @@ public static class Seed
         // inherited units 15k-720k on the carrier's equipment standard, because joining a carrier means
         // inheriting trucks that have been working. That is only ever used to populate a garage.
         return $"a NEW {spec.Make} {spec.Model} off the dealer lot — {spec.Engine} around {spec.Hp} hp, " +
-               $"{spec.Trans}, {spec.Cab.ToLowerInvariant()}, roughly {spec.Fuel:N0} gal of fuel. " +
+               $"{spec.Trans}, {spec.Cab.ToLowerInvariant()}, roughly {Units.Volume(spec.Fuel, "N0")} of fuel. " +
                "Buy it new, not used: we are replacing a unit that ran out of life and second-hand miles " +
                "put us back here inside two years. Anything close to that spec is fine; match what you " +
                "actually buy on the Equipment tab.";

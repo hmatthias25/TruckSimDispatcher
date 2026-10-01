@@ -306,8 +306,8 @@ public static class Migrations
             Channel = "pay",
             GameTime = s.Status.GameTime,
             Message =
-                $"Your loaded rate is corrected from ${was:0.000} to ${s.Driver.Pay.LoadedCpm:0.000} a mile, " +
-                $"and empty from ${wasDh:0.000} to ${s.Driver.Pay.DeadheadCpm:0.000}. You were on " +
+                $"Your loaded rate is corrected from {Units.Money(was, "0.000")} to {Units.Money(s.Driver.Pay.LoadedCpm, "0.000")} a mile, " +
+                $"and empty from {Units.Money(wasDh, "0.000")} to {Units.Money(s.Driver.Pay.DeadheadCpm, "0.000")}. You were on " +
                 $"{s.Company.Name}'s full company rate while still serving probation — that is the figure a " +
                 "cleared company driver earns, and it meant clearing probation was worth nothing at all. " +
                 "Settlements already run stay as they were paid.",
@@ -2192,7 +2192,7 @@ public static class Migrations
             {
                 t.Pay.BreakdownPay = keep;
                 t.Pay.Total = keep;
-                t.Pay.Lines.Add($"Cancelled by the company — one day of breakdown/detention pay = ${keep:N2}.");
+                t.Pay.Lines.Add($"Cancelled by the company — one day of breakdown/detention pay = {Units.Money(keep)}.");
             }
             taken += had - t.Pay.Total;
         }
@@ -2202,7 +2202,7 @@ public static class Migrations
         {
             Channel = "payroll",
             GameTime = s.Status.GameTime,
-            Message = $"${taken:N2} taken back off {wrong.Count} cancelled load(s) — they were paid the full " +
+            Message = $"{Units.Money(taken)} taken back off {wrong.Count} cancelled load(s) — they were paid the full " +
                       "loaded rate for freight that was never hauled. Empty miles still come back on the " +
                       "next dispatch at the empty rate.",
         });
@@ -2322,7 +2322,7 @@ public static class Migrations
         if (!moved && yards.Count == 0) return;
 
         var parts = new List<string>();
-        if (moved) parts.Add($"${was:0.00} to ${s.Settings.FuelPricePerGal:0.00} a gallon");
+        if (moved) parts.Add($"{Units.Money(was, "0.00")} to {Units.Money(s.Settings.FuelPricePerGal, "0.00")} a gallon");
         if (yards.Count > 0) parts.Add($"contract fuel at {yards.Count} yard(s) with it");
 
         s.Events.Insert(0, new LogEvent
@@ -2432,7 +2432,7 @@ public static class Migrations
             Channel = "ledger",
             GameTime = s.Status.GameTime,
             Message =
-                $"Fleet wages written off the books — ${wages:N0} of them. ATS pays hired drivers out of " +
+                $"Fleet wages written off the books — {Units.Money0(wages)} of them. ATS pays hired drivers out of " +
                 "the job before it shows you their $/mile, so that figure was already net and the app was " +
                 "deducting a second wage from it. What they bring in is contribution now, and the rung's " +
                 "share says what somebody is worth rather than moving money.",

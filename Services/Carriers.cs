@@ -1883,7 +1883,7 @@ public static class Carriers
                          // thing you can do anywhere in ATS. Reported from play.
                          + (LimitsSpeed(s.Company.Code)
                              ? $"{s.Company.Name} governs its trucks. In ATS go to Options, Gameplay, and turn "
-                               + $"the truck speed limiter ON — that caps you at {LimiterMph} mph, which is what "
+                               + $"the truck speed limiter ON — that caps you at {Units.Speed(LimiterMph)}, which is what "
                                + "the planner is working to.\n\n"
                              : $"{s.Company.Name} does not govern its trucks. Leave the truck speed limiter OFF "
                                + "in Options, Gameplay — the seat is yours to run at the truck's own speed, and "
@@ -1987,7 +1987,7 @@ public static class Carriers
             {
                 Title = "Optional — remember the yard has a shop",
                 Detail = $"{hq.City} has a repair shop ({hq.ShopLabourDiscount * 100:0}% off labour) and contract fuel at " +
-                         $"${hq.FuelPricePerGal:0.00}/gal. Bringing damage home is cheaper than fixing it on the road.",
+                         $"{Units.FuelPrice(hq.FuelPricePerGal, "0.00")}. Bringing damage home is cheaper than fixing it on the road.",
                 Why = "Maintenance cost comes out of the company's reserve, which funds your equipment."
             });
 

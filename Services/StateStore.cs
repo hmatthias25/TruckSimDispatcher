@@ -23,7 +23,7 @@ public class StateStore
     private AppState _state
     {
         get => __state;
-        set { __state = value; GameProfile.Activate(value); }
+        set { __state = value; GameProfile.Activate(value); Units.Activate(value); }
     }
 
     /// <summary>
@@ -438,6 +438,7 @@ public class StateStore
             // A mutation can set the game itself (a new career choosing it at onboarding), so it is read
             // again before anything else asks a table.
             GameProfile.Activate(_state);
+            Units.Activate(_state);
             Save();
             return result;
         }

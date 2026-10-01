@@ -49,13 +49,46 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const sv = (id) => ($(id)?.value ?? '').trim();
-const fv = (id) => { const n = parseFloat($(id)?.value); return isNaN(n) ? 0 : n; };
+/*
+ * A box that holds a distance, a fuel volume, a weight or a rate says so with data-u, and is read back into
+ * the stored unit here — so a box shown in km can never be sent to the server as though it were miles. The
+ * kinds: dist (miles, odometers included), vol (US gallons), wt (pounds), perdist (money per mile),
+ * pervol (money per gallon), speed (mph), econ (mpg, shown as L/100 km in metric). Untagged boxes are read exactly as typed. See the units block below.
+ */
+const UNIT_IN = {
+  dist: (v) => v / UN().distancePerMile,
+  vol: (v) => v / UN().volumePerGallon,
+  wt: (v) => v / UN().weightPerPound,
+  perdist: (v) => v * UN().distancePerMile,
+  pervol: (v) => v * UN().volumePerGallon,
+  speed: (v) => v / UN().distancePerMile,
+  // Economy is not a multiple: litres per 100 km is the reciprocal of miles per gallon.
+  econ: (v) => (UN().id === 'metric' ? (v > 0 ? 235.214583 / v : 0) : v),
+};
+const UNIT_OUT = {
+  dist: (v) => v * UN().distancePerMile,
+  vol: (v) => v * UN().volumePerGallon,
+  wt: (v) => v * UN().weightPerPound,
+  perdist: (v) => v / UN().distancePerMile,
+  pervol: (v) => v / UN().volumePerGallon,
+  speed: (v) => v * UN().distancePerMile,
+  econ: (v) => (UN().id === 'metric' ? (v > 0 ? 235.214583 / v : 0) : v),
+};
+const stored = (id, n) => { const k = $(id)?.dataset?.u; return k && UNIT_IN[k] ? UNIT_IN[k](n) : n; };
+/** A stored figure as it goes into a box tagged data-u="kind": "" when there is nothing to show. */
+const uv = (value, kind, d = 0) => {
+  const n = +value;
+  if (value === '' || value == null || isNaN(n)) return '';
+  const shown = UNIT_OUT[kind] ? UNIT_OUT[kind](n) : n;
+  return d > 0 ? shown.toFixed(d) : String(Math.round(shown));
+};
+const fv = (id) => { const n = parseFloat($(id)?.value); return isNaN(n) ? 0 : stored(id, n); };
 /* Empty means "not reported", which is different from zero — a blank clock must not read as 0 hours left. */
 const fvn = (id) => {
   const raw = ($(id)?.value ?? '').trim();
   if (raw === '') return null;
   const n = parseFloat(raw);
-  return isNaN(n) ? null : n;
+  return isNaN(n) ? null : stored(id, n);
 };
 const bv = (id) => !!$(id)?.checked;
 
@@ -101,9 +134,71 @@ const list = (id) => sv(id).split(',').map((x) => x.trim()).filter(Boolean);
 const ticked = (id) => Array.from(document.querySelectorAll(`#${id} input[type=checkbox]:checked`))
   .map((x) => x.value);
 
-const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const money0 = (n) => (n < 0 ? '-$' : '$') + Math.abs(+n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+/*
+ * Units and currency (#268). The career is stored in miles, US gallons, pounds and mph whatever the
+ * player sees, and the server's API takes and gives those. What changes is what is SHOWN and how what is
+ * TYPED is read: miles or km, gallons or litres, pounds or kg, $ or €. So every figure on screen goes
+ * through these, and every box a figure is typed into is converted back by the to*() readers before it
+ * is sent. S.units comes from the server (Units.View) and follows the career's game, or the override in
+ * Settings. Before the first snapshot it is the US system, which is what every career was.
+ */
+const UNITS_US = { id: 'US', distance: 'mi', distancePerMile: 1, volume: 'gal', volumePerGallon: 1,
+  weight: 'lb', weightPerPound: 1, speed: 'mph', economy: 'mpg', symbol: '$' };
+const UN = () => (typeof S !== 'undefined' && S && S.units) || UNITS_US;
+const SYM = () => UN().symbol || '$';
+
+const money = (n) => (n < 0 ? '-' : '') + SYM() + Math.abs(+n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money0 = (n) => (n < 0 ? '-' : '') + SYM() + Math.abs(+n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const num = (n, d = 0) => (+n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+/** The distance unit: "mi" or "km". */
+const DU = () => UN().distance;
+/** A distance stored in miles, as the number shown. */
+const distN = (mi) => (+mi || 0) * UN().distancePerMile;
+/** "1,234 mi" or "1,986 km". */
+const dist = (mi, d = 0) => `${num(distN(mi), d)} ${DU()}`;
+/** A rate stored per mile, as "$1.23/mi" or "€0.76/km". */
+const perDist = (perMile, d = 2) => {
+  const v = (+perMile || 0) / UN().distancePerMile;
+  return `${v < 0 ? '-' : ''}${SYM()}${Math.abs(v).toFixed(d)}/${DU()}`;
+};
+/** A rate stored per mile, as the bare number shown. */
+const perDistN = (perMile) => (+perMile || 0) / UN().distancePerMile;
+/** "mile" or "km", for running text: "a loaded mile", "per km". */
+const DUW = () => (DU() === 'km' ? 'km' : 'mile');
+/** "miles" or "kilometres", for running text and headings. */
+const DUWS = () => (DU() === 'km' ? 'kilometres' : 'miles');
+/** A per-mile figure as the money shown per mile or per km, at d decimals, with no unit after it. */
+const pm = (perMile, d = 3) => `${SYM()}${perDistN(perMile).toFixed(d)}`;
+/** A per-mile pay rate at three decimals, as "$0.540" or "€0.336", with no unit after it. */
+const cpm3 = (perMile) => `${SYM()}${perDistN(perMile).toFixed(3)}`;
+/** The fuel unit: "gal" or "L". */
+const VU = () => UN().volume;
+/** Fuel stored in US gallons, as "85.0 gal" or "321.8 L". */
+const vol = (gal, d = 1) => `${num((+gal || 0) * UN().volumePerGallon, d)} ${VU()}`;
+const volN = (gal) => (+gal || 0) * UN().volumePerGallon;
+/** A price stored per gallon, as "$6.32/gal" or "€1.67/L". */
+const fuelPrice = (perGal, d = 2) => `${SYM()}${((+perGal || 0) / UN().volumePerGallon).toFixed(d)}/${VU()}`;
+const fuelPriceN = (perGal) => (+perGal || 0) / UN().volumePerGallon;
+/** Economy stored in mpg, as "6.5 mpg" or "36.2 L/100 km". */
+const econ = (mpg, d = 1) => (UN().id === 'metric'
+  ? ((+mpg || 0) > 0 ? `${(235.214583 / mpg).toFixed(d)} L/100 km` : '— L/100 km')
+  : `${(+mpg || 0).toFixed(d)} mpg`);
+/** The weight unit: "lb" or "kg". */
+const WU = () => UN().weight;
+/** Weight stored in pounds, as "42,000 lb" or "19,051 kg". */
+const wt = (lb, d = 0) => `${num((+lb || 0) * UN().weightPerPound, d)} ${WU()}`;
+const wtN = (lb) => (+lb || 0) * UN().weightPerPound;
+/** Speed stored in mph, as "65 mph" or "105 km/h". */
+const spd = (mph, d = 0) => `${num((+mph || 0) * UN().distancePerMile, d)} ${UN().speed}`;
+
+/* What the player typed, back into the stored unit. Blank and non-numbers pass through as NaN, the same as
+   parseFloat would give, so the existing "|| 0" and "> 0" checks around them keep working. */
+const toMi = (v) => parseFloat(v) / UN().distancePerMile;
+const toGal = (v) => parseFloat(v) / UN().volumePerGallon;
+const toLb = (v) => parseFloat(v) / UN().weightPerPound;
+const toPerMile = (v) => parseFloat(v) * UN().distancePerMile;
+const toPerGal = (v) => parseFloat(v) * UN().volumePerGallon;
 const hrs = (n) => hhmm(n);
 
 /**
@@ -331,7 +426,7 @@ function eventNote(kind) {
       return 'The clock coming off the dock — how long they actually held you, and what this facility '
            + 'gets remembered for.';
     case 'Fuel':
-      return 'The fill goes onto the close-out as you make it. Gallons and price below.';
+      return `The fill goes onto the close-out as you make it. ${VU() === 'L' ? 'Litres' : 'Gallons'} and price below.`;
     case 'Break':
       return 'The required thirty. The end is filled in for you; change it if you sat longer.';
     case 'Rest': case 'Restart':
@@ -669,14 +764,14 @@ function payLadderHtml(c) {
   const sign = delta > 0 ? '+' : '';
 
   return `<div class="kv" style="margin-top:6px">
-    <span>to start <b class="mono">$${start.toFixed(3)}</b>${
+    <span>to start <b class="mono">${cpm3(start)}</b>${
       c.startingNote ? ` <span class="sub">${esc(c.startingNote)}</span>` : ''}</span>
-    <span>off probation <b class="mono">$${company.toFixed(3)}</b></span>
-    ${c.topLoadedCpm ? `<span>top of scale <b class="mono">$${(+c.topLoadedCpm).toFixed(3)}</b>${
+    <span>off probation <b class="mono">${cpm3(company)}</b></span>
+    ${c.topLoadedCpm ? `<span>top of scale <b class="mono">${cpm3(+c.topLoadedCpm)}</b>${
       c.ceilingTitle ? ` <span class="sub">${esc(c.ceilingTitle)}</span>` : ''}</span>` : ''}
     ${now && !c.isCurrentEmployer
-      ? `<span>you earn now <b class="mono">$${now.toFixed(3)}</b> ${
-          badge(cls, `${sign}$${delta.toFixed(3)}/mi to start`)}</span>`
+      ? `<span>you earn now <b class="mono">${cpm3(now)}</b> ${
+          badge(cls, `${sign}${cpm3(delta)}/${DU()} to start`)}</span>`
       : ''}
   </div>`;
 }
@@ -751,7 +846,7 @@ function renderMarket(market, { onboarding }) {
         <span class="lane">${esc(c.name)}</span>
         <span class="sub">${esc(c.hqCity)}, ${esc(c.hqState)} · ${esc(c.size)}</span>
         <div class="spacer"></div>
-        <b style="font-family:var(--mono)">$${(+(c.startingCpm || c.loadedCpm)).toFixed(3)}/mi</b>
+        <b style="font-family:var(--mono)">${cpm3(+(c.startingCpm || c.loadedCpm))}/${DU()}</b>
         <span class="hint" style="margin:0">to start</span>
       </div>
       ${payLadderHtml(c)}
@@ -780,7 +875,7 @@ function renderMarket(market, { onboarding }) {
         <span>yards <b>${esc([c.hqCity + ', ' + c.hqState].concat(c.yards).join(' · '))}</b></span>
       </div>
       <div class="kv">
-        <span>scale <b>$${(+c.loadedCpm).toFixed(3)}</b> &rarr; <b>$${(+c.topLoadedCpm).toFixed(3)}</b>/loaded mi</span>
+        <span>scale <b>${cpm3(+c.loadedCpm)}</b> &rarr; <b>${cpm3(+c.topLoadedCpm)}</b>/loaded ${DU()}</span>
         <span>tops out at <b>${esc(c.ceilingTitle)}</b></span>
       </div>
       ${/* The terms, beside the rate.
@@ -973,7 +1068,7 @@ document.addEventListener('click', async (ev) => {
           <dt>Headquarters</dt><dd>${esc(r.company.terminalCity)}, ${esc(r.company.terminalState)}</dd>
           <dt>Yards</dt><dd>${esc((r.company.terminals || []).map((x) => `${x.city}, ${x.state} (${x.level})`).join(' · '))}</dd>
           <dt>Divisions</dt><dd>${esc(r.company.divisions.join(', '))}</dd>
-          <dt>Pay</dt><dd>$${(+S.driver.pay.loadedCpm).toFixed(3)}/loaded mi · $${(+S.driver.pay.deadheadCpm).toFixed(3)}/empty mi</dd>
+          <dt>Pay</dt><dd>${cpm3(+S.driver.pay.loadedCpm)}/loaded ${DU()} · ${cpm3(+S.driver.pay.deadheadCpm)}/empty ${DU()}</dd>
           <dt>Truck</dt><dd>${t2 ? `Unit ${esc(t2.unit)} — ${t2.year} ${esc(t2.make)} ${esc(t2.model)}, ${esc(t2.transmission)}` : '—'}</dd>
           <dt>Trailer</dt><dd>${tr ? `${esc(tr.unit)} — ${esc(tr.length)} ${esc(tr.type)}` : '—'}</dd>
         </dl>
@@ -1412,7 +1507,7 @@ function viewDispatch() {
               `<option ${st.locationKind === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
           <label>Detail<input id="st-detail" value="${esc(st.locationDetail)}" placeholder="e.g. Walmart DC dock 14"></label>
           <label>Fuel %<input id="st-fuel" type="number" min="0" max="100" step="1" value="${st.fuelPct}"></label>
-          <label>ATS odometer<input id="st-odo" type="number" step="1" value="${Math.round(st.atsOdometer)}"></label>
+          <label>ATS odometer ${DU()}<input id="st-odo" data-u="dist" type="number" step="1" value="${uv(st.atsOdometer, 'dist')}"></label>
           ${/* The ATS bank balance is not asked for here any more. It is the company's cash, not a
                 reading off the driver's day, and the books stopped trying to be a copy of it — so
                 putting it beside fuel and the odometer implied it was part of reporting in. It lives on
@@ -1468,8 +1563,8 @@ function viewDispatch() {
         ${metersHtml(v.hos)}
         <div class="callout ${v.hos.drivableNowHours <= 0 ? 'stop' : 'info'}" style="margin-top:12px">
           <p><b>${esc(v.hos.nextRequiredAction)}</b></p>
-          <p>Binding clock: ${esc(v.hos.bindingClock)}. At ${num(v.hos.effectiveMph, 1)} mph effective that is about
-            <b>${num(v.hos.projectedMilesNow)} mi</b> today, ${num(v.hos.stintMiles)} mi before the break.</p>
+          <p>Binding clock: ${esc(v.hos.bindingClock)}. At ${spd(v.hos.effectiveMph, 1)} effective that is about
+            <b>${dist(v.hos.projectedMilesNow)}</b> today, ${dist(v.hos.stintMiles)} before the break.</p>
         </div>
         ${recapAdviceHtml()}
       </div>
@@ -1507,18 +1602,18 @@ function viewDispatch() {
           ${BOARD_STAGE === 'local'
             ? `<input type="hidden" id="b-ocity" value="${esc(st.locationCity)}">
                <input type="hidden" id="b-ostate" value="${esc(st.locationState)}">
-               <input type="hidden" id="b-dh" value="0">`
+               <input type="hidden" id="b-dh" data-u="dist" value="0">`
             : `<label>Origin city<input id="b-ocity" value="${esc(st.locationCity)}"></label>
                <label>Origin state<input id="b-ostate" class="up" maxlength="2" value="${esc(st.locationState)}"></label>`}
           <label>Destination city<input id="b-dcity" placeholder="e.g. Boise"></label>
           <label>Destination state<input id="b-dstate" class="up" maxlength="2" placeholder="ID"></label>
-          <label>Loaded miles<input id="b-miles" type="number" step="1" min="0" placeholder="ATS distance"></label>
+          <label>Loaded ${DU()}<input id="b-miles" data-u="dist" type="number" step="1" min="0" placeholder="ATS distance"></label>
           ${/* The "trailer already loaded" tick is gone. It said a dry van or reefer off a facility's own
                 board came hooked to a loaded trailer and cost no loading time, and only a flatbed had to
                 be loaded. Wrong: in ATS you unload, and if you take a load from the same facility you go
                 and load it whatever is on the back. There was no question to ask. */ ''}
-          ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead miles<input id="b-dh" type="number" step="1" min="0" value="0"></label>`}
-          <label>Job revenue $<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
+          ${BOARD_STAGE === 'local' ? '' : `<label>Deadhead ${DU()}<input id="b-dh" data-u="dist" type="number" step="1" min="0" value="0"></label>`}
+          <label>Job revenue ${SYM()}<input id="b-rev" type="number" step="1" min="0" placeholder="ATS payout"></label>
           <label>Delivery window, as ATS shows it
             <input id="b-window" placeholder="6:15 AM to 12:55 PM"
               title="Type the window straight off the listing — both times, AM/PM and all. The app knows the game clock and does the arithmetic. This is the better way to give it.">
@@ -1526,7 +1621,7 @@ function viewDispatch() {
           <label>Time to deliver<input id="b-deadline" inputmode="numeric" placeholder="h:mm — only if no window shown"></label>
           <label>Receiver opens in<input id="b-opens" inputmode="numeric" placeholder="h:mm from now"></label>
           ${BOARD_STAGE === 'local' ? '' : `<label title="How long the LISTING stays on the market — the countdown on the job offer, not the delivery time. Under half an hour is not accepted; under an hour dispatch asks you whether you can get there.">Listing expires in<input id="b-expires" inputmode="numeric" placeholder="h:mm, optional"></label>`}
-          <label>Weight lb<input id="b-weight" type="number" step="1" min="0" placeholder="optional"></label>
+          <label>Weight ${WU()}<input id="b-weight" data-u="wt" type="number" step="1" min="0" placeholder="optional"></label>
           <label>ATS nav estimate<input id="b-nav" inputmode="numeric" placeholder="h:mm, optional"></label>
           <label>Shipper<input id="b-shipper" placeholder="optional"></label>
           <label>Receiver<input id="b-receiver" placeholder="optional"></label>
@@ -1584,7 +1679,7 @@ function paintOdometerHint() {
 
   if (typed > 0) {
     el.className = 'hint';
-    el.textContent = `Using your ${num(typed)} loaded mi instead of the odometer.`;
+    el.textContent = `Using your ${dist(typed)} loaded instead of the odometer.`;
     return;
   }
   if (!start || !end) {
@@ -1600,14 +1695,14 @@ function paintOdometerHint() {
   if (delta < 0) warn = `That reads ${num(end)} against a start of ${num(start)} — an odometer does not run backwards.`;
   else if (delta < 0.5) warn = `The odometer has not moved off ${num(start)}.`;
   else if (planned > 0 && delta > Math.max(planned * 2.5, planned + 250))
-    warn = `${num(delta)} mi against a ${num(planned)} mi routing — that looks like a stray digit.`;
+    warn = `${dist(delta)} against a ${dist(planned)} routing — that looks like a stray digit.`;
   else if (planned > 0 && delta < planned * 0.5 && planned - delta > 50)
-    warn = `${num(delta)} mi against a ${num(planned)} mi routing — that is well short of the run.`;
+    warn = `${dist(delta)} against a ${dist(planned)} routing — that is well short of the run.`;
 
   el.className = warn ? 'hint bad' : 'hint';
   el.textContent = warn
     ? `${warn} Check it, or type the miles to override.`
-    : `${num(start)} → ${num(end)} = ${num(delta)} mi${dh > 0 ? `, less ${num(dh)} deadhead = ${num(delta - dh)} loaded` : ''}.`;
+    : `${num(distN(start))} → ${num(distN(end))} = ${dist(delta)}${dh > 0 ? `, less ${dist(dh)} deadhead = ${dist(delta - dh)} loaded` : ''}.`;
 }
 
 /**
@@ -1656,15 +1751,15 @@ function loadedReportHtml(t) {
         : 'weight and trailer condition as you pull out'}</span></div>
 
     ${done ? `<div class="callout go">
-      <p>Reported: ${t.weightLbs > 0 ? `<b>${num(t.weightLbs)} lb</b>` : 'no weight given'}${
+      <p>Reported: ${t.weightLbs > 0 ? `<b>${wt(t.weightLbs)}</b>` : 'no weight given'}${
         t.weightVarianceNote ? ` — ${esc(t.weightVarianceNote)}` : ''}. Trailer at ${num(t.trailerDamageAtHook, 1)}%,
         odometer ${num(t.startOdometer)}.</p>
       <p class="hint" style="margin:0">Nothing more needed on this load until you deliver.</p>
     </div>` : `
     <div class="grid3">
-      <label>Actual weight lb<input id="ld-weight" type="number" step="100" placeholder="${t.weightLbs > 0 ? num(t.weightLbs) : 'from the job'}"></label>
+      <label>Actual weight ${WU()}<input id="ld-weight" data-u="wt" type="number" step="100" placeholder="${t.weightLbs > 0 ? num(wtN(t.weightLbs)) : 'from the job'}"></label>
       ${dh ? '' : `<label>Trailer damage % now<input id="ld-trdmg" type="number" step="0.1" min="0" max="100" value="${S.status.trailerDamagePct}"></label>`}
-      <label>Odometer<input id="ld-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
+      <label>Odometer<input id="ld-odo" data-u="dist" type="number" step="1" value="${uv(S.status.atsOdometer, 'dist')}"></label>
       ${/* When the wheels started turning. A live load has this off its End load event; drop and hook has
             no load events at all, so it is asked for here — read off the game like the odometer beside it
             rather than stamped when the panel happens to be filed. See SpeedLearning. */ ''}
@@ -1887,8 +1982,9 @@ function extractHtml() {
     <h4>No job rows found</h4><p>${esc(EXTRACT.notes || 'Nothing legible in those images.')}</p></div></div>`;
 
   const conf = (c) => badge(c === 'high' ? 'ok' : c === 'medium' ? 'warn' : 'bad', c);
-  const cell = (i, f, val, w = '') =>
-    `<input id="x-${f}-${i}" value="${esc(val)}" style="min-width:${w || '82px'};padding:4px 6px;margin:0;font-size:12px">`;
+  // u: a unit kind for data-u, so a figure read in miles shows and is read back in the career's units.
+  const cell = (i, f, val, w = '', u = '') =>
+    `<input id="x-${f}-${i}"${u ? ` data-u="${u}"` : ''} value="${esc(u ? uv(val, u) : val)}" style="min-width:${w || '82px'};padding:4px 6px;margin:0;font-size:12px">`;
 
   return `<div class="panel">
     <div class="panel-head"><h2>Confirm what was read</h2>
@@ -1913,10 +2009,10 @@ function extractHtml() {
 
     <div class="tablewrap"><table>
       <thead><tr><th></th><th>Cargo</th><th>Origin</th><th>ST</th><th>Destination</th><th>ST</th>
-        <th class="num">Loaded mi</th><th class="num">Revenue</th><th class="num">Deliver in</th>
+        <th class="num">Loaded ${DU()}</th><th class="num">Revenue</th><th class="num">Deliver in</th>
         <th class="num" title="When the receiver will take it, worked out from the window on the listing. Blank means the listing showed no opening time.">Opens in</th>
         <th title="The window exactly as the reader transcribed it off the listing. Deliver in and Opens in are worked out from THIS, against the game clock — so if those two look wrong, this is the field to check. Correct it and they follow.">Window read</th>
-        <th class="num">Weight lb</th><th>Trailer</th><th>Read</th></tr></thead>
+        <th class="num">Weight ${WU()}</th><th>Trailer</th><th>Read</th></tr></thead>
       <tbody>${rows.map((l, i) => {
         const missing = (l.unreadable || []);
         const bad = (f) => missing.includes(f) || (f === 'deadlineHours' && l.windowWarning)
@@ -1928,12 +2024,12 @@ function extractHtml() {
           <td>${cell(i, 'ostate', l.originState, '44px')}</td>
           <td>${cell(i, 'dcity', l.destCity, '104px')}</td>
           <td>${cell(i, 'dstate', l.destState, '44px')}</td>
-          <td><span${bad('loadedMiles')}>${cell(i, 'miles', l.loadedMiles || '', '72px')}</span></td>
+          <td><span${bad('loadedMiles')}>${cell(i, 'miles', l.loadedMiles || '', '72px', 'dist')}</span></td>
           <td><span${bad('gameRevenue')}>${cell(i, 'rev', l.gameRevenue || '', '82px')}</span></td>
           <td><span${bad('deadlineHours')}>${cell(i, 'dl', l.deadlineHours ? hhmm(l.deadlineHours) : '', '72px')}</span></td>
           <td>${cell(i, 'op', l.appointmentOpensHours ? hhmm(l.appointmentOpensHours) : '', '72px')}</td>
           <td><span${l.windowWarning ? ' style="outline:1px solid var(--red)"' : ''}>${cell(i, 'wtext', l.deliverByText || '', '150px')}</span></td>
-          <td>${cell(i, 'wt', l.weightLbs || '', '82px')}</td>
+          <td>${cell(i, 'wt', l.weightLbs || '', '82px', 'wt')}</td>
           <td>${cell(i, 'trailer', l.trailerType, '92px')}</td>
           <td>${conf(l.confidence)}${missing.length ? '<br>' + badge('bad', 'gaps') : ''}</td>
         </tr>`;
@@ -1961,7 +2057,7 @@ function boardTableHtml() {
       <button class="btn primary tiny" data-act="board-eval">Evaluate &amp; assign</button></div>
     <div class="tablewrap"><table>
       <thead><tr><th>Cargo</th><th>Lane</th><th class="num">Loaded</th><th class="num">DH</th>
-        <th class="num">Revenue</th><th class="num">$/mi</th><th class="num">Deliver in</th><th></th></tr></thead>
+        <th class="num">Revenue</th><th class="num">${SYM()}/${DU()}</th><th class="num">Deliver in</th><th></th></tr></thead>
       <tbody>${S.board.map((l) => {
         const tot = l.loadedMiles + l.deadheadMiles;
         return `<tr>
@@ -2020,7 +2116,7 @@ function decisionHtml() {
           data-city="${esc(o.city)}" data-state="${esc(o.state)}" data-miles="${o.miles}"
           data-home="${o.isHomeRun ? '1' : ''}"
           data-reason="${esc(o.reason)}">
-          ${o.isHomeRun ? 'Run home empty' : 'Reposition'} to ${esc(o.city)}, ${esc(o.state)} — ${num(o.miles)} mi</button>
+          ${o.isHomeRun ? 'Run home empty' : 'Reposition'} to ${esc(o.city)}, ${esc(o.state)} — ${dist(o.miles)}</button>
         <span class="hint" style="margin:0">${esc(o.reason)}</span>
       </div>`).join('')}
       ${/* The trailer verdict, HERE, beside the button that triggers it. It only ever went into the
@@ -2100,9 +2196,9 @@ function loadCardHtml(e, d) {
     </div>
     <div class="kv">
       <span>${esc(e.load.cargo)}</span>
-      <span>all-in <b>$${e.allInRpm.toFixed(2)}</b>/mi</span>
-      <span>loaded <b>$${e.loadedRpm.toFixed(2)}</b>/mi</span>
-      <span>${num(e.load.loadedMiles)} mi + <b>${num(e.load.deadheadMiles)}</b> DH</span>
+      <span>all-in <b>${SYM()}${perDistN(e.allInRpm).toFixed(2)}</b>/${DU()}</span>
+      <span>loaded <b>${SYM()}${perDistN(e.loadedRpm).toFixed(2)}</b>/${DU()}</span>
+      <span>${dist(e.load.loadedMiles)} + <b>${num(distN(e.load.deadheadMiles))}</b> DH</span>
       ${e.feasibility.waitForAppointmentHours > 0
         ? `<span>wait for dock <b>${hhmm(e.feasibility.waitForAppointmentHours)}</b></span>` : ''}
       ${e.listingHoursLeft != null
@@ -2152,11 +2248,11 @@ function loadCardHtml(e, d) {
 function timelineHtml(f) {
   if (!f.timeline?.length) return '';
   return `<div class="tablewrap"><table class="tl">
-    <thead><tr><th>Segment</th><th>From</th><th>To</th><th class="num">Time</th><th class="num">Miles</th>
+    <thead><tr><th>Segment</th><th>From</th><th>To</th><th class="num">Time</th><th class="num">${DU() === 'km' ? 'Km' : 'Miles'}</th>
       <th class="num">Drive</th><th class="num">Shift</th><th class="num">Break</th><th class="num">Cycle</th></tr></thead>
     <tbody>${f.timeline.map((s) => `<tr class="${s.kind}">
       <td>${esc(s.label)}</td><td>${gt(s.startGameTime)}</td><td>${gt(s.endGameTime)}</td>
-      <td class="num">${hhmm(s.hours)}</td><td class="num">${s.miles ? num(s.miles) : ''}</td>
+      <td class="num">${hhmm(s.hours)}</td><td class="num">${s.miles ? num(distN(s.miles)) : ''}</td>
       <td class="num">${hhmm(s.driveRemainingAfter)}</td><td class="num">${hhmm(s.shiftRemainingAfter)}</td>
       <td class="num">${hhmm(s.breakRemainingAfter)}</td><td class="num">${hhmm(s.cycleRemainingAfter)}</td>
     </tr>`).join('')}</tbody></table></div>`;
@@ -2245,7 +2341,7 @@ function viewActive() {
       <div class="spacer"></div><span class="sub">${esc(t.division)} division · trailer ${esc(t.trailerUnit)} · unit ${esc(t.truckUnit)}</span></div>
     <dl class="kvlist">
       <dt>Lane</dt><dd>${esc(t.originCity)}, ${esc(t.originState)} → ${esc(t.destCity)}, ${esc(t.destState)}</dd>
-      <dt>Dispatched</dt><dd>${num(t.dispatchedMiles)} loaded + ${num(t.deadheadMiles)} deadhead mi</dd>
+      <dt>Dispatched</dt><dd>${num(distN(t.dispatchedMiles))} loaded + ${num(distN(t.deadheadMiles))} deadhead ${DU()}</dd>
       <dt>Revenue</dt><dd>${money(t.gameRevenue)} from ATS → ${money(t.companyRevenue)} booked</dd>
       <dt>Dispatched at</dt><dd>${gt(t.dispatchedGameTime)}</dd>
       ${t.appointmentOpensGameTime
@@ -2274,7 +2370,7 @@ function viewActive() {
                <div class="sub">Aim for the slot. Past it you have ${num(S.settings.appointmentGraceHours, 1)}h
                  of grace before it counts against you, even with the window open.</div></dd>`
           : ''}
-      ${t.weightLbs ? `<dt>Weight</dt><dd>${num(t.weightLbs)} lb</dd>` : ''}
+      ${t.weightLbs ? `<dt>Weight</dt><dd>${wt(t.weightLbs)}</dd>` : ''}
       ${pk ? `<dt>Parking</dt><dd>${badge(pk.allowed ? 'ok' : 'warn', pk.headline)}
              <div class="sub">${esc(pk.detail)}</div></dd>` : ''}
       ${sh ? `<dt>Their hours</dt><dd>${badge('info', sh.headline)}
@@ -2300,7 +2396,7 @@ function viewActive() {
       <div class="callout ${f.verdict === 'Feasible' ? 'go' : 'warn'}">
         <p><b>${esc(f.verdict)}</b> — ${hhmm(f.slackHours)} slack against a ${hhmm(f.requiredBufferHours)} required buffer.
           ${f.restsRequired} rest(s), ${f.breaksRequired} break(s), ${f.fuelStopsRequired} fuel stop(s),
-          ${hhmm(f.driveHours)} driving over ${num(f.totalMiles)} mi.</p>
+          ${hhmm(f.driveHours)} driving over ${dist(f.totalMiles)}.</p>
         ${/* Said, because a driver checking the timeline against their own arithmetic will find a leg
               ending before the 11 does, and an unexplained gap reads as the app getting it wrong. */ ''}
         ${f.parkingReserveApplied ? `<p class="hint" style="margin:0">A driving day here stops
@@ -2381,8 +2477,8 @@ function viewActive() {
         at pickup is still wanted, in <b>Report after hooking</b>.</p>` : ''}
       <fieldset><legend>If this is a fuel stop</legend>
         <div class="grid4">
-          <label>Gallons<input id="ev-gal" type="number" step="0.1" placeholder="0"></label>
-          <label>$/gal<input id="ev-price" type="number" step="0.001" placeholder="0.000"></label>
+          <label>${VU() === 'L' ? 'Litres' : 'Gallons'}<input id="ev-gal" data-u="vol" type="number" step="0.1" placeholder="0"></label>
+          <label>${SYM()}/${VU()}<input id="ev-price" data-u="pervol" type="number" step="0.001" placeholder="0.000"></label>
           <label>City<input id="ev-city" placeholder="${esc(S.status.locationCity)}"></label>
           <label>State<input id="ev-state" class="up" maxlength="2" placeholder="${esc(S.status.locationState)}"></label>
         </div>
@@ -2397,7 +2493,7 @@ function viewActive() {
             : (e.kind === 'Rest' || e.kind === 'Restart')
               ? ` <span class="badge warn">no end time</span>` : ''
         } — ${esc(e.detail)}${
-          e.gallons ? ` <b>${num(e.gallons, 1)} gal</b>${e.pricePerGal ? ` @ $${num(e.pricePerGal, 3)}` : ''}` : ''
+          e.gallons ? ` <b>${vol(e.gallons)}</b>${e.pricePerGal ? ` @ ${SYM()}${num(fuelPriceN(e.pricePerGal), 3)}` : ''}` : ''
         } <button class="btn tiny ghost" data-act="amend-event" data-trip="${esc(t.id)}"
             data-ev="${esc(e.id)}" title="Correct or drop this entry">fix</button></span></div>`).join('')}</div>
         <p class="hint">Typed a stamp wrong? <b>fix</b> it here. On a load already closed out I work the
@@ -2471,11 +2567,11 @@ function viewActive() {
              out.</p></div>` : ''}
       <div class="grid2">
         ${dayTimeInput('c-time', arrivedFromLog(t) || S.status.gameTime, 'Arrived at the receiver (game)')}
-        <label>Ending odometer<input id="c-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
-        <label>Miles run — override<input id="c-miles" type="number" step="1" placeholder="from odometer"></label>
+        <label>Ending odometer ${DU()}<input id="c-odo" data-u="dist" type="number" step="1" value="${uv(S.status.atsOdometer, 'dist')}"></label>
+        <label>${DU() === 'km' ? 'Kilometres' : 'Miles'} run — override<input id="c-miles" data-u="dist" type="number" step="1" placeholder="from odometer"></label>
         <label>Actual payout $<input id="c-rev" type="number" step="1" value="${Math.round(t.gameRevenue)}"></label>
-        <label>Tolls $<input id="c-tolls" type="number" step="0.01" value="0"></label>
-        <label>Repairs $<input id="c-repair" type="number" step="0.01" value="0"></label>
+        <label>Tolls ${SYM()}<input id="c-tolls" type="number" step="0.01" value="0"></label>
+        <label>Repairs ${SYM()}<input id="c-repair" type="number" step="0.01" value="0"></label>
         <label>Fines $<input id="c-fines" type="number" step="0.01" value="0"></label>
         <label>Other expense $<input id="c-other" type="number" step="0.01" value="0"></label>
         <label>Tractor damage % after<input id="c-tdmg" type="number" step="0.1" min="0" max="100" value="${S.status.truckDamagePct}"></label>
@@ -2555,7 +2651,7 @@ function homeTimeHtml() {
     </div>
     <div class="callout ${cls}" style="margin-top:12px"><p>${esc(h.headline)}</p>
       ${h.milesFromHome !== null && h.milesFromHome !== undefined
-        ? `<p>Roughly <b>${num(h.milesFromHome)} mi</b> from ${esc(h.terminalLabel)} right now${
+        ? `<p>Roughly <b>${dist(h.milesFromHome)}</b> from ${esc(h.terminalLabel)} right now${
             h.atYard ? ' — you are at the yard.'
               : h.atHome ? ' — close enough that freight this way counts as heading home.' : '.'}</p>` : ''}
       ${h.homeTimesTaken > 0 ? `<p class="sub">${h.homeTimesTaken} home time(s) taken · last home ${gt(h.lastHomeGameTime)}.</p>` : ''}
@@ -2703,10 +2799,10 @@ function fuelStopsHtml(t) {
 
   return `<fieldset><legend>Fuel stops</legend>
     ${rows.length ? `<div class="tablewrap"><table><thead><tr>
-        <th>Gallons</th><th>$/gal</th><th>City</th><th>ST</th><th class="num">Cost</th><th></th></tr></thead><tbody>
+        <th>${VU() === 'L' ? 'Litres' : 'Gallons'}</th><th>${SYM()}/${VU()}</th><th>City</th><th>ST</th><th class="num">Cost</th><th></th></tr></thead><tbody>
       ${rows.map((r, i) => `<tr>
-        <td><input id="fs-gal-${i}" type="number" step="0.1" style="width:86px" value="${r.gallons || ''}"></td>
-        <td><input id="fs-price-${i}" type="number" step="0.001" style="width:86px" value="${r.pricePerGal || ''}"></td>
+        <td><input id="fs-gal-${i}" data-u="vol" type="number" step="0.1" style="width:86px" value="${uv(r.gallons || '', 'vol', 1)}"></td>
+        <td><input id="fs-price-${i}" data-u="pervol" type="number" step="0.001" style="width:86px" value="${uv(r.pricePerGal || '', 'pervol', 3)}"></td>
         <td><input id="fs-city-${i}" style="width:128px" value="${esc(r.city || '')}"></td>
         <td><input id="fs-state-${i}" class="up" maxlength="2" style="width:50px" value="${esc(r.state || '')}"></td>
         <td class="num">${money((+r.gallons || 0) * (+r.pricePerGal || 0))}</td>
@@ -2716,9 +2812,9 @@ function fuelStopsHtml(t) {
     </tbody></table></div>` : `<div class="empty">No fuel bought on this trip.</div>`}
     <div class="row-actions">
       <button class="btn ghost" data-act="add-fuel-row">+ Add a fuel stop</button>
-      ${rows.length ? `<span class="sub">${num(gal, 1)} gal · ${money(cost)}${
-        gal > 0 ? ` · blended $${num(cost / gal, 3)}/gal` : ''}${
-        gal > 0 && mi > 0 ? ` · ${num(mi / gal, 1)} mpg` : ''}</span>` : ''}
+      ${rows.length ? `<span class="sub">${vol(gal)} · ${money(cost)}${
+        gal > 0 ? ` · blended ${SYM()}${num(fuelPriceN(cost / gal), 3)}/${VU()}` : ''}${
+        gal > 0 && mi > 0 ? ` · ${econ(mi / gal)}` : ''}</span>` : ''}
     </div>
   </fieldset>`;
 }
@@ -2936,7 +3032,7 @@ function dropHookHtml() {
     <h4>Drop and hook${dh.dedicated ? ` — ${esc(S.driver.dedicatedAccount)} only` : ''}</h4>
     <p style="margin:0">${dh.instruction}</p>
     ${dh.dedicated ? `<p class="hint" style="margin:6px 0 0">Paying
-      <b>$${(+dh.premiumCpm).toFixed(3)}</b> a loaded mile over your scale while you are on it.</p>` : ''}
+      <b>${cpm3(+dh.premiumCpm)}</b> a loaded ${DUW()} over your scale while you are on it.</p>` : ''}
   </div>`;
 }
 
@@ -3052,10 +3148,10 @@ function advanceHtml(n) {
     <h4>${esc(n.headline)}</h4>
     <ul>${(n.detail || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
     <dl class="kv" style="margin-top:8px">
-      <dt>Loaded mile</dt><dd>$${(+n.loadedCpm).toFixed(3)}${up > 0
-        ? ` <span class="sub">was $${(+n.previousLoadedCpm).toFixed(3)}</span>` : ''}</dd>
-      <dt>Empty mile</dt><dd>$${(+n.deadheadCpm).toFixed(3)}${up > 0
-        ? ` <span class="sub">was $${(+n.previousDeadheadCpm).toFixed(3)}</span>` : ''}</dd>
+      <dt>Loaded ${DUW()}</dt><dd>${cpm3(+n.loadedCpm)}${up > 0
+        ? ` <span class="sub">was ${cpm3(+n.previousLoadedCpm)}</span>` : ''}</dd>
+      <dt>Empty ${DUW()}</dt><dd>${cpm3(+n.deadheadCpm)}${up > 0
+        ? ` <span class="sub">was ${cpm3(+n.previousDeadheadCpm)}</span>` : ''}</dd>
     </dl>
   </div>`;
 }
@@ -3560,7 +3656,7 @@ function viewTrips() {
       <span class="sub">${trips.length} on file · click a row for the full record</span>
       <div class="spacer"></div><button class="btn tiny" data-act="show-move">Log a move</button></div>
     ${trips.length ? `<div class="tablewrap"><table>
-      <thead><tr><th>Trip</th><th>Cargo</th><th>Lane</th><th class="num">Miles</th><th class="num">Revenue</th>
+      <thead><tr><th>Trip</th><th>Cargo</th><th>Lane</th><th class="num">${DU() === 'km' ? 'Km' : 'Miles'}</th><th class="num">Revenue</th>
         <th>Service</th><th>Fault</th><th class="num">Your pay</th><th>Settled</th></tr></thead>
       <tbody>${trips.map((t) => `<tr data-act="trip-detail" data-id="${t.id}" style="cursor:pointer">
         <td class="mono">${esc(t.number)}</td><td>${esc(t.cargo)}</td>
@@ -3609,7 +3705,7 @@ function tripDetailModal(id) {
         : t.arrivedGameTime ? row('At the receiver', 'arrived ' + gt(t.arrivedGameTime) + ' · straight in') : ''}
       ${t.appointmentOpensGameTime
         ? row('Delivery window', gt(t.appointmentOpensGameTime) + ' → ' + gt(t.dueGameTime)) : ''}
-      ${row('Fuel', num(t.fuelGallons, 1) + ' gal · ' + money(t.fuelCost))}
+      ${row('Fuel', vol(t.fuelGallons) + ' · ' + money(t.fuelCost))}
       ${row('Tolls / repairs / fines', money(t.tolls) + ' · ' + money(t.repairCost) + ' · ' + money(t.fines))}
       ${row('Unit / trailer', esc(t.truckUnit) + ' / ' + esc(t.trailerUnit))}
       ${row('Tractor damage', pct(t.truckDamageBefore) + ' → ' + pct(t.truckDamageAfter))}
@@ -3653,9 +3749,9 @@ function viewFleet() {
         <dt>Unit</dt><dd>${esc(t.gameId || t.unit)}${t.gameId ? ` <span class="sub">(unit ${esc(t.unit)})</span>` : ''}</dd>
         <dt>Tractor</dt><dd>${t.year} ${esc(t.make)} ${esc(t.model)}</dd>
         <dt>Driveline</dt><dd>${esc(t.engine)} · ${esc(t.transmission)}</dd>
-        <dt>Spec</dt><dd>${esc(t.cabConfig)} · ${esc(t.wheelbase)} · governed ${t.governedMph} mph</dd>
-        <dt>Fuel / economy</dt><dd>${num(t.fuelCapacityGal)} gal · ${num(t.avgMpg, 1)} mpg</dd>
-        <dt>Company service mi</dt><dd>${num(t.serviceMiles)}</dd>
+        <dt>Spec</dt><dd>${esc(t.cabConfig)} · ${esc(t.wheelbase)} · governed ${spd(t.governedMph)}</dd>
+        <dt>Fuel / economy</dt><dd>${vol(t.fuelCapacityGal, 0)} · ${econ(t.avgMpg)}</dd>
+        <dt>Company service ${DU()}</dt><dd>${num(distN(t.serviceMiles))}</dd>
         <dt>ATS odometer</dt><dd>${num(t.atsOdometer)}</dd>
         <dt>Service</dt><dd>${esc(serviceLine(t.unit))}</dd>
         <dt>Damage</dt><dd>${pct(t.damagePct)}</dd>
@@ -3665,7 +3761,7 @@ function viewFleet() {
         <dt>Trailer</dt><dd>${esc(tr.unit)}</dd>
         <dt>Equipment</dt><dd>${tr.year} ${esc(tr.make)} · ${esc(tr.length)} ${esc(tr.type)} · ${esc(tr.axles)}</dd>
         <dt>Division</dt><dd>${esc(tr.division)}</dd>
-        <dt>Service mi</dt><dd>${num(tr.serviceMiles)}</dd>
+        <dt>Service ${DU()}</dt><dd>${num(distN(tr.serviceMiles))}</dd>
         <dt>Damage</dt><dd>${pct(tr.damagePct)}</dd>
         <dt>Located</dt><dd>${esc(tr.currentLocation || '—')}</dd>
       </dl>` : '<div class="empty">No trailer assigned.</div>'}</div>
@@ -3776,7 +3872,7 @@ function viewEquipment() {
       <button class="btn tiny primary" data-act="add-truck">Add tractor</button></div>
     <div class="tablewrap"><table>
       <thead><tr><th>Unit</th><th>Tractor</th><th>Driveline</th><th>Cab</th><th class="num">Gov</th>
-        <th class="num">Service mi</th><th>Garage</th><th class="num">Damage</th><th>Status</th><th>Driver</th><th></th></tr></thead>
+        <th class="num">Service ${DU()}</th><th>Garage</th><th class="num">Damage</th><th>Status</th><th>Driver</th><th></th></tr></thead>
       <tbody>${S.trucks.map((x) => `<tr>
         <td><span class="unit">${esc(x.gameId || x.unit)}</span>${x.gameId
             ? `<div class="sub" style="font-size:10px">unit ${esc(x.unit)}</div>` : ''}</td>
@@ -3874,7 +3970,7 @@ function terminalsHtml() {
             ${t.id === S.driver.homeTerminalId ? ' ' + badge('info', 'home') : ''}</td>
           <td>${badge(t.level === 'Large' ? 'ok' : t.level === 'Medium' ? 'info' : 'mute', t.level)}</td>
           <td class="num">${t.truckCapacity}</td>
-          <td>${t.hasFuel ? badge('ok', '$' + (+t.fuelPricePerGal).toFixed(2) + '/gal') : badge('mute', 'none')}</td>
+          <td>${t.hasFuel ? badge('ok', fuelPrice(+t.fuelPricePerGal)) : badge('mute', 'none')}</td>
           <td>${t.hasShop ? badge('ok', (t.shopLabourDiscount * 100).toFixed(0) + '% off labour') : badge('mute', 'none')}</td>
           <td>${esc(svc.join(', '))}</td>
           <td class="num">${money0(t.monthlyCost)}</td>
@@ -4123,9 +4219,9 @@ function domicilePrefsHtml() {
       <label>Trip length
         <select id="tl-pref"${S.views.probation?.on ? ' disabled' : ''}>
           ${/* A radius from the yard, not a load length — see DispatchEngine.OperatingRadiusMiles. */ ''}
-          ${[['short', 'Short — within about 150 mi of the yard'],
-             ['medium', 'Medium — within about 300 mi of the yard'],
-             ['long', 'Long — within about 600 mi of the yard'],
+          ${[['short', `Short — within about ${dist(150)} of the yard`],
+             ['medium', `Medium — within about ${dist(300)} of the yard`],
+             ['long', `Long — within about ${dist(600)} of the yard`],
              ['otr', 'OTR — no radius, out for weeks']]
             .filter(([k]) => (S.terms.tripLengthsOffered || []).includes(k))
             .map(([k, label]) => `<option value="${k}" ${(S.application && S.application.preferredTripLength === k) ? 'selected' : ''}>${esc(label)}</option>`).join('')}
@@ -4380,7 +4476,7 @@ function equipmentByYardHtml() {
         ${badge(full ? 'bad' : 'ok', `${used}/${y.truckCapacity} tractors`)}
       </div>
       <p class="hint" style="margin:0 0 8px">${esc(y.level)} yard ·
-        ${y.hasFuel ? `fuel $${(+y.fuelPricePerGal).toFixed(2)}/gal` : 'no fuel'} ·
+        ${y.hasFuel ? `fuel ${fuelPrice(+y.fuelPricePerGal)}` : 'no fuel'} ·
         ${y.hasShop ? `shop ${(y.shopLabourDiscount * 100).toFixed(0)}% off labour` : 'no shop'}</p>
       ${trucks.length || trailers.length ? `<div class="tablewrap"><table>
         <thead><tr><th>Unit</th><th>Equipment</th><th>Garage</th><th class="num">Damage</th><th>Move to</th></tr></thead>
@@ -4492,7 +4588,7 @@ function fleetDecisionsHtml() {
     ${open.length ? `<h3 class="sect">Trucks with nobody in them</h3>
       ${open.map((u) => `<div class="callout info">
         <h4>Unit ${esc(u.unit)} — ${esc(u.spec)}</h4>
-        <p>${num(u.serviceMiles)} mi · ${pct(u.damagePct)} damage${u.yard ? ' · based ' + esc(u.yard) : ''}</p>
+        <p>${dist(u.serviceMiles)} · ${pct(u.damagePct)} damage${u.yard ? ' · based ' + esc(u.yard) : ''}</p>
         <ul>
           <li><b>Hire someone.</b> ${esc(u.hireNote)}</li>
           <li><b>Take it yourself.</b> ${esc(u.takeNote)}</li>
@@ -4547,17 +4643,17 @@ function fuelBoardHtml() {
 
   const row = (x) => `<tr${x.here ? ' style="font-weight:600"' : ''}>
     <td class="mono">${esc(x.state)}${x.here ? ' <span class="sub">(here)</span>' : ''}</td>
-    <td class="num mono">$${(+x.perGallon).toFixed(2)}</td>
+    <td class="num mono">${SYM()}${fuelPriceN(+x.perGallon).toFixed(2)}</td>
     <td class="num">${x.index < 1 ? '' : '+'}${Math.round((x.index - 1) * 100)}%</td>
     <td class="sub">${esc(x.source)}${x.stops ? ` · ${x.stops} stop${x.stops === 1 ? '' : 's'}` : ''}${
       x.stale ? ' · ' + badge('warn', 'worth re-checking') : ''}</td></tr>`;
 
-  const head = `<thead><tr><th>State</th><th class="num">$/gal</th>
+  const head = `<thead><tr><th>State</th><th class="num">${SYM()}/${VU()}</th>
     <th class="num">vs ref</th><th>From</th></tr></thead>`;
 
   return `<div class="panel">
     <div class="panel-head"><h2>Where to buy fuel</h2>
-      <span class="sub">against $${(+f.reference).toFixed(2)}/gal reference</span>
+      <span class="sub">against ${fuelPrice(+f.reference)} reference</span>
       <div class="spacer"></div>
       ${f.staleCount ? badge('warn', `${f.staleCount} figure(s) going stale`) : ''}</div>
 
@@ -4617,8 +4713,8 @@ function fleetPmHtml() {
       <div class="meters" style="margin-top:8px">
         ${fkpi('Service', money0(p.cost))}
         ${p.checkpoints?.length ? fkpi('Checkpoints due', p.checkpoints.length, 'warn') : ''}
-        ${fkpi('Past due', num(p.milesPastDue) + ' mi', p.milesPastDue > 0 ? 'warn' : 'ok')}
-        ${fkpi('Odometer', num(p.odometer) + ' mi')}
+        ${fkpi('Past due', dist(p.milesPastDue), p.milesPastDue > 0 ? 'warn' : 'ok')}
+        ${fkpi('Odometer', dist(p.odometer))}
         ${fkpi('Shop finds something', p.findChancePct + '%', p.findChancePct >= 25 ? 'warn' : 'ok')}
       </div>
       <p class="hint" style="margin-top:8px">${esc(p.risk)}</p>
@@ -4652,7 +4748,7 @@ function fleetOpsHtml() {
         actually earned and how beaten-up their truck is. Revenue lands in the company's books and funds
         the payroll and maintenance reserves. Nothing here is invented — the app only records what you
         read off the game, which for a driver you are not sitting next to means their level,
-        $/mile and $/day, and for their equipment a star rating rather than a damage percentage.</p>
+        ${SYM()}/${DUW()} and ${SYM()}/day, and for their equipment a star rating rather than a damage percentage.</p>
       ${f.unassignedUnits?.length
         ? `<p><b>Units with nobody on them:</b> ${esc(f.unassignedUnits.join(', '))}. Buy a driver for them
            in ATS and add them here, or delete the units the company should not own.</p>` : ''}
@@ -4678,7 +4774,7 @@ function fleetOpsHtml() {
         <thead><tr><th>Driver</th><th>Unit</th>
           <th class="num" title="Level as ATS reports it — how much driving they have done">Level</th>
           <th title="What they have earned here: time served, miles, level, clean record">Grade</th>
-          <th class="num">$/day</th><th class="num">$/mi</th><th class="num">Truck &starf;</th>
+          <th class="num">${SYM()}/day</th><th class="num">${SYM()}/${DU()}</th><th class="num">Truck &starf;</th>
           <th class="num" title="Preventable incidents on their record. Being hit by somebody else does not count.">Prev</th>
           <th>Status</th><th class="num">Wage share</th>
           <th class="num" title="Net of everything ATS already took for wages, fuel and tolls">Contribution</th><th class="num">Reports</th><th></th></tr></thead>
@@ -4717,7 +4813,7 @@ function fleetOpsHtml() {
         <h3 class="sect">File a fleet report</h3>
         <details class="explainer"><summary>What to copy off the game, and what is not asked for</summary>
         <p class="hint">Every ${f.due?.intervalDays ?? 15} game days, open the ATS company screen and copy
-          down what it shows you: each driver's <b>level</b>, <b>$/mile</b> and <b>$/day</b>,
+          down what it shows you: each driver's <b>level</b>, <b>${SYM()}/${DUW()}</b> and <b>${SYM()}/day</b>,
           and for their equipment the <b>star rating</b> — plus the truck's odometer. Those are the numbers
           the game gives for people and units you are not sitting in, so those are the numbers operations
           judges on. Leave wages blank to use the driver's agreed share.</p>
@@ -4753,8 +4849,8 @@ function fleetOpsHtml() {
           <thead><tr>
             <th>Driver</th><th>Unit</th>
             <th class="num" title="Driver level from the ATS company screen">Level</th>
-            <th class="num" title="Average income per mile, as ATS reports it">$/mi</th>
-            <th class="num" title="Average income per day, as ATS reports it">$/day</th>
+            <th class="num" title="Average income per ${DUW()}, as the game reports it">${SYM()}/${DU()}</th>
+            <th class="num" title="Average income per day, as the game reports it">${SYM()}/day</th>
             <th class="num" title="Tractor condition in stars, 5 down to 1">Truck &starf;</th>
             <th class="num" title="Tractor odometer as shown in game">Odometer</th>
             ${/* No trailer columns here at all.
@@ -4772,12 +4868,12 @@ function fleetOpsHtml() {
             <td class="mono">${esc(d.assignedTruckUnit)}</td>
             <td class="num"><input id="fr-lvl-${esc(d.id)}" type="number" step="1" min="0" style="width:64px"
                   value="${d.level || ''}" placeholder="—"></td>
-            <td class="num"><input id="fr-permi-${esc(d.id)}" type="number" step="0.01" min="0" style="width:78px" placeholder="—"></td>
+            <td class="num"><input id="fr-permi-${esc(d.id)}" data-u="perdist" type="number" step="0.01" min="0" style="width:78px" placeholder="—"></td>
             <td class="num"><input id="fr-perday-${esc(d.id)}" type="number" step="1" min="0" style="width:82px" placeholder="—"></td>
             <td class="num"><input id="fr-tstar-${esc(d.id)}" type="number" step="0.5" min="0" max="5" style="width:70px"
                   value="${tk?.stars || ''}" placeholder="—"></td>
-            <td class="num"><input id="fr-odo-${esc(d.id)}" type="number" step="1" min="0" style="width:96px"
-                  value="${tk ? Math.round(tk.atsOdometer) : ''}" placeholder="—"></td>
+            <td class="num"><input id="fr-odo-${esc(d.id)}" data-u="dist" type="number" step="1" min="0" style="width:96px"
+                  value="${tk ? uv(tk.atsOdometer, 'dist') : ''}" placeholder="—"></td>
           </tr>`; }).join('')}</tbody></table></div>
         ${playerLineHtml()}
         ${trailerSectionHtml()}
@@ -4859,7 +4955,7 @@ function trailerSectionHtml() {
             on the header alone the text right-aligned while the input stayed left, and every numeric
             column ended up labelling the gap beside it rather than the box below it. */ ''}
       <thead><tr><th>Trailer</th><th>Type</th><th class="num">Util %</th><th class="num">Distance on job</th>
-        <th class="num">Loads</th><th class="num">Weight (lb)</th><th>Where</th></tr></thead>
+        <th class="num">Loads</th><th class="num">Weight (${WU()})</th><th>Where</th></tr></thead>
       <tbody>${boxes.map((b) => `<tr>
         <td><span class="unit">${esc(b.gameId || b.unit)}</span>${b.gameId
             ? `<div class="sub" style="font-size:10px">unit ${esc(b.unit)}</div>` : ''}</td>
@@ -4867,15 +4963,15 @@ function trailerSectionHtml() {
         <td class="num"><input id="ft-util-${esc(b.unit)}" type="number" step="1" min="0" max="100"
               style="width:72px;text-align:right"
               value="${b.utilisationPct >= 0 ? Math.round(b.utilisationPct) : ''}" placeholder="—"></td>
-        <td class="num"><input id="ft-dist-${esc(b.unit)}" type="number" step="1" min="0"
+        <td class="num"><input id="ft-dist-${esc(b.unit)}" data-u="dist" type="number" step="1" min="0"
               style="width:108px;text-align:right"
-              value="${b.distanceOnJobMi >= 0 ? Math.round(b.distanceOnJobMi) : ''}" placeholder="—"></td>
+              value="${b.distanceOnJobMi >= 0 ? uv(b.distanceOnJobMi, 'dist') : ''}" placeholder="—"></td>
         <td class="num"><input id="ft-loads-${esc(b.unit)}" type="number" step="1" min="0"
               style="width:80px;text-align:right"
               value="${b.loadsTransported >= 0 ? Math.round(b.loadsTransported) : ''}" placeholder="—"></td>
-        <td class="num"><input id="ft-wt-${esc(b.unit)}" type="number" step="1" min="0"
+        <td class="num"><input id="ft-wt-${esc(b.unit)}" data-u="wt" type="number" step="1" min="0"
               style="width:116px;text-align:right"
-              value="${b.weightTransportedLbs >= 0 ? Math.round(b.weightTransportedLbs) : ''}" placeholder="—"></td>
+              value="${b.weightTransportedLbs >= 0 ? uv(b.weightTransportedLbs, 'wt') : ''}" placeholder="—"></td>
         <td class="sub">${esc(b.currentLocation || '—')}</td>
       </tr>`).join('')}</tbody></table></div>`;
 }
@@ -4889,7 +4985,7 @@ function playerLineHtml() {
       your production is already on the books load by load.</p>
     <div class="grid3">
       ${tk ? `<label>Unit ${esc(tk.ref || tk.unit)} odometer (ATS)
-        <input id="fr-me-odo" type="number" step="1" min="0" placeholder="${Math.round(tk.atsOdometer) || '—'}"></label>
+        <input id="fr-me-odo" data-u="dist" type="number" step="1" min="0" placeholder="${uv(tk.atsOdometer, 'dist') || '—'}"></label>
       <label>Unit ${esc(tk.ref || tk.unit)} damage %
         <input id="fr-me-tdmg" type="number" step="0.1" min="0" max="100" placeholder="${num(tk.damagePct, 1)}"></label>` : ''}
       ${tl ? `<label>Trailer ${esc(tl.ref || tl.unit)} damage %
@@ -5025,8 +5121,8 @@ function driverFileModal(id) {
     <h3 class="sect">Period by period</h3>
     ${periods.length ? `<div class="tablewrap"><table>
       <thead><tr><th>Report</th><th>Ended</th><th class="num">Level</th>
-        <th class="num" title="Net per mile, as ATS reports it">$/mi</th>
-        <th class="num" title="Net per day, as ATS reports it">$/day</th>
+        <th class="num" title="Net per ${DUW()}, as the game reports it">${SYM()}/${DU()}</th>
+        <th class="num" title="Net per day, as the game reports it">${SYM()}/day</th>
         <th class="num" title="What they put in the company pocket — ATS has already taken wages, fuel and tolls">Contribution</th>
         <th class="num">Repairs</th></tr></thead>
       <tbody>${periods.map((p) => `<tr>
@@ -5146,7 +5242,7 @@ function editTerminalModal(id) {
         <select id="tm-level">${['Small', 'Medium', 'Large'].map((l) =>
           `<option ${t.level === l ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Tractor capacity<input id="tm-cap" type="number" step="1" min="1" value="${t.truckCapacity}"></label>
-      <label>Contract fuel $/gal<input id="tm-fuel" type="number" step="0.01" value="${t.fuelPricePerGal}"></label>
+      <label>Contract fuel ${SYM()}/${VU()}<input id="tm-fuel" data-u="pervol" type="number" step="0.01" value="${uv(t.fuelPricePerGal, 'pervol', 3)}"></label>
       <label>Shop labour discount (0–1)<input id="tm-shopdisc" type="number" step="0.05" min="0" max="1" value="${t.shopLabourDiscount}"></label>
       <label>Upkeep per period $<input id="tm-cost" type="number" step="50" value="${t.monthlyCost}"></label>
       <label>What the garage cost $<input id="tm-price" type="number" step="1" min="0" value="${t.purchasePrice || 0}"></label>
@@ -5199,7 +5295,7 @@ function stubTableHtml(st) {
     ${st.onTimeBonus ? row('On-time bonus', st.onTimeBonus) : ''}
     ${st.safetyBonus ? row('Safety bonus', st.safetyBonus) : ''}
     ${st.fuelEfficiencyBonus ? row(`Fuel economy bonus${st.mpg
-      ? ` (${num(st.mpg, 2)} mpg vs ${num(st.ratedMpg, 1)} rated)` : ''}`, st.fuelEfficiencyBonus) : ''}
+      ? ` (${econ(st.mpg, 2)} vs ${econ(st.ratedMpg)} rated)` : ''}`, st.fuelEfficiencyBonus) : ''}
     ${st.fuelBuyingBonus ? row(`Fuel buying bonus${st.fuelSaved
       ? ` (${money(st.fuelSaved)} saved)` : ''}`, st.fuelBuyingBonus) : ''}
     ${st.guaranteeMakeup ? row('Weekly guarantee make-up', st.guaranteeMakeup) : ''}
@@ -5367,14 +5463,14 @@ function viewPayroll() {
       <div class="panel-head"><h2>Your pay plan</h2></div>
       <dl class="kvlist">
         <dt>Position</dt><dd>${esc(S.driver.rankTitle)}</dd>
-        <dt>Loaded mile</dt><dd>$${p.loadedCpm.toFixed(3)}</dd>
-        <dt>Empty mile</dt><dd>$${p.deadheadCpm.toFixed(3)}</dd>
-        <dt>Reefer / hazmat / oversize</dt><dd>+$${p.reeferCpm.toFixed(3)} / +$${p.hazmatCpm.toFixed(3)} / +$${p.oversizeCpm.toFixed(3)}</dd>
+        <dt>Loaded ${DUW()}</dt><dd>${cpm3(p.loadedCpm)}</dd>
+        <dt>Empty ${DUW()}</dt><dd>${cpm3(p.deadheadCpm)}</dd>
+        <dt>Reefer / hazmat / oversize</dt><dd>+${cpm3(p.reeferCpm)} / +${cpm3(p.hazmatCpm)} / +${cpm3(p.oversizeCpm)}</dd>
         <dt>Detention</dt><dd>${money(p.detentionPerHour)}/h after ${hhmm(p.detentionFreeHours)} free on the
           work, ${hhmm(p.queueFreeHours)} on waiting</dd>
         <dt>Layover / breakdown</dt><dd>${money(p.layoverPerDay)} / ${money(p.breakdownPerDay)} per day</dd>
         <dt>Stop / tarp</dt><dd>${money(p.extraStopPay)} / ${money(p.tarpPay)}</dd>
-        <dt>On-time bonus</dt><dd>$${p.onTimeBonusCpm.toFixed(3)}/loaded mi at 100% service</dd>
+        <dt>On-time bonus</dt><dd>${cpm3(p.onTimeBonusCpm)}/loaded ${DU()} at 100% service</dd>
         <dt>Safety bonus</dt><dd>${money(p.safetyBonusPerSettlement)} per clean settlement</dd>
         <dt>Weekly guarantee</dt><dd>${p.weeklyGuarantee > 0 ? money(p.weeklyGuarantee) : 'none'}</dd>
         <dt>Lifetime earnings</dt><dd>${money(S.driver.lifetimeEarnings)}</dd>
@@ -5399,7 +5495,7 @@ function viewPayroll() {
             <b style="font-family:var(--mono);color:var(--green)">${money(s.stub.net)}</b>
             <span class="sub">net</span>` : ''}</div>
         <div class="kv"><span>trips <b>${s.tripNumbers.length}</b></span>
-          <span>loaded <b>${num(s.loadedMiles)} mi</b></span><span>empty <b>${num(s.deadheadMiles)} mi</b></span>
+          <span>loaded <b>${dist(s.loadedMiles)}</b></span><span>empty <b>${dist(s.deadheadMiles)}</b></span>
           <span>linehaul <b>${money(s.linehaulPay)}</b></span><span>accessorials <b>${money(s.accessorials)}</b></span>
           <span>bonuses <b>${money(s.onTimeBonus + s.safetyBonus)}</b></span></div>
         <ul class="reasons">${s.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
@@ -5438,7 +5534,7 @@ function viewFinance() {
       ${fkpi('Revenue booked', money0(f.revenue), f.revenue > 0 ? 'ok' : '')}
       ${fkpi('Operating income', money0(f.operatingIncome), f.operatingIncome < 0 ? 'bad' : 'ok')}
       ${fkpi('Operating ratio', f.operatingRatio ? f.operatingRatio.toFixed(3) : '—', f.operatingRatio > 1 ? 'bad' : f.operatingRatio > 0.95 ? 'warn' : '')}
-      ${fkpi('Revenue / loaded mi', '$' + f.revenuePerLoadedMile.toFixed(3))}
+      ${fkpi(`Revenue / loaded ${DU()}`, pm(f.revenuePerLoadedMile))}
       ${fkpi('Cost / mile', '$' + f.costPerMile.toFixed(3))}
       ${fkpi('Fuel', money0(f.fuel))}
       ${fkpi('Maintenance', money0(f.maintenanceSpend))}
@@ -5579,8 +5675,8 @@ function positionHtml() {
           ${fkpi('Unsettled', money0(e.unsettled || 0), (e.unsettled || 0) > 0 ? 'warn' : '')}
           ${fkpi('Earned to date', money0(e.totalEarned || 0))}
           ${fkpi('Settlements', e.settlements || 0)}
-          ${fkpi('Paid loaded mi', num(e.loadedMiles || 0))}
-          ${fkpi('Effective', '$' + (+(e.effectiveCpm || 0)).toFixed(3) + '/mi')}
+          ${fkpi(`Paid loaded ${DU()}`, num(distN(e.loadedMiles || 0)))}
+          ${fkpi('Effective', pm(+(e.effectiveCpm || 0)) + '/' + DU())}
         </div>
         <p class="hint" style="margin-top:10px">${esc(e.note || '')}</p>
       </div>
@@ -5602,28 +5698,28 @@ function costModelHtml() {
       <button class="btn tiny primary" data-act="calibrate">Calibrate to my market</button></div>
 
     <div class="meters">
-      ${fkpi('Fuel / mi', '$' + be.fuelPerMile.toFixed(3))}
-      ${fkpi('Your pay / mi', '$' + be.driverPayPerMile.toFixed(3))}
-      ${fkpi('Overhead / mi', '$' + be.overheadPerMile.toFixed(3), be.overheadDominates ? 'bad' : '')}
-      ${fkpi('Break-even', '$' + (+be.breakEvenRpm).toFixed(2) + '/mi', 'warn')}
-      ${fkpi('Target', '$' + (+be.targetRpm).toFixed(2) + '/mi')}
-      ${fkpi('Over', num(be.loadedMiles) + ' mi')}
+      ${fkpi(`Fuel / ${DU()}`, pm(be.fuelPerMile))}
+      ${fkpi(`Your pay / ${DU()}`, pm(be.driverPayPerMile))}
+      ${fkpi(`Overhead / ${DU()}`, pm(be.overheadPerMile), be.overheadDominates ? 'bad' : '')}
+      ${fkpi('Break-even', pm(+be.breakEvenRpm, 2) + '/' + DU(), 'warn')}
+      ${fkpi('Target', pm(+be.targetRpm, 2) + '/' + DU())}
+      ${fkpi('Over', dist(be.loadedMiles))}
     </div>
 
     ${be.overheadDominates ? `<div class="callout stop" style="margin-top:14px">
       <h4>Overhead is distorting your economics</h4>
-      <p>Fixed overhead is <b>$${be.overheadPerMile.toFixed(3)}/mi</b> — more than half your per-mile cost —
-        purely because $${(+S.settings.overheadPerLoad).toFixed(0)} per load is spread across
-        ${num(be.loadedMiles)} scaled ATS miles. On a scaled map this is the usual reason every load looks
+      <p>Fixed overhead is <b>${pm(be.overheadPerMile)}/${DU()}</b> — more than half your per-${DUW()} cost —
+        purely because ${money0(+S.settings.overheadPerLoad)} per load is spread across
+        ${num(distN(be.loadedMiles))} scaled ${S?.game?.shortName || 'ATS'} ${DUWS()}. On a scaled map this is the usual reason every load looks
         unprofitable. Lower <b>overhead per load</b> in Settings, or hit Calibrate for a specific number.</p>
     </div>` : ''}
 
     ${c ? `<div class="callout ${c.verdict === 'Healthy' ? 'go' : c.verdict === 'Marginal' ? 'warn' : 'stop'}" style="margin-top:14px">
       <h4>${esc(c.verdict)} — ${c.sampleCount} load(s) sampled</h4>
       <p>${esc(c.summary)}</p>
-      ${c.sampleCount ? `<p class="hint" style="margin:0">Market $/mi: low $${(+c.lowRpm).toFixed(2)} ·
-        median $${(+c.medianRpm).toFixed(2)} · high $${(+c.highRpm).toFixed(2)} over an average of
-        ${num(c.medianLoadedMiles)} mi. Headroom over break-even: $${(+c.headroomPerMile).toFixed(2)}/mi.</p>` : ''}
+      ${c.sampleCount ? `<p class="hint" style="margin:0">Market ${SYM()}/${DU()}: low ${pm(+c.lowRpm, 2)} ·
+        median ${pm(+c.medianRpm, 2)} · high ${pm(+c.highRpm, 2)} over an average of
+        ${dist(c.medianLoadedMiles)}. Headroom over break-even: ${pm(+c.headroomPerMile, 2)}/${DU()}.</p>` : ''}
     </div>
     ${c.recommendations.length ? `<h3 class="sect">What to change</h3>
       <ul class="reasons">${c.recommendations.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
@@ -5631,8 +5727,8 @@ function costModelHtml() {
       <div class="grid3">
         <label>Overhead per load $<input id="cal-oh" type="number" step="1" min="0"
           value="${Math.max(5, Math.round((+S.settings.overheadPerLoad) * 0.25 / 5) * 5)}"></label>
-        <label>Fuel $/gal (what your game charges)<input id="cal-fuel" type="number" step="0.01"
-          value="${(+S.settings.fuelPricePerGal).toFixed(2)}"></label>
+        <label>Fuel ${SYM()}/${VU()} (what your game charges)<input id="cal-fuel" data-u="pervol" type="number" step="0.01"
+          value="${uv(+S.settings.fuelPricePerGal, 'pervol', 2)}"></label>
         <label>Margin goal over cost<input id="cal-margin" type="number" step="0.05" min="1" max="3"
           value="${(+(S.settings.marginGoal ?? 1.25)).toFixed(2)}"></label>
       </div>
@@ -5753,7 +5849,7 @@ function towHtml() {
       <div class="panel-head"><h2>Recovered on a hook</h2>${badge('warn', 'towed')}</div>
       <div class="callout warn">
         <h4>${esc(truck.ref || truck.unit)} was towed in${on.toCity ? ` to ${esc(on.toCity)}, ${esc(on.toState)}` : ''}</h4>
-        <p>${on.miles > 0 ? `${num(on.miles)} mi on the hook. ` : ''}Recovery billed at
+        <p>${on.miles > 0 ? `${dist(on.miles)} on the hook. ` : ''}Recovery billed at
           <b>${money(on.cost)}</b> — the company's, and on the claim if this unit does not come back.</p>
         <p class="hint" style="margin-top:6px">Nothing runs home on a hook. It is fixed or written off
           where it sits; the damage decides which. This clears itself when the unit is repaired.</p>
@@ -5772,7 +5868,7 @@ function towHtml() {
       <label>State<input id="tow-fromst" class="up" maxlength="2" value="${esc(S.status.locationState)}"></label>
       <label>Towed to<input id="tow-to" placeholder="city the wrecker took it to"></label>
       <label>State<input id="tow-tost" class="up" maxlength="2" placeholder="ST"></label>
-      <label>Towed miles<input id="tow-miles" type="number" step="1" min="0"
+      <label>Towed ${DU() === 'km' ? 'kilometres' : 'miles'}<input id="tow-miles" data-u="dist" type="number" step="1" min="0"
         placeholder="blank = work it out"></label>
       <label>Tractor damage after %<input id="tow-dmg" type="number" step="0.1" min="0" max="100"
         value="${Math.round((S.status.truckDamagePct || 0) * 10) / 10}"></label>
@@ -5808,8 +5904,8 @@ function serviceScheduleHtml() {
       : c.due ? badge('warn', 'due')
       : badge('ok', 'ok');
     const when = c.done ? '—'
-      : c.due ? `${num(Math.abs(c.milesUntilDue))} mi over`
-      : `in ${num(c.milesUntilDue)} mi`;
+      : c.due ? `${dist(Math.abs(c.milesUntilDue))} over`
+      : `in ${dist(c.milesUntilDue)}`;
     return `<tr>
       <td>${esc(c.name)}${c.milestone ? ' ' + badge('info', 'one-off') : ''}
         <div class="sub">${esc(c.represents)}</div></td>
@@ -5892,14 +5988,14 @@ function viewMaint() {
       ${fkpi('Total loss (fresh truck)', pct(m.totalLossPct, 0) + '+', 'bad')}
       ${m.useGdcSchedule
         ? fkpi('Service schedule', 'GDC · ' + (m.severeDuty ? 'severe' : 'standard') + ' duty')
-        : fkpi('PM interval', num(m.preventiveIntervalMiles) + ' mi')}
+        : fkpi('PM interval', dist(m.preventiveIntervalMiles))}
     </div>
     ${(S.views.writeOffLines || []).length ? `<div class="tablewrap" style="margin-top:12px"><table>
       <thead><tr><th>Unit</th><th class="num">Odometer</th><th class="num">Written off at</th><th class="num">Now</th></tr></thead>
       <tbody>${S.views.writeOffLines.map((l) => {
         const t = S.trucks.find((x) => x.unit === l.unit);
         const dmg = t ? t.damagePct : 0;
-        return `<tr><td>${esc(l.unit)}</td><td class="num">${num(l.miles)} mi</td>
+        return `<tr><td>${esc(l.unit)}</td><td class="num">${dist(l.miles)}</td>
           <td class="num"><b>${num(l.atPct, 1)}%</b></td>
           <td class="num" style="color:${dmg >= l.atPct ? 'var(--red)' : dmg >= m.stopDispatchPct ? 'var(--amber2)' : 'var(--ink3)'}">${num(dmg, 1)}%</td></tr>`;
       }).join('')}</tbody></table></div>
@@ -5924,7 +6020,7 @@ function viewMaint() {
         <label>City<input id="wo-city" value="${esc(S.status.locationCity)}"></label>
         <label>State<input id="wo-state" class="up" maxlength="2" value="${esc(S.status.locationState)}"></label>
         <label>Damage before %<input id="wo-dmgb" type="number" step="0.1" value="${woDamageBefore()}"></label>
-        <label>Odometer<input id="wo-odo" type="number" step="1" value="${Math.round(S.status.atsOdometer)}"></label>
+        <label>Odometer ${DU()}<input id="wo-odo" data-u="dist" type="number" step="1" value="${uv(S.status.atsOdometer, 'dist')}"></label>
       </div>
       ${(S.views?.serviceSchedule?.due || []).length ? `<p class="hint" style="margin-top:8px">
         <b>Recording a scheduled service?</b> Set <b>Type</b> to <b>Preventive</b>. That is the one that
@@ -6208,7 +6304,7 @@ function dedicatedHtml() {
     <div class="callout ${dh.dedicatedBlocked ? 'mute' : 'go'}">
       <p><b>The best seat we have.</b> One account, no trailer of your own, and no dock work at either
         end — you pull what the shipper has and drop it at the other. It makes deadhead unavoidable, so
-        it pays <b>$${(+(dh.premiumCpm || 0)).toFixed(3)}</b> a loaded mile over your scale.</p>
+        it pays <b>${cpm3(+(dh.premiumCpm || 0))}</b> a loaded ${DUW()} over your scale.</p>
       ${dh.dedicatedBlocked
         ? `<p style="margin:6px 0 0">${esc(dh.dedicatedBlocked)}</p>`
         : `<p style="margin:6px 0 0">You are eligible. I will pick from companies you can actually reach
@@ -6306,12 +6402,12 @@ function viewCareer() {
     <p>You have run this company to the top of its ladder, and that earns the pick of the fleet. Choose
       one and operations will put the order in.</p>
     <div class="tablewrap"><table>
-      <thead><tr><th>Truck</th><th>Engine</th><th>Gearbox</th><th class="num">mpg</th><th></th></tr></thead>
+      <thead><tr><th>Truck</th><th>Engine</th><th>Gearbox</th><th class="num">${UN().economy || 'mpg'}</th><th></th></tr></thead>
       <tbody>${(S.views.showcase.choices || []).map((x) => `<tr>
         <td><b>${esc(x.year + ' ' + x.make + ' ' + x.model)}</b></td>
         <td>${esc(x.engine)} <span class="sub">${x.hp} hp</span></td>
         <td>${esc(x.transmission)}</td>
-        <td class="num">${num(x.mpg, 1)}</td>
+        <td class="num">${num(UNIT_OUT.econ(+x.mpg), 1)}</td>
         <td><button class="btn tiny primary" data-act="take-showcase" data-index="${x.index}">Take it</button></td>
       </tr>`).join('')}</tbody></table></div>
     <p class="hint">The whole list is here whatever gearbox you asked for at hire — it is a reward, not an
@@ -6324,8 +6420,8 @@ function viewCareer() {
     <div class="panel-head"><h2>Top of their scale</h2>
       ${badge('warn', esc(c.ceilingTitle))}</div>
     <p>${esc(c.ceilingTitle)} is as far as ${esc(S.company.name || 'this carrier')} promotes. You are on
-      <b>$${(+S.driver.pay.loadedCpm).toFixed(3)}</b> a loaded mile and
-      <b>$${(+S.driver.pay.deadheadCpm).toFixed(3)}</b> empty, and more loads will not move either.</p>
+      <b>${cpm3(+S.driver.pay.loadedCpm)}</b> a loaded ${DUW()} and
+      <b>${cpm3(+S.driver.pay.deadheadCpm)}</b> empty, and more loads will not move either.</p>
     <p class="hint">Higher rungs exist, just not here. Carriers set their own scale and a better one pays
       more at every rank, not only at the top — the Job Market shows what each pays now, what it tops out
       at, and how far it promotes. Your record travels with you.</p>
@@ -6380,8 +6476,8 @@ function viewCareer() {
     <div class="panel">
       <div class="panel-head"><h2>Your rate</h2><span class="sub">set by rank</span></div>
       <dl class="kv">
-        <dt>Loaded mile</dt><dd>$${(+S.driver.pay.loadedCpm).toFixed(3)}</dd>
-        <dt>Empty mile</dt><dd>$${(+S.driver.pay.deadheadCpm).toFixed(3)}</dd>
+        <dt>Loaded ${DUW()}</dt><dd>${cpm3(+S.driver.pay.loadedCpm)}</dd>
+        <dt>Empty ${DUW()}</dt><dd>${cpm3(+S.driver.pay.deadheadCpm)}</dd>
         <dt>Scale</dt><dd>${esc(S.driver.rankTitle)}</dd>
         <dt>Credited experience</dt><dd>${num(c.creditedExperienceYears, 1)} yr
           <span class="sub">declared + time served</span></dd>
@@ -6453,7 +6549,7 @@ function viewJobMarket() {
     <div class="panel-head"><h2>Employment history</h2></div>
     <div class="tablewrap"><table>
       <thead><tr><th>Carrier</th><th>From</th><th>To</th><th>Rank at exit</th>
-        <th class="num">Loads</th><th class="num">Miles</th><th class="num">On-time</th>
+        <th class="num">Loads</th><th class="num">${DU() === 'km' ? 'Km' : 'Miles'}</th><th class="num">On-time</th>
         <th class="num">Faults</th><th class="num">Earned</th><th>Left because</th></tr></thead>
       <tbody>${hist.map((e) => `<tr>
         <td><b>${esc(e.carrierName)}</b> <span class="mono" style="color:var(--ink3)">${esc(e.carrierCode)}</span></td>
@@ -6625,8 +6721,18 @@ function viewSettings() {
   <div class="cols">
     <div class="panel">
       <div class="panel-head"><h2>Operational assumptions</h2></div>
+      ${/* Miles or kilometres, for everything on screen. The career is stored the same way either way, so
+            this can be changed at any time and changes nothing on disk. ATS itself can be set to km. */ ''}
+      <label>Units
+        <select id="op-units">${[
+          ['', `Game default (${UN().gameDefault === 'metric' ? 'km, litres, kg' : 'miles, gallons, pounds'})`],
+          ['US', 'Miles, US gallons, pounds'],
+          ['metric', 'Kilometres, litres, kilograms'],
+        ].map(([v, l]) => `<option value="${v}" ${(UN().chosen || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <p class="hint">Display only: your career is stored the same way whichever you pick, so you can change
+        this whenever you like. Pick what your game's dashboard shows.</p>
       <div class="grid2">
-        <label>Governed mph<input id="op-gov" type="number" step="1" value="${s.governedMph}"></label>
+        <label>Governed ${UN().speed}<input id="op-gov" data-u="speed" type="number" step="1" value="${uv(s.governedMph, 'speed')}"></label>
         <label>Speed factor<input id="op-factor" type="number" step="0.01" min="0.3" max="1" value="${s.speedFactor}">
           <span class="sub">${s.speedFactorManual ? 'set by hand — no longer learning'
             : s.speedFactorSamples > 0 ? `learned from ${s.speedFactorSamples} run(s)`
@@ -6639,12 +6745,12 @@ function viewSettings() {
         <label>Fallback loading<input id="op-load" inputmode="numeric" value="${hhmm(s.defaultLoadingHours)}"></label>
         <label>Fallback unloading<input id="op-unload" inputmode="numeric" value="${hhmm(s.defaultUnloadingHours)}"></label>
         <label>Fuel stop<input id="op-fuelstop" inputmode="numeric" value="${hhmm(s.fuelStopHours)}"></label>
-        <label>Planned fuel range mi<input id="op-range" type="number" step="10" value="${s.fuelRangeMiles}"></label>
-        <label>Fuel price $/gal<input id="op-fuelprice" type="number" step="0.01" value="${s.fuelPricePerGal}"></label>
+        <label>Planned fuel range ${DU()}<input id="op-range" data-u="dist" type="number" step="10" value="${uv(s.fuelRangeMiles, 'dist')}"></label>
+        <label>Fuel price ${SYM()}/${VU()}<input id="op-fuelprice" data-u="pervol" type="number" step="0.01" value="${uv(s.fuelPricePerGal, 'pervol', 3)}"></label>
       </div>
       ${facilityTimesHtml()}
-      <p class="hint">Effective planning speed is governed mph × speed factor — currently
-        <b>${num(s.governedMph * s.speedFactor, 1)} mph</b>. Every hour the app projects is miles divided
+      <p class="hint">Effective planning speed is governed speed × speed factor — currently
+        <b>${spd(s.governedMph * s.speedFactor, 1)}</b>. Every hour the app projects is distance divided
         by that, so it decides whether a load is feasible, what it leaves on your cycle and how much slack
         there is. It <b>learns</b>: every delivered run over ${num(50, 0)} miles, timed from pulling out of
         the shipper to arriving at the receiver with the logged stops taken off, folds into it. A run whose
@@ -6690,12 +6796,12 @@ function viewSettings() {
         <label>Mandatory review %<input id="mt-review" type="number" step="1" value="${m.mandatoryReviewPct}"></label>
         <label>Out of service %<input id="mt-oos" type="number" step="1" value="${m.outOfServicePct}"></label>
         <label>Total loss, fresh truck %<input id="mt-total" type="number" step="1" value="${m.totalLossPct}"></label>
-        <label>PM interval mi<input id="mt-pm" type="number" step="500" value="${m.preventiveIntervalMiles}"></label>
+        <label>PM interval ${DU()}<input id="mt-pm" data-u="dist" type="number" step="500" value="${uv(m.preventiveIntervalMiles, 'dist')}"></label>
       </div>
       <p class="hint">The write-off line falls with the odometer — a worn-out tractor is scrapped over damage a new
         one would be repaired from, because past a point the repair is worth more than the truck.</p>
       <div class="grid3">
-        <label>Fully worn at mi<input id="mt-life" type="number" step="25000" value="${m.writeOffLifeMiles}"></label>
+        <label>Fully worn at ${DU()}<input id="mt-life" data-u="dist" type="number" step="25000" value="${uv(m.writeOffLifeMiles, 'dist')}"></label>
         <label>Wear takes ×<input id="mt-wear" type="number" step="0.05" min="0" max="1" value="${m.writeOffWearFactor}"></label>
         <label>Never below %<input id="mt-floor" type="number" step="1" value="${m.writeOffFloorPct}"></label>
       </div>
@@ -6745,8 +6851,8 @@ function viewSettings() {
       <div class="panel-head"><h2>Load scoring</h2>
         <span class="sub">How operations weighs freight.</span></div>
       <div class="grid2">
-        <label>Target all-in $/mi<input id="sc-target" type="number" step="0.05" value="${w.targetAllInRpm}"></label>
-        <label>Floor all-in $/mi<input id="sc-floor" type="number" step="0.05" value="${w.floorAllInRpm}"></label>
+        <label>Target all-in ${SYM()}/${DU()}<input id="sc-target" data-u="perdist" type="number" step="0.05" value="${uv(w.targetAllInRpm, 'perdist', 2)}"></label>
+        <label>Floor all-in ${SYM()}/${DU()}<input id="sc-floor" data-u="perdist" type="number" step="0.05" value="${uv(w.floorAllInRpm, 'perdist', 2)}"></label>
         <label>Max deadhead ratio<input id="sc-dh" type="number" step="0.05" min="0" max="1" value="${w.maxDeadheadRatio}"></label>
         <label>Reset watch at cycle h<input id="sc-resetwatch" type="number" step="1" value="${w.resetWatchCycleHours}"></label>
         <label>Weight: RPM<input id="sc-wrpm" type="number" step="0.1" value="${w.allInRpm}"></label>
@@ -6819,7 +6925,7 @@ function moveModal() {
     <div class="grid2">
       <label>Kind<select id="mv-kind"><option value="EmptyMove">Empty repositioning</option>
         <option value="Maintenance">Maintenance move</option></select></label>
-      <label>Miles<input id="mv-miles" type="number" step="1" value="0"></label>
+      <label>${DU() === 'km' ? 'Kilometres' : 'Miles'}<input id="mv-miles" data-u="dist" type="number" step="1" value="0"></label>
       <label>Destination city<input id="mv-city"></label>
       <label>Destination state<input id="mv-state" class="up" maxlength="2"></label>
     </div>
@@ -6902,9 +7008,9 @@ function editTruckModal(unit) {
         <option value="automatic" ${t.transmissionType === 'automatic' ? 'selected' : ''}>automatic</option></select></label>
       <label>Cab<select id="et-cab"><option ${t.cabConfig === 'Sleeper' ? 'selected' : ''}>Sleeper</option>
         <option ${t.cabConfig === 'Day Cab' ? 'selected' : ''}>Day Cab</option></select></label>
-      <label>Governed mph<input id="et-gov" type="number" step="1" value="${t.governedMph}"></label>
-      <label>Fuel gal<input id="et-fuel" type="number" step="1" value="${t.fuelCapacityGal}"></label>
-      <label>Avg mpg<input id="et-mpg" type="number" step="0.1" value="${t.avgMpg}"></label>
+      <label>Governed ${UN().speed}<input id="et-gov" data-u="speed" type="number" step="1" value="${uv(t.governedMph, 'speed')}"></label>
+      <label>Fuel ${VU()}<input id="et-fuel" data-u="vol" type="number" step="1" value="${uv(t.fuelCapacityGal, 'vol')}"></label>
+      <label>Avg ${UN().economy || 'mpg'}<input id="et-mpg" data-u="econ" type="number" step="0.1" value="${uv(t.avgMpg, 'econ', 1)}"></label>
       <label>Damage %<input id="et-dmg" type="number" step="0.1" value="${t.damagePct}"></label>
       <label>Status<select id="et-status">${['InService', 'Shop', 'OutOfService', 'Reserve']
         .map((x) => `<option ${t.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
@@ -6917,10 +7023,10 @@ function editTruckModal(unit) {
               ${esc(y.city)}, ${esc(y.state)} — ${based}/${y.truckCapacity}${full && y.id !== t.homeTerminalId ? ' (full)' : ''}</option>`;
           }).join('')}
         </select></label>
-      <label>Company service mi<input id="et-svc" type="number" step="1" value="${Math.round(t.serviceMiles)}"></label>
-      <label>ATS odometer<input id="et-odo" type="number" step="1" value="${Math.round(t.atsOdometer)}"></label>
-      <label>Last PM at mi<input id="et-lastpm" type="number" step="1" value="${Math.round(t.lastServiceMiles)}"></label>
-      <label>PM interval mi<input id="et-pm" type="number" step="500" value="${Math.round(t.serviceIntervalMiles)}"></label>
+      <label>Company service ${DU()}<input id="et-svc" data-u="dist" type="number" step="1" value="${uv(t.serviceMiles, 'dist')}"></label>
+      <label>ATS odometer ${DU()}<input id="et-odo" data-u="dist" type="number" step="1" value="${uv(t.atsOdometer, 'dist')}"></label>
+      <label>Last PM at ${DU()}<input id="et-lastpm" data-u="dist" type="number" step="1" value="${uv(t.lastServiceMiles, 'dist')}"></label>
+      <label>PM interval ${DU()}<input id="et-pm" data-u="dist" type="number" step="500" value="${uv(t.serviceIntervalMiles, 'dist')}"></label>
     </div>
     <label>Notes<input id="et-notes" value="${esc(t.notes)}"></label>
     <div class="row-actions">
@@ -7062,7 +7168,7 @@ function editTrailerModal(unit) {
       <label>Damage %<input id="er-dmg" type="number" step="0.1" value="${t.damagePct}"></label>
       <label>Status<select id="er-status">${['InService', 'Shop', 'OutOfService', 'Reserve']
         .map((x) => `<option ${t.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-      <label>Service mi<input id="er-svc" type="number" step="1" value="${Math.round(t.serviceMiles)}"></label>
+      <label>Service ${DU()}<input id="er-svc" data-u="dist" type="number" step="1" value="${uv(t.serviceMiles, 'dist')}"></label>
       <label>Location<input id="er-loc" value="${esc(t.currentLocation)}"></label>
     </div>
     <label>Notes<input id="er-notes" value="${esc(t.notes)}"></label>
@@ -7671,14 +7777,14 @@ async function handleAction(act, d, ev) {
           gameTime: began, kind: sv('ev-kind'),
           endGameTime: rolled && rolled > began ? rolled : '',
           // The event type and time are the record; a detail is only worth having when there is one.
-          detail: sv('ev-detail') || (gal > 0 ? `Fuelled ${num(gal, 1)} gal` : sv('ev-kind')),
+          detail: sv('ev-detail') || (gal > 0 ? `Fuelled ${vol(gal)}` : sv('ev-kind')),
           city: sv('ev-city'), state: sv('ev-state'),
           gallons: gal, pricePerGal: price, cost: 0,
         }));
         const isRest = sv('ev-kind') === 'Rest' || sv('ev-kind') === 'Restart';
         const moved = rolled && rolled > began;
         toast(gal > 0 && sv('ev-kind') === 'Fuel'
-          ? `Logged — ${gal} gal added to the close-out.`
+          ? `Logged — ${vol(gal)} added to the close-out.`
           // Where the clock has jumped hours or days, say where it landed. Everything downstream reads
           // off it — what the arrival form comes up holding, whether a payday has fallen due — so a
           // driver finding out later is a driver unpicking a stack of entries.
@@ -7840,7 +7946,7 @@ async function handleAction(act, d, ev) {
         marginGoal: fv('cal-margin'), useManualThresholds: bv('cal-manual'),
       }));
       CALIB = r.calibration;
-      toast(`Break-even $${(+r.before.breakEvenRpm).toFixed(2)} → $${(+r.after.breakEvenRpm).toFixed(2)}/mi.`, 'ok');
+      toast(`Break-even ${pm(+r.before.breakEvenRpm, 2)} → ${pm(+r.after.breakEvenRpm, 2)}/${DU()}.`, 'ok');
     });
 
     /* ---- hired fleet */
@@ -7870,7 +7976,7 @@ async function handleAction(act, d, ev) {
     case 'book-empty':
       return run(async () => {
         const r = absorb(await api('/moves/book-empty', 'POST', {}));
-        toast(`${r.trip.number}: ${num(r.miles)} empty mi booked.`, 'ok');
+        toast(`${r.trip.number}: ${dist(r.miles)} empty booked.`, 'ok');
       });
 
     case 'arrival-read':
@@ -8649,6 +8755,7 @@ function collectSettings() {
       driveDisplayCaps: bv('hr-capsask') ? (s.hos.driveDisplayCaps === 'no' ? '' : s.hos.driveDisplayCaps) : 'no',
       breakConsumesShift: bv('hr-breakshift'), sleeperSplitAllowed: bv('hr-split'),
     },
+    displayUnits: sv('op-units'),
     governedMph: fv('op-gov'), speedFactor: fv('op-factor'),
     safetyBufferHours: hv('op-buffer'), parkingBufferHours: hv('op-park'),
     strandedMarginHours: hv('op-strand'),
