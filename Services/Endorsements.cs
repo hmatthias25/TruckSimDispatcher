@@ -32,7 +32,11 @@ public static class Endorsements
     /// cryogenic, 2.3 poisonous) but is unlocked as one class, so the subclasses describe what is
     /// inside rather than being separate unlocks.
     /// </summary>
-    public static readonly HazClass[] All =
+    /// <summary>The open career's game's classes. See <see cref="GameProfile.HazmatClasses"/>.</summary>
+    public static HazClass[] All => GameProfile.Current.HazmatClasses;
+
+    /// <summary>ATS's HazMat classes. Reached through <see cref="GameProfile.HazmatClasses"/>.</summary>
+    internal static readonly HazClass[] AtsClasses =
     {
         new("1", "Class 1 — Explosives",
             "explosive substances and articles",

@@ -38,7 +38,11 @@ public static class MapCoverage
     /// asked for all US states and because a mod may yet add them — an entry nobody ticks costs nothing,
     /// and a missing one cannot be ticked at all.
     /// </summary>
-    public static readonly IReadOnlyList<Region> All = new List<Region>
+    /// <summary>The open career's game's regions. See <see cref="GameProfile.Regions"/>.</summary>
+    public static IReadOnlyList<Region> All => GameProfile.Current.Regions;
+
+    /// <summary>ATS's states and provinces. Reached through <see cref="GameProfile.Regions"/>.</summary>
+    internal static readonly IReadOnlyList<Region> AtsRegions = new List<Region>
     {
         new("AL", "Alabama", "US"), new("AK", "Alaska", "US"), new("AZ", "Arizona", "US"),
         new("AR", "Arkansas", "US"), new("CA", "California", "US"), new("CO", "Colorado", "US"),
@@ -85,7 +89,7 @@ public static class MapCoverage
     /// career gets the sensible half of the continent on day one and turns Canada on deliberately.
     /// </summary>
     public static List<string> DefaultSelection() =>
-        All.Where(r => r.Country == "US").Select(r => r.Code).ToList();
+        All.Where(r => r.Country == GameProfile.Current.DefaultRegionCountry).Select(r => r.Code).ToList();
 
     private static string Norm(string? code) => (code ?? "").Trim().ToUpperInvariant();
 

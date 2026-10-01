@@ -34,8 +34,8 @@ namespace TruckSimDispatcher.Services;
 /// </summary>
 public static class ModCompanyNames
 {
-    /// <summary>ATS on Steam. The workshop keeps mods under this app id.</summary>
-    public const string AtsAppId = "270880";
+    /// <summary>The open career's game on Steam. The workshop keeps mods under this app id.</summary>
+    public static string AppId => GameProfile.Current.SteamAppId;
 
     public sealed record Candidate(string Path, string Name, long Bytes, string Format);
 
@@ -97,7 +97,7 @@ public static class ModCompanyNames
 
         foreach (var lib in SteamLibraries())
         {
-            var ws = Path.Combine(lib, "steamapps", "workshop", "content", AtsAppId);
+            var ws = Path.Combine(lib, "steamapps", "workshop", "content", AppId);
             if (!Directory.Exists(ws)) continue;
             try { found.AddRange(Directory.EnumerateFiles(ws, "*.scs", SearchOption.AllDirectories)); }
             catch { }
@@ -105,7 +105,7 @@ public static class ModCompanyNames
 
         var manual = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-            "American Truck Simulator", "mod");
+            GameProfile.Current.GameFolder, "mod");
         if (Directory.Exists(manual))
         {
             try { found.AddRange(Directory.EnumerateFiles(manual, "*.scs", SearchOption.TopDirectoryOnly)); }

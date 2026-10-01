@@ -196,7 +196,7 @@ public static class Carriers
         return cities.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    private record Spec(
+    internal record Spec(
         string Name, string Code, string[] Divisions,
         string Size, string HqCity, string HqState, string[] OtherYards,
         decimal LoadedCpm, decimal DeadheadCpm,
@@ -408,7 +408,12 @@ public static class Carriers
     /// put them on the same rung as the invented filler. Taking rookies and having standards are
     /// independent — Prime and Roehl do both — and the data had conflated them.
     /// </summary>
-    private static readonly Spec[] RealWorld =
+    private static Spec[] RealWorld => GameProfile.Current.CarriersReal;
+    private static Spec[] Fictional => GameProfile.Current.CarriersFictional;
+    private static Spec[] SecondChanceCarriers => GameProfile.Current.CarriersSecondChance;
+
+    /// <summary>ATS's real-world carriers. Reached through <see cref="GameProfile.CarriersReal"/>.</summary>
+    internal static readonly Spec[] AtsRealWorld =
     {
         new("Schneider National", "SNI",
             new[] { "Dry Van", "Intermodal", "Dedicated", "Tanker" }, "Large",
@@ -658,7 +663,8 @@ public static class Carriers
     /// and, where the freight is regulated, the endorsement to go with it — the freight decides the
     /// hiring bar, not the other way round.
     /// </summary>
-    private static readonly Spec[] Fictional =
+    /// <summary>ATS's fictional carriers. Reached through <see cref="GameProfile.CarriersFictional"/>.</summary>
+    internal static readonly Spec[] AtsFictional =
     {
         // Stands one-for-one against the real table: same sizes, same divisions, same hiring bars and
         // the same place on the pay band. Turning real names off changes what is written on the door
@@ -898,7 +904,8 @@ public static class Carriers
     /// lives, thin freight, no say in equipment or home time. Unpleasant enough that redemption means
     /// something, not so unpleasant that the career is over in practice.
     /// </summary>
-    private static readonly Spec[] SecondChanceCarriers =
+    /// <summary>ATS's second-chance carriers. Reached through <see cref="GameProfile.CarriersSecondChance"/>.</summary>
+    internal static readonly Spec[] AtsSecondChance =
     {
         new("Rampart Freight Systems", "RFS",
             new[] { "Dry Van", "Reefer" }, "Large",
@@ -933,7 +940,10 @@ public static class Carriers
     /// at all are the regional ones. Livestock and grain are the plains; logs are the northwest and
     /// the southeast; and none of them is a national seat you can take from anywhere.
     /// </summary>
-    public static string RegionOf(string? state) => (state ?? "").Trim().ToUpperInvariant() switch
+    public static string RegionOf(string? state) => GameProfile.Current.CarrierRegionOf(state);
+
+    /// <summary>ATS's carrier regions. Reached through <see cref="GameProfile.CarrierRegionOf"/>.</summary>
+    internal static string AtsRegionOf(string? state) => (state ?? "").Trim().ToUpperInvariant() switch
     {
         "WA" or "OR" or "ID" or "MT" or "AK" => "Northwest",
         "CA" or "NV" or "AZ" or "UT" or "HI" => "West",

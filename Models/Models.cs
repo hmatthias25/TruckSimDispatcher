@@ -74,6 +74,16 @@ public class AppState
     /// </summary>
     public string CareerName { get; set; } = "";
 
+    /// <summary>
+    /// Which game this career is played in: "ATS", or "ETS2" once it exists. See
+    /// <see cref="Services.GameProfile"/>.
+    ///
+    /// Fixed for the life of the career. The cities, the distances, the pay and the clock rules all follow
+    /// from it, so a career that changed game would be wrong in every one of them. Every career written
+    /// before this existed was ATS, and the default makes them so without a migration.
+    /// </summary>
+    public string Game { get; set; } = "ATS";
+
     public bool Onboarded { get; set; }
     public string CreatedUtc { get; set; } = DateTime.UtcNow.ToString("o");
 

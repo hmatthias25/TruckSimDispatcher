@@ -16,7 +16,15 @@ public class StateStore
     private readonly string _backupDir;
     private readonly object _gate = new();
     private readonly List<string> _searched;
-    private AppState _state;
+
+    // Every career the store opens — loaded, switched to, created, restored, imported — goes through this
+    // setter, so the game the tables answer for can never lag the career that is open. See GameProfile.
+    private AppState __state = null!;
+    private AppState _state
+    {
+        get => __state;
+        set { __state = value; GameProfile.Activate(value); }
+    }
 
     /// <summary>
     /// Where careers that are not the one being played are kept.
@@ -191,13 +199,14 @@ public class StateStore
 
     /// <summary>One line about a career, read off its file without loading it as the live state.</summary>
     public record CareerInfo(string Slug, string Label, bool Current, string Company, string Driver,
-                             string GameTime, int Day, int Trips, bool Onboarded, string SavedUtc);
+                             string GameTime, int Day, int Trips, bool Onboarded, string SavedUtc,
+                             string Game);
 
     private static CareerInfo Describe(AppState s, string slug, bool current, DateTime savedUtc) =>
         new(slug, LabelFor(s), current, s.Company.Name ?? "", s.Driver.Name ?? "",
             s.Status.GameTime ?? "", GameClock.DayOf(s.Status.GameTime) ?? 0,
             s.Trips.Count(t => t.Status == "Delivered"), s.Onboarded,
-            savedUtc.ToString("o", CultureInfo.InvariantCulture));
+            savedUtc.ToString("o", CultureInfo.InvariantCulture), GameProfile.For(s).Id);
 
     /// <summary>
     /// Every career on file, the live one first.
@@ -426,6 +435,9 @@ public class StateStore
         lock (_gate)
         {
             var result = action(_state);
+            // A mutation can set the game itself (a new career choosing it at onboarding), so it is read
+            // again before anything else asks a table.
+            GameProfile.Activate(_state);
             Save();
             return result;
         }

@@ -16,7 +16,10 @@ namespace TruckSimDispatcher.Services;
 public static class PayrollTax
 {
     // 2026 single-filer brackets: (ceiling of the band, rate).
-    private static readonly (decimal Upto, decimal Rate)[] FederalSingle =
+    private static (decimal Upto, decimal Rate)[] FederalSingle => GameProfile.Current.IncomeTaxBrackets;
+
+    /// <summary>US federal single-filer brackets. Reached through <see cref="GameProfile.IncomeTaxBrackets"/>.</summary>
+    internal static readonly (decimal Upto, decimal Rate)[] AtsFederalSingle =
     {
         (12_400m, 0.10m),
         (50_400m, 0.12m),
@@ -47,7 +50,10 @@ public static class PayrollTax
     /// The nine states with no wage income tax are listed explicitly at 0 so the stub can show a zero
     /// line — the absence of state tax is worth seeing, not hiding.
     /// </summary>
-    private static readonly Dictionary<string, decimal> StateRates = new(StringComparer.OrdinalIgnoreCase)
+    private static IReadOnlyDictionary<string, decimal> StateRates => GameProfile.Current.RegionTaxRates;
+
+    /// <summary>US state income tax rates. Reached through <see cref="GameProfile.RegionTaxRates"/>.</summary>
+    internal static readonly Dictionary<string, decimal> AtsStateRates = new(StringComparer.OrdinalIgnoreCase)
     {
         // No wage income tax
         ["AK"] = 0m, ["FL"] = 0m, ["NV"] = 0m, ["NH"] = 0m, ["SD"] = 0m,

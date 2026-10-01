@@ -33,7 +33,8 @@ public static class Geo
     private const double EarthRadiusMiles = 3958.8;
 
     /// <summary>Rough state centroids, for a city the coordinate table does not know.</summary>
-    private static readonly Dictionary<string, (double Lat, double Lon)> Centers = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>ATS state and province centroids. Reached through <see cref="GameProfile.RegionCentres"/>.</summary>
+    internal static readonly Dictionary<string, (double Lat, double Lon)> AtsCentres = new(StringComparer.OrdinalIgnoreCase)
     {
         ["AL"] = (32.8, -86.8), ["AZ"] = (34.2, -111.7), ["AR"] = (34.9, -92.4), ["CA"] = (37.2, -119.5),
         ["CO"] = (39.0, -105.5), ["CT"] = (41.6, -72.7), ["DE"] = (39.0, -75.5), ["FL"] = (28.6, -82.4),
@@ -67,16 +68,20 @@ public static class Geo
     /// </summary>
     private const double SameStateFallbackMiles = 130.0;
 
-    private static Dictionary<string, (double Lat, double Lon)>? _cities;
+    private static IReadOnlyDictionary<string, (double Lat, double Lon)> Centers => GameProfile.Current.RegionCentres;
+
+    // One coordinate table per game, each loaded on first use.
+    private static readonly Dictionary<string, Dictionary<string, (double Lat, double Lon)>> _cities =
+        new(StringComparer.OrdinalIgnoreCase);
     private static readonly object Gate = new();
 
     /// <summary>The shipped coordinate table, loaded once on first use.</summary>
     private static Dictionary<string, (double Lat, double Lon)> Cities()
     {
-        if (_cities != null) return _cities;
+        var game = GameProfile.Current;
         lock (Gate)
         {
-            if (_cities != null) return _cities;
+            if (_cities.TryGetValue(game.Id, out var cached)) return cached;
             var map = new Dictionary<string, (double, double)>(StringComparer.OrdinalIgnoreCase);
 
             // Two files, one format, one table. Canada is a separate resource because it comes from a
@@ -84,7 +89,7 @@ public static class Geo
             // the app cares which side of the border a city is on. Reported from play: a C2C career can
             // switch Ontario on under "Where you run" and then every distance rule goes quiet on it,
             // including the home-time ceiling that is the only thing stopping a run the wrong way.
-            foreach (var resource in new[] { "data/us-cities.txt", "data/ca-cities.txt" })
+            foreach (var resource in game.CityResources)
             {
                 try
                 {
@@ -107,8 +112,8 @@ public static class Geo
                     // Carry on to the next one rather than losing both to one bad read.
                 }
             }
-            _cities = map;
-            return _cities;
+            _cities[game.Id] = map;
+            return map;
         }
     }
 

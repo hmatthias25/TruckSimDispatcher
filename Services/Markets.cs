@@ -443,9 +443,11 @@ public static class Markets
     Augusta|ME|3|0|C2C|Log,Dry Van
     """;
 
-    private static readonly List<MarketCity> _builtIn = Parse();
+    /// <summary>ATS's freight markets. Reached through <see cref="GameProfile.Markets"/>.</summary>
+    internal static readonly List<MarketCity> AtsBuiltIn = Parse();
 
-    public static IReadOnlyList<MarketCity> BuiltIn => _builtIn;
+    /// <summary>The open career's game's freight markets, before any the driver added.</summary>
+    public static IReadOnlyList<MarketCity> BuiltIn => GameProfile.Current.Markets;
 
     private static List<MarketCity> Parse()
     {
@@ -475,7 +477,7 @@ public static class Markets
     public static List<MarketCity> Effective(AppState state)
     {
         var map = new Dictionary<string, MarketCity>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in _builtIn) map[Key(c.City, c.State)] = c;
+        foreach (var c in BuiltIn) map[Key(c.City, c.State)] = c;
         foreach (var c in state.MarketExtras) map[Key(c.City, c.State)] = c;
         return map.Values.OrderBy(c => c.State).ThenBy(c => c.City).ToList();
     }
@@ -485,14 +487,14 @@ public static class Markets
         if (string.IsNullOrWhiteSpace(city)) return null;
         var k = Key(city, st);
         var hit = state.MarketExtras.FirstOrDefault(c => Key(c.City, c.State) == k)
-               ?? _builtIn.FirstOrDefault(c => Key(c.City, c.State) == k);
+               ?? BuiltIn.FirstOrDefault(c => Key(c.City, c.State) == k);
         if (hit != null) return hit;
 
         // Fall back to a city-name match when the driver did not give a state.
         if (string.IsNullOrWhiteSpace(st))
         {
             return state.MarketExtras.FirstOrDefault(c => c.City.Equals(city.Trim(), StringComparison.OrdinalIgnoreCase))
-                ?? _builtIn.FirstOrDefault(c => c.City.Equals(city.Trim(), StringComparison.OrdinalIgnoreCase));
+                ?? BuiltIn.FirstOrDefault(c => c.City.Equals(city.Trim(), StringComparison.OrdinalIgnoreCase));
         }
         return null;
     }

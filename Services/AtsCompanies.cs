@@ -33,7 +33,7 @@ public static class AtsCompanies
     /// The base game is California, Nevada and Arizona. The wiki writes those three as "Base game" in
     /// the state column, so it is expanded here rather than carried around as a special case.
     /// </summary>
-    private static readonly string[] BaseGame = { "CA", "NV", "AZ" };
+    private static IReadOnlyList<string> BaseGame => GameProfile.Current.BaseGameRegions;
 
     /// <summary>
     /// A company freight moves for.
@@ -65,7 +65,11 @@ public static class AtsCompanies
     /// or a state is wrong it is a transcription error, and it should be fixed against the wiki rather
     /// than adjusted to taste.
     /// </summary>
-    public static readonly Firm[] All =
+    /// <summary>The open career's game's companies. See <see cref="GameProfile.Companies"/>.</summary>
+    public static Firm[] All => GameProfile.Current.Companies;
+
+    /// <summary>ATS's companies. Reached through <see cref="GameProfile.Companies"/>.</summary>
+    internal static readonly Firm[] AtsFirms =
     {
         // ---------------------------------------------------------------- Logistics
         new("42 Print", "Logistics", "Printing", S("BASE","AZ","AR","CO","KS","MO","MT","NM","OR","TX"), 12, "42p"),

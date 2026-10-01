@@ -47,7 +47,10 @@ public static class GameZones
     /// A state that is not in this table has no offset and produces no shift at all, which is the honest
     /// answer for somewhere we cannot place.
     /// </summary>
-    private static readonly Dictionary<string, int> ByState = new(StringComparer.OrdinalIgnoreCase)
+    private static IReadOnlyDictionary<string, int> ByState => GameProfile.Current.TimeZones;
+
+    /// <summary>ATS's zones by state. Reached through <see cref="GameProfile.TimeZones"/>.</summary>
+    internal static readonly Dictionary<string, int> AtsZones = new(StringComparer.OrdinalIgnoreCase)
     {
         // --- documented ATS assignments
         ["CA"] = Pacific, ["NV"] = Pacific, ["OR"] = Pacific, ["WA"] = Pacific,
@@ -122,9 +125,13 @@ public static class GameZones
     /// <summary>
     /// What to call a zone when saying so out loud. Standard time only, because ATS keeps no other.
     /// </summary>
-    public static string NameOf(int zone) => zone switch
+    public static string NameOf(int zone) =>
+        GameProfile.Current.TimeZoneNames.TryGetValue(zone, out var name) ? name : "";
+
+    /// <summary>ATS's zone names. Reached through <see cref="GameProfile.TimeZoneNames"/>.</summary>
+    internal static readonly Dictionary<int, string> AtsZoneNames = new()
     {
-        Pacific => "PST", Mountain => "MST", Central => "CST", Eastern => "EST", _ => "",
+        [Pacific] = "PST", [Mountain] = "MST", [Central] = "CST", [Eastern] = "EST",
     };
 
     /// <summary>

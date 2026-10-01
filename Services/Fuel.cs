@@ -47,7 +47,10 @@ public static class Fuel
     /// rather than per cent. Buying well still pays — but it pays less than it did, and saying otherwise
     /// would send a driver a long way out of their route for it.</para>
     /// </summary>
-    private static readonly Dictionary<string, double> StateIndex = new(StringComparer.OrdinalIgnoreCase)
+    private static IReadOnlyDictionary<string, double> StateIndex => GameProfile.Current.FuelIndex;
+
+    /// <summary>ATS's fuel index by state. Reached through <see cref="GameProfile.FuelIndex"/>.</summary>
+    internal static readonly Dictionary<string, double> AtsStateIndex = new(StringComparer.OrdinalIgnoreCase)
     {
         ["CA"] = 1.272,
         ["WA"] = 1.137, ["OR"] = 1.035, ["NV"] = 1.024, ["AZ"] = 0.961,
@@ -85,7 +88,7 @@ public static class Fuel
     /// figures on each level, which quietly went stale the moment the pump price did — expressed against
     /// the reference instead, they follow it.
     /// </summary>
-    public static decimal ContractPrice(string level) => Math.Round(DefaultPricePerGal * level switch
+    public static decimal ContractPrice(string level) => Math.Round(GameProfile.Current.DefaultFuelPrice * level switch
     {
         "Large" => 0.884m,
         "Medium" => 0.919m,
@@ -116,7 +119,7 @@ public static class Fuel
 
     /// <summary>What a gallon is taken to cost before anywhere in particular is considered.</summary>
     public static decimal Reference(AppState s) =>
-        s.Settings.FuelPricePerGal > 0 ? s.Settings.FuelPricePerGal : DefaultPricePerGal;
+        s.Settings.FuelPricePerGal > 0 ? s.Settings.FuelPricePerGal : GameProfile.Current.DefaultFuelPrice;
 
     /// <summary>Every fuel stop the driver has ever logged.</summary>
     public static IEnumerable<FuelPurchase> AllStops(AppState s) =>

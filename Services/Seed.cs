@@ -88,7 +88,11 @@ public static class Seed
 
     // ---------------------------------------------------------------- company
 
-    private static readonly (string Name, string Code, string Division, string City, string State, string Motto)[] Profiles =
+    private static (string Name, string Code, string Division, string City, string State, string Motto)[] Profiles =>
+        GameProfile.Current.StartingCompanies;
+
+    /// <summary>ATS's starting companies. Reached through <see cref="GameProfile.StartingCompanies"/>.</summary>
+    internal static readonly (string Name, string Code, string Division, string City, string State, string Motto)[] AtsProfiles =
     {
         ("Sierra Freight Lines",    "SFL", "Dry Van",   "Phoenix",        "AZ", "Loaded and legal."),
         ("Cold Harbor Carriers",    "CHC", "Reefer",    "Fresno",         "CA", "Cold on time, every time."),
@@ -221,7 +225,7 @@ public static class Seed
     }
 
     /// <summary><see cref="Tier"/> is the equipment standard a carrier has to hold to issue this unit.</summary>
-    private record TruckSpec(string Make, string Model, int Year, string Engine, int Hp,
+    internal record TruckSpec(string Make, string Model, int Year, string Engine, int Hp,
         string Trans, string TransType, string Cab, int Governed, double Fuel, double Mpg, int Tier);
 
     // ---- everything below is spec-ed off what ATS ACTUALLY SELLS.
@@ -240,7 +244,12 @@ public static class Seed
     // Model years follow the game's own variants: Cascadia 2019 and 2024, T680 2014 and 2022, VNL 2014,
     // 2018 and 2025. Where a year here is between those, it is the same dealer truck bought used.
 
-    private static readonly TruckSpec[] AmtSpecs =
+    private static TruckSpec[] AmtSpecs => GameProfile.Current.TrucksAutomatic;
+    private static TruckSpec[] ManualSpecs => GameProfile.Current.TrucksManual;
+    private static TruckSpec[] ShowcaseSpecs => GameProfile.Current.TrucksShowcase;
+
+    /// <summary>ATS dealer trucks with automated gearboxes. Reached through <see cref="GameProfile.TrucksAutomatic"/>.</summary>
+    internal static readonly TruckSpec[] AtsAmtSpecs =
     {
         new("Volvo",        "VNL",      2023, "Volvo D13 500",       500, "I-Shift ATO2612G 12-spd", "automatic", "Sleeper", 68, 250, 7.3, 5),
         new("Freightliner", "Cascadia", 2022, "Detroit DD15 505",    505, "Detroit DT12-OA 12-spd", "automatic", "Sleeper", 65, 240, 7.1, 4),
@@ -253,7 +262,8 @@ public static class Seed
         new("Kenworth",     "T680",     2014, "Paccar MX-13 455",    455, "Eaton UltraShift FM-15E310B-LAS 10-spd", "automatic", "Day Cab", 62, 150, 5.5, 1)
     };
 
-    private static readonly TruckSpec[] ManualSpecs =
+    /// <summary>ATS dealer trucks for a manual driver. Reached through <see cref="GameProfile.TrucksManual"/>.</summary>
+    internal static readonly TruckSpec[] AtsManualSpecs =
     {
         new("Peterbilt", "389",        2023, "Cummins ISX15 600",   600, "Eaton UltraShift FO-22E318B-VXP 18-spd", "manual", "Sleeper", 70, 300, 5.9, 5),
         new("Peterbilt", "579",        2021, "Cummins ISX15 550",   550, "Eaton UltraShift FO-20E313A-MHP 13-spd", "manual", "Sleeper", 65, 240, 6.6, 4),
@@ -276,7 +286,8 @@ public static class Seed
     /// Every other reward in this app is a number: a rate, a rank, a percentage. This is the one that is
     /// visible out of the windscreen every mile, which is why it is a choice rather than an assignment.
     /// </summary>
-    private static readonly TruckSpec[] ShowcaseSpecs =
+    /// <summary>ATS dealer trucks for a five-star carrier. Reached through <see cref="GameProfile.TrucksShowcase"/>.</summary>
+    internal static readonly TruckSpec[] AtsShowcaseSpecs =
     {
         // The long noses. Nothing else on this list turns a head in a truck stop.
         // Trim names are gone: ATS sells a "389", not a "389 Pride & Class", and being sent to the
@@ -681,7 +692,10 @@ public static class Seed
         return $"T{Math.Max(501, highest + 2)}";
     }
 
-    private static string TrailerMake(string type) => type switch
+    private static string TrailerMake(string type) => GameProfile.Current.TrailerMake(type);
+
+    /// <summary>ATS trailer makes by type. Reached through <see cref="GameProfile.TrailerMake"/>.</summary>
+    internal static string AtsTrailerMake(string type) => type switch
     {
         "Reefer" => "Utility 3000R",
         "Dry Van" => "Wabash DuraPlate",

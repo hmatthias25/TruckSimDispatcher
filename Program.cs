@@ -2744,6 +2744,9 @@ object Snapshot(AppState? given = null)
         // which is how the switcher came to show the carrier's name over a career the player had
         // called something else.
         careerName = s.CareerName,
+        // Which game this career is played in. Named here for the same reason as the career name: a new
+        // field on AppState does not reach the browser until the snapshot says so. See GameProfile.
+        game = new { id = GameProfile.For(s).Id, name = GameProfile.For(s).Name, shortName = GameProfile.For(s).ShortName },
         // The terms your employer sets, so the Career tab can show what is actually on offer instead of
         // a free dropdown the endpoint then refuses. Reported from play: both pickers still read as the
         // driver's choice after the carrier became the one who decides.
