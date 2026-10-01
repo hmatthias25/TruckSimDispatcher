@@ -234,7 +234,10 @@ public static class HosEngine
     {
         var r = s.Settings.EuHos ?? new EuHosRules();
         var spread = r.Spread;
-        var driven = dayDriven ?? Math.Max(0, r.DailyDriving - s.Hos.DriveRemaining);
+        // The companion's D counts down from ten while the week still has a 10-hour day left, and from nine after.
+        var dayLimit = s.Hos.DriveRemaining > r.DailyDriving || s.Hos.EuExtensionsUsed < r.ExtensionsPerWeek
+            ? r.ExtendedDailyDriving : r.DailyDriving;
+        var driven = dayDriven ?? Math.Max(0, dayLimit - s.Hos.DriveRemaining);
         var breaks = Math.Floor(driven / Math.Max(0.1, r.DrivingBeforeBreak) - 1e-9) * r.BreakLength;
         var used = driven + Math.Max(0, breaks);
         if (at is { } now)

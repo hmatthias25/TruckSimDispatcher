@@ -1277,6 +1277,14 @@ public class HosSnapshot
     /// the day's driving and the last daily rest in the trip log. Sent as true to ask for the estimate.
     /// </summary>
     public bool SpreadEstimated { get; set; }
+    /// <summary>ETS2: driving per game day this week, from the fall in W between reports. See EuCounters.</summary>
+    public Dictionary<int, double>? EuDayDriving { get; set; }
+    /// <summary>The week EuDayDriving belongs to (its Monday, as a game time).</summary>
+    public string EuDayWeek { get; set; } = "";
+    /// <summary>Today's driving limit: ten while the week has a 10-hour day left, nine after.</summary>
+    public double EuDailyLimit { get; set; }
+    /// <summary>A D above today's limit was typed and capped to it.</summary>
+    public bool EuDriveCapped { get; set; }
     /// <summary>Driving last calendar week, for the 90-hour fortnight. Null where never reported.</summary>
     public double? EuLastWeekDriven { get; set; }
     /// <summary>10-hour days already used this week, of the two allowed.</summary>
