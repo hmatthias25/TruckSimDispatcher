@@ -344,11 +344,34 @@ public static class TripService
         if (HosEngine.Eu(s) && ev.Kind is "Rest" or "Restart" or "Break"
             && GameClock.TryParse(ev.EndGameTime) is { } offEnd && GameClock.TryParse(ev.GameTime) is { } offStart && offEnd > offStart)
         {
-            var value = EuCounters.RestValue(s, (offEnd - offStart).TotalHours);
+            var offHours = (offEnd - offStart).TotalHours;
+            var euR = s.Settings.EuHos ?? new EuHosRules();
+            var value = EuCounters.RestValue(s, offHours);
             if (value.Length > 0)
-                ev.Detail = string.Join(" ", new[] { $"{Hhmm.Of((offEnd - offStart).TotalHours)} off: under EU rules that is {value}.", ev.Detail }
+                ev.Detail = string.Join(" ", new[] { $"{Hhmm.Of(offHours)} off: under EU rules that is {value}.", ev.Detail }
                     .Where(x => !string.IsNullOrWhiteSpace(x)));
-            EuCounters.Derive(s, offEnd, s.Hos.EuWeekDriven, s.Hos.EuDayWeek);
+
+            // A daily rest starts a fresh day, and the clocks say so without waiting for the status line: D back to
+            // the day's limit, B to four and a half, the spread to thirteen. Only where the rest is the newest thing
+            // known — a report typed after it is the companion's own word and stands. The day's limit comes out of
+            // Derive (ten while a 10-hour day is left this week, nine after), so D is put at ten first and capped.
+            // W and 2W do not move: rest is not driving.
+            var freshDay = offHours >= euR.ReducedDailyRest - 0.01
+                           && (GameClock.TryParse(s.Hos.AsOfGameTime) is not { } reported || offEnd >= reported);
+            if (freshDay)
+            {
+                s.Hos.DriveRemaining = euR.ExtendedDailyDriving;
+                s.Hos.BreakRemaining = euR.DrivingBeforeBreak;
+            }
+            EuCounters.Derive(s, offEnd, s.Hos.EuWeekDriven, s.Hos.EuDayWeek, report: false);
+            if (freshDay)
+            {
+                s.Hos.DriveRemaining = s.Hos.EuDailyLimit > 0 ? s.Hos.EuDailyLimit : euR.DailyDriving;
+                s.Hos.EuDriveCapped = false;
+                s.Hos.EuClocksFromRest = true;
+                s.Hos.AsOfGameTime = GameClock.Format(offEnd);
+                s.Hos.Projected = false;
+            }
         }
 
         // Events carry a location when the driver gives one — that is a city we have now been to.

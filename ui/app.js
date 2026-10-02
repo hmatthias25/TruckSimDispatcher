@@ -2539,6 +2539,12 @@ function euClocksHtml(h, v) {
       hours, Monday to Sunday, and ${num(fortnight, 0)} over this week and last — <b>${hhmm(v.cycleRemaining)}</b> left as it stands.</p>
     ${h.euDriveCapped ? `<div class="callout warn"><p style="margin:0">Both 10-hour days are used this week, so today is
       <b>${num(r.dailyDriving || 9, 0)} hours</b>. The D you typed was over that and is taken as ${hhmm(h.driveRemaining)}.</p></div>` : ''}
+    ${h.euMultiDayReport > 0 ? `<div class="callout warn"><p style="margin:0">Your last report covered <b>${hhmm(h.euMultiDayReport)}</b>
+      of driving — more than one day can hold, so it spans more than one driving day and I have put it all on this one. I cannot
+      tell which of those days were 10-hour days. Type the status line at the end of each shift, before your daily rest, and
+      the count stays right.</p></div>` : ''}
+    ${h.euClocksFromRest ? `<div class="callout"><p style="margin:0">D, B and the spread were reset by the daily rest you logged,
+      ending ${gt(h.asOfGameTime)}: a fresh day. Your next status-line report replaces them.</p></div>` : ''}
     <h4 class="sect" style="margin:12px 0 6px">Worked out for you <span class="sub">from your reports and the trip log</span></h4>
     ${(() => {
       const limit = h.euDailyLimit || r.extendedDailyDriving || 10;

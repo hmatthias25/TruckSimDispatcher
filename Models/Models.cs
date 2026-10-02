@@ -1285,6 +1285,18 @@ public class HosSnapshot
     public double EuDailyLimit { get; set; }
     /// <summary>A D above today's limit was typed and capped to it.</summary>
     public bool EuDriveCapped { get; set; }
+
+    /// <summary>
+    /// Hours of driving the last status-line report covered, where that was more than one shift can hold (over
+    /// ten) — so it spans driving days and the app cannot tell which of them were 10-hour days. Zero otherwise.
+    /// </summary>
+    public double EuMultiDayReport { get; set; }
+
+    /// <summary>
+    /// True when D and B were put back to a fresh day's by a logged daily rest rather than read off the status
+    /// line — so the panel can say they are the app's, until the next report.
+    /// </summary>
+    public bool EuClocksFromRest { get; set; }
     /// <summary>
     /// D was read off a display that counts down from ten while the week has a 10-hour day left (the HOS
     /// companion's status line), so today's extension is already inside it. The planner must not add it

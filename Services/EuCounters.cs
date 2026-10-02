@@ -64,7 +64,9 @@ public static class EuCounters
     /// Folds a status-line report into the career's clocks. Called with the clocks already holding the new
     /// B, D, W and 2W, and with the week's driving as it stood before this report.
     /// </summary>
-    public static void Derive(AppState s, DateTime now, double? weekDrivenBefore, string? weekBefore)
+    /// <param name="report">False when the call is a logged rest refreshing the counters rather than a status-line
+    /// report — which keeps what the last report said about itself.</param>
+    public static void Derive(AppState s, DateTime now, double? weekDrivenBefore, string? weekBefore, bool report = true)
     {
         var h = s.Hos;
         var r = s.Settings.EuHos ?? new EuHosRules();
@@ -73,8 +75,12 @@ public static class EuCounters
 
         // ---- driving per day, from the fall in W. A new week clears the record.
         if (h.EuDayWeek != weekKey) { h.EuDayDriving.Clear(); h.EuDayWeek = weekKey; }
+        if (report) { h.EuMultiDayReport = 0; h.EuClocksFromRest = false; }
         if (weekBefore == weekKey && weekDrivenBefore is { } was && h.EuWeekDriven is { } nowDriven && nowDriven > was + 0.01)
         {
+            // More than a shift can hold: the report spans driving days, and all of it lands on this one. Said,
+            // so the driver knows the 10-hour-day count is a guess until they report a day at a time.
+            if (nowDriven - was > r.ExtendedDailyDriving + 0.01) h.EuMultiDayReport = Math.Round(nowDriven - was, 2);
             var day = ShiftDay(s, now);
             h.EuDayDriving[day] = Math.Round(h.EuDayDriving.GetValueOrDefault(day) + (nowDriven - was), 2);
         }

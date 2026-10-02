@@ -63,6 +63,32 @@ const line = (at, b, d, w, w2) => api('/hos', 'POST', {
   h = await line(iso(10, '03:30'), 3, 0, 46, 80);
   ok('the ten hours land on one day', near(h.euDayDriving[9], 10) && h.euDayDriving[10] == null, JSON.stringify(h.euDayDriving));
   ok('and it is a 10-hour day used', h.euExtensionsUsed === 1, `${h.euExtensionsUsed}`);
+  ok('one shift of driving is not a multi-day report', !h.euMultiDayReport, `${h.euMultiDayReport}`);
+
+  head('4. A logged daily rest starts a fresh day, without a status-line report');
+  // D is 0 and B 3:00 off the 03:30 report. Rest 03:30 to 12:30.
+  await api(`/trips/${trip.id}/event`, 'POST', { kind: 'Rest', gameTime: iso(10, '03:30'), endGameTime: iso(10, '12:30') });
+  h = (await api('/bootstrap')).hos;
+  ok('D back to ten: a 10-hour day is still left this week', near(h.driveRemaining, 10) && h.euDailyLimit === 10, `${h.driveRemaining}, limit ${h.euDailyLimit}`);
+  ok('B back to 4:30', near(h.breakRemaining, 4.5), `${h.breakRemaining}`);
+  ok('the spread a fresh 13', near(h.shiftRemaining, 13), `${h.shiftRemaining}`);
+  ok('W does not move: rest is not driving', near(h.euWeekDriven, 10), `${h.euWeekDriven}`);
+  ok('and the panel is told the clocks are the rest\'s, not the status line\'s', h.euClocksFromRest === true && h.asOfGameTime === iso(10, '12:30'));
+
+  head('5. A rest logged after a newer report does not undo the report');
+  h = await line(iso(10, '16:30'), 1, 6, 42, 76);
+  ok('the report clears the rest\'s flag', h.euClocksFromRest === false);
+  await api(`/trips/${trip.id}/event`, 'POST', { kind: 'Break', gameTime: iso(10, '13:00'), endGameTime: iso(10, '13:45') });
+  await api(`/trips/${trip.id}/event`, 'POST', { kind: 'Rest', gameTime: iso(9, '05:30'), endGameTime: iso(9, '05:40') });
+  h = (await api('/bootstrap')).hos;
+  ok('D and B stay as reported', near(h.driveRemaining, 6) && near(h.breakRemaining, 1), `${h.driveRemaining}, ${h.breakRemaining}`);
+
+  head('6. One report covering more than a shift can hold');
+  // Out of both 10-hour days' worth of reports: 22 hours of driving reported at once.
+  h = await line(iso(12, '20:00'), 2, 1, 20, 54);
+  ok('said: it spans driving days', near(h.euMultiDayReport, 22), `${h.euMultiDayReport}`);
+  h = await line(iso(12, '21:00'), 2, 1, 20, 54);
+  ok('and cleared by the next report', !h.euMultiDayReport, `${h.euMultiDayReport}`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
