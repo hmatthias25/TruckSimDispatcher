@@ -30,6 +30,8 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.PropertyNameCaseInsensitive = true;
     o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
     o.SerializerOptions.NumberHandling = JsonNumberHandling.AllowReadingFromString;
+    // A whole-number field sent a decimal (a converted 90 km/h is 55.92 mph) takes the nearest whole number.
+    o.SerializerOptions.Converters.Add(new WholeNumberConverter());
 });
 // A body that will not bind throws rather than answering a bare 400, so the handler below can say which
 // field it was. A settings save refused over one value used to reach the player as "Request failed (400)"

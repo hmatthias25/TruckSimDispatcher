@@ -97,6 +97,13 @@ const app = { driverName: 'A. Rossi', preferredDivision: 'Dry Van', transmission
   let saved = await api('/settings', 'POST', { ...cur5, governedMph: 56 }).catch((e) => e);
   ok('a whole-mph limiter saves', !(saved instanceof Error), saved.message || '');
   saved = await api('/settings', 'POST', { ...cur5, governedMph: 55.92340730136005 }).catch((e) => e);
+  ok('90 km/h converted to 55.92 mph saves as 56, not a refused save', !(saved instanceof Error) && saved.settings.governedMph === 56,
+    saved.message || `${saved.settings?.governedMph}`);
+  const truck = (await api('/bootstrap')).trucks[0];
+  saved = await api('/fleet/truck', 'POST', { ...truck, gameId: 'Scania S 1', governedMph: 55.92340730136005 }).catch((e) => e);
+  ok('and so does a truck on the equipment form, with its game ID', !(saved instanceof Error)
+    && saved.trucks.find((t) => t.unit === truck.unit).gameId === 'Scania S 1', saved.message || '');
+  saved = await api('/settings', 'POST', { ...cur5, governedMph: 'fast' }).catch((e) => e);
   ok('a value that will not bind says which field, not a bare 400', saved instanceof Error && /governedMph/i.test(saved.message), saved.message);
 
   head('5. Another career, and starting over');
