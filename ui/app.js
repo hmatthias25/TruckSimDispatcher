@@ -644,7 +644,7 @@ function dayTimeInput(idPrefix, iso, label) {
         data-dow="${idPrefix}-dow" value="${day}" title="Game day">
       <span id="${idPrefix}-dow" class="badge info" style="flex:0 0 auto"
         title="Day 1 is a Monday. Check this against the game before you file.">${dowForDay(day)}</span>
-      <input id="${idPrefix}-tod" class="tod" inputmode="text" maxlength="8" style="flex:1" placeholder="${todPlaceholder()}"
+      <input id="${idPrefix}-tod" class="tod" inputmode="text" maxlength="8" style="flex:1 1 auto;min-width:84px" placeholder="${todPlaceholder()}"
         value="${fmtTod(iso ? timeOf(iso) : (S ? timeOf(S.status.gameTime) : '06:00'))}"
         title="Time of day — 18:30 or 6:30 PM, either works">
     </span></label>`;
@@ -2656,9 +2656,13 @@ function atPortHtml(t) {
   return `<div class="panel">
     <div class="panel-head"><h2>At a port?</h2>
       <span class="sub">Say which crossing and I will tell you which ${S.views.ferries.realSailings ? 'real ' : ''}sailing you make.</span></div>
-    <div class="grid3">
+    ${/* Two rows: the day/weekday/time trio needs a half-width column at least — squeezed into a third it
+          left the time box a sliver (reported from play). */ ''}
+    <div class="grid2">
       <label>Crossing<select id="fp-route">${ferryOptions()}</select></label>
       <label>Direction<select id="fp-dir"><option value="a">From the first port</option><option value="b">From the second port</option></select></label>
+    </div>
+    <div class="grid2">
       ${dayTimeInput('fp-time', S.status.gameTime, 'Game time you pulled in')}
     </div>
     <div class="row-actions"><button class="btn" data-act="at-port">I am at the port</button></div>
