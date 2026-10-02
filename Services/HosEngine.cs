@@ -692,19 +692,36 @@ public static class HosEngine
         /// The EU daily rest: eleven hours, or nine where the plan stretched today's spread to fifteen. And the
         /// weekly rest instead, where another day would carry the driver past six days without one.
         /// </summary>
-        void TakeEuDailyRest()
+        void TakeEuDailyRest(double cover = 0, double dockAfter = 0, string what = null)
         {
-            var len = nextRestReduced ? euR.ReducedDailyRest : euR.RegularDailyRest;
+            // A rest that covers a wait for the receiver's opening is as long as the wait — and when the wait is
+            // under eleven, it can be a reduced one of nine or more. That is what the three reduced rests are
+            // for, and the full eleven there lands after the opening: reported from play, Mannheim to Innsbruck
+            // with a 02:07 opening, arriving 17:20 — the eleven was ready at 04:20 and the load came back
+            // infeasible, where a nine was on the dock at 02:20. A reduced rest is only spent where the eleven
+            // would cost the window; one that still makes it with the buffer keeps the reduced rest in hand.
+            var reduceForWait = false;
+            if (!nextRestReduced && cover > Eps && cover < euR.RegularDailyRest - Eps && reducedLeft > 0)
+            {
+                var keepsWindow = req.DeadlineHours <= 0
+                    || (start.Value.AddHours(req.DeadlineHours) - clock.AddHours(euR.RegularDailyRest + dockAfter)).TotalHours
+                       - Math.Max(0, s.ParkingBufferHours) >= Math.Max(0, s.SafetyBufferHours) - Eps;
+                reduceForWait = !keepsWindow;
+            }
+            var reduced = nextRestReduced || reduceForWait;
+            var len = Math.Max(cover, reduced ? euR.ReducedDailyRest : euR.RegularDailyRest);
             if (sinceWeekly + len + euR.Spread > euR.WeeklyRestDueAfterHours)
             {
-                TakeEuWeeklyRest(0, "your six days since the last weekly rest are up");
+                TakeEuWeeklyRest(cover, "your six days since the last weekly rest are up");
                 return;
             }
+            if (reduceForWait) reducedLeft--;
             var where = atFacility != null ? $" — at {atFacility}" : "";
-            Step(nextRestReduced
-                    ? $"{len:0.#}-hour reduced daily rest{where}"
-                    : $"{len:0.#}-hour daily rest{where}", "Rest", len, 0);
-            if (nextRestReduced) result.ReducedDailyRests++;
+            var kind = reduced ? "reduced daily rest" : "daily rest";
+            var named = len > euR.RegularDailyRest + Eps || (reduced && len > euR.ReducedDailyRest + Eps)
+                ? $"{Hhmm.Of(len)} {kind}" : $"{len:0.#}-hour {kind}";
+            Step(what != null ? $"{what} — {named}{where}" : $"{named}{where}", "Rest", len, 0);
+            if (reduced) result.ReducedDailyRests++;
             result.RestsRequired++;
             drive = euR.DailyDriving;
             shift = euR.Spread;
@@ -933,9 +950,13 @@ public static class HosEngine
                             cycle = Math.Max(0, cycle - hop);
                             Step("Reposition to a truck stop — the receiver will not have you overnight", "Drive", hop, 0);
 
-                            drive = rules.DriveLimit; shift = rules.ShiftLimit; brk = rules.DrivingBeforeBreak;
-                            result.RestsRequired++;
-                            Step($"{Hhmm.Of(rest)} reset at the truck stop", "Rest", rest, 0);
+                            if (eu) TakeEuDailyRest(Math.Max(0, waiting - hop * 2), task.Hours + hop, "At the truck stop");
+                            else
+                            {
+                                drive = rules.DriveLimit; shift = rules.ShiftLimit; brk = rules.DrivingBeforeBreak;
+                                result.RestsRequired++;
+                                Step($"{Hhmm.Of(rest)} reset at the truck stop", "Rest", rest, 0);
+                            }
 
                             drive -= hop; shift -= hop; cycle = Math.Max(0, cycle - hop);
                             if (requireBreak) brk -= hop;
@@ -948,11 +969,15 @@ public static class HosEngine
                         }
                         else if (waiting >= rules.OffDutyReset)
                         {
-                            drive = rules.DriveLimit;
-                            shift = rules.ShiftLimit;
-                            brk = rules.DrivingBeforeBreak;
-                            result.RestsRequired++;
-                            Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}, taken as the {(HosWords.Eu ? "daily rest" : "reset")}", "Rest", waiting, 0);
+                            if (eu) TakeEuDailyRest(waiting, task.Hours, "Waiting for the receiver to open, taken as the rest");
+                            else
+                            {
+                                drive = rules.DriveLimit;
+                                shift = rules.ShiftLimit;
+                                brk = rules.DrivingBeforeBreak;
+                                result.RestsRequired++;
+                                Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}, taken as the reset", "Rest", waiting, 0);
+                            }
                             result.Warnings.Add(
                                 $"You arrive {Hhmm.Of(waiting)} before they open, and they will let you sit on their " +
                                 $"property. Take your {HosWords.Reset(state.Settings)} there — the wait is not wasted.");
@@ -973,6 +998,25 @@ public static class HosEngine
                             // was handed four hours of clock that do not exist and every leg after it was
                             // computed off a number the game will never agree with. Sleeping LONGER at the
                             // last stop is the right idea and it means at least the full ten.
+                            // The wait is slept, not sat at the gate — so it is not a wait for the board to
+                            // tell the driver to stand through as other work, which it was doing on top of
+                            // the rest the plan had just put there.
+                            result.WaitForAppointmentHours = 0;
+                            if (eu)
+                            {
+                                var reducedBefore = result.ReducedDailyRests;
+                                TakeEuDailyRest(waiting, task.Hours, "Rest timed to the opening");
+                                result.Warnings.Add(result.ReducedDailyRests > reducedBefore
+                                    ? $"You would get there {Hhmm.Of(waiting)} before they open, with too little of your " +
+                                      $"{HosWords.Window} left to wait and then unload. Take your daily rest as soon as you arrive — " +
+                                      $"a reduced one of {Hhmm.Of(Math.Max(waiting, euR.ReducedDailyRest))}, since the full 11 would " +
+                                      "put you on the dock too late for the window — and unload on a fresh day."
+                                    : $"You would get there {Hhmm.Of(waiting)} before they open, with too little of your " +
+                                      $"{HosWords.Window} left to wait and then unload. Take your daily rest as soon as you arrive " +
+                                      "and unload on a fresh day.");
+                            }
+                            else
+                            {
                             var slept = Math.Max(waiting, rules.OffDutyReset);
                             drive = rules.DriveLimit;
                             shift = rules.ShiftLimit;
@@ -985,6 +1029,7 @@ public static class HosEngine
                                 $"{Hhmm.Of(task.Hours)}. Sleep in at your last stop instead — a full " +
                                 $"{Hhmm.Of(HosWords.ResetHours(state.Settings))}, not just the {Hhmm.Of(waiting)} you would be " +
                                 "waiting — and roll up on the opening with a clock that is actually fresh.");
+                            }
                         }
                     }
                     else if (waiting >= SleepInWorthIt
@@ -1320,10 +1365,16 @@ public static class HosEngine
             // reading "window 21:26 -> 04:06" beside "misses the 04:06 appointment", which reads as the
             // app booking a slot at the closing edge — and invited exactly the question of why the
             // appointment sits where it does. It is the deadline; say deadline.
-            result.Blockers.Add(
-                $"Projected arrival {GameClock.Pretty(There(clock))} is past the {GameClock.Pretty(There(due))} window " +
-                $"closing by {Hhmm.Of(Math.Abs(result.SlackHours))} after parking allowance. " +
-                "Not deliverable legally.");
+            // When the finish itself is inside the window, it is the parking allowance that tips it over — and
+            // saying "03:50 is past 04:07" without that reads as the app unable to tell the time.
+            var parkingAllowance = Math.Max(0, s.ParkingBufferHours);
+            result.Blockers.Add(clock <= due && parkingAllowance > 0
+                ? $"Done at the dock {GameClock.Pretty(There(clock))}, and the {GameClock.Pretty(There(due))} window close leaves " +
+                  $"only {Hhmm.Of((due - clock).TotalHours)} of that — under the {Hhmm.Of(parkingAllowance)} parking allowance " +
+                  $"by {Hhmm.Of(Math.Abs(result.SlackHours))}. Not deliverable legally."
+                : $"Projected arrival {GameClock.Pretty(There(clock))} is past the {GameClock.Pretty(There(due))} window " +
+                  $"closing by {Hhmm.Of(Math.Abs(result.SlackHours))} after parking allowance. " +
+                  "Not deliverable legally.");
         }
         else if (result.SlackHours < result.RequiredBufferHours)
         {
@@ -1341,8 +1392,9 @@ public static class HosEngine
                 result.Warnings.Add($"This plan drives {result.ExtendedDays} ten-hour day(s) — you have " +
                                     $"{euR.ExtensionsPerWeek} a week, and {extLeft} left after this.");
             if (result.ReducedDailyRests > 0)
-                result.Warnings.Add($"This plan takes {result.ReducedDailyRests} reduced (9-hour) daily rest(s) to get a " +
-                                    $"15-hour spread. You may take {euR.ReducedRestsBetweenWeekly} between weekly rests.");
+                // Not always for the spread: a reduced rest also covers a wait for an opening the eleven would miss.
+                result.Warnings.Add($"This plan takes {result.ReducedDailyRests} reduced (9-hour) daily rest(s). " +
+                                    $"You may take {euR.ReducedRestsBetweenWeekly} between weekly rests, and have {reducedLeft} left after this.");
             if (result.WeeklyRestsRequired > 0)
                 result.Warnings.Add($"This plan includes {result.WeeklyRestsRequired} weekly rest(s)" +
                                     (result.ReducedWeeklyRests > 0 ? $", {result.ReducedWeeklyRests} of them reduced to 24 hours" : "") + ".");

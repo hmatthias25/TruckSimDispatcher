@@ -4176,6 +4176,12 @@ public class LoadEvaluation
 
     /// <summary>The booked slot at the receiver, as a game time. Empty when the window gave no range.</summary>
     public string AppointmentGameTime { get; set; } = "";
+
+    /// <summary>
+    /// Hours from now to the slot this evaluation booked and planned against — the one authorisation stamps,
+    /// so the card, the plan and the trip all carry the same appointment. Zero when nothing was booked.
+    /// </summary>
+    public double BookedSlotHours { get; set; }
     public bool DestResetFriendly { get; set; }
     public decimal EstimatedDriverPay { get; set; }
     public decimal EstimatedCompanyRevenue { get; set; }

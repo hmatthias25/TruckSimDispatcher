@@ -317,7 +317,13 @@ public static class DispatchEngine
             decision.DispatchNotes.Add($"Run it at {Units.PerDistance(pick.AllInRpm, "0.00")} all-in on {Units.Dist(pick.Load.LoadedMiles + pick.Load.DeadheadMiles):0} total {Units.DistWord}.");
             if (pick.EuWeekEnd.Length > 0) decision.DispatchNotes.Add(pick.EuWeekEnd);
             if (pick.EuStrandedNights > 0 && EuRunHomeNote(s, decision) is { } runHome) decision.DispatchNotes.Add(runHome);
-            decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
+            // The booked slot is what the delivery is graded against, so it leads. The window close used to be
+            // printed here under the word "appointment", which is two different times called by one name.
+            decision.DispatchNotes.Add(!string.IsNullOrWhiteSpace(pick.AppointmentGameTime) && GateArrivalOf(pick.Feasibility) is { } atGate
+                ? $"Booked in for {GameClock.Pretty(pick.AppointmentGameTime)} — the plan has you at the gate {GameClock.Pretty(atGate)}, " +
+                  $"and late past {GameClock.Pretty(GameClock.Format(GameClock.TryParse(pick.AppointmentGameTime)!.Value.AddHours(Math.Max(0, s.Settings.AppointmentGraceHours))))}. " +
+                  $"The window closes {GameClock.Pretty(pick.Feasibility.DueGameTime)}, {Hhmm.Of(pick.Feasibility.SlackHours)} after you are done and parked."
+                : $"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} deadline — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
             if (pick.Feasibility.RestsRequired > 0)
                 decision.DispatchNotes.Add(Restart.IsEu(s)
                     ? $"Plan on {pick.Feasibility.RestsRequired} daily rest(s) and {pick.Feasibility.BreaksRequired} break(s) en route — the timeline says which are 11 hours and which 9."
@@ -780,6 +786,9 @@ public static class DispatchEngine
     /// <para>Falls back to the end of the plan for a plan with no dock work in it at all, where the two
     /// are the same thing.</para>
     /// </summary>
+    /// <summary>Feasible above Tight above Infeasible, for "did this make the plan worse".</summary>
+    private static int VerdictRank(string verdict) => verdict switch { "Feasible" => 2, "Tight" => 1, _ => 0 };
+
     public static DateTime? GateArrivalOf(FeasibilityResult f) =>
         GameClock.TryParse(string.IsNullOrWhiteSpace(f.ProjectedDockStartGameTime)
             ? f.ProjectedArrivalGameTime
@@ -1472,6 +1481,46 @@ public static class DispatchEngine
         // ETS2: every way across the water tried and the best kept. Anything else plans as it always did.
         e.Feasibility = Crossings.PlanBest(s, planReq, truck);
 
+        // ---- the appointment, booked where the truck can actually be
+        //
+        // A booked slot is what the delivery is graded against, so it is what the plan has to aim at — and a
+        // dispatcher books one the driver can make. The slot used to be chosen first and the plan made to wait
+        // for it, so a slot at the opening that the driver's rest could not reach was booked anyway and the
+        // plan came out the far side of the rest hours after its own appointment. Reported from play: Mannheim
+        // to Innsbruck booked for 02:07, the opening, against a rest that had the driver ready at 04:20.
+        //
+        // So: the earliest the plan can stand at the gate, waiting for nothing but the doors to open. Where
+        // that is after the slot, the slot moves to it, and the plan is redone against the slot booked.
+        if (booked && load.AppointmentOpensHours > 0 && GameClock.TryParse(s.Status.GameTime) is { } bookNow)
+        {
+            var seeded = planReq.WaitUntilHours;
+            var slotHours = seeded;
+            planReq.WaitUntilHours = Math.Max(0, load.AppointmentOpensHours);
+            var earliest = Math.Abs(planReq.WaitUntilHours - seeded) < 0.01 ? e.Feasibility : Crossings.PlanBest(s, planReq, truck);
+            var nowThere = GameZones.AtReceiver(s, bookNow, load.DestState);
+            if (GateArrivalOf(earliest) is { } gate && GameClock.TryParse(earliest.DueGameTime) is { } dueThere)
+            {
+                var reachable = DeliveryWindow.NextHalfHour(gate);
+                var reachableHours = (reachable - nowThere).TotalHours;
+                if (reachableHours > seeded + 0.01 && reachable <= dueThere) slotHours = Math.Round(reachableHours, 2);
+            }
+            planReq.WaitUntilHours = slotHours;
+            if (Math.Abs(slotHours - seeded) > 0.01)
+            {
+                var atSlot = Crossings.PlanBest(s, planReq, truck);
+                // A half hour of rounding is a nicety; it does not get to cost the load. Where it would, the
+                // slot is the minute the plan gets there.
+                if (VerdictRank(atSlot.Verdict) < VerdictRank(earliest.Verdict) && GateArrivalOf(earliest) is { } exact)
+                {
+                    slotHours = Math.Round((exact - nowThere).TotalHours, 2);
+                    planReq.WaitUntilHours = slotHours;
+                    atSlot = earliest;
+                }
+                e.Feasibility = atSlot;
+            }
+            e.BookedSlotHours = slotHours;
+        }
+
         // When a site opens, and how long the queue at its gate runs, are the app's reading of the world
         // rather than anything the game said. They are allowed to cost the driver hours. They are not
         // allowed to be the reason a load ATS called deliverable comes back refused — that is a guess
@@ -1493,6 +1542,8 @@ public static class DispatchEngine
             if (straightIn.Verdict != "Infeasible")
             {
                 e.Feasibility = straightIn;
+                // Walking straight in has no slot of ours in it; the one stated is whatever the plan reaches.
+                e.BookedSlotHours = 0;
                 e.Cons.Add(
                     "This only works if you walk straight in. On our reading of when they open and how " +
                     "busy the gate is it does not make the deadline — but that reading is ours, not the " +
@@ -1517,7 +1568,7 @@ public static class DispatchEngine
         {
             // On the receiver's clock, like the arrival and the window it is about to be compared with.
             // A slot is a door being held at the far end, so it is quoted in the time kept there.
-            var shown = GameZones.AtReceiver(s, evalNow.AddHours(AppointmentHoursFor(s, load)), load.DestState);
+            var shown = GameZones.AtReceiver(s, evalNow.AddHours(e.BookedSlotHours > 0 ? e.BookedSlotHours : AppointmentHoursFor(s, load)), load.DestState);
             // Same rule as authorisation: never quote a slot the plan does not reach.
             if (GateArrivalOf(e.Feasibility) is { } plannedAt && plannedAt > shown)
                 shown = DeliveryWindow.NextHalfHour(plannedAt);
@@ -2571,7 +2622,7 @@ public static class DispatchEngine
             // already on it, and a slot quoted on the truck's clock would be compared against three
             // times that are not.
             var slot = GameClock.TryParse(s.Status.GameTime) is { } slotFrom
-                ? GameZones.AtReceiver(s, slotFrom.AddHours(AppointmentHoursFor(s, load)), load.DestState)
+                ? GameZones.AtReceiver(s, slotFrom.AddHours(eval.BookedSlotHours > 0 ? eval.BookedSlotHours : AppointmentHoursFor(s, load)), load.DestState)
                 : opensAt;
 
             // A dock does not book you in before you can physically get there, and neither should we.
