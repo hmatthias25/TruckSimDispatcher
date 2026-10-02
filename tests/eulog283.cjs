@@ -102,6 +102,20 @@ const line = (at, b, d, w, w2) => api('/hos', 'POST', {
   h = await line(iso(15, '20:37'), 2.5, 8, 49.53, 83.53);
   ok('two hours into the evening shift, its spread runs from 18:37', near(h.shiftRemaining, 11), `${h.shiftRemaining}`);
 
+  head('7b. The same day with the rest LOGGED first, then the clocks typed (as it was actually played)');
+  // Day 16: out at 05:09 fresh; 4:28 driven; the 09:37-18:37 rest logged; the status line typed at 18:37.
+  await line(iso(16, '05:09'), 4.5, 10, 49.53, 83.53);
+  await api(`/trips/${trip.id}/event`, 'POST', { kind: 'Rest', gameTime: iso(16, '09:37'), endGameTime: iso(16, '18:37') });
+  h = await line(iso(16, '18:37'), 4.5, 10, 45.06, 79.06);
+  ok('the spread is a fresh 13, not spent', near(h.shiftRemaining, 13), `${h.shiftRemaining}`);
+  ok('no 10-hour day spent', h.euExtensionsUsed === 0, `${h.euExtensionsUsed} — ${JSON.stringify(h.euDayDriving)}`);
+  // And typed later instead, two hours into the evening: D says two of the 6:28 were after the rest.
+  await line(iso(17, '05:09'), 4.5, 10, 45.06, 79.06);
+  await api(`/trips/${trip.id}/event`, 'POST', { kind: 'Rest', gameTime: iso(17, '09:37'), endGameTime: iso(17, '18:37') });
+  h = await line(iso(17, '20:37'), 2.5, 8, 38.59, 72.59);
+  ok('split across the rest by D: 2 hours on the evening shift, so 11 of spread left', near(h.shiftRemaining, 11), `${h.shiftRemaining}`);
+  ok('and 4:28 on the morning one', Object.values(h.euDayDriving).some((v) => near(v, 4.47)), JSON.stringify(h.euDayDriving));
+
   head('8. The migration: a career written before shifts, with a lumped day spending a 10-hour day');
   const st = await api('/export');
   st.schemaVersion = 32;

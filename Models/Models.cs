@@ -1303,6 +1303,12 @@ public class HosSnapshot
     /// B (only seen after a daily rest), or a logged rest's end. The spread runs from it.
     /// </summary>
     public string EuShiftStart { get; set; } = "";
+
+    /// <summary>
+    /// When W was last read off the status line — what the next report's fall in W is measured from. Kept apart
+    /// from AsOfGameTime, which a logged daily rest moves to its end.
+    /// </summary>
+    public string EuWeekReadAt { get; set; } = "";
     /// <summary>
     /// D was read off a display that counts down from ten while the week has a 10-hour day left (the HOS
     /// companion's status line), so today's extension is already inside it. The planner must not add it
