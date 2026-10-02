@@ -145,7 +145,7 @@ public static class DiscoveryService
                               $" {notice.Place} is not on that network, so there is no yard here to open. " +
                               "That is not your call to make and it is not mine either.");
             if (market != null)
-                notice.Detail.Add($"Tier-{tier} freight market{(market.ResetFriendly ? ", with the parking and services for a 34-hour restart" : "")} — " +
+                notice.Detail.Add($"Tier-{tier} freight market{(market.ResetFriendly ? $", with the parking and services for a {(HosWords.Eu ? "weekly rest" : "34-hour restart")}" : "")} — " +
                                   "worth knowing when I am picking loads that end here.");
             entry.Notified = true;
             store_Log(s, $"Discovered {notice.Place} — off network, no yard offered.");
@@ -158,7 +158,7 @@ public static class DiscoveryService
 
         notice.Detail.Add(market == null
             ? "This city is not in our market table, so I cannot tell you how strong the freight is. Watch the board here for a few runs before you spend money on a yard."
-            : $"Tier-{tier} freight market{(market.ResetFriendly ? ", and it has the parking and services for a 34-hour restart" : "")}.");
+            : $"Tier-{tier} freight market{(market.ResetFriendly ? $", and it has the parking and services for a {(HosWords.Eu ? "weekly rest" : "34-hour restart")}" : "")}.");
 
         notice.Detail.Add(tier switch
         {

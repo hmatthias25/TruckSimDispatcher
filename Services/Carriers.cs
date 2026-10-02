@@ -1309,7 +1309,7 @@ public static class Carriers
 
         if (spec.NeedsClasses.Length > 0 && !hasHazmat)
             fails.Add($"Their freight is placarded — {Endorsements.Describe(spec.NeedsClasses)} — and you do not " +
-                      "hold a hazmat endorsement.");
+                      $"hold {(HosWords.Eu ? "an ADR certificate for them" : "a hazmat endorsement")}.");
 
         // What the driver has levelled up in the game. Named to the level, the same way the hazmat
         // refusal names the class — "not qualified" tells somebody nothing they can act on.
@@ -1675,7 +1675,9 @@ public static class Carriers
             PayStars = spec.PayStars,
             HomeTimeStars = spec.HomeTimeStars,
             Divisions = spec.Divisions.ToList(),
-            OperatingAuthorityNotes = $"48-state common carrier authority. {string.Join(" / ", spec.Divisions)} divisions.",
+            OperatingAuthorityNotes = HosWords.Eu
+                ? $"EU Community Licence for international haulage. {string.Join(" / ", spec.Divisions)} divisions."
+                : $"48-state common carrier authority. {string.Join(" / ", spec.Divisions)} divisions.",
             // Where this carrier actually runs terminals. A company driver does not decide where their
             // employer opens yards, so this is what garage opportunities are checked against — without
             // it the app offers a yard in every town the truck passes through.
@@ -1965,14 +1967,23 @@ public static class Carriers
             Why = "Every feasibility check is measured from where you are and what time it is."
         });
 
-        steps.Add(new SetupStep
-        {
-            Title = "Report your HOS clocks",
-            Detail = "Type in what your HOS display shows for drive, shift, break and cycle. Running vanilla with no " +
-                     "HOS mod? Leave the full clocks as they are and use the app's numbers as the roleplay layer. " +
-                     "If you play without the 30-minute break, switch it off in Settings → HOS rule set.",
-            Why = "Your HOS display is authoritative — the app never invents clock values."
-        });
+        steps.Add(HosWords.Eu
+            ? new SetupStep
+            {
+                Title = "Report your clocks",
+                Detail = "Type in the four figures on your HOS app's status line — B, D, W and 2W, all hours left. " +
+                         "The spread, the 10-hour days and the rests are worked out from them and the trip log. " +
+                         "Starting fresh? B 4:30, D 10:00, W 56:00 and 2W 90:00 is a new week.",
+                Why = "Your HOS app is authoritative — the app never invents clock values."
+            }
+            : new SetupStep
+            {
+                Title = "Report your HOS clocks",
+                Detail = "Type in what your HOS display shows for drive, shift, break and cycle. Running vanilla with no " +
+                         "HOS mod? Leave the full clocks as they are and use the app's numbers as the roleplay layer. " +
+                         "If you play without the 30-minute break, switch it off in Settings → HOS rule set.",
+                Why = "Your HOS display is authoritative — the app never invents clock values."
+            });
 
         steps.Add(new SetupStep
         {

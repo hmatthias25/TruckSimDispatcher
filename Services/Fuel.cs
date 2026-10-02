@@ -275,7 +275,7 @@ public static class Fuel
                     : $"{here.State} is {(here.Index <= 0.95 ? "cheap" : "about average")} at " +
                       $"{Units.Money(here.PerGallon)} a gallon ({here.Source}). " +
                       (here.Index <= 0.95 ? "Worth filling before you leave." : ""),
-            learning = $"A state switches from the typical figure to your own once you have logged " +
+            learning = $"A {HosWords.Region} switches from the typical figure to your own once you have logged " +
                        $"{StopsToLearnAState} stops there, and only counts receipts from the last " +
                        $"{LearnedWindowDays} game days — prices move, and an old reading should not " +
                        "outvote what the pump charged you last week.",

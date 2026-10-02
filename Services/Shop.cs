@@ -102,7 +102,9 @@ public static class Shop
         q.Lines.Add(atCompanyShop
             ? "That is at our own yard, which is the quicker option."
             : $"That is a roadside dealer. Our own shop would turn it round in about {Hhmm.Of(q.WaitHours * Math.Clamp(m.CompanyShopFactor, 0.1, 1.0))}.");
-        q.Lines.Add("It is on-duty-not-driving time. Report it when it is done and it lands in your HOS like anything else.");
+        q.Lines.Add(HosWords.Eu
+            ? "It is other work, not driving: it runs your spread down and nothing else. Report it when it is done."
+            : "It is on-duty-not-driving time. Report it when it is done and it lands in your HOS like anything else.");
 
         return q;
     }

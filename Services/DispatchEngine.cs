@@ -345,7 +345,7 @@ public static class DispatchEngine
                     ? Facilities.OvernightNote(s, pick.Load.DestCity, pick.Load.DestState, pick.Load.Receiver,
                         pick.Feasibility.WaitForAppointmentHours)
                     : $"You get there {Hhmm.Of(pick.Feasibility.WaitForAppointmentHours)} before they open. " +
-                      "Wait at the receiver — that is fine for a stint that short, and it is on-duty time.");
+                      $"Wait at the receiver — that is fine for a stint that short, and it is {HosWords.DockWork}.");
             // If this pick is the ride home, say so plainly — the driver should know why they are
             // taking it over a better-paying load, and what to do once the trailer comes off.
             foreach (var line in HomeTime.HomeRunInstructions(s, pick.Load.DestCity, pick.Load.DestState))
@@ -1008,7 +1008,7 @@ public static class DispatchEngine
         if (GameClock.TryParse(s.Status.GameTime) == null)
             need.Add("Current in-game day and time.");
         if (string.IsNullOrWhiteSpace(s.Status.LocationCity))
-            need.Add("Current truck location (city and state).");
+            need.Add($"Current truck location (city and {HosWords.Region}).");
         if (string.IsNullOrWhiteSpace(s.Hos.UpdatedUtc) && string.IsNullOrWhiteSpace(s.Hos.AsOfGameTime))
             need.Add(Restart.IsEu(s)
                 ? "Current driving and rest times from your tachograph (daily driving, spread, break, week)."
@@ -1686,10 +1686,12 @@ public static class DispatchEngine
             var resetPts = (bothAtOnce ? 2.0 : e.DestResetFriendly ? 1.0 : -0.8) * w.ResetPositioning;
             score += resetPts;
             detail.Add(bothAtOnce
-                ? $"Reset watch active ({Hhmm.Of(s.Hos.CycleRemaining)} cycle) and this finishes at " +
+                ? $"{(HosWords.Eu ? "Weekly driving watch" : "Reset watch")} active ({Hhmm.Of(s.Hos.CycleRemaining)} {(HosWords.Eu ? "left" : "cycle")}) and this finishes at " +
                   $"{hs34.TerminalLabel} with home time {(hs34.Overdue ? "overdue" : $"due in {hs34.DaysUntilDue:0.#} days")} " +
                   $"— the restart and the home time are the same 34: {resetPts:+0.00;-0.00}"
-                : $"Reset watch active ({Hhmm.Of(s.Hos.CycleRemaining)} cycle) and destination is {(e.DestResetFriendly ? "reset-capable" : "NOT a good restart location")}: {resetPts:+0.00;-0.00}");
+                : HosWords.Eu
+                    ? $"Weekly driving watch active ({Hhmm.Of(s.Hos.CycleRemaining)} left) and destination {(e.DestResetFriendly ? "has the parking for a weekly rest" : "is NOT a good place for a weekly rest")}: {resetPts:+0.00;-0.00}"
+                    : $"Reset watch active ({Hhmm.Of(s.Hos.CycleRemaining)} cycle) and destination is {(e.DestResetFriendly ? "reset-capable" : "NOT a good restart location")}: {resetPts:+0.00;-0.00}");
 
             if (bothAtOnce)
                 e.Pros.Add($"Sit the 34 at {hs34.TerminalLabel}. You need the restart and you are due " +
@@ -1719,7 +1721,7 @@ public static class DispatchEngine
         var slackForScore = e.Feasibility.SlackHours + Math.Max(0, e.Feasibility.IdleHours);
         var slackPts = Math.Clamp(slackForScore / 8.0, -2.0, 1.5) * w.HosSlack;
         score += slackPts;
-        detail.Add($"HOS slack {Hhmm.Of(e.Feasibility.SlackHours)}"
+        detail.Add($"{(HosWords.Eu ? "Hours" : "HOS")} slack {Hhmm.Of(e.Feasibility.SlackHours)}"
                    + (e.Feasibility.IdleHours > 0.25
                        ? $" ({Hhmm.Of(slackForScore)} once the gate wait is set aside — it is charged below, not twice)"
                        : "")
@@ -1812,7 +1814,7 @@ public static class DispatchEngine
                        "so if you do have to run to it you are still paid for it.");
         if (e.DestTier == 1) e.Pros.Add($"{Place(load.DestCity, load.DestState)} reloads easily.");
         if (e.DestResetFriendly && s.Hos.CycleRemaining <= w.ResetWatchCycleHours)
-            e.Pros.Add("Destination can hold a restart.");
+            e.Pros.Add(HosWords.Eu ? "Destination has the parking for a weekly rest." : "Destination can hold a restart.");
         if (e.Feasibility.Verdict == "Feasible" && e.Feasibility.SlackHours >= s.Settings.SafetyBufferHours * 2)
             e.Pros.Add($"Comfortable window — {Hhmm.Of(e.Feasibility.SlackHours)} of slack.");
         if (e.EstimatedMargin > 0) e.Pros.Add($"Contributes ~{Units.Money0(e.EstimatedMargin)} after fuel, wages and overhead.");
@@ -2403,7 +2405,7 @@ public static class DispatchEngine
             AuthorizationRationale = string.IsNullOrWhiteSpace(rationaleOverride)
                 ? $"{Units.PerDistance(eval.AllInRpm, "0.00")} all-in on {Units.Dist(load.LoadedMiles + load.DeadheadMiles):N0} total {Units.DistWord}, " +
                   $"{Hhmm.Of(eval.Feasibility.SlackHours)} of slack against a {Hhmm.Of(eval.Feasibility.RequiredBufferHours)} buffer, " +
-                  $"tier-{eval.DestTier} destination{(eval.DestResetFriendly ? " with restart capability" : "")}."
+                  $"tier-{eval.DestTier} destination{(eval.DestResetFriendly ? (HosWords.Eu ? " with parking for a weekly rest" : " with restart capability") : "")}."
                 : rationaleOverride
         };
 

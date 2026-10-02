@@ -321,7 +321,7 @@ public static class HosEngine
         if (req.LoadingHours > 0)
             // A hook is a few minutes and can be done on the last of a window; a live load cannot. Both
             // are dock work, and the planner refuses to split either around a reset.
-            tasks.Add(new HosTask { Label = handsOff ? "Loading — in the bunk" : "Hook / load",
+            tasks.Add(new HosTask { Label = handsOff ? (HosWords.Eu ? "Loading — waiting while the dock works" : "Loading — in the bunk") : "Hook / load",
                                     Kind = "OnDuty", Hours = req.LoadingHours,
                                     AtDock = true, HandsOff = handsOff });
 
@@ -361,7 +361,7 @@ public static class HosEngine
             tasks.Add(new HosTask { Label = $"Intermediate stop {i + 1}", Kind = "OnDuty", Hours = 0.5 });
 
         if (req.UnloadingHours > 0)
-            tasks.Add(new HosTask { Label = handsOff ? "Unloading — in the bunk" : "Unload / drop",
+            tasks.Add(new HosTask { Label = handsOff ? (HosWords.Eu ? "Unloading — waiting while the dock works" : "Unloading — in the bunk") : "Unload / drop",
                                     Kind = "OnDuty", Hours = req.UnloadingHours,
                                     IsUnload = true, AtDock = true, HandsOff = handsOff });
 
@@ -450,7 +450,7 @@ public static class HosEngine
         {
             var drift = (start.Value - asOf).TotalHours;
             if (drift > 2)
-                result.Warnings.Add($"HOS clocks were reported {drift:0.#} game-hours ago ({GameClock.Pretty(asOf)}). Re-read the HOS display before I commit freight.");
+                result.Warnings.Add($"Your clocks were reported {drift:0.#} game-hours ago ({GameClock.Pretty(asOf)}). Re-read your {HosWords.Display} before I commit freight.");
             else if (drift < -0.5)
                 result.Warnings.Add("HOS snapshot is stamped later than the current game clock — check the times you reported.");
         }
@@ -661,25 +661,25 @@ public static class HosEngine
             if (req.ReceiverAllowsOvernight)
             {
                 result.Warnings.Add(
-                    $"You have {Hhmm.Of(shift)} of window and {where} needs {Hhmm.Of(needed)}{queued} — " +
+                    $"You have {Hhmm.Of(shift)} of {HosWords.Window} and {where} needs {Hhmm.Of(needed)}{queued} — " +
                     $"{Hhmm.Of(shortBy)} short. They will let you sit, so take the " +
-                    $"{rules.OffDutyReset:0.#} on their property first and start fresh.");
+                    $"{(HosWords.Eu ? HosWords.Reset(state.Settings) : $"{rules.OffDutyReset:0.#}")} on their property first and start fresh.");
                 TakeReset();
                 return;
             }
 
             var hop = Facilities.RepositionHoursEachWay;
             result.Warnings.Add(
-                $"You have {Hhmm.Of(shift)} of window and {where} needs {Hhmm.Of(needed)}{queued} — you cannot " +
+                $"You have {Hhmm.Of(shift)} of {HosWords.Window} and {where} needs {Hhmm.Of(needed)}{queued} — you cannot " +
                 $"start that, let alone finish it and get off their lot. Run to a truck stop, take your " +
-                $"{rules.OffDutyReset:0.#}, and come back to it with a full window. That is about " +
-                $"{Hhmm.Of(hop * 2)} of driving either side plus the reset, and it is the only legal way to " +
+                $"{(eu ? HosWords.Reset(state.Settings) : $"{rules.OffDutyReset:0.#}")}, and come back to it with a full {HosWords.Window}. That is about " +
+                $"{Hhmm.Of(hop * 2)} of driving either side plus the {(eu ? "rest" : "reset")}, and it is the only legal way to " +
                 "do this load.");
 
             drive = Math.Max(0, drive - hop); shift = Math.Max(0, shift - hop);
             cycle = Math.Max(0, cycle - hop);
             if (requireBreak) brk = Math.Max(0, brk - hop);
-            Step("Reposition to a truck stop — no window left to work the dock", "Drive", hop, 0);
+            Step($"Reposition to a truck stop — no {HosWords.Window} left to work the dock", "Drive", hop, 0);
 
             TakeReset();
 
@@ -952,10 +952,10 @@ public static class HosEngine
                             shift = rules.ShiftLimit;
                             brk = rules.DrivingBeforeBreak;
                             result.RestsRequired++;
-                            Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}, taken as the reset", "Rest", waiting, 0);
+                            Step($"Waiting for the receiver to open — {Hhmm.Of(waiting)}, taken as the {(HosWords.Eu ? "daily rest" : "reset")}", "Rest", waiting, 0);
                             result.Warnings.Add(
                                 $"You arrive {Hhmm.Of(waiting)} before they open, and they will let you sit on their " +
-                                $"property. Take your {rules.OffDutyReset:0.#}-hour reset there — the wait is not wasted.");
+                                $"property. Take your {HosWords.Reset(state.Settings)} there — the wait is not wasted.");
                         }
                         else
                         {
@@ -981,9 +981,9 @@ public static class HosEngine
                             Step($"Rest timed to the opening — {Hhmm.Of(slept)} rather than arriving early", "Rest", slept, 0);
                             result.Warnings.Add(
                                 $"You would get there {Hhmm.Of(waiting)} before they open with only " +
-                                $"{Hhmm.Of(Math.Max(0, windowAfterWaiting))} of window left, and the dock needs " +
+                                $"{Hhmm.Of(Math.Max(0, windowAfterWaiting))} of {HosWords.Window} left, and the dock needs " +
                                 $"{Hhmm.Of(task.Hours)}. Sleep in at your last stop instead — a full " +
-                                $"{Hhmm.Of(rules.OffDutyReset)}, not just the {Hhmm.Of(waiting)} you would be " +
+                                $"{Hhmm.Of(HosWords.ResetHours(state.Settings))}, not just the {Hhmm.Of(waiting)} you would be " +
                                 "waiting — and roll up on the opening with a clock that is actually fresh.");
                         }
                     }
@@ -1025,7 +1025,7 @@ public static class HosEngine
                         result.Warnings.Add(
                             $"You would have got there {Hhmm.Of(waiting)} early, so I have held your rest " +
                             $"{Hhmm.Of(waiting)} longer instead of sitting at the gate. The same hours parked " +
-                            $"either way — this way they do not come off your {rules.ShiftLimit:0.#}-hour window.");
+                            $"either way — this way they do not come off your {HosWords.ShiftClock(state.Settings)}.");
                     }
                     else
                     {
@@ -1039,8 +1039,8 @@ public static class HosEngine
                         if (waiting >= 0.25)
                             result.Warnings.Add(
                                 $"You get there {Hhmm.Of(waiting)} before they open, and there is no rest in this " +
-                                "plan to hang the wait on. It gets sat at the receiver, and it is on-duty time — " +
-                                $"it comes off your {rules.ShiftLimit:0.#}-hour window, not out of slack.");
+                                $"plan to hang the wait on. It gets sat at the receiver, and it is {HosWords.DockWork} — " +
+                                $"it comes off your {HosWords.ShiftClock(state.Settings)}, not out of slack.");
                     }
                 }
             }
@@ -1413,10 +1413,11 @@ public static class HosEngine
         // Where to sleep if it comes to that, said in every one of these rather than assumed. A plan that
         // says "take your ten on their property" at a receiver that turns trucks out is the advice that
         // put a driver on a lot with no legal way to leave it.
+        var restWord = eu ? HosWords.Reset(state.Settings) : $"{rules.OffDutyReset:0.#}";
         var berth = req.ReceiverAllowsOvernight
-            ? $"They will have you overnight, so plan on the {rules.OffDutyReset:0.#} at their gate."
+            ? $"They will have you overnight, so plan on the {restWord} at their gate."
             : $"They do NOT allow overnight parking, so there is nowhere on that lot to take the " +
-              $"{rules.OffDutyReset:0.#} — and once the window is gone you cannot legally move to find one. " +
+              $"{restWord} — and once the {HosWords.Window} is gone you cannot legally move to find one. " +
               "Ask before you back in.";
 
         // How firm the dock figure is. It is an AVERAGE: half of all docks run longer than it, by
@@ -1440,18 +1441,18 @@ public static class HosEngine
         // the wrong end: by then the overrun has already happened.
         else if (req.UnloadingHours > 0 && atDock >= 0 && atDock < req.UnloadingHours + dockMargin)
             result.Warnings.Add(
-                $"You back in with {Hhmm.Of(atDock)} of window against a dock we have down for " +
+                $"You back in with {Hhmm.Of(atDock)} of {HosWords.Window} against a dock we have down for " +
                 $"{Hhmm.Of(req.UnloadingHours)}" +
                 (req.DockSamples > 0
                     ? $", averaged over {req.DockSamples} load(s). "
                     : " — and that figure is a starting estimate, not something we have measured here. ") +
-                $"Run {Hhmm.Of(dockMargin)} long and your window shuts while you are on their property. {berth}");
+                $"Run {Hhmm.Of(dockMargin)} long and your {HosWords.Window} runs out while you are on their property. {berth}");
 
         else if (req.UnloadingHours > 0 && shift < strandMargin)
             result.Warnings.Add(
                 $"This delivers with only {Hhmm.Of(shift)} left on your {(eu ? "spread" : "14-hour SHIFT")} once you are empty — " +
                 $"nothing to do with the delivery window. If they hold you {Hhmm.Of(shift)} longer than " +
-                $"planned, the window shuts while you are on the property. {berth}");
+                $"planned, the {(eu ? "spread runs out" : "window shuts")} while you are on the property. {berth}");
 
         if (result.FuelStopsRequired == 0 && result.TotalMiles > req.UsableFuelRangeMiles)
             result.Warnings.Add("Fuel range check could not be resolved — confirm the fuel level.");

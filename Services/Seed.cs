@@ -73,7 +73,7 @@ public static class Seed
             d.Reasons.Add($"You already hold {Endorsements.Describe(held)}. That opens freight most of " +
                           "our drivers cannot touch, and it is worth money to us and to you.");
         else if (app.HasHazmat)
-            d.Reasons.Add("Your hazmat endorsement opens freight most of our drivers cannot touch. Tell me " +
+            d.Reasons.Add($"Your {HosWords.Endorsement} opens freight most of our drivers cannot touch. Tell me " +
                           "which classes you are cleared for and I will start routing it to you.");
 
         if (!app.AcceptsProbation)
@@ -141,8 +141,11 @@ public static class Seed
             Founded = "2009",
             Divisions = divisions,
             Motto = profile.Motto,
-            OperatingAuthorityNotes = $"48-state common carrier authority. {string.Join(" / ", divisions)} divisions. " +
-                                      "Interstate for-hire; no brokerage authority — we haul our own freight only."
+            OperatingAuthorityNotes = HosWords.Eu
+                ? $"EU Community Licence for international haulage. {string.Join(" / ", divisions)} divisions. " +
+                  "Own-account freight only — no freight forwarding."
+                : $"48-state common carrier authority. {string.Join(" / ", divisions)} divisions. " +
+                  "Interstate for-hire; no brokerage authority — we haul our own freight only."
         };
 
         // One yard, at the smallest tier — which is what ATS actually sells you first.

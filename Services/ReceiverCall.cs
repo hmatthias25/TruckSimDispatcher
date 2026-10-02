@@ -303,10 +303,10 @@ public static class ReceiverCall
                       $"until {GameClock.Pretty(doorsOpen)} and nothing gets you in before that. But they " +
                       "have a door free when they do, so you are not sitting on the gate for the slot as " +
                       $"well. Set the game clock to {GameClock.Pretty(doorsOpen)} and log Begin unload then. " +
-                      $"That is {Hhmm.Of(keptByEarly)} of window you keep against the slot."
+                      $"That is {Hhmm.Of(keptByEarly)} of {HosWords.Window} you keep against the slot."
                     : $"You are {Hhmm.Of(earlyBy)} ahead of your {GameClock.Pretty(slot)} " +
                       "slot and they have a door free, so they are taking you now. Nothing to set — log Begin " +
-                      $"unload and get it off. That is {Hhmm.Of(earlyBy)} of window you keep.",
+                      $"unload and get it off. That is {Hhmm.Of(earlyBy)} of {HosWords.Window} you keep.",
             };
         }
 

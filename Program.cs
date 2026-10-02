@@ -235,7 +235,9 @@ app.MapPost("/api/hos", (HosSnapshot h) => Results.Ok(store.Mutate(s =>
     s.Hos.Notes = h.Notes ?? "";
     s.Hos.AsOfGameTime = string.IsNullOrWhiteSpace(h.AsOfGameTime) ? s.Status.GameTime : h.AsOfGameTime;
     s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
-    store.Log(s, "dispatch", $"HOS reported: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, break {s.Hos.BreakRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
+    store.Log(s, "dispatch", HosEngine.Eu(s)
+        ? $"Clocks reported: B {Hhmm.Of(s.Hos.BreakRemaining)} · D {Hhmm.Of(s.Hos.DriveRemaining)} · W {Hhmm.Of(Math.Max(0, (s.Settings.EuHos ?? new EuHosRules()).WeeklyDriving - (s.Hos.EuWeekDriven ?? 0)))} · 2W {Hhmm.Of(s.Hos.CycleRemaining)}, spread {Hhmm.Of(s.Hos.ShiftRemaining)}"
+        : $"HOS reported: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, break {s.Hos.BreakRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
     if (ClockCheck.Capped(s) is { } q)
         store.Log(s, "dispatch",
             $"Queried the drive clock: {Hhmm.Of(s.Hos.DriveRemaining)} reported with the break clock on the " +
@@ -3250,13 +3252,16 @@ static string BuildFirstDispatch(AppState s, Truck? truck, Trailer? trailer)
 {
     var terminal = DispatchEngine.Place(s.Company.TerminalCity, s.Company.TerminalState);
     return $"Welcome aboard, {s.Driver.Name}. You are {s.Driver.RankTitle} at {s.Company.Name}, employee {s.Driver.EmployeeId}, " +
-           $"on a {s.Driver.Probation.DurationDays}-day probation at {Units.Money(s.Driver.Pay.LoadedCpm, "0.000")} per loaded mile.\n\n" +
+           $"on a {s.Driver.Probation.DurationDays}-day probation at " +
+           (PayEngine.IsSalary(s)
+               ? $"{Units.Money0(PayEngine.MonthlySalary(s))} a month, with {Units.Money0(PayEngine.DailyAllowance(s))} a day on the road tax-free.\n\n"
+               : $"{Units.Money(s.Driver.Pay.LoadedCpm, "0.000")} per loaded mile.\n\n") +
            $"Your equipment is unit {truck?.Ref} — {truck?.Year} {truck?.Make} {truck?.Model}, {truck?.Transmission} — " +
            $"pulling trailer {trailer?.Ref}, a {trailer?.Length} {trailer?.Type}. It is not the newest truck on the property; " +
            $"that is how probation works. Take care of it and we will talk about equipment again when your probation clears.\n\n" +
            $"You are sitting at our {terminal} yard. The terminal is not a shipper, so there is no freight to pull directly off it. " +
            $"Open ATS, look at the jobs available from shippers around {s.Company.TerminalCity}, and enter them on the Dispatch tab. " +
-           $"Report your in-game date and time and your HOS clocks with them, and I will pick your first load — " +
+           $"Report your in-game date and time and your {(HosEngine.Eu(s) ? "clocks off your HOS app (B, D, W, 2W)" : "HOS clocks")} with them, and I will pick your first load — " +
            $"{DispatchEngine.PeekNumber(s, "Freight")}.";
 }
 

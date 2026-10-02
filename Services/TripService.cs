@@ -1126,7 +1126,7 @@ public static class TripService
         if (!string.IsNullOrWhiteSpace(hosView.ResetWatch)) audit.Directives.Add(hosView.ResetWatch);
         audit.Directives.Add(audit.ClocksReported
             ? $"Clocks logged at delivery — I have what I need to plan the next load. {hosView.NextRequiredAction}"
-            : $"Re-read your HOS display and report the clocks — I am not booking the next load off stale numbers. Current reading: {hosView.NextRequiredAction}");
+            : $"Re-read your {HosWords.Display} and report the clocks — I am not booking the next load off stale numbers. Current reading: {hosView.NextRequiredAction}");
         if (audit.Discovery is { GarageAvailable: true } disc)
             audit.Directives.Add($"{disc.Place} is new to us and ATS sells a garage here. See the note on the Dispatch tab before you leave.");
 
@@ -1946,7 +1946,7 @@ public static class TripService
         {
             if (f != null && f.ShiftRemainingOnArrival < s.Settings.StrandedMarginHours)
                 return ("Dispatcher",
-                    $"Dispatcher fault. The plan had you finishing with {Hhmm.Of(f.ShiftRemainingOnArrival)} of window in hand, " +
+                    $"Dispatcher fault. The plan had you finishing with {Hhmm.Of(f.ShiftRemainingOnArrival)} of {HosWords.Window} in hand, " +
                     "and the dock took the rest. Booking a load that tight to the window is my error, not yours.");
             return ("Unavoidable",
                 "The dock held you until your hours ran out. Finishing the work was legal, moving the truck was not, and " +

@@ -319,11 +319,11 @@ public static class Restart
         var fallback = options.FirstOrDefault();
         return fallback != null
             ? (fallback.City, fallback.State, false,
-                $"{DispatchEngine.Place(fallback.City, fallback.State)} is reset-capable. I cannot measure the distance " +
+                $"{DispatchEngine.Place(fallback.City, fallback.State)} {(IsEu(s) ? "has the parking for a weekly rest" : "is reset-capable")}. I cannot measure the distance " +
                 "from where you are, so check it is a sensible run before you commit." +
                 (homeDeclined.Length > 0 ? " " + homeDeclined : ""))
             : ("", "", false,
-                "I have nowhere reset-capable on file near you. Find a truck stop with real parking and services, " +
+                $"I have nowhere {(IsEu(s) ? "fit for a weekly rest" : "reset-capable")} on file near you. Find a truck stop with real parking and services, " +
                 "report in when you are there, and I will start the clock." +
                 (homeDeclined.Length > 0 ? " " + homeDeclined : ""));
     }

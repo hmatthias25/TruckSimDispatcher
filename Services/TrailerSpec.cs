@@ -209,7 +209,7 @@ public static class TrailerSpec
         var known = TankerKinds.FirstOrDefault(k => k.Key.Equals((subtype ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
         if (known.Key != null)
             return $"a {known.Label} — {known.Hauls}." +
-                   (known.NeedsHazmat ? " Placarded, so you need the hazmat endorsement." : "");
+                   (known.NeedsHazmat ? $" Placarded, so you need the {HosWords.Endorsement}." : "");
 
         // No subtype on file. Suggest what the carrier's freight actually implies, and list the rest.
         var likely = LikelyFor(s);

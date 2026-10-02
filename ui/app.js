@@ -163,6 +163,7 @@ const GAME_WORDS = [
   [/\bAmerican Truck Simulator\b/g, 'Euro Truck Simulator 2'],
   [/\bATS\b/g, 'ETS2'],
   [/\bHazMat\b/g, 'ADR'], [/\bHAZMAT\b/g, 'ADR'], [/\bhazmat\b/g, 'ADR'],
+  [/\bHOS display\b/g, 'HOS app'],
   [/\bCDL school\b/g, 'driving school'], [/\bClass A CDL\b/g, 'C+E licence'], [/\bCDL\b/g, 'licence'],
 ];
 /* Field labels and column headings only: a US state is a country in Europe. Kept off running text, where
@@ -193,7 +194,7 @@ function gameWordsIn(root) {
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
     const isLabel = n.parentElement && n.parentElement.closest('label,th,legend');
-    if (!/ATS|American Truck|HazMat|HAZMAT|hazmat|CDL/.test(n.nodeValue) && !(isLabel && /\b(states?|States?|ST)\b/.test(n.nodeValue))) continue;
+    if (!/ATS|American Truck|HazMat|HAZMAT|hazmat|CDL|HOS display/.test(n.nodeValue) && !(isLabel && /\b(states?|States?|ST)\b/.test(n.nodeValue))) continue;
     if (keep(n)) continue;
     const t = isLabel ? gwLabel(n.nodeValue) : gw(n.nodeValue);
     if (t !== n.nodeValue) n.nodeValue = t;
@@ -1700,7 +1701,9 @@ function viewDispatch() {
             ${gt(h.asOfGameTime)}. Still good if you have not driven since.</p></div>`
         : h.projected ? `<div class="callout warn">
           <p><b>These clocks were worked out, not read.</b> I carried them across the unload at
-            ${gt(h.asOfGameTime)} — on-duty time off your shift and cycle, drive clock untouched. Check
+            ${gt(h.asOfGameTime)} — ${v.hos.ruleset === 'EU561'
+              ? 'the dock off your spread; B, D, W and 2W untouched, since the unload is not driving'
+              : 'on-duty time off your shift and cycle, drive clock untouched'}. Check
             them against your display; anything you type replaces them.</p></div>`
         : h.confirmed === false ? `<div class="callout warn">
           <p>These clocks were last read at ${gt(h.asOfGameTime)} and a load has run since. Re-read your
@@ -2050,7 +2053,7 @@ function restartHtml() {
   const o = r.order;
 
   return `<div class="panel">
-    <div class="panel-head"><h2>34-hour restart</h2>
+    <div class="panel-head"><h2>${S.views.hos.ruleset === 'EU561' ? 'Weekly rest' : '34-hour restart'}</h2>
       ${badge(o && o.status === 'Arrived' ? 'warn' : 'bad', o ? o.status.toLowerCase() : 'required')}
       <div class="spacer"></div>
       <span class="sub">no freight until this is sat</span></div>
@@ -2071,9 +2074,12 @@ function restartHtml() {
         <p style="margin:0">Clock started ${gt(o.arrivedGameTime)}. Eligible
           <b>${gt(o.eligibleGameTime)}</b> — that is the earliest you can legally roll.</p>
       </div>
-      <p class="hint">When you have sat the full ${num(o.requiredHours, 0)} hours, re-read your HOS display,
+      <p class="hint">${S.views.hos.ruleset === 'EU561'
+        ? `When you have taken the ${hhmm(o.requiredHours)} dispatch set, confirm here. I check the elapsed time, and what
+          it was short of 45 hours is owed back on your next weekly rest.`
+        : `When you have sat the full ${num(o.requiredHours, 0)} hours, re-read your HOS display,
         report your clocks above, then confirm here. I check the elapsed time and the cycle before I put
-        freight on the truck.</p>
+        freight on the truck.`}</p>
       <div class="grid2">
         ${dayTimeInput('rs-done', S.status.gameTime, 'Rolling again at (game)')}
         <div class="row-actions" style="align-self:end">
@@ -4586,7 +4592,8 @@ function domicilePrefsHtml() {
       It is <b>how far from your yard they will let the truck end up</b>, not how long any one load is:
       three 300-mile runs in a row are three regional loads that leave you nine hundred miles out, and
       dispatch scores against the one that does that. Multi-day runs are planned properly either way,
-      with breaks, ten-hour resets and 34-hour restarts worked into the plan.</p>
+      with ${S.views.hos.ruleset === 'EU561' ? 'breaks, daily rests and weekly rests' : 'breaks, ten-hour resets and 34-hour restarts'}
+      worked into the plan.</p>
     ${S.terms?.tripLengthNote ? `<div class="callout info" style="margin-bottom:8px">
       <p style="margin:0">${esc(S.terms.tripLengthNote)}</p></div>` : ''}
     ${/* Shown as settled rather than as a control you press and get told off for. A disabled select
@@ -6173,7 +6180,9 @@ function shopOrderHtml() {
       ${fkpi('Written off at', num(o.totalLossAtPct, 1) + '%', 'bad')}
     </div>
     <p class="hint">They work both units at once, so the wait is the longer of the two, not the sum.
-      It is on-duty-not-driving time — log it and it lands in your HOS like anything else.</p>` : ''}
+      ${S.views.hos.ruleset === 'EU561'
+        ? 'It is other work, not driving: it runs your spread down and nothing else.'
+        : 'It is on-duty-not-driving time — log it and it lands in your HOS like anything else.'}</p>` : ''}
   </div>`;
 }
 
@@ -7050,6 +7059,26 @@ function mapCoveragePanel() {
     </div>`;
 }
 
+/** Settings on an ETS2 career: the EU 561/2006 limits the planner works to. The law, so not edited here. */
+function euRulesPanel() {
+  const r = S.settings.euHos || {};
+  const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+  return `<div class="panel">
+    <div class="panel-head"><h2>Driving and rest rules</h2><span class="sub">EU Regulation 561/2006</span></div>
+    <dl class="kvlist">
+      ${row('Daily driving', `${num(r.dailyDriving || 9, 0)} h, ${num(r.extendedDailyDriving || 10, 0)} h on ${r.extensionsPerWeek || 2} days a week`)}
+      ${row('Break', `${num((r.breakLength || 0.75) * 60, 0)} min after ${hhmm(r.drivingBeforeBreak || 4.5)} of driving, or 15 + 30`)}
+      ${row('Daily rest', `${num(r.regularDailyRest || 11, 0)} h, or ${num(r.reducedDailyRest || 9, 0)} h ${r.reducedRestsBetweenWeekly || 3} times between weekly rests`)}
+      ${row('Spread', `${num(24 - (r.regularDailyRest || 11), 0)} h from the end of the daily rest`)}
+      ${row('Weekly driving', `${num(r.weeklyDriving || 56, 0)} h Monday to Sunday, ${num(r.fortnightDriving || 90, 0)} h over two weeks`)}
+      ${row('Weekly rest', `${num(r.regularWeeklyRest || 45, 0)} h, or 24 to 45 h reduced with the shortfall owed back; within six days`)}
+      ${row('Hotel', `a full weekly rest away from home, about ${money0(r.hotelPerNight || 90)} a night, on the company`)}
+    </dl>
+    <p class="hint">Dispatch plans every load on these and decides which rest you take and how long. Your clocks come
+      off your HOS app's status line — B, D, W and 2W — on the Dispatch tab.</p>
+  </div>`;
+}
+
 function viewSettings() {
   const s = S.settings, h = s.hos, m = s.maintenance, w = s.scoring;
   return `
@@ -7091,7 +7120,7 @@ function viewSettings() {
     ${mapCoveragePanel()}
     ${ferriesPanel()}
 
-    <div class="panel">
+    ${S.views.hos.ruleset === 'EU561' ? euRulesPanel() : `<div class="panel">
       <div class="panel-head"><h2>HOS rule set</h2>
         <span class="sub">Your mod wins — type its numbers here.</span></div>
       <div class="grid2">
@@ -7117,7 +7146,7 @@ function viewSettings() {
       <label class="chk"><input type="checkbox" id="hr-split" ${h.sleeperSplitAllowed ? 'checked' : ''}> Sleeper-berth split allowed</label>
       <p class="hint">Vanilla ATS has no real HOS system, so these numbers are the roleplay layer. If your mod
         uses a different restart duration, change it here and the planner uses yours.</p>
-    </div>
+    </div>`}
   </div>
 
   <div class="cols">
@@ -9218,7 +9247,8 @@ function collectSettings() {
     runnableStates: document.querySelector('input[data-mc]')
       ? [...document.querySelectorAll('input[data-mc]')].filter((b) => b.checked).map((b) => b.dataset.mc)
       : s.runnableStates,
-    hos: {
+    // The US rule set is only on screen on an ATS career; on ETS2 the career's own figures are kept.
+    hos: !$('hr-drive') ? s.hos : {
       ...s.hos,
       driveLimit: hv('hr-drive'), shiftLimit: hv('hr-shift'),
       drivingBeforeBreak: hv('hr-beforebreak'), breakLength: hv('hr-breaklen'),

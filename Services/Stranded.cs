@@ -100,7 +100,7 @@ public static class Stranded
         if (planned != null && planned.ShiftRemainingOnArrival is var left and >= 0 && left < margin)
         {
             sit.Fault = "Company";
-            sit.FaultReason = $"The plan had you finishing with {Hhmm.Of(left)} of window in hand against our {Hhmm.Of(margin)} margin. " +
+            sit.FaultReason = $"The plan had you finishing with {Hhmm.Of(left)} of {HosWords.Window} in hand against our {Hhmm.Of(margin)} margin. " +
                               "That was too thin when I booked it — this one is on dispatch, not on you.";
         }
         else
