@@ -1224,8 +1224,17 @@ public static class HosEngine
                     // day ends here, it ends here — which is what TakeReset now says out loud.
                     if (task.AtDock && remaining <= Eps)
                         atFacility = task.IsUnload ? "the receiver" : "the shipper";
-                    Step(task.Label + (cap < dockWork - Eps ? " (segment)" : ""),
+                    // Dock time as the break. FMCSA since 2020: any 30 consecutive minutes not driving satisfies
+                    // it — on duty at the dock included. EU 561/2006: a break is time with no driving AND no other
+                    // work, so it counts only when the dock does the work and the driver is free (a van or a
+                    // reefer), never on the straps or the hoses. Reported from play: a plan that sent the driver
+                    // on a break a few minutes after an hour sat at the dock.
+                    var countsAsBreak = requireBreak && (eu ? task.HandsOff : true)
+                                        && cap >= (eu ? euR.BreakLength : rules.BreakLength) - Eps;
+                    Step(task.Label + (cap < dockWork - Eps ? " (segment)" : "")
+                                    + (countsAsBreak ? $" — counts as your {(eu ? euR.BreakLength : rules.BreakLength) * 60:0}-minute break" : ""),
                          burnsCycle ? "OnDuty" : "DockRest", cap, 0);
+                    if (countsAsBreak) brk = eu ? euR.DrivingBeforeBreak : rules.DrivingBeforeBreak;
                 }
             }
         }
@@ -1376,10 +1385,14 @@ public static class HosEngine
         // instead then ATS will run their seventy down and the app will insist it did not. So this is
         // not a note about a calculation, it is the calculation telling them what it assumed.
         if (eu && req.UnloadingHours + req.LoadingHours > 0.01)
-            result.DockAdvice =
-                $"{Hhmm.Of(req.LoadingHours + req.UnloadingHours)} of dock time on this one is other work, not " +
-                "driving: it runs your spread down like any other hour of the day, but none of your driving limits — " +
-                "daily, weekly or the fortnight — move for it.";
+            result.DockAdvice = TrailerSpec.WorksTheDock(req.TrailerType)
+                ? $"{Hhmm.Of(req.LoadingHours + req.UnloadingHours)} of dock time on this one is other work — you are on the " +
+                  $"{TrailerSpec.Describe(req.TrailerType, null)} yourself. Record it as other work (the hammer): it runs your " +
+                  "spread down, moves none of your driving limits, and is not a break."
+                : $"{Hhmm.Of(req.LoadingHours + req.UnloadingHours)} of dock time on this one is the warehouse's work, not yours — " +
+                  $"behind a {TrailerSpec.Describe(req.TrailerType, null)} the dock does it. Take it as a break, free of the truck: " +
+                  $"{euR.BreakLength * 60:0} minutes or more of it is your break, and the plan counts it. It still runs your spread " +
+                  "down, and none of your driving limits move for it.";
         else if (result.DockRestHours > 0.01)
             result.DockAdvice =
                 $"{Hhmm.Of(result.DockRestHours)} of dock time on this one is waiting, not working — behind a " +

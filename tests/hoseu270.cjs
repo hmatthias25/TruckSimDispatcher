@@ -183,6 +183,12 @@ async function clocks(c) {
   ok('weekly driving goes down by the driving alone', Math.abs(p.cycleRemainingAfter - (46 - p.driveHours)) < 0.05,
     `${hhmm(p.cycleRemainingAfter)} left after ${hhmm(p.driveHours)} driving and 6:00 at docks`);
   ok('and the dock advice says so', /none of your driving limits/.test(p.dockAdvice || ''), (p.dockAdvice || '').slice(0, 80));
+  // Reported from play: dock time behind a van is the warehouse's work, and 45 minutes of it is the break.
+  ok('behind a van, the dock time counts as the 45-minute break', (p.timeline || []).some((t) => /counts as your 45-minute break/.test(t.label))
+    && !(p.timeline || []).some((t) => t.kind === 'Break'), (p.timeline || []).map((t) => t.label).join(' | ').slice(0, 200));
+  const fb = await plan({ loadedMiles: mph * 3, loadingHours: 3, unloadingHours: 3, trailerType: 'Flatbed' });
+  ok('on a flatbed you work the dock, so it is not a break', !(fb.timeline || []).some((t) => /counts as your/.test(t.label))
+    && /not a break/.test(fb.dockAdvice || ''), (fb.dockAdvice || '').slice(0, 120));
 
   head('9. What dispatch says and orders, on EU rules');
   await clocks({ driveRemaining: 6, shiftRemaining: 9, breakRemaining: 2, euWeekDriven: 20, cycleRemaining: 36, euHoursSinceWeeklyRest: 40 });
