@@ -1238,6 +1238,11 @@ document.addEventListener('change', (ev) => {
   })), `${el.dataset.kind} ${el.dataset.unit} re-homed.`);
 });
 
+// The crossing picked decides the cabin; say which as it changes.
+document.addEventListener('change', (ev) => {
+  if (ev.target && ev.target.id === 'ev-ferry' && $('ev-cabin-note')) $('ev-cabin-note').innerHTML = cabinNote(ev.target.value);
+});
+
 /* The odometer is the one number a typo makes silently wrong, so it is checked as it is typed
    rather than argued about after the trip has posted. */
 document.addEventListener('input', (ev) => {
@@ -2558,6 +2563,23 @@ function ferriesPanel() {
     </div>`;
 }
 
+/**
+ * Whether a crossing has a cabin. ETS2 has no cabins to see, so the app does not ask: the real ferry decides.
+ * Overnight and long sailings carry cabins and a driver books one — that is what makes the crossing a rest —
+ * and short hops and the Channel Tunnel do not. The same flag the planner uses (Services.Ferries, Cabin).
+ */
+function cabinOf(routeId) {
+  const r = ((S.views.ferries || {}).routes || []).find((x) => x.id === routeId);
+  return !!(r && r.cabin);
+}
+function cabinNote(routeId) {
+  const r = ((S.views.ferries || {}).routes || []).find((x) => x.id === routeId);
+  if (!r) return '';
+  return r.cabin
+    ? `<b>Cabin: yes.</b> ${esc(r.label)} is a long crossing and the real ferry has cabins, so you are booked into one.`
+    : `<b>Cabin: no.</b> ${esc(r.label)} is ${r.train ? 'the shuttle train' : 'a short crossing'} with no cabins — it can be a break, never a rest.`;
+}
+
 /** The crossings, for a select: the game's route names, with the train marked. */
 function ferryOptions() {
   const f = S.views.ferries;
@@ -2761,8 +2783,8 @@ function viewActive() {
         <div class="grid3">
           <label>Crossing<select id="ev-ferry">${ferryOptions()}</select></label>
           <label>Fare ${SYM()}<input id="ev-fare" type="number" step="1" min="0" placeholder="what the game charged"></label>
-          <label class="chk" style="align-self:end"><input type="checkbox" id="ev-cabin"> Had a cabin</label>
         </div>
+        <p class="hint" id="ev-cabin-note">${cabinNote(((S.views.ferries.routes || []).find((r) => r.on !== false) || {}).id)}</p>
         <p class="hint">Log it as you board, with the end time when you land. The fare goes on the load's tolls, and the
           log says what the crossing counts as under EU rules — the game counts any ferry time as rest, the law only
           counts it with a cabin, and long enough.</p>
@@ -8132,7 +8154,7 @@ async function handleAction(act, d, ev) {
           gallons: gal, pricePerGal: price,
           // A crossing carries its route, the cabin, and the fare as the event's cost (it goes on the tolls).
           ...(sv('ev-kind') === 'Ferry'
-            ? { ferryRoute: sv('ev-ferry'), cabin: bv('ev-cabin'), cost: fv('ev-fare') || 0, detail: sv('ev-detail') }
+            ? { ferryRoute: sv('ev-ferry'), cabin: cabinOf(sv('ev-ferry')), cost: fv('ev-fare') || 0, detail: sv('ev-detail') }
             : { cost: 0 }),
         }));
         const isRest = sv('ev-kind') === 'Rest' || sv('ev-kind') === 'Restart';
