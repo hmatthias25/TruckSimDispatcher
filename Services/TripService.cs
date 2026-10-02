@@ -98,6 +98,9 @@ public class CompleteTripRequest
     public double? HosShiftRemaining { get; set; }
     public double? HosBreakRemaining { get; set; }
     public double? HosCycleRemaining { get; set; }
+    /// <summary>ETS2: W and 2W off the HOS companion's status line, hours left. The rest is worked out (EuCounters).</summary>
+    public double? HosEuWeekLeft { get; set; }
+    public double? HosEuTwoWeeksLeft { get; set; }
 }
 
 public class TripAudit
@@ -899,8 +902,11 @@ public static class TripService
 
         // Clocks at delivery, if the driver read them off while they were closing the load out.
         if (req.HosDriveRemaining.HasValue || req.HosShiftRemaining.HasValue
-            || req.HosBreakRemaining.HasValue || req.HosCycleRemaining.HasValue)
+            || req.HosBreakRemaining.HasValue || req.HosCycleRemaining.HasValue
+            || req.HosEuWeekLeft.HasValue || req.HosEuTwoWeeksLeft.HasValue)
         {
+            var euWeekDrivenBefore = s.Hos.EuWeekDriven;
+            var euWeekBefore = s.Hos.EuDayWeek;
             if (req.HosDriveRemaining.HasValue) s.Hos.DriveRemaining = Math.Max(0, req.HosDriveRemaining.Value);
             if (req.HosShiftRemaining.HasValue) s.Hos.ShiftRemaining = Math.Max(0, req.HosShiftRemaining.Value);
             if (req.HosBreakRemaining.HasValue) s.Hos.BreakRemaining = Math.Max(0, req.HosBreakRemaining.Value);
@@ -913,8 +919,27 @@ public static class TripService
 
             s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
             audit.ClocksReported = true;
-            audit.CarriedForward.Add(
-                $"Clocks: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
+            if (HosEngine.Eu(s) && GameClock.TryParse(trip.DeliveredGameTime) is { } euArrivedAt)
+            {
+                // ETS2: the status line's W and 2W are the week's and the fortnight's driving, left. Worked back
+                // into what was driven, then everything else is derived exactly as a Dispatch-tab report is.
+                var euR = s.Settings.EuHos ?? new EuHosRules();
+                if (req.HosEuWeekLeft is { } w) s.Hos.EuWeekDriven = Math.Max(0, euR.WeeklyDriving - w);
+                if (req.HosEuTwoWeeksLeft is { } w2)
+                    s.Hos.EuLastWeekDriven = Math.Max(0, euR.FortnightDriving - w2 - (s.Hos.EuWeekDriven ?? 0));
+                if (req.HosEuWeekLeft is { } wl && req.HosEuTwoWeeksLeft is { } w2l)
+                    s.Hos.CycleRemaining = Math.Max(0, Math.Min(wl, w2l));
+                EuCounters.Derive(s, euArrivedAt, euWeekDrivenBefore, euWeekBefore);
+                var weekLeft = Math.Max(0, euR.WeeklyDriving - (s.Hos.EuWeekDriven ?? 0));
+                var twoLeft = Math.Max(0, euR.FortnightDriving - (s.Hos.EuWeekDriven ?? 0) - (s.Hos.EuLastWeekDriven ?? 0));
+                audit.CarriedForward.Add(
+                    $"Clocks as you arrived: B {Hhmm.Of(s.Hos.BreakRemaining)} · D {Hhmm.Of(s.Hos.DriveRemaining)} · " +
+                    $"W {Hhmm.Of(weekLeft)} · 2W {Hhmm.Of(twoLeft)}, with {Hhmm.Of(s.Hos.ShiftRemaining)} of spread left (estimated)" +
+                    (s.Hos.EuDriveCapped ? ". Both 10-hour days are used, so D is nine at most and was taken as that." : "."));
+            }
+            else
+                audit.CarriedForward.Add(
+                    $"Clocks: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
 
             // These are the clocks AS THE DRIVER ARRIVED — they stopped driving, backed in, and read
             // the display. That is the natural moment to read them and the only one the app can anchor
@@ -1248,6 +1273,24 @@ public static class TripService
 
         var shiftWas = s.Hos.ShiftRemaining;
         var cycleWas = s.Hos.CycleRemaining;
+
+        // EU 561/2006: the spread is elapsed time since the daily rest, so the dock runs it down whatever the
+        // driver was doing; D, W and 2W count driving only, and an unload is not driving. Nothing is "in the
+        // bunk" or "on duty" here — that is the US split.
+        if (HosEngine.Eu(s))
+        {
+            s.Hos.ShiftRemaining = Math.Max(0, s.Hos.ShiftRemaining - spentAtDock);
+            s.Hos.Projected = true;
+            s.Hos.AsOfGameTime = s.Status.GameTime;
+            s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
+            audit.CarriedForward.Add(
+                $"Clocks carried across the unload: spread {Hhmm.Of(shiftWas)} \u2192 {Hhmm.Of(s.Hos.ShiftRemaining)}. The spread " +
+                $"runs on through the {Hhmm.Of(spentAtDock)} at the dock whatever you did with it. D, W and 2W are " +
+                "driving only, so the unload leaves them as you arrived \u2014 your status line will read the same. " +
+                "Worked out, not read; check it.");
+            return;
+        }
+
         s.Hos.ShiftRemaining = Math.Max(0, s.Hos.ShiftRemaining - spentAtDock);
         if (workedTheDock)
             s.Hos.CycleRemaining = Math.Max(0, s.Hos.CycleRemaining - spentAtDock);

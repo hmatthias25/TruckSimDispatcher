@@ -3354,6 +3354,18 @@ function dropHookHtml() {
 /* ---- clocks at delivery
    Reporting them here is what stops the Dispatch tab asking for the same four numbers again. */
 function clocksAtDeliveryHtml() {
+  // ETS2: the HOS companion's status line — B, D, W, 2W, hours left — and nothing else to type.
+  if (S.views.hos.ruleset === 'EU561') return `<fieldset><legend>Clocks as you arrived — read them when you back in, before the unload</legend>
+    <div class="grid4">
+      <label>Break left <span class="sub">B</span><input id="c-hbreak" inputmode="numeric" placeholder="h:mm"></label>
+      <label>Daily drive left <span class="sub">D</span><input id="c-hdrive" inputmode="numeric" placeholder="h:mm"></label>
+      <label>Week left <span class="sub">W</span><input id="c-hwleft" inputmode="numeric" placeholder="h:mm"></label>
+      <label>Two weeks left <span class="sub">2W</span><input id="c-h2wleft" inputmode="numeric" placeholder="h:mm"></label>
+    </div>
+    <p class="hint">Off your HOS app's status line, as it reads when you stop at the receiver. The spread, the 10-hour
+      days and the rest are worked out, as on the Dispatch tab, and the dock time is taken off the spread afterwards —
+      the unload is not driving, so D, W and 2W stay as you arrived. Leave them blank and I will ask on the Dispatch tab.</p>
+  </fieldset>`;
   const brk = S.views.hos.breakEnforced;
   return `<fieldset><legend>Clocks as you arrived — read them when you back in, before the unload</legend>
     <p class="hint">This is the level-set: the last moment you and the game agree. Whatever the dock then
@@ -8245,6 +8257,8 @@ async function handleAction(act, d, ev) {
         locationKind: 'Receiver', fuelPct: fv('c-fuelpct'), gameTime: readDayTime('c-time'),
         hosDriveRemaining: hvn('c-hdrive'), hosShiftRemaining: hvn('c-hshift'),
         hosBreakRemaining: hvn('c-hbreak'), hosCycleRemaining: hvn('c-hcycle'),
+        // ETS2's status line: W and 2W, hours left. Absent on ATS, where these read as null.
+        hosEuWeekLeft: hvn('c-hwleft'), hosEuTwoWeeksLeft: hvn('c-h2wleft'),
       });
       absorb(r); TRIP_AUDIT = r.audit;
       FUEL = { tripId: null, seeded: 0, rows: [] };

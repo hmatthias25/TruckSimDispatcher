@@ -1285,6 +1285,12 @@ public class HosSnapshot
     public double EuDailyLimit { get; set; }
     /// <summary>A D above today's limit was typed and capped to it.</summary>
     public bool EuDriveCapped { get; set; }
+    /// <summary>
+    /// D was read off a display that counts down from ten while the week has a 10-hour day left (the HOS
+    /// companion's status line), so today's extension is already inside it. The planner must not add it
+    /// again. Reported from play: D 4:59 planned as 5:59, and a load that could not be made was authorised.
+    /// </summary>
+    public bool EuDriveIncludesExtension { get; set; }
     /// <summary>Driving last calendar week, for the 90-hour fortnight. Null where never reported.</summary>
     public double? EuLastWeekDriven { get; set; }
     /// <summary>10-hour days already used this week, of the two allowed.</summary>

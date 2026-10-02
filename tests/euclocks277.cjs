@@ -79,6 +79,50 @@ const line = (at, b, d, w, w2) => api('/hos', 'POST', {
   ok('the 9.5-hour rest since is a reduced daily rest', h.euReducedRestsUsed === 1, `${h.euReducedRestsUsed}`);
   ok('and the spread runs from when it ended: 10 hours gone, 3 left', near(h.shiftRemaining, 3), `${h.shiftRemaining}`);
 
+  head('5. Reported from play: Cologne to Groningen, "B 03:18 | D 04:59 | W 50:59 | 2W 84:59" at 18:54');
+  // A new week (day 15 is a Monday), so both 10-hour days are left and D is counted from ten: today's
+  // extension is already in the 4:59. It was added again, 5:46 of driving was planned straight through, and
+  // a load that could not be made was authorised as Feasible.
+  h = await line(iso(15, '18:54'), 3.3, 4.983, 50.983, 84.983);
+  ok('D 4:59 is counted from ten, so the extension is inside it', h.euDriveIncludesExtension === true && near(h.driveRemaining, 4.983));
+  const g = await api('/hos/plan', 'POST', { deadlineHours: 10.8, loadingHours: 0.5, unloadingHours: 0.5, trailerType: 'Dry Van',
+    usableFuelRangeMiles: 99999, startGameTime: iso(15, '18:54'), loadedMiles: 252.3 });
+  ok('no second extension is planned on top of it', (g.extendedDays || 0) === 0, `${g.extendedDays} extended`);
+  ok('5:46 of driving does not fit in 4:59: a daily rest is needed on the way', g.restsRequired >= 1, `${g.restsRequired} rest(s)`);
+  ok('and Groningen by Tuesday 05:42 is not on', g.verdict === 'Infeasible', `${g.verdict}, arrives ${g.projectedArrivalGameTime}`);
+
+  head('6. Close-out: the status line as you arrived, and the unload carried by EU rules');
+  // Reported from play: the hours reported on end trip were all wrong for Euro — the form asked for ATS's
+  // shift and cycle, and the dock was carried by the US split ("in the bunk", the seventy).
+  // Section 4's load is still open; close it out before booking another.
+  await api(`/trips/${trip.id}/complete`, 'POST', { deliveredGameTime: iso(12, '18:00'), endOdometer: 1050, actualMiles: 50,
+    truckDamageAfter: 1, trailerDamageAfter: 1 });
+  await api('/status', 'POST', { locationCity: 'Hamburg', locationState: 'DE', locationKind: 'TruckStop', gameTime: iso(16, '06:00'),
+    fuelPct: 100, atsOdometer: 1050, truckDamagePct: 1, trailerDamagePct: 1, dutyStatus: 'OffDuty', atsBankBalance: 50000 });
+  await api('/board/clear', 'POST', {});
+  await api('/board/add', 'POST', { cargo: 'Paper', trailerType: 'Dry Van', shipper: 'S', receiver: 'R', originCity: 'Hamburg', originState: 'DE',
+    destCity: 'Bremen', destState: 'DE', loadedMiles: 80, deadheadMiles: 0, gameRevenue: 1500, deadlineHours: 200, weightLbs: 30000, atLocation: true });
+  await line(iso(16, '06:00'), 4.5, 10, 50, 84);
+  const ev2 = (await api('/board/evaluate')).evaluations[0];
+  const t2 = (await api('/dispatch/authorize', 'POST', { loadId: ev2.load.id, overrideTight: true })).trip;
+  await api(`/trips/${t2.id}/event`, 'POST', { kind: 'BeginLoad', gameTime: iso(16, '06:30') });
+  await api(`/trips/${t2.id}/event`, 'POST', { kind: 'EndLoad', gameTime: iso(16, '07:00') });
+  await api(`/trips/${t2.id}/event`, 'POST', { kind: 'BeginUnload', gameTime: iso(16, '09:00') });
+  await api(`/trips/${t2.id}/event`, 'POST', { kind: 'EndUnload', gameTime: iso(16, '10:00') });
+  const closed = await api(`/trips/${t2.id}/complete`, 'POST', { deliveredGameTime: iso(16, '09:00'), endOdometer: 1130, actualMiles: 80,
+    truckDamageAfter: 1, trailerDamageAfter: 1, unloadAlreadyRan: true,
+    hosBreakRemaining: 2.5, hosDriveRemaining: 8, hosEuWeekLeft: 48, hosEuTwoWeeksLeft: 82 });
+  h = (await api('/bootstrap')).hos;
+  const said = (closed.audit?.carriedForward || []).join(' | ');
+  ok('B and D as typed', near(h.breakRemaining, 2.5) && near(h.driveRemaining, 8), `${h.breakRemaining} / ${h.driveRemaining}`);
+  ok('W 48:00 is 8 hours driven this week, 2W 82:00 leaves last week at none', near(h.euWeekDriven, 8) && near(h.euLastWeekDriven, 0),
+    `${h.euWeekDriven} / ${h.euLastWeekDriven}`);
+  ok('the planner\'s week left is the lesser of W and 2W', near(h.cycleRemaining, 48), `${h.cycleRemaining}`);
+  ok('the arrival is said as the status line', /B 2:30 · D 8:00 · W 48:00 · 2W 82:00/.test(said), said);
+  ok('the unload comes off the spread, not off D or the week', /spread .* →/.test(said) && /D, W and 2W are driving only/.test(said)
+    && !/bunk|seventy|cycle/.test(said), said);
+  ok('D and the week are left as you arrived', near(h.driveRemaining, 8) && near(h.cycleRemaining, 48));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

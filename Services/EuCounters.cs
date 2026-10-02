@@ -46,6 +46,8 @@ public static class EuCounters
         var extendedToday = h.EuDayDriving.GetValueOrDefault(today) > r.DailyDriving + 0.01;
         h.EuDailyLimit = extendedToday || h.EuExtensionsUsed < r.ExtensionsPerWeek ? r.ExtendedDailyDriving : r.DailyDriving;
         h.EuDriveCapped = false;
+        // The status line counts D from ten while a 10-hour day is left: today's extension is in the figure.
+        h.EuDriveIncludesExtension = h.EuDailyLimit > r.DailyDriving + 0.01;
         if (h.DriveRemaining > h.EuDailyLimit + 0.01)
         {
             h.DriveRemaining = h.EuDailyLimit;

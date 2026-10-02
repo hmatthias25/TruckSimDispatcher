@@ -487,8 +487,14 @@ public static class HosEngine
         var lastWeekDriven = Math.Max(0, hos.EuLastWeekDriven ?? 0);
         var extLeft = Math.Max(0, euR.ExtensionsPerWeek - hos.EuExtensionsUsed);
         var reducedLeft = Math.Max(0, euR.ReducedRestsBetweenWeekly - hos.EuReducedRestsUsed);
-        // A driver with more than nine hours of daily driving left is already on an extended day.
-        var extendedToday = eu && hos.DriveRemaining > euR.DailyDriving + Eps;
+        // A driver with more than nine hours of daily driving left is already on an extended day — and so is
+        // one whose D came off a display that counts from ten while a 10-hour day is left. Either way today's
+        // extension is already in the drive clock, and adding it again plans an hour that is not there.
+        var extendedToday = eu && (hos.DriveRemaining > euR.DailyDriving + Eps || hos.EuDriveIncludesExtension);
+        // Today's extension, being in the figure, is spent from the week's for planning — the conservative
+        // reading, since the plan is free to drive into it.
+        if (eu && hos.EuDriveIncludesExtension && !(hos.EuDayDriving?.GetValueOrDefault(GameClock.DayOf(start.Value)) > euR.DailyDriving + Eps))
+            extLeft = Math.Max(0, extLeft - 1);
         var spreadExtended = eu && hos.ShiftRemaining > euR.Spread + Eps;
         var nextRestReduced = spreadExtended;
         var sinceWeekly = Math.Max(0, hos.EuHoursSinceWeeklyRest
