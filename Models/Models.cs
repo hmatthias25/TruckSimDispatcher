@@ -3359,6 +3359,12 @@ public class AppSettings
     public string DisplayUnits { get; set; } = "";
 
     /// <summary>
+    /// How times of day are typed: "24" (18:30) or "12" (6:30 PM). Empty is the game's default — 24-hour on
+    /// ETS2, 12-hour on ATS. Either is accepted whatever is set; this decides what the boxes show.
+    /// </summary>
+    public string ClockFormat { get; set; } = "";
+
+    /// <summary>
     /// ETS2: wait for the real ferry sailing (or Channel Tunnel shuttle) rather than leaving the moment the
     /// truck reaches the port. On by default; switch it off for crossings that go when you get there. See
     /// Services.Ferries. ATS has no ferries and never reads it.

@@ -447,7 +447,8 @@ public static class Markets
     internal static readonly List<MarketCity> AtsBuiltIn = Parse(Table);
 
     /// <summary>ETS2's freight markets. Reached through <see cref="GameProfile.Markets"/>.</summary>
-    internal static readonly List<MarketCity> Ets2BuiltIn = Parse(Ets2Data.MarketTable);
+    internal static readonly List<MarketCity> Ets2BuiltIn = Parse(Ets2Data.MarketTable)
+        .Select(c => { c.City = CityNames.Canonical(c.City, c.State); return c; }).ToList();
 
     /// <summary>The open career's game's freight markets, before any the driver added.</summary>
     public static IReadOnlyList<MarketCity> BuiltIn => GameProfile.Current.Markets;
@@ -496,8 +497,9 @@ public static class Markets
         // Fall back to a city-name match when the driver did not give a state.
         if (string.IsNullOrWhiteSpace(st))
         {
-            return state.MarketExtras.FirstOrDefault(c => c.City.Equals(city.Trim(), StringComparison.OrdinalIgnoreCase))
-                ?? BuiltIn.FirstOrDefault(c => c.City.Equals(city.Trim(), StringComparison.OrdinalIgnoreCase));
+            var plain = CityNames.Fold(city.Trim());
+            return state.MarketExtras.FirstOrDefault(c => CityNames.Fold(c.City).Equals(plain, StringComparison.OrdinalIgnoreCase))
+                ?? BuiltIn.FirstOrDefault(c => CityNames.Fold(c.City).Equals(plain, StringComparison.OrdinalIgnoreCase));
         }
         return null;
     }
@@ -514,6 +516,7 @@ public static class Markets
             .ToList();
     }
 
+    // Either spelling of a city is the same market: Köln, Koln and Cologne. See CityNames.
     private static string Key(string city, string st) =>
-        $"{city.Trim().ToLowerInvariant()}|{st.Trim().ToLowerInvariant()}";
+        $"{CityNames.Fold(CityNames.Canonical(city, st)).Trim().ToLowerInvariant()}|{st.Trim().ToLowerInvariant()}";
 }

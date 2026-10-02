@@ -158,40 +158,7 @@ public static class Geo
     /// dropped too, in case a name arrives already decomposed. Anything else is passed through rather
     /// than deleted — it will not match, which is the same answer as before and an honest one.</para>
     /// </summary>
-    private static string Fold(string text)
-    {
-        var plain = true;
-        foreach (var ch in text) if (ch > 127) { plain = false; break; }
-        if (plain) return text;                         // the common case, and free
-
-        var sb = new StringBuilder(text.Length);
-        foreach (var ch in text)
-        {
-            if (ch < 128) { sb.Append(ch); continue; }
-            if (ch is >= '̀' and <= 'ͯ') continue;      // a combining mark on its own
-            sb.Append(ch switch
-            {
-                'À' or 'Á' or 'Â' or 'Ã' or 'Ä' or 'Å' or 'à' or 'á' or 'â' or 'ã' or 'ä' or 'å' => "a",
-                'Æ' or 'æ' => "ae",
-                'Ç' or 'ç' => "c",
-                'È' or 'É' or 'Ê' or 'Ë' or 'è' or 'é' or 'ê' or 'ë' => "e",
-                'Ì' or 'Í' or 'Î' or 'Ï' or 'ì' or 'í' or 'î' or 'ï' => "i",
-                'Ð' or 'ð' or 'Đ' or 'đ' => "d",
-                'Ñ' or 'ñ' => "n",
-                'Ò' or 'Ó' or 'Ô' or 'Õ' or 'Ö' or 'Ø' or 'ò' or 'ó' or 'ô' or 'õ' or 'ö' or 'ø' => "o",
-                'Œ' or 'œ' => "oe",
-                'Ù' or 'Ú' or 'Û' or 'Ü' or 'ù' or 'ú' or 'û' or 'ü' => "u",
-                'Ý' or 'ý' or 'ÿ' => "y",
-                'Þ' or 'þ' => "th",
-                'ß' => "ss",
-                'Š' or 'š' => "s",
-                'Ž' or 'ž' => "z",
-                'Ł' or 'ł' => "l",
-                _ => ch.ToString(),
-            });
-        }
-        return sb.ToString();
-    }
+    private static string Fold(string text) => CityNames.Fold(text);
 
     /// <summary>The coordinates of a city, or null when it is not one we know.</summary>
     public static (double Lat, double Lon)? Locate(string? city, string? state)

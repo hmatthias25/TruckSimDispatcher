@@ -1481,7 +1481,8 @@ public static class HosEngine
             ShiftRemaining = h.ShiftRemaining,
             BreakRemaining = h.BreakRemaining,
             CycleRemaining = weekly,
-            DriveLimit = r.DailyDriving,
+            // Today's limit: ten while the week has a 10-hour day left, nine after (EuCounters).
+            DriveLimit = h.EuDailyLimit > 0 ? h.EuDailyLimit : r.DailyDriving,
             ShiftLimit = r.Spread,
             BreakLimit = r.DrivingBeforeBreak,
             CycleLimit = r.WeeklyDriving,
@@ -1513,7 +1514,7 @@ public static class HosEngine
         else if (weekly <= 0.01)
             v.NextRequiredAction = "No driving until Monday 00:00 — the week's (or fortnight's) driving is spent.";
         else if (v.DrivableNowHours <= 0.01)
-            v.NextRequiredAction = $"{r.RegularDailyRest:0.#}-hour daily rest (9 if you have a reduced one left) before any driving.";
+            v.NextRequiredAction = $"{r.RegularDailyRest:0.#}-hour daily rest before any driving.";
         else if (h.BreakRemaining < v.DrivableNowHours - 0.01)
             v.NextRequiredAction = $"Clear to drive {Hhmm.Of(v.StintBeforeBreakHours)} before the 45-minute break.";
         else

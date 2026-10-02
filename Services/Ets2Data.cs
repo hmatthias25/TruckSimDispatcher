@@ -157,6 +157,17 @@ internal static partial class Ets2Data
     internal static readonly (decimal Upto, decimal Rate)[] FlatIncomeTax = { (decimal.MaxValue, 0.20m) };
     internal static readonly Dictionary<string, decimal> NoRegionTax = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>A carrier with its head office and yards in their English names.</summary>
+    internal static Carriers.Spec InEnglish(Carriers.Spec c) => c with
+    {
+        HqCity = CityNames.Canonical(c.HqCity, c.HqState),
+        OtherYards = c.OtherYards.Select(y =>
+        {
+            var i = y.LastIndexOf(',');
+            return i < 0 ? y : $"{CityNames.Canonical(y[..i], y[(i + 1)..])},{y[(i + 1)..]}";
+        }).ToArray(),
+    };
+
     // ------------------------------------------------------------------ companies a career can start as
 
     internal static readonly (string Name, string Code, string Division, string City, string State, string Motto)[] StartingCompanies =

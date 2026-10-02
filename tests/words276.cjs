@@ -35,7 +35,7 @@ function loadClient() {
   };
   const win = { addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) };
   const make = new Function('document', 'window', 'location', 'navigator', 'fetch',
-    src + '\nreturn { gw, gwLabel, setS: (x) => { S = x; } };');
+    src + '\nreturn { gw, gwLabel, parseTod, fmtTod, toIso, setS: (x) => { S = x; } };');
   return make(doc, win, { hash: '' }, {}, () => new Promise(() => {}));
 }
 
@@ -64,6 +64,20 @@ function loadClient() {
   ok('running text is left alone: a state can be a condition', UI.gw('waiting for an authoritative state') === 'waiting for an authoritative state');
   UI.setS({ game: { id: 'ATS' } });
   ok('on ATS a state is a state', UI.gwLabel('Destination state') === 'Destination state');
+  UI.setS({ game: { id: 'ETS2' } });
+
+  head('2c. Times of day: 24-hour on ETS2, 12-hour on ATS, either understood');
+  UI.setS({ game: { id: 'ETS2' }, settings: {} });
+  ok('ETS2 shows 18:30', UI.fmtTod('18:30') === '18:30');
+  UI.setS({ game: { id: 'ATS' }, settings: {} });
+  ok('ATS shows 6:30 PM, and just past midnight is 12:05 AM', UI.fmtTod('18:30') === '6:30 PM' && UI.fmtTod('00:05') === '12:05 AM', UI.fmtTod('18:30'));
+  UI.setS({ game: { id: 'ETS2' }, settings: { clockFormat: '12' } });
+  ok('the setting overrides the game', UI.fmtTod('07:15') === '7:15 AM');
+  const reads = [['18:30', '18:30'], ['6:30 pm', '18:30'], ['6:30PM', '18:30'], ['12:00 am', '00:00'], ['12:15 PM', '12:15'],
+    ['1830', '18:30'], ['630', '06:30'], ['18.30', '18:30'], ['7 am', '07:00'], ['25:00', ''], ['nonsense', '']];
+  ok('either form is read, and nonsense is not', reads.every(([i, o]) => UI.parseTod(i) === o),
+    reads.filter(([i, o]) => UI.parseTod(i) !== o).map(([i]) => `${i} -> ${UI.parseTod(i)}`).join(', '));
+  ok('a 12-hour time goes in as the same moment', UI.toIso(3, '6:30 PM') === UI.toIso(3, '18:30'), UI.toIso(3, '6:30 PM'));
   UI.setS({ game: { id: 'ETS2' } });
 
   head('3. The server tells the browser which game');

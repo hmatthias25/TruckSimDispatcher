@@ -244,11 +244,13 @@ public sealed class GameProfile
         hazmat: () => Ets2Data.Adr,
         regionTax: () => Ets2Data.NoRegionTax,
         incomeTax: () => Ets2Data.FlatIncomeTax,
-        carriersReal: () => Ets2Data.CarriersReal,
-        carriersFictional: () => Ets2Data.CarriersFictional,
-        carriersSecondChance: () => Ets2Data.CarriersSecondChance,
+        // Shown as the game shows them in English: Cologne, not Köln. See CityNames.
+        carriersReal: () => Ets2Data.CarriersReal.Select(Ets2Data.InEnglish).ToArray(),
+        carriersFictional: () => Ets2Data.CarriersFictional.Select(Ets2Data.InEnglish).ToArray(),
+        carriersSecondChance: () => Ets2Data.CarriersSecondChance.Select(Ets2Data.InEnglish).ToArray(),
         carrierRegionOf: Ets2Data.RegionOf,
-        startingCompanies: () => Ets2Data.StartingCompanies,
+        startingCompanies: () => Ets2Data.StartingCompanies
+            .Select(c => c with { City = CityNames.Canonical(c.City, c.State) }).ToArray(),
         trucksAutomatic: () => Ets2Data.TrucksAutomatic,
         trucksManual: () => Ets2Data.TrucksManual,
         trucksShowcase: () => Ets2Data.TrucksShowcase,

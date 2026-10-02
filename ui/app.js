@@ -307,6 +307,34 @@ const dayOf = (iso) => {
   const t = Date.parse(isoUtc(iso));
   return isNaN(t) ? 0 : Math.floor((t - EPOCH) / DAY_MS) + 1;
 };
+/* Times of day as typed (#reported from play): 24-hour on ETS2 and 12-hour on ATS by default, Settings
+   to change it. Either form is read whatever is set — "18:30", "6:30 pm", "1830", "18.30" — and stored as
+   24-hour; the setting only decides what the boxes show. */
+const H12 = () => {
+  const f = (S && S.settings && S.settings.clockFormat) || '';
+  return f ? f === '12' : !(S && S.game && S.game.id === 'ETS2');
+};
+/** "18:30" in the chosen form: "18:30" or "6:30 PM". */
+const fmtTod = (hhmm) => {
+  const m = String(hhmm || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!m || !H12()) return hhmm || '';
+  const h = +m[1];
+  return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+};
+/** Any typed time of day to "HH:mm", or '' if it is not one. */
+const parseTod = (raw) => {
+  const t = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!t) return '';
+  const m = t.match(/^(\d{1,2})(?:[:.h]?(\d{2}))?\s*(a|p)?\.?m?\.?$/);
+  if (!m) return '';
+  let h = +m[1]; const min = m[2] ? +m[2] : 0;
+  if (m[3] === 'p' && h < 12) h += 12;
+  if (m[3] === 'a' && h === 12) h = 0;
+  if (h > 23 || min > 59) return '';
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+};
+const todPlaceholder = () => (H12() ? '6:30 PM' : '18:30');
+
 const timeOf = (iso) => {
   const t = Date.parse(isoUtc(iso));
   if (isNaN(t)) return '00:00';
@@ -329,7 +357,7 @@ function toIso(day, hhmm) {
   const raw = parseInt(day, 10);
   // Day 1 is the epoch, so there is no day 0 to fall back to — GameClock.FromDay clamps the same way.
   const d = Math.max(1, isNaN(raw) ? 1 : raw);
-  const [h, m] = String(hhmm || '00:00').split(':').map((x) => parseInt(x, 10) || 0);
+  const [h, m] = String(parseTod(hhmm) || '00:00').split(':').map((x) => parseInt(x, 10) || 0);
   const t = new Date(EPOCH + (d - 1) * DAY_MS + h * 3600000 + m * 60000);
   return t.toISOString().slice(0, 16);
 }
@@ -615,8 +643,9 @@ function dayTimeInput(idPrefix, iso, label) {
         data-dow="${idPrefix}-dow" value="${day}" title="Game day">
       <span id="${idPrefix}-dow" class="badge info" style="flex:0 0 auto"
         title="Day 1 is a Monday. Check this against the game before you file.">${dowForDay(day)}</span>
-      <input id="${idPrefix}-tod" type="time" step="60" style="flex:1"
-        value="${iso ? timeOf(iso) : (S ? timeOf(S.status.gameTime) : '06:00')}" title="Time of day">
+      <input id="${idPrefix}-tod" class="tod" inputmode="text" maxlength="8" style="flex:1" placeholder="${todPlaceholder()}"
+        value="${fmtTod(iso ? timeOf(iso) : (S ? timeOf(S.status.gameTime) : '06:00'))}"
+        title="Time of day — 18:30 or 6:30 PM, either works">
     </span></label>`;
 }
 const readDayTime = (idPrefix) => toIso(sv(idPrefix + '-day'), sv(idPrefix + '-tod'));
@@ -742,7 +771,7 @@ function closeModal() { $('modal').classList.add('hidden'); $('modal-body').inne
     $('boot').classList.add('hidden');
     if (!S.onboarded) {
       $('onboarding').classList.remove('hidden');
-      $('ap-gameday').value = 1; $('ap-gametod').value = '06:00';
+      $('ap-gameday').value = 1;
       onboardingForGame();
       gameWordsIn(document.body);   // the static application page, in the career's game's words
       // Choosing the game puts the career on it, with that game's defaults, before anything is applied for.
@@ -781,6 +810,9 @@ function closeModal() { $('modal').classList.add('hidden'); $('modal-body').inne
  */
 function onboardingForGame() {
   const g = S.game || { id: 'ATS', shortName: 'ATS' };
+  // The application's start time, in the game's clock: 06:00 or 6:00 AM.
+  const tod = $('ap-gametod');
+  if (tod) { const was = parseTod(tod.value) || '06:00'; tod.value = fmtTod(was); tod.placeholder = todPlaceholder(); }
   $('ap-game').value = g.id;
   const eu = g.id === 'ETS2';
   const classes = ((S.views && S.views.endorsements && S.views.endorsements.all) || []);
@@ -1405,13 +1437,13 @@ function syncSpanEnd(openedNow) {
   // which gets a break rolling past midnight right without being told — and a ten-hour reset started
   // at 21:00 is on tomorrow either way.
   if (!tod.dataset.touched) {
-    tod.value = timeOf(defaultSpanEnd(kind.value, readDayTime('ev-time'), S?.settings?.hos));
+    tod.value = fmtTod(timeOf(defaultSpanEnd(kind.value, readDayTime('ev-time'), S?.settings?.hos)));
   }
   if (day.dataset.touched) return;
 
   const started = parseInt(sv('ev-time-day'), 10);
   if (!Number.isFinite(started)) return;
-  day.value = tod.value >= sv('ev-time-tod') ? started : started + 1;
+  day.value = parseTod(tod.value) >= parseTod(sv('ev-time-tod')) ? started : started + 1;
   const dow = document.getElementById('ev-end-dow');
   if (dow) dow.textContent = dowForDay(day.value);
 }
@@ -2052,6 +2084,7 @@ function restartHtml() {
 }
 
 function metersHtml(h) {
+  if (h.ruleset === 'EU561') return metersEuHtml(h);
   const m = (lbl, val, lim) => {
     const p = lim > 0 ? Math.max(0, Math.min(100, (val / lim) * 100)) : 0;
     const cls = p <= 8 ? 'bad' : p <= 25 ? 'warn' : 'ok';
@@ -2063,6 +2096,26 @@ function metersHtml(h) {
     ${m('Shift window', h.shiftRemaining, h.shiftLimit)}
     ${h.breakEnforced ? m('Break clock', h.breakRemaining, h.breakLimit) : ''}
     ${m('Cycle', h.cycleRemaining, h.cycleLimit)}
+  </div>`;
+}
+
+/** ETS2's clocks as the HOS companion's status line has them — B, D, W, 2W — and the spread, estimated. */
+function metersEuHtml(h) {
+  const m = (lbl, val, lim, note) => {
+    const p = lim > 0 ? Math.max(0, Math.min(100, (val / lim) * 100)) : 0;
+    const cls = p <= 8 ? 'bad' : p <= 25 ? 'warn' : 'ok';
+    return `<div class="meter ${cls}"><div class="lbl">${lbl}</div><div class="big">${hhmm(val)}</div>
+      <div class="of">${note || `of ${hhmm(lim)}`}</div><div class="bar"><i style="width:${p}%"></i></div></div>`;
+  };
+  const r = S.settings.euHos || {};
+  const weekLeft = Math.max(0, (h.cycleLimit || 56) - (h.weekDriven || 0));
+  const twoLeft = Math.max(0, h.fortnightRemaining ?? ((r.fortnightDriving || 90) - (h.weekDriven || 0) - (h.lastWeekDriven || 0)));
+  return `<div class="meters">
+    ${m('Break · B', h.breakRemaining, h.breakLimit)}
+    ${m('Day · D', h.driveRemaining, h.driveLimit, `of ${hhmm(h.driveLimit)} today`)}
+    ${m('Week · W', weekLeft, h.cycleLimit || 56)}
+    ${m('2 weeks · 2W', twoLeft, r.fortnightDriving || 90)}
+    ${m('Spread', h.shiftRemaining, h.shiftLimit, S.hos.spreadEstimated ? `of ${hhmm(h.shiftLimit)}, estimated` : '')}
   </div>`;
 }
 
@@ -2468,11 +2521,11 @@ function euClocksHtml(h, v) {
   const weekLeft = Math.max(0, week - (h.euWeekDriven ?? 0));
   const twoWeeksLeft = Math.max(0, fortnight - (h.euWeekDriven ?? 0) - (h.euLastWeekDriven ?? 0));
   return `
-    <div class="grid4">
-      <label>Break left <span class="sub">B</span><input id="h-break" inputmode="numeric" placeholder="4:30" value="${hhmm(h.breakRemaining)}"></label>
-      <label>Daily drive left <span class="sub">D</span><input id="h-drive" inputmode="numeric" placeholder="10:00" value="${hhmm(h.driveRemaining)}"></label>
-      <label>Week left <span class="sub">W</span><input id="he-wleft" inputmode="numeric" placeholder="56:00" value="${hhmm(weekLeft)}"></label>
-      <label>Two weeks left <span class="sub">2W</span><input id="he-2wleft" inputmode="numeric" placeholder="90:00" value="${hhmm(twoWeeksLeft)}"></label>
+    <div class="grid4 clockrow">
+      <label>B · break<input id="h-break" inputmode="numeric" placeholder="4:30" value="${hhmm(h.breakRemaining)}"></label>
+      <label>D · day<input id="h-drive" inputmode="numeric" placeholder="10:00" value="${hhmm(h.driveRemaining)}"></label>
+      <label>W · week<input id="he-wleft" inputmode="numeric" placeholder="56:00" value="${hhmm(weekLeft)}"></label>
+      <label>2W · 2 weeks<input id="he-2wleft" inputmode="numeric" placeholder="90:00" value="${hhmm(twoWeeksLeft)}"></label>
     </div>
     <p class="hint">Type them as your HOS app's status line shows them — <b>B D W 2W</b>, hours left. The break is
       ${num((r.breakLength || 0.75) * 60, 0)} minutes after ${num(r.drivingBeforeBreak || 4.5, 1)} hours of driving; the day is
@@ -3356,11 +3409,11 @@ function dropHookHtml() {
 function clocksAtDeliveryHtml() {
   // ETS2: the HOS companion's status line — B, D, W, 2W, hours left — and nothing else to type.
   if (S.views.hos.ruleset === 'EU561') return `<fieldset><legend>Clocks as you arrived — read them when you back in, before the unload</legend>
-    <div class="grid4">
-      <label>Break left <span class="sub">B</span><input id="c-hbreak" inputmode="numeric" placeholder="h:mm"></label>
-      <label>Daily drive left <span class="sub">D</span><input id="c-hdrive" inputmode="numeric" placeholder="h:mm"></label>
-      <label>Week left <span class="sub">W</span><input id="c-hwleft" inputmode="numeric" placeholder="h:mm"></label>
-      <label>Two weeks left <span class="sub">2W</span><input id="c-h2wleft" inputmode="numeric" placeholder="h:mm"></label>
+    <div class="grid4 clockrow">
+      <label>B · break<input id="c-hbreak" inputmode="numeric" placeholder="h:mm"></label>
+      <label>D · day<input id="c-hdrive" inputmode="numeric" placeholder="h:mm"></label>
+      <label>W · week<input id="c-hwleft" inputmode="numeric" placeholder="h:mm"></label>
+      <label>2W · 2 weeks<input id="c-h2wleft" inputmode="numeric" placeholder="h:mm"></label>
     </div>
     <p class="hint">Off your HOS app's status line, as it reads when you stop at the receiver. The spread, the 10-hour
       days and the rest are worked out, as on the Dispatch tab, and the dock time is taken off the spread afterwards —
@@ -7080,6 +7133,13 @@ function viewSettings() {
         ].map(([v, l]) => `<option value="${v}" ${(UN().chosen || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <p class="hint">Display only: your career is stored the same way whichever you pick, so you can change
         this whenever you like. Pick what your game's dashboard shows.</p>
+      <label>Times of day
+        <select id="op-clock">${[
+          ['', `Game default (${S.game.id === 'ETS2' ? '24-hour, 18:30' : '12-hour, 6:30 PM'})`],
+          ['24', '24-hour — 18:30'],
+          ['12', '12-hour — 6:30 PM'],
+        ].map(([v, l]) => `<option value="${v}" ${(s.clockFormat || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <p class="hint">How the time boxes show a time. Either form is understood when you type it.</p>
       ${S.views.ferries ? `<label class="chk"><input type="checkbox" id="op-ferries" ${s.realFerrySailings !== false ? 'checked' : ''}>
         Real ferry sailings — wait for the next real departure at a port</label>
       <p class="hint">On, a ferry or Channel Tunnel crossing leaves on the operator's typical timetable and dispatch plans
@@ -9170,6 +9230,7 @@ function collectSettings() {
       breakConsumesShift: bv('hr-breakshift'), sleeperSplitAllowed: bv('hr-split'),
     },
     displayUnits: sv('op-units'),
+    clockFormat: $('op-clock') ? sv('op-clock') : (s.clockFormat || ''),
     realFerrySailings: $('op-ferries') ? bv('op-ferries') : s.realFerrySailings,
     salaryDetentionPay: $('op-saldet') ? bv('op-saldet') : !!s.salaryDetentionPay,
     // As with the map: the boxes if the panel is on screen, the career's own list if it is not.

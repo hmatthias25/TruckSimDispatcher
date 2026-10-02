@@ -450,3 +450,8 @@ pre.reply{
 .w2box .w2n{display:inline-block;min-width:20px;font-family:var(--mono);font-size:11px;color:var(--ink3)}
 .w2box .w2l{font-size:11px;color:var(--ink3)}
 .w2box .w2v{display:block;margin-top:3px;font-family:var(--mono);font-size:15px;font-weight:600}
+
+/* Clock boxes four across: the label stays on one line, the box below it. Reported from play — the
+   headers wrapped and the boxes went out of line. */
+.clockrow label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.clockrow input{min-width:0}

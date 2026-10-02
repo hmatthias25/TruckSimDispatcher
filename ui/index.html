@@ -108,7 +108,8 @@
         <label>Current in-game day &amp; time
           <span style="display:flex;gap:6px">
             <input id="ap-gameday" type="number" min="1" step="1" class="spin" value="1" style="flex:0 0 92px" title="Game day">
-            <input id="ap-gametod" type="time" step="60" value="06:00" style="flex:1" title="Time of day">
+            <input id="ap-gametod" class="tod" inputmode="text" maxlength="8" value="06:00" style="flex:1"
+              title="Time of day — 18:30 or 6:30 PM, either works">
           </span>
           <span class="hint">The game has no calendar the app can read — just count days from wherever your
             profile is now. Day 1 is fine for a new driver.</span>

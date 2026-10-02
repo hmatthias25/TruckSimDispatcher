@@ -53,7 +53,15 @@ public static class Ferries
     /// counterpart: the game's own time, no timetable), "promods" (a real ferry serving a ProMods region, not yet
     /// confirmed against ProMods' own map — the in-game ferry list is the authority).
     /// </summary>
-    public static readonly Route[] All =
+    // Lazy: static fields initialise in source order, and Table is below.
+    public static Route[] All => AllInEnglish.Value;
+    private static readonly Lazy<Route[]> AllInEnglish = new(() => Table.Select(r => r with
+    {
+        A = CityNames.Canonical(r.A, r.ACc), B = CityNames.Canonical(r.B, r.BCc),
+        ACity = CityNames.Canonical(r.ACity, r.ACc), BCity = CityNames.Canonical(r.BCity, r.BCc),
+    }).ToArray());
+
+    private static readonly Route[] Table =
     {
         // ---- the Channel and the North Sea
         new("dover-calais", "Dover", "Dover", "UK", "Calais", "Calais", "FR", 1.52, 384, "",

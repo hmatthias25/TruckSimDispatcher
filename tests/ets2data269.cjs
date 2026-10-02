@@ -96,7 +96,9 @@ const km = async (a, sa, b, sb) => {
   ok('Iceland\'s ProMods cities are in it', ice.length > 10 && ice.every((c) => c.source === 'ProMods' || c.source === 'Iceland'),
     `${ice.length} in IS`);
   const tr = await api('/markets?state=TR');
-  ok('and the game\'s own spellings', tr.some((c) => c.city === 'İstanbul'), tr.map((c) => c.city).join(', '));
+  // The English names the cargo list shows (localized names on, the default): Istanbul, not İstanbul.
+  ok('and the names the game shows in English', tr.some((c) => c.city === 'Istanbul') && tr.some((c) => c.city === 'Tekirdağ'),
+    tr.map((c) => c.city).join(', '));
 
   head('5. Fuel, ADR, carriers');
   ok('fuel is priced in euros per litre', boot.settings.fuelPricePerGal > 0, `stored ${boot.settings.fuelPricePerGal} per gallon`);
