@@ -101,8 +101,7 @@ public static class DispatchEngine
             {
                 decision.OutOfHours = true;
                 decision.NeedsRestart = true;
-                decision.Headline = $"You are out of cycle — {Hhmm.Of(s.Hos.CycleRemaining)} left on the " +
-                                    $"{s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}.";
+                decision.Headline = OutOfCycleHeadline(s);
                 decision.Rationale = "There is no point reading a board yet. Sit the restart, report your " +
                                      "clocks, and pull a fresh one then — these listings will have turned over.";
                 decision.DispatchNotes.AddRange(Restart.Instructions(s, restartOpen));
@@ -164,8 +163,7 @@ public static class DispatchEngine
             {
                 decision.OutOfHours = true;
                 decision.NeedsRestart = true;
-                decision.Headline = $"You are out of cycle — {Hhmm.Of(s.Hos.CycleRemaining)} left on the " +
-                                    $"{s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}.";
+                decision.Headline = OutOfCycleHeadline(s);
                 decision.Rationale = string.Join(" ", stops);
                 decision.DispatchNotes.AddRange(stops);
                 decision.DispatchNotes.Add("Do not hold on to this board. By the time you are legal these jobs " +
@@ -319,7 +317,9 @@ public static class DispatchEngine
             decision.DispatchNotes.Add($"Run it at {Units.PerDistance(pick.AllInRpm, "0.00")} all-in on {Units.Dist(pick.Load.LoadedMiles + pick.Load.DeadheadMiles):0} total {Units.DistWord}.");
             decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
             if (pick.Feasibility.RestsRequired > 0)
-                decision.DispatchNotes.Add($"Plan on {pick.Feasibility.RestsRequired} × {s.Settings.Hos.OffDutyReset:0.#}-hour reset and {pick.Feasibility.BreaksRequired} required break(s) en route.");
+                decision.DispatchNotes.Add(Restart.IsEu(s)
+                    ? $"Plan on {pick.Feasibility.RestsRequired} daily rest(s) and {pick.Feasibility.BreaksRequired} break(s) en route — the timeline says which are 11 hours and which 9."
+                    : $"Plan on {pick.Feasibility.RestsRequired} × {s.Settings.Hos.OffDutyReset:0.#}-hour reset and {pick.Feasibility.BreaksRequired} required break(s) en route.");
             // A reset that lands in the first few hours is a different day from one that lands tomorrow
             // night, and the driver should hear which before they hook. Taking a load on a short drive
             // clock is fine when the pickup and an early sleep still make the appointment — it is only
@@ -376,13 +376,15 @@ public static class DispatchEngine
             decision.OutOfHours = true;
             decision.NeedsRestart = restartNeeded;
             decision.Headline = restartNeeded
-                ? $"You are out of cycle — {Hhmm.Of(s.Hos.CycleRemaining)} left on the {s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}."
+                ? OutOfCycleHeadline(s)
                 : "You are out of hours for today. Nothing on this board can be run legally.";
             decision.Rationale = restNote;
             decision.DispatchNotes.Add(restNote);
 
             foreach (var opt in Markets.ResetOptions(s, s.Status.LocationState).Take(3))
-                decision.DispatchNotes.Add($"{Place(opt.City, opt.State)} can hold a restart — parking, fuel and services.");
+                decision.DispatchNotes.Add(Restart.IsEu(s)
+                    ? $"{Place(opt.City, opt.State)} has the parking and services for a long rest."
+                    : $"{Place(opt.City, opt.State)} can hold a restart — parking, fuel and services.");
 
             decision.DispatchNotes.Add("I am clearing the board. By the time you are legal these jobs will have " +
                                        "turned over anyway — pull a fresh one when you are back on duty.");
@@ -820,6 +822,8 @@ public static class DispatchEngine
     {
         var shift = s.Hos.ShiftRemaining;
         var rules = s.Settings.Hos;
+        var eu = Restart.IsEu(s);
+        var euR = s.Settings.EuHos ?? new EuHosRules();
 
         // Out of hours entirely is a different message, and a better one — it explains the ten against
         // the thirty-four and clears the board. The line between them is whether the driver could still
@@ -839,6 +843,13 @@ public static class DispatchEngine
         var needed = Math.Max(s.Settings.HookHours, dock.Loading) + Math.Max(0, s.Settings.ParkingBufferHours);
         if (shift >= needed) return null;
 
+        if (eu)
+            return $"You have {Hhmm.Of(shift)} of your {euR.Spread:0.#}-hour spread left. Loading " +
+                   $"{(trailer?.Type ?? "a trailer").ToLowerInvariant()} freight takes about {Hhmm.Of(dock.Loading)} " +
+                   "and you still have to get off their property afterwards, so there is nothing on any board you " +
+                   $"could legally start. Do not bother pulling the job list — find parking and take your " +
+                   $"{euR.RegularDailyRest:0.#}-hour daily rest, then report in with fresh clocks." +
+                   (Restart.EuWeeklyRestDueSoon(s) ? " Your weekly rest is due as well, so make it that instead — I will set how long." : "");
         return $"You have {Hhmm.Of(shift)} of your {rules.ShiftLimit:0.#}-hour window left. Loading " +
                $"{(trailer?.Type ?? "a trailer").ToLowerInvariant()} freight takes about {Hhmm.Of(dock.Loading)} " +
                $"and you still have to get off their property afterwards, so there is nothing on any board " +
@@ -846,6 +857,11 @@ public static class DispatchEngine
                $"{rules.OffDutyReset:0.#}, and report in tomorrow with a fresh clock. I will have freight for " +
                "you then.";
     }
+
+    /// <summary>The headline when the long rest is what is owed: the 34 on ATS, the weekly rest on ETS2.</summary>
+    private static string OutOfCycleHeadline(AppState s) => Restart.IsEu(s)
+        ? $"Your weekly rest is due — {Hhmm.Of(Restart.EuWeeklyRestHours(s))}, set by dispatch."
+        : $"You are out of cycle — {Hhmm.Of(s.Hos.CycleRemaining)} left on the {s.Settings.Hos.CycleLimit:0} in {s.Settings.Hos.CycleDays}.";
 
     /// <summary>The career is over; there is no freight and no market. Checked before anything else.</summary>
     private static string? CareerOverBlocker(AppState s) =>
@@ -884,6 +900,47 @@ public static class DispatchEngine
 
         var rules = s.Settings.Hos;
         var view = HosEngine.Describe(s, AssignedTruck(s));
+
+        if (Restart.IsEu(s))
+        {
+            // EU 561/2006. Three different stops, and each says exactly what to take:
+            //   the weekly rest is due      -> the weekly rest, length set by dispatch (Restart.EuWeeklyRestPlan)
+            //   weekly driving is spent      -> nothing moves until Monday 00:00 brings W and 2W back
+            //   the day is spent (D or spread) -> the daily rest, 11 hours
+            var euR = s.Settings.EuHos ?? new EuHosRules();
+            var now = GameClock.TryParse(s.Status.GameTime);
+            restartNeeded = Restart.Needed(s);
+            var weekSpent = s.Hos.CycleRemaining <= Math.Max(0.25, rules.StopDispatchAtDriveHours);
+            var daySpent = view.DrivableNowHours <= rules.StopDispatchAtDriveHours;
+            if (!restartNeeded && !weekSpent && !daySpent) return false;
+            if (restartNeeded)
+            {
+                var plan = Restart.EuWeeklyRestPlan(s, false, now);
+                note = $"Your weekly rest is due — six days since the last one are nearly up, and only a weekly rest starts " +
+                       $"them again. Dispatch has set it at {Hhmm.Of(plan.Hours)}: {plan.Why}. I will give you the order " +
+                       "and where to take it.";
+                return true;
+            }
+            if (weekSpent && now is { } n)
+            {
+                var toMonday = (HosEngine.WeekStart(n).AddDays(7) - n).TotalHours;
+                note = $"Your weekly driving is spent — {Hhmm.Of(s.Hos.CycleRemaining)} left on W and 2W. Nothing moves until " +
+                       $"Monday 00:00 brings it back, {Hhmm.Of(toMonday)} from now. " +
+                       (toMonday >= euR.ReducedWeeklyRest - 0.01
+                           ? "That is long enough to be your weekly rest, so take it as one and the six days start again."
+                           : $"Take it as your {euR.RegularDailyRest:0.#}-hour daily rest and stay parked until Monday.");
+                return true;
+            }
+            var binding = s.Hos.DriveRemaining <= s.Hos.ShiftRemaining
+                ? $"Your daily driving is the one that has run out — D {Hhmm.Of(s.Hos.DriveRemaining)} against " +
+                  $"{Hhmm.Of(s.Hos.ShiftRemaining)} of spread."
+                : $"Your {euR.Spread:0.#}-hour spread is the one that has run out — {Hhmm.Of(s.Hos.ShiftRemaining)} left against " +
+                  $"D {Hhmm.Of(s.Hos.DriveRemaining)}. Driving you cannot legally use is not driving.";
+            note = $"{binding} That is about enough to reach parking and not enough to run freight. Take your " +
+                   $"{euR.RegularDailyRest:0.#}-hour daily rest. It gives you a fresh day — D and the spread — but not the " +
+                   $"week, which stays at {Hhmm.Of(s.Hos.CycleRemaining)}.";
+            return true;
+        }
 
         // Out of cycle is the serious one: only a restart fixes it.
         restartNeeded = s.Hos.CycleRemaining <= Math.Max(1.0, rules.DriveLimit * 0.25);

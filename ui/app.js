@@ -2231,7 +2231,7 @@ function decisionHtml() {
     ${d.infoNeeded.length ? `<div class="callout warn"><h4>I need this before committing freight</h4>
       <ul>${d.infoNeeded.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''}
     ${d.outOfHours ? `<div class="callout stop">
-      <h4>${d.needsRestart ? 'You need the 34-hour restart' : 'You are out of hours'}</h4>
+      <h4>${d.needsRestart ? (S.views.hos.ruleset === 'EU561' ? 'Your weekly rest is due' : 'You need the 34-hour restart') : 'You are out of hours'}</h4>
       <p>${esc(d.rationale)}</p>
       <p class="hint" style="margin:0">The board has been cleared — those jobs will have turned over by
         the time you are legal. Report your clock when you are back on duty and enter a fresh one.</p>

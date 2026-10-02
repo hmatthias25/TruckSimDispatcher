@@ -2992,7 +2992,8 @@ object Snapshot(AppState? given = null)
             backdrop = Backdrop(s),
             hos = HosEngine.Describe(s, truck),
             // Recap versus the 34, weighed for them. The decision drivers get wrong most often.
-            recap = Recap.Assess(s),
+            // Recap is the US 70-hour cycle's; an ETS2 week resets on Monday, so there is none to show.
+            recap = Restart.IsEu(s) ? null : Recap.Assess(s),
             // The restart on order, if any, plus where the app would send them.
             restart = Restart.Open(s) is { } ro
                 ? new { order = (RestartOrder?)ro, instructions = Restart.Instructions(s, ro), needed = true }

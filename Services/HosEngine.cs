@@ -723,11 +723,14 @@ public static class HosEngine
         /// </summary>
         void TakeEuWeeklyRest(double atLeast, string why)
         {
-            var reduced = euR.AllowReducedWeeklyRest && !lastWeeklyReduced && atLeast <= euR.ReducedWeeklyRest + Eps;
-            var len = reduced ? euR.ReducedWeeklyRest : euR.RegularWeeklyRest + owed;
-            len = Math.Max(len, atLeast);
+            // A reduced weekly rest is anything from 24 up to 45: a wait that has to be sat anyway (Monday, a
+            // window) is taken as a longer reduced rest, with less owed, not a 45 and a hotel.
+            var canReduce = euR.AllowReducedWeeklyRest && !lastWeeklyReduced;
+            var len = canReduce ? Math.Max(euR.ReducedWeeklyRest, atLeast) : Math.Max(euR.RegularWeeklyRest + owed, atLeast);
+            var reduced = canReduce && len < euR.RegularWeeklyRest - Eps;
+            var owedNow = reduced ? euR.RegularWeeklyRest - len : 0;
             var label = reduced
-                ? $"{len:0.#}-hour reduced weekly rest — {why}; {euR.RegularWeeklyRest - euR.ReducedWeeklyRest:0.#} h owed back. The cab is allowed"
+                ? $"{Hhmm.Of(len)} reduced weekly rest — {why}; {Hhmm.Of(owedNow)} owed back. The cab is allowed"
                 : owed > Eps
                     ? $"{len:0.#}-hour weekly rest — {why}, with {Hhmm.Of(owed)} of compensation paid back"
                     : $"{len:0.#}-hour weekly rest — {why}";
@@ -744,7 +747,7 @@ public static class HosEngine
                 result.HotelCost += cost;
             }
             Step(label, "Restart", len, 0);
-            if (reduced) { owed += euR.RegularWeeklyRest - euR.ReducedWeeklyRest; result.ReducedWeeklyRests++; }
+            if (reduced) { owed += owedNow; result.ReducedWeeklyRests++; }
             else owed = 0;
             lastWeeklyReduced = reduced;
             result.WeeklyRestsRequired++;
@@ -1239,7 +1242,12 @@ public static class HosEngine
         // and that is what put freight in front of a driver who had none of the clock to run it.
         var firstDrive = timeline.FindIndex(t => t.Kind == "Drive" && t.Hours > 0.01);
         var firstRest = timeline.FindIndex(t => t.Kind == "Rest");
-        result.BeginsWithRest = firstRest >= 0 && (firstDrive < 0 || firstRest < firstDrive);
+        // Also a plan that crawls a few minutes first and then sleeps: half an hour of D is the drive to
+        // parking, not the start of the load. Reported from play on an ETS2 career — D 0:30, and freight was
+        // booked because the plan's first step was a thirty-minute drive rather than the rest.
+        var drivenBeforeRest = firstRest < 0 ? 0 : timeline.Take(firstRest).Where(t => t.Kind == "Drive").Sum(t => t.Hours);
+        result.BeginsWithRest = firstRest >= 0 && (firstDrive < 0 || firstRest < firstDrive
+                                                   || (eu && drivenBeforeRest <= state.Settings.Hos.StopDispatchAtDriveHours + 0.01));
 
         result.DriveHours = Math.Round(timeline.Where(t => t.Kind == "Drive").Sum(t => t.Hours), 2);
         // On duty is driving plus work. Time in the bunk at a dock is neither, which is the whole point

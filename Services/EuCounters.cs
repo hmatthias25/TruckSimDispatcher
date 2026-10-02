@@ -60,6 +60,11 @@ public static class EuCounters
             .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
             .Where(x => x.Start is { } a && x.End is { } b && b > a && b <= now)
             .Select(x => (Start: x.Start!.Value, End: x.End!.Value, Hours: (x.End!.Value - x.Start!.Value).TotalHours))
+            .Concat(s.RestartOrders
+                .Where(o => o.Status == "Completed")
+                .Select(o => (Start: GameClock.TryParse(o.ArrivedGameTime), End: GameClock.TryParse(o.CompletedGameTime)))
+                .Where(x => x.Start is { } a && x.End is { } b && b > a && b <= now)
+                .Select(x => (Start: x.Start!.Value, End: x.End!.Value, Hours: (x.End!.Value - x.Start!.Value).TotalHours)))
             .OrderBy(x => x.End)
             .ToList();
         var weekly = rests.LastOrDefault(x => x.Hours >= r.ReducedWeeklyRest - 0.01);
@@ -67,7 +72,12 @@ public static class EuCounters
         {
             h.EuHoursSinceWeeklyRest = Math.Round((now - weekly.End).TotalHours, 2);
             h.EuLastWeeklyRestReduced = weekly.Hours < r.RegularWeeklyRest - 0.01;
-            h.EuCompensationOwed = h.EuLastWeeklyRestReduced ? Math.Round(r.RegularWeeklyRest - weekly.Hours, 2) : 0;
+            var owed = 0.0;
+            foreach (var w in rests.Where(x => x.Hours >= r.ReducedWeeklyRest - 0.01))
+                owed = w.Hours < r.RegularWeeklyRest - 0.01
+                    ? owed + (r.RegularWeeklyRest - w.Hours)
+                    : Math.Max(0, owed - (w.Hours - r.RegularWeeklyRest));
+            h.EuCompensationOwed = Math.Round(owed, 2);
         }
         else
         {
