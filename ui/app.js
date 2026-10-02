@@ -61,7 +61,9 @@ const UNIT_IN = {
   wt: (v) => v / UN().weightPerPound,
   perdist: (v) => v * UN().distancePerMile,
   pervol: (v) => v * UN().volumePerGallon,
-  speed: (v) => v / UN().distancePerMile,
+  // Whole mph: a governed speed is stored as a whole number, and 90 km/h is 55.92 mph — sent as that, the
+  // whole Settings save was refused. Reported from play on an ETS2 career: "request failed" on Save.
+  speed: (v) => Math.round(v / UN().distancePerMile),
   // Economy is not a multiple: litres per 100 km is the reciprocal of miles per gallon.
   econ: (v) => (UN().id === 'metric' ? (v > 0 ? 235.214583 / v : 0) : v),
 };

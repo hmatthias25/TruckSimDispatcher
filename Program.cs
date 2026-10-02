@@ -31,6 +31,10 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
     o.SerializerOptions.NumberHandling = JsonNumberHandling.AllowReadingFromString;
 });
+// A body that will not bind throws rather than answering a bare 400, so the handler below can say which
+// field it was. A settings save refused over one value used to reach the player as "Request failed (400)"
+// and nothing else.
+builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 
 var app = builder.Build();
 var ui = LoadEmbeddedUi();
@@ -42,7 +46,11 @@ app.Use(async (ctx, next) =>
     {
         ctx.Response.StatusCode = 400;
         ctx.Response.ContentType = "application/json";
-        await ctx.Response.WriteAsJsonAsync(new { error = ex.Message });
+        // A body that would not bind: the JSON reader's own message names the field ("Path: $.governedMph").
+        var why = ex is BadHttpRequestException && ex.InnerException is JsonException je
+            ? $"The app could not read what was sent: {je.Message}"
+            : ex.Message;
+        await ctx.Response.WriteAsJsonAsync(new { error = why });
     }
 });
 

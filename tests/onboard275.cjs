@@ -92,6 +92,13 @@ const app = { driverName: 'A. Rossi', preferredDivision: 'Dry Van', transmission
   const [late] = (await api('/board/interpret', 'POST', [{ ...row, deliverByText: 'Mon 22:00 - Tue 06:15' }])).loads;
   ok('an overnight 24-hour window crosses midnight', Math.abs(late.deadlineHours - 24.25) < 0.01, `${late.deadlineHours}`);
 
+  head('4b. Saving settings on a kilometre career');
+  const cur5 = (await api('/bootstrap')).settings;
+  let saved = await api('/settings', 'POST', { ...cur5, governedMph: 56 }).catch((e) => e);
+  ok('a whole-mph limiter saves', !(saved instanceof Error), saved.message || '');
+  saved = await api('/settings', 'POST', { ...cur5, governedMph: 55.92340730136005 }).catch((e) => e);
+  ok('a value that will not bind says which field, not a bare 400', saved instanceof Error && /governedMph/i.test(saved.message), saved.message);
+
   head('5. Another career, and starting over');
   let r = await api('/careers/new', 'POST', { name: 'Back in the States', game: 'ATS', inheritSettings: true });
   S = r.snapshot;
