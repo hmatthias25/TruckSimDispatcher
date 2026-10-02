@@ -453,5 +453,7 @@ pre.reply{
 
 /* Clock boxes four across: the label stays on one line, the box below it. Reported from play — the
    headers wrapped and the boxes went out of line. */
-.clockrow label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.clockrow input{min-width:0}
+/* The input is a block of its own: left inline, nowrap kept it on the label's line and pushed it out of
+   sight (reported from play: "the boxes are gone"). */
+.clockrow label{white-space:nowrap;min-width:0}
+.clockrow input{display:block;width:100%;min-width:0;white-space:normal}
