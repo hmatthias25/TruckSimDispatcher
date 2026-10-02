@@ -128,6 +128,33 @@ const freshOrders = async () => { const st = await api('/export'); st.restartOrd
     && /41:15 reduced weekly rest/.test(wk.label) && /3:45 owed back/.test(wk.label), wk?.label);
   ok('and no hotel for it', (p.hotelNights || 0) === 0, `${p.hotelNights} night(s)`);
 
+  head('7. Spending the week: home beats a hotel (reported from play: six hotel nights to Monday)');
+  await freshOrders();
+  // Tuesday (day 23) in Marseille with 6 hours of the week's driving left. The yard is Lyon.
+  await clocks(23, '08:00', { euHoursSinceWeeklyRest: 30, euLastWeeklyRestReduced: false, euCompensationOwed: 0,
+    cycleRemaining: 6, euWeekDriven: 50, euLastWeekDriven: 30, driveRemaining: 9, shiftRemaining: 13 });
+  await api('/status', 'POST', { locationCity: 'Marseille', locationState: 'FR', locationKind: 'TruckStop', gameTime: iso(23, '08:00'),
+    fuelPct: 100, atsOdometer: 1000, truckDamagePct: 1, trailerDamagePct: 1, dutyStatus: 'OffDuty', atsBankBalance: 50000 });
+  await api('/board/clear', 'POST', {});
+  const lane = (dest, cc, mi, rev) => api('/board/add', 'POST', { cargo: `Paper to ${dest}`, trailerType: 'Dry Van', shipper: 'S', receiver: 'R',
+    originCity: 'Marseille', originState: 'FR', destCity: dest, destState: cc, loadedMiles: mi, deadheadMiles: 0, gameRevenue: rev,
+    deadlineHours: 30, weightLbs: 30000, atLocation: true });
+  await lane('Nice', 'FR', 120, 2600);
+  d = await lane('Lyon', 'FR', 195, 2600);
+  const nice = d.evaluations.find((x) => x.load.destCity === 'Nice');
+  const lyon = d.evaluations.find((x) => x.load.destCity === 'Lyon');
+  ok('Nice spends the week away: parked until Monday, hotel nights costed', nice.euStrandedNights >= 2 && nice.euStrandedCost > 0
+    && /parked|sits there/.test(nice.euWeekEnd), `${nice.euStrandedNights} night(s), ${nice.euStrandedCost}: ${nice.euWeekEnd}`);
+  ok('and the cost comes off its margin', nice.cons.some((c) => /hotel/.test(c)));
+  ok('Lyon ends at the yard: the wait to Monday is home time', /home time/.test(lyon.euWeekEnd), lyon.euWeekEnd);
+  ok('so the load home is the one dispatch picks', (d.authorizedLoadId === lyon.load.id) || (lyon.score > nice.score),
+    `Lyon ${lyon.score} vs Nice ${nice.score}`);
+
+  await api('/board/clear', 'POST', {});
+  d = await lane('Nice', 'FR', 120, 2600);
+  const notes = (d.dispatchNotes || []).join(' | ');
+  ok('with only Nice on the board: run home empty instead, the week still gets you there', /run home empty/.test(notes), notes.slice(0, 300));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

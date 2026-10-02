@@ -4103,6 +4103,14 @@ public class TimelineStep
 public class LoadEvaluation
 {
     public BoardLoad Load { get; set; } = new();
+    /// <summary>
+    /// ETS2: what the load leaves after the drop when it spends the week's driving — parked until Monday,
+    /// where, and what that costs. Empty when the week is not the question. See DispatchEngine.EuWeekEnd.
+    /// </summary>
+    public string EuWeekEnd { get; set; } = "";
+    /// <summary>Hotel nights and their cost for being parked away from home until Monday after this load.</summary>
+    public int EuStrandedNights { get; set; }
+    public decimal EuStrandedCost { get; set; }
     public FeasibilityResult Feasibility { get; set; } = new();
     public decimal LoadedRpm { get; set; }
     public decimal AllInRpm { get; set; }

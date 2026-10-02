@@ -315,6 +315,8 @@ public static class DispatchEngine
             }
 
             decision.DispatchNotes.Add($"Run it at {Units.PerDistance(pick.AllInRpm, "0.00")} all-in on {Units.Dist(pick.Load.LoadedMiles + pick.Load.DeadheadMiles):0} total {Units.DistWord}.");
+            if (pick.EuWeekEnd.Length > 0) decision.DispatchNotes.Add(pick.EuWeekEnd);
+            if (pick.EuStrandedNights > 0 && EuRunHomeNote(s, decision) is { } runHome) decision.DispatchNotes.Add(runHome);
             decision.DispatchNotes.Add($"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} appointment — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
             if (pick.Feasibility.RestsRequired > 0)
                 decision.DispatchNotes.Add(Restart.IsEu(s)
@@ -1638,7 +1640,9 @@ public static class DispatchEngine
         // mention of it anywhere. CycleRemainingAfter was computed, printed on the card, and read by
         // nothing.
         var cycleLeft = e.Feasibility.CycleRemainingAfter;
-        if (e.Feasibility.Verdict != "Infeasible" && cycleLeft > 0 && cycleLeft <= w.ResetWatchCycleHours)
+        if (Restart.IsEu(s))
+            score += EuWeekEnd(s, load, e, detail);
+        else if (e.Feasibility.Verdict != "Infeasible" && cycleLeft > 0 && cycleLeft <= w.ResetWatchCycleHours)
         {
             // Thin enough that the estimate itself is the risk. The plan runs at governed speed times a
             // factor; real roads, weather and traffic do not, and a margin smaller than a tenth of the
@@ -1671,7 +1675,7 @@ public static class DispatchEngine
                        $"{(e.DestResetFriendly ? "" : ", somewhere that cannot hold one")}: {burnPts:+0.00;-0.00}");
         }
 
-        if (s.Hos.CycleRemaining <= w.ResetWatchCycleHours)
+        if (!Restart.IsEu(s) && s.Hos.CycleRemaining <= w.ResetWatchCycleHours)
         {
             // The restart and the home time are the SAME thirty-four hours. Where both are due and the
             // load finishes at the yard, one stop serves both — and taking the restart anywhere else
@@ -2078,10 +2082,92 @@ public static class DispatchEngine
     public static bool IsOwnYard(AppState s, string? city, string? state)
     {
         if (string.IsNullOrWhiteSpace(city)) return false;
+        // Either spelling of a city is the same yard: Köln and Cologne. See CityNames.
+        static string K(string? c, string? st) => CityNames.Fold(CityNames.Canonical(c, st)).Trim();
         return s.Company.Terminals.Any(
-            t => t.City.Equals(city.Trim(), StringComparison.OrdinalIgnoreCase)
+            t => K(t.City, t.State).Equals(K(city, state ?? t.State), StringComparison.OrdinalIgnoreCase)
                  && (string.IsNullOrWhiteSpace(state) || string.IsNullOrWhiteSpace(t.State)
                      || t.State.Equals(state.Trim(), StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>
+    /// ETS2: every runnable load strands the truck away until Monday, but the week still has the driving to get
+    /// home. Then the board is the wrong question: run home empty and spend the wait as home time.
+    /// </summary>
+    private static string? EuRunHomeNote(AppState s, BoardDecision decision)
+    {
+        if (decision.Evaluations.Any(x => x.Feasibility.Verdict != "Infeasible" && x.EuStrandedNights == 0)) return null;
+        var home = HomeTime.HomeTerminal(s);
+        if (home == null || IsOwnYard(s, s.Status.LocationCity, s.Status.LocationState)) return null;
+        var miles = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
+        var view = HosEngine.Describe(s, AssignedTruck(s));
+        if (miles is not { } m || view.EffectiveMph <= 1 || s.Hos.CycleRemaining < m / view.EffectiveMph + 0.5) return null;
+        return $"Every load here leaves you parked away until Monday. You still have {Hhmm.Of(s.Hos.CycleRemaining)} of the " +
+               $"week's driving, and {Place(home.City, home.State)} is {Units.Distance(m)} — run home empty instead and the wait " +
+               "is home time, not a hotel on the company.";
+    }
+
+    /// <summary>
+    /// ETS2: what happens after the drop when a load spends the week's driving (reported from play: a week spent on
+    /// a Tuesday, six hotel nights to Monday). Weekly driving only comes back at Monday 00:00, so a load that
+    /// leaves less than a day's driving parks the truck until then — at home, that is home time; away, it is a
+    /// regular weekly rest, which the Mobility Package puts in a hotel on the company. So:
+    /// <list type="bullet">
+    /// <item>finishing at the yard with the week spent is the best way to spend it, and scores so;</item>
+    /// <item>finishing away with enough driving left to run home is fine, and says to;</item>
+    /// <item>finishing away without it is costed — the hotel nights to Monday come off the margin — and the
+    ///   cost marks the load down, so a load home wins on a board that has one.</item>
+    /// </list>
+    /// </summary>
+    private static double EuWeekEnd(AppState s, BoardLoad load, LoadEvaluation e, List<string> detail)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        var f = e.Feasibility;
+        if (f.Verdict == "Infeasible") return 0;
+        var weekLeft = Math.Max(0, f.CycleRemainingAfter);
+        if (weekLeft >= r.DailyDriving - 0.01) return 0;               // a full day still in the week
+        if (GameClock.TryParse(f.ProjectedArrivalGameTime) is not { } arrive) return 0;
+        var toMonday = (HosEngine.WeekStart(arrive).AddDays(7) - arrive).TotalHours;
+        if (toMonday < r.RegularDailyRest) return 0;                     // Monday is tonight's rest anyway
+
+        var dest = Place(load.DestCity, load.DestState);
+        if (IsOwnYard(s, load.DestCity, load.DestState))
+        {
+            e.EuWeekEnd = $"This ends at your yard with the week's driving spent, so the {Hhmm.Of(toMonday)} until Monday " +
+                          "is home time — no hotel, and a full weekly rest at home.";
+            e.Pros.Add(e.EuWeekEnd);
+            var pts = 1.2 * s.Settings.Scoring.ResetPositioning;
+            detail.Add($"Spends the week at the yard — Monday is home time: {pts:+0.00;-0.00}");
+            return pts;
+        }
+
+        var home = HomeTime.HomeTerminal(s);
+        var milesHome = home == null ? null : Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State);
+        var mph = f.EffectiveMph > 1 ? f.EffectiveMph : 45;
+        if (home != null && milesHome is { } mh && weekLeft >= mh / mph + 0.5)
+        {
+            e.EuWeekEnd = $"This leaves {Hhmm.Of(weekLeft)} of the week's driving and Monday is {Hhmm.Of(toMonday)} away — enough to " +
+                          $"run home to {Place(home.City, home.State)} ({Units.Distance(mh)}) after the drop and spend the wait there.";
+            e.Cons.Add(e.EuWeekEnd);
+            return 0;
+        }
+
+        // Stranded until Monday. A rest that long is a regular weekly rest, and away from home that is a hotel.
+        var nights = toMonday >= r.RegularWeeklyRest - 0.01 ? MobilityPackage.HotelNights(toMonday) : 0;
+        var cost = nights * Math.Max(0, r.HotelPerNight);
+        e.EuStrandedNights = nights;
+        e.EuStrandedCost = cost;
+        e.EstimatedMargin = Math.Round(e.EstimatedMargin - cost, 2);
+        e.EuWeekEnd = $"This spends your week {(milesHome is { } m ? $"{Units.Distance(m)} from home, " : "")}at {dest}: " +
+                      $"{Hhmm.Of(weekLeft)} of driving left on arrival and Monday {Hhmm.Of(toMonday)} away, so the truck sits there " +
+                      (nights > 0
+                          ? $"until then — a weekly rest in a hotel, {nights} night(s), about {Units.Money0(cost)} on the company. "
+                          : "until then, a reduced weekly rest in the cab. ") +
+                      "A load that finishes nearer home is the better way to spend the week.";
+        e.Cons.Add(e.EuWeekEnd);
+        var penalty = -(0.8 + 0.25 * nights) * s.Settings.Scoring.ResetPositioning;
+        detail.Add($"Spends the week away — parked until Monday{(nights > 0 ? $", {nights} hotel night(s)" : "")}: {penalty:+0.00;-0.00}");
+        return penalty;
     }
 
     /// <summary>The home terminal's city, or empty. Kept beside IsOwnYard, which asks the same question.</summary>
