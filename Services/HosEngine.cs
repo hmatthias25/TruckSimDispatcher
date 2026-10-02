@@ -243,7 +243,7 @@ public static class HosEngine
         if (at is { } now)
         {
             var lastRestEnd = s.Trips.SelectMany(t => t.Events)
-                .Where(e => e.Kind is "Rest" or "Restart" || (e.Kind == "Ferry" && e.Cabin))
+                .Where(EuCounters.IsTimeOff)
                 .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
                 .Where(x => x.Start is { } a && x.End is { } b && (b - a).TotalHours >= r.ReducedDailyRest - 0.01 && b <= now)
                 .Select(x => x.End!.Value)
@@ -493,7 +493,7 @@ public static class HosEngine
         var extendedToday = eu && (hos.DriveRemaining > euR.DailyDriving + Eps || hos.EuDriveIncludesExtension);
         // Today's extension, being in the figure, is spent from the week's for planning — the conservative
         // reading, since the plan is free to drive into it.
-        if (eu && hos.EuDriveIncludesExtension && !(hos.EuDayDriving?.GetValueOrDefault(GameClock.DayOf(start.Value)) > euR.DailyDriving + Eps))
+        if (eu && hos.EuDriveIncludesExtension && !(hos.EuDayDriving?.GetValueOrDefault(EuCounters.ShiftDay(state, start.Value)) > euR.DailyDriving + Eps))
             extLeft = Math.Max(0, extLeft - 1);
         var spreadExtended = eu && hos.ShiftRemaining > euR.Spread + Eps;
         var nextRestReduced = spreadExtended;

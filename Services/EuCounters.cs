@@ -22,6 +22,45 @@ namespace TruckSimDispatcher.Services;
 public static class EuCounters
 {
     /// <summary>
+    /// A logged span that is time off under EU rules, whatever it was logged as. The law has no "break" and
+    /// "rest" kinds — nine hours off is a daily rest — so a nine-hour stop logged as a Break is one. Reported
+    /// from play: a reduced nine logged as a Break was not counted as the reduced rest it was. How long it
+    /// has to be for which rest is the caller's threshold.
+    /// </summary>
+    public static bool IsTimeOff(TripEvent e) => e.Kind is "Rest" or "Restart" or "Break" || (e.Kind == "Ferry" && e.Cabin);
+
+    /// <summary>
+    /// The driving day a moment belongs to. Daily driving under EU rules runs between two daily rests, not
+    /// midnight to midnight: a shift that crosses midnight is one day. So the day is the one the last logged
+    /// rest of nine hours or more ended on, where that was within the last day; the calendar day otherwise,
+    /// which is all there is to go on when rests are not logged.
+    /// </summary>
+    public static int ShiftDay(AppState s, DateTime at)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        var lastRestEnd = s.Trips.SelectMany(t => t.Events)
+            .Where(IsTimeOff)
+            .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
+            .Where(x => x.Start is { } a && x.End is { } b && (b - a).TotalHours >= r.ReducedDailyRest - 0.01 && b <= at)
+            .Select(x => x.End!.Value)
+            .DefaultIfEmpty(DateTime.MinValue).Max();
+        return lastRestEnd > DateTime.MinValue && (at - lastRestEnd).TotalHours < 24
+            ? GameClock.DayOf(lastRestEnd)
+            : GameClock.DayOf(at);
+    }
+
+    /// <summary>What a logged span of time off counts as under EU rules, for the trip log. Empty under a daily rest.</summary>
+    public static string RestValue(AppState s, double hours)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        if (hours >= r.RegularWeeklyRest - 0.01) return "a regular weekly rest";
+        if (hours >= r.ReducedWeeklyRest - 0.01) return $"a reduced weekly rest ({Hhmm.Of(r.RegularWeeklyRest - hours)} owed back)";
+        if (hours >= r.RegularDailyRest - 0.01) return "a regular daily rest";
+        if (hours >= r.ReducedDailyRest - 0.01) return "a reduced daily rest";
+        return "";
+    }
+
+    /// <summary>
     /// Folds a status-line report into the career's clocks. Called with the clocks already holding the new
     /// B, D, W and 2W, and with the week's driving as it stood before this report.
     /// </summary>
@@ -36,13 +75,13 @@ public static class EuCounters
         if (h.EuDayWeek != weekKey) { h.EuDayDriving.Clear(); h.EuDayWeek = weekKey; }
         if (weekBefore == weekKey && weekDrivenBefore is { } was && h.EuWeekDriven is { } nowDriven && nowDriven > was + 0.01)
         {
-            var day = GameClock.DayOf(now);
+            var day = ShiftDay(s, now);
             h.EuDayDriving[day] = Math.Round(h.EuDayDriving.GetValueOrDefault(day) + (nowDriven - was), 2);
         }
         h.EuExtensionsUsed = Math.Min(r.ExtensionsPerWeek, h.EuDayDriving.Count(kv => kv.Value > r.DailyDriving + 0.01));
 
         // ---- the day's limit: ten while a 10-hour day is left, nine after.
-        var today = GameClock.DayOf(now);
+        var today = ShiftDay(s, now);
         var extendedToday = h.EuDayDriving.GetValueOrDefault(today) > r.DailyDriving + 0.01;
         h.EuDailyLimit = extendedToday || h.EuExtensionsUsed < r.ExtensionsPerWeek ? r.ExtendedDailyDriving : r.DailyDriving;
         h.EuDriveCapped = false;
@@ -56,7 +95,7 @@ public static class EuCounters
 
         // ---- the weekly rest, and what has happened since, from the trip log.
         var rests = s.Trips.SelectMany(t => t.Events)
-            .Where(e => e.Kind is "Rest" or "Restart" || (e.Kind == "Ferry" && e.Cabin))
+            .Where(IsTimeOff)
             .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
             .Where(x => x.Start is { } a && x.End is { } b && b > a && b <= now)
             .Select(x => (Start: x.Start!.Value, End: x.End!.Value, Hours: (x.End!.Value - x.Start!.Value).TotalHours))

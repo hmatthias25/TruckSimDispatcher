@@ -337,6 +337,20 @@ public static class TripService
             }.Where(x => x.Length > 0));
         }
 
+        // EU: time off counts by its length, not by what it was logged as — a nine-hour Break is a reduced daily
+        // rest. Said on the log, and the counters that come off the log (reduced rests used, the weekly rest,
+        // the spread) are worked out again now rather than at the next status-line report. Reported from play:
+        // a reduced nine logged as a Break went uncounted.
+        if (HosEngine.Eu(s) && ev.Kind is "Rest" or "Restart" or "Break"
+            && GameClock.TryParse(ev.EndGameTime) is { } offEnd && GameClock.TryParse(ev.GameTime) is { } offStart && offEnd > offStart)
+        {
+            var value = EuCounters.RestValue(s, (offEnd - offStart).TotalHours);
+            if (value.Length > 0)
+                ev.Detail = string.Join(" ", new[] { $"{Hhmm.Of((offEnd - offStart).TotalHours)} off: under EU rules that is {value}.", ev.Detail }
+                    .Where(x => !string.IsNullOrWhiteSpace(x)));
+            EuCounters.Derive(s, offEnd, s.Hos.EuWeekDriven, s.Hos.EuDayWeek);
+        }
+
         // Events carry a location when the driver gives one — that is a city we have now been to.
         if (!string.IsNullOrWhiteSpace(ev.City))
             DiscoveryService.Note(s, ev.City, ev.State, ev.GameTime, trip.Number);
