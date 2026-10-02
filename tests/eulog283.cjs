@@ -61,7 +61,7 @@ const line = (at, b, d, w, w2) => api('/hos', 'POST', {
   await line(iso(9, '05:00'), 4.5, 10, 56, 90);
   await line(iso(9, '23:00'), 3, 4, 50, 84);
   h = await line(iso(10, '03:30'), 3, 0, 46, 80);
-  ok('the ten hours land on one day', near(h.euDayDriving[9], 10) && h.euDayDriving[10] == null, JSON.stringify(h.euDayDriving));
+  ok('the ten hours land on one day', Object.values(h.euDayDriving).length === 1 && near(Object.values(h.euDayDriving)[0], 10), JSON.stringify(h.euDayDriving));
   ok('and it is a 10-hour day used', h.euExtensionsUsed === 1, `${h.euExtensionsUsed}`);
   ok('one shift of driving is not a multi-day report', !h.euMultiDayReport, `${h.euMultiDayReport}`);
 
@@ -89,6 +89,31 @@ const line = (at, b, d, w, w2) => api('/hos', 'POST', {
   ok('said: it spans driving days', near(h.euMultiDayReport, 22), `${h.euMultiDayReport}`);
   h = await line(iso(12, '21:00'), 2, 1, 20, 54);
   ok('and cleared by the next report', !h.euMultiDayReport, `${h.euMultiDayReport}`);
+
+  head('7. Reported from play: 4:28 driven, a nine-hour rest NOT logged, the clocks typed on rolling again');
+  // A fresh week (day 15 is a Monday). Out at 05:09 on a fresh clock; drove 4:28; rested 09:37 to 18:37 without
+  // logging it; typed the status line at 18:37 — B and D full again, W down 4:28.
+  await line(iso(15, '05:09'), 4.5, 10, 56, 90);
+  h = await line(iso(15, '18:37'), 4.5, 10, 51.53, 85.53);
+  ok('the full D and B are read as a new shift: the spread is a fresh 13', near(h.shiftRemaining, 13), `${h.shiftRemaining}`);
+  ok('no 10-hour day spent on a 4:28 morning', h.euExtensionsUsed === 0, `${h.euExtensionsUsed} — ${JSON.stringify(h.euDayDriving)}`);
+  ok('the 4:28 is on the morning\'s shift, not the evening\'s', Object.values(h.euDayDriving).some((v) => near(v, 4.47)), JSON.stringify(h.euDayDriving));
+  ok('and D stays the ten typed', near(h.driveRemaining, 10) && h.euDailyLimit === 10, `${h.driveRemaining}`);
+  h = await line(iso(15, '20:37'), 2.5, 8, 49.53, 83.53);
+  ok('two hours into the evening shift, its spread runs from 18:37', near(h.shiftRemaining, 11), `${h.shiftRemaining}`);
+
+  head('8. The migration: a career written before shifts, with a lumped day spending a 10-hour day');
+  const st = await api('/export');
+  st.schemaVersion = 32;
+  st.hos.euDayDriving = { 15: 11.5, 16: 6 };
+  st.hos.euExtensionsUsed = 1;
+  st.hos.euShiftStart = '';
+  st.hos.breakRemaining = 4.5; st.hos.driveRemaining = 10; st.hos.shiftRemaining = 0;
+  await api('/import', 'POST', st);
+  h = (await api('/bootstrap')).hos;
+  ok('the lumped 11:30 no longer spends a 10-hour day', h.euExtensionsUsed === 0, `${h.euExtensionsUsed} — ${JSON.stringify(h.euDayDriving)}`);
+  ok('the 6 hours are kept, on the new key', Object.values(h.euDayDriving).some((v) => near(v, 6)), JSON.stringify(h.euDayDriving));
+  ok('and the last clocks, a fresh day\'s, start the shift: the spread is 13 again', near(h.shiftRemaining, 13), `${h.shiftRemaining}`);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

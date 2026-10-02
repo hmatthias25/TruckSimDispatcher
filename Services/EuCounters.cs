@@ -35,7 +35,15 @@ public static class EuCounters
     /// rest of nine hours or more ended on, where that was within the last day; the calendar day otherwise,
     /// which is all there is to go on when rests are not logged.
     /// </summary>
-    public static int ShiftDay(AppState s, DateTime at)
+    public static int ShiftDay(AppState s, DateTime at) =>
+        ShiftStart(s, at) is { } start ? KeyOf(start) : KeyOf(at.Date);
+
+    /// <summary>
+    /// When the shift a moment belongs to began: the end of the last daily rest before it — logged in the trip
+    /// log, or seen on the status line as a fresh D and B (<see cref="HosSnapshot.EuShiftStart"/>) — where that
+    /// was within the last day. Null when neither is known, and the calendar day stands in.
+    /// </summary>
+    public static DateTime? ShiftStart(AppState s, DateTime at)
     {
         var r = s.Settings.EuHos ?? new EuHosRules();
         var lastRestEnd = s.Trips.SelectMany(t => t.Events)
@@ -44,10 +52,19 @@ public static class EuCounters
             .Where(x => x.Start is { } a && x.End is { } b && (b - a).TotalHours >= r.ReducedDailyRest - 0.01 && b <= at)
             .Select(x => x.End!.Value)
             .DefaultIfEmpty(DateTime.MinValue).Max();
-        return lastRestEnd > DateTime.MinValue && (at - lastRestEnd).TotalHours < 24
-            ? GameClock.DayOf(lastRestEnd)
-            : GameClock.DayOf(at);
+        if (GameClock.TryParse(s.Hos.EuShiftStart) is { } seen && seen <= at && seen > lastRestEnd) lastRestEnd = seen;
+        return lastRestEnd > DateTime.MinValue && (at - lastRestEnd).TotalHours < 24 ? lastRestEnd : null;
     }
+
+    /// <summary>
+    /// A shift's key: the hour it began. Two shifts on one calendar day — a morning drive, a nine-hour rest, an
+    /// evening drive — are two driving days under the rules, and keying them by the day merged them into one.
+    /// A day with no known rest is keyed by its midnight.
+    /// </summary>
+    private static int KeyOf(DateTime start) => (int)((start - new DateTime(2000, 1, 1)).TotalHours);
+
+    /// <summary>Driving no single shift could hold, kept out of every shift's count. See <see cref="Derive"/>.</summary>
+    public const int Unattributed = -1;
 
     /// <summary>What a logged span of time off counts as under EU rules, for the trip log. Empty under a daily rest.</summary>
     public static string RestValue(AppState s, double hours)
@@ -76,15 +93,47 @@ public static class EuCounters
         // ---- driving per day, from the fall in W. A new week clears the record.
         if (h.EuDayWeek != weekKey) { h.EuDayDriving.Clear(); h.EuDayWeek = weekKey; }
         if (report) { h.EuMultiDayReport = 0; h.EuClocksFromRest = false; }
-        if (weekBefore == weekKey && weekDrivenBefore is { } was && h.EuWeekDriven is { } nowDriven && nowDriven > was + 0.01)
+        var prevAt = GameClock.TryParse(h.AsOfGameTime);
+        int Extensions() => Math.Min(r.ExtensionsPerWeek, h.EuDayDriving.Count(kv => kv.Key != Unattributed && kv.Value > r.DailyDriving + 0.01));
+
+        // A fresh day, read off the status line itself: D back at a full day's and B at 4:30 only happen after a
+        // daily rest. Reported from play: four and a half hours driven, a nine-hour rest not logged, the clocks
+        // typed on rolling again — and the app ran the spread from the rest before, read it as spent, and put the
+        // morning's driving on the evening's shift. The report is the start of a new shift, and the driving since
+        // the last report belongs to the one before it.
+        //
+        // A fresh B alone is any 45-minute break, so D has to be full too — for the day as it now stands, which is
+        // ten while a 10-hour day is left this week and nine after. A report still fresh in the same shift (typed
+        // twice before driving) does not move the start again.
+        var freshShift = false;
+        var drop = weekBefore == weekKey && weekDrivenBefore is { } was && h.EuWeekDriven is { } nowDriven && nowDriven > was + 0.01
+            ? nowDriven - was : 0;
+        if (report && h.BreakRemaining >= r.DrivingBeforeBreak - 0.01 && h.DriveRemaining >= r.DailyDriving - 0.01)
         {
-            // More than a shift can hold: the report spans driving days, and all of it lands on this one. Said,
-            // so the driver knows the 10-hour-day count is a guess until they report a day at a time.
-            if (nowDriven - was > r.ExtendedDailyDriving + 0.01) h.EuMultiDayReport = Math.Round(nowDriven - was, 2);
-            var day = ShiftDay(s, now);
-            h.EuDayDriving[day] = Math.Round(h.EuDayDriving.GetValueOrDefault(day) + (nowDriven - was), 2);
+            var newDayLimit = Extensions() < r.ExtensionsPerWeek ? r.ExtendedDailyDriving : r.DailyDriving;
+            var startedBefore = GameClock.TryParse(h.EuShiftStart);
+            // Typed twice before driving is the same shift; a fresh report a rest's length after the last one is
+            // a new one, driving or not.
+            freshShift = h.DriveRemaining >= newDayLimit - 0.01
+                         && (startedBefore == null || prevAt == null || startedBefore < prevAt || drop > 0.01
+                             || (now - prevAt.Value).TotalHours >= r.ReducedDailyRest - 0.01);
         }
-        h.EuExtensionsUsed = Math.Min(r.ExtensionsPerWeek, h.EuDayDriving.Count(kv => kv.Value > r.DailyDriving + 0.01));
+
+        if (drop > 0.01)
+        {
+            // Which shift the driving was in: the one the last report was in, where this report opens a new one.
+            var key = freshShift && prevAt is { } before ? ShiftDay(s, before) : ShiftDay(s, now);
+            if (drop > r.ExtendedDailyDriving + 0.01)
+            {
+                // More than a shift can hold: the report spans driving days, and which of them were 10-hour days
+                // cannot be told. Kept out of the count rather than spending a 10-hour day on a guess, and said.
+                h.EuMultiDayReport = Math.Round(drop, 2);
+                key = Unattributed;
+            }
+            h.EuDayDriving[key] = Math.Round(h.EuDayDriving.GetValueOrDefault(key) + drop, 2);
+        }
+        if (freshShift) h.EuShiftStart = GameClock.Format(now);
+        h.EuExtensionsUsed = Extensions();
 
         // ---- the day's limit: ten while a 10-hour day is left, nine after.
         var today = ShiftDay(s, now);

@@ -48,9 +48,11 @@ const line = (at, b, d, w, w2) => api('/hos', 'POST', {
 
   head('2. The 10-hour days come from how far W falls');
   h = await line(iso(8, '12:00'), 3, 6, 52, 86);
-  ok('four hours driven by midday: the spread is 13 less 4, no break owed yet', near(h.shiftRemaining, 9), `${h.shiftRemaining}`);
+  // The 06:00 report was a fresh day's (B and D full), so the shift is known to have started then: the spread is
+  // the time since, six hours, which is more than the four driven.
+  ok('six hours since the fresh 06:00 report: 13 less 6', near(h.shiftRemaining, 7), `${h.shiftRemaining}`);
   h = await line(iso(8, '19:00'), 4.5, 0, 46, 80);
-  ok('ten hours on Monday is a 10-hour day', h.euExtensionsUsed === 1 && near(h.euDayDriving[8], 10), JSON.stringify(h.euDayDriving));
+  ok('ten hours on Monday is a 10-hour day', h.euExtensionsUsed === 1 && Object.values(h.euDayDriving).some((v) => near(v, 10)), JSON.stringify(h.euDayDriving));
   h = await line(iso(9, '19:00'), 4.5, 0, 36, 70);
   ok('and ten on Tuesday is the second', h.euExtensionsUsed === 2, `${h.euExtensionsUsed}`);
 

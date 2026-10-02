@@ -85,6 +85,49 @@ public static class Migrations
         PutTheFirstDayBackOnDayOne(s);
         ReReadWindowsThatNamedTheirDay(s);
         LearnDockTimesWithTheWaitIn(s);
+        KeyEuDrivingByTheShift(s);
+    }
+
+    /// <summary>
+    /// ETS2: the week's driving was recorded against calendar days, so two shifts on one day were merged and a
+    /// status-line report covering days put all of it on one — and either could spend a 10-hour day nobody drove.
+    /// Reported from play: an evening report after an unlogged rest took the morning's drive with yesterday's,
+    /// and came out as a 10-hour day used and a spread spent.
+    ///
+    /// The days already recorded are moved to the new keys (each day's midnight), and a "day" over ten hours —
+    /// more than a shift can hold — is moved out of the count, as a report like it now would be. Then, where the
+    /// last clocks typed are a fresh day's (D full, B at 4:30), the shift is started from that report and the
+    /// spread worked out again. Nothing in the trip log is touched.
+    /// </summary>
+    private static void KeyEuDrivingByTheShift(AppState s)
+    {
+        if (s.SchemaVersion >= 33) return;
+        s.SchemaVersion = 33;
+        if (!HosEngine.Eu(s)) return;
+        var h = s.Hos;
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        if (h.EuDayDriving is { Count: > 0 } days)
+        {
+            var moved = new Dictionary<int, double>();
+            foreach (var (day, hours) in days)
+            {
+                // The old keys were game day numbers. Each goes to its midnight, as a day with no known rest is keyed.
+                var key = hours > r.ExtendedDailyDriving + 0.01
+                    ? EuCounters.Unattributed
+                    : (day - 1) * 24;   // KeyOf(that day's midnight): hours since the epoch, day 1 at 00:00
+                moved[key] = Math.Round(moved.GetValueOrDefault(key) + hours, 2);
+            }
+            h.EuDayDriving = moved;
+            h.EuExtensionsUsed = Math.Min(r.ExtensionsPerWeek,
+                moved.Count(kv => kv.Key != EuCounters.Unattributed && kv.Value > r.DailyDriving + 0.01));
+        }
+        if (GameClock.TryParse(h.AsOfGameTime) is { } at
+            && h.BreakRemaining >= r.DrivingBeforeBreak - 0.01 && h.DriveRemaining >= r.DailyDriving - 0.01)
+        {
+            h.EuShiftStart = GameClock.Format(at);
+            h.EuDailyLimit = h.EuExtensionsUsed < r.ExtensionsPerWeek ? r.ExtendedDailyDriving : r.DailyDriving;
+            h.ShiftRemaining = HosEngine.EstimateEuSpread(s, null, at);
+        }
     }
 
     /// <summary>

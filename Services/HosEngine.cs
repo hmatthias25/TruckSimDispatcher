@@ -242,14 +242,10 @@ public static class HosEngine
         var used = driven + Math.Max(0, breaks);
         if (at is { } now)
         {
-            var lastRestEnd = s.Trips.SelectMany(t => t.Events)
-                .Where(EuCounters.IsTimeOff)
-                .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
-                .Where(x => x.Start is { } a && x.End is { } b && (b - a).TotalHours >= r.ReducedDailyRest - 0.01 && b <= now)
-                .Select(x => x.End!.Value)
-                .DefaultIfEmpty(DateTime.MinValue).Max();
-            if (lastRestEnd > DateTime.MinValue && (now - lastRestEnd).TotalHours < 24)
-                used = Math.Max(used, (now - lastRestEnd).TotalHours);
+            // From the shift's start: a logged daily rest's end, or a status line that showed a fresh day. The
+            // second is what keeps an unlogged rest from leaving the spread running from the rest before it.
+            if (EuCounters.ShiftStart(s, now) is { } shiftStart)
+                used = Math.Max(used, (now - shiftStart).TotalHours);
         }
         return Math.Round(Math.Clamp(spread - used, 0, spread), 2);
     }

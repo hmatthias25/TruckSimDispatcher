@@ -369,6 +369,7 @@ public static class TripService
                 s.Hos.DriveRemaining = s.Hos.EuDailyLimit > 0 ? s.Hos.EuDailyLimit : euR.DailyDriving;
                 s.Hos.EuDriveCapped = false;
                 s.Hos.EuClocksFromRest = true;
+                s.Hos.EuShiftStart = GameClock.Format(offEnd);
                 s.Hos.AsOfGameTime = GameClock.Format(offEnd);
                 s.Hos.Projected = false;
             }

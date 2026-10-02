@@ -61,7 +61,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 32;
+    public const int Current = 33;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
 
@@ -1297,6 +1297,12 @@ public class HosSnapshot
     /// line — so the panel can say they are the app's, until the next report.
     /// </summary>
     public bool EuClocksFromRest { get; set; }
+
+    /// <summary>
+    /// When the current shift began, where the trip log does not say: a status-line report showing a fresh D and
+    /// B (only seen after a daily rest), or a logged rest's end. The spread runs from it.
+    /// </summary>
+    public string EuShiftStart { get; set; } = "";
     /// <summary>
     /// D was read off a display that counts down from ten while the week has a 10-hour day left (the HOS
     /// companion's status line), so today's extension is already inside it. The planner must not add it
