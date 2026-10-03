@@ -83,6 +83,18 @@ async function offer(windowText) {
   ok('infeasible', f.verdict === 'Infeasible', f.verdict);
   ok('the blocker names the parking allowance rather than calling 03:50 past 04:07', /parking allowance/.test(why) && !/is past the/.test(why), why);
 
+  head('5. Reported from play: Parma to Porto-Vecchio — the ferry is said in the briefing, not only in the plan');
+  await api('/status', 'POST', { locationCity: 'Parma', locationState: 'IT', locationKind: 'TruckStop', gameTime: '2000-01-10T08:00',
+    fuelPct: 100, atsOdometer: 1000, truckDamagePct: 1, trailerDamagePct: 1, dutyStatus: 'OffDuty', atsBankBalance: 50000 });
+  await api('/board/clear', 'POST', {});
+  const pv = await api('/board/add', 'POST', { cargo: 'Paper', trailerType: 'Dry Van', shipper: 'S', receiver: 'R', originCity: 'Parma',
+    originState: 'IT', destCity: 'Porto-Vecchio', destState: 'FR', loadedMiles: 300, deadheadMiles: 0, gameRevenue: 4000, weightLbs: 30000,
+    atLocation: true, deadlineHours: 60 });
+  const pf = (pv.evaluations[0] || {}).feasibility || {};
+  ok('the plan crosses Marseille – Porto-Vecchio', (pf.crossingRoutes || []).includes('marseille-portovecchio'), JSON.stringify(pf.crossingRoutes));
+  ok('and the briefing says so, with the sailing', (pv.dispatchNotes || []).some((n) => /crosses the water.*Marseille.*Porto-Vecchio.*sailing/.test(n)),
+    (pv.dispatchNotes || []).join(' | ').slice(0, 400));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

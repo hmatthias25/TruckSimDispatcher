@@ -315,6 +315,11 @@ public static class DispatchEngine
             }
 
             decision.DispatchNotes.Add($"Run it at {Units.PerDistance(pick.AllInRpm, "0.00")} all-in on {Units.Dist(pick.Load.LoadedMiles + pick.Load.DeadheadMiles):0} total {Units.DistWord}.");
+            // The crossing, said in the briefing. It was only in the plan's small print, so a long wait for a
+            // sailing read as dispatch ordering a 22-hour rest for no reason — reported from play, Parma to
+            // Porto-Vecchio, where the wait was for the three-a-week Marseille sailing.
+            foreach (var c in pick.Feasibility.Crossings)
+                decision.DispatchNotes.Add($"This load crosses the water. {c} Book it when you reach the port; any wait there is in the plan.");
             if (pick.EuWeekEnd.Length > 0) decision.DispatchNotes.Add(pick.EuWeekEnd);
             if (pick.EuStrandedNights > 0 && EuRunHomeNote(s, decision) is { } runHome) decision.DispatchNotes.Add(runHome);
             // The booked slot is what the delivery is graded against, so it leads. The window close used to be

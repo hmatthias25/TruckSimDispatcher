@@ -1046,7 +1046,12 @@ public static class HosEngine
                         // inside seven hours of slack, which is exactly why this had to be the shape.
                         var slept = timeline[restAt];
                         slept.Hours = Math.Round(slept.Hours + waiting, 2);
-                        slept.Label = $"{slept.Label} — held {Hhmm.Of(waiting)} longer rather than arriving early";
+                        // A crossing cannot run long; the rest carries on ashore. Written as the ferry "held 8:14
+                        // longer", the step read as a 22-hour rest with no reason — reported from play, Parma to
+                        // Porto-Vecchio.
+                        slept.Label = slept.Kind == "Crossing" || slept.Label.StartsWith("Ferry", StringComparison.Ordinal)
+                            ? $"{slept.Label}, then {Hhmm.Of(waiting)} more rest ashore rather than arriving early ({Hhmm.Of(slept.Hours)} in all)"
+                            : $"{slept.Label} — held {Hhmm.Of(waiting)} longer rather than arriving early";
                         slept.EndGameTime = Shifted(slept.EndGameTime, waiting);
 
                         // Everything after it happens later by the same amount. The clocks those legs
