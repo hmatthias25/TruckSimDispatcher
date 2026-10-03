@@ -58,6 +58,27 @@ async function plan(gameTime, city, cc, destCity, destCc, miles) {
   f = await plan('2000-01-03T10:00', 'Milan', 'IT', 'Turin', 'IT', 90);
   ok('no ban wait', !(f.timeline || []).some((t) => /truck ban/.test(t.label)), steps(f));
 
+  head('5. What is owed from a reduced weekly rest: said only where the load changes it');
+  // 9:41 already owed; a short weekday run with no weekly rest in it: nothing to say.
+  await api('/status', 'POST', { locationCity: 'Rotterdam', locationState: 'NL', locationKind: 'Shipper', gameTime: '2000-01-03T10:00',
+    fuelPct: 100, atsOdometer: 1000, truckDamagePct: 1, trailerDamagePct: 1, dutyStatus: 'OffDuty', atsBankBalance: 50000 });
+  await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 13, breakRemaining: 4.5, cycleRemaining: 50, asOfGameTime: '2000-01-03T10:00',
+    euWeekDriven: 6, euLastWeekDriven: 20, euHoursSinceWeeklyRest: 20, euCompensationOwed: 9.68, spreadEstimated: false });
+  await api('/board/clear', 'POST', {});
+  let d = await api('/board/add', 'POST', { cargo: 'Paper', trailerType: 'Dry Van', originCity: 'Rotterdam', originState: 'NL', destCity: 'Groningen',
+    destState: 'NL', loadedMiles: 150, gameRevenue: 1500, weightLbs: 30000, atLocation: true, deadlineHours: 30 });
+  let w = (d.evaluations[0].feasibility.warnings || []).join(' | ');
+  ok('no owed-rest line on a load that does not change it', !/owed/.test(w), w.slice(0, 300));
+  ok('and the old rule recital is gone', !/third week/.test(w));
+  // Nothing owed, and the six days run out on the way: the plan takes a reduced weekly rest and says what it means.
+  await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 13, breakRemaining: 4.5, cycleRemaining: 50, asOfGameTime: '2000-01-03T10:00',
+    euWeekDriven: 6, euLastWeekDriven: 20, euHoursSinceWeeklyRest: 136, euCompensationOwed: 0, spreadEstimated: false });
+  await api('/board/clear', 'POST', {});
+  d = await api('/board/add', 'POST', { cargo: 'Paper', trailerType: 'Dry Van', originCity: 'Rotterdam', originState: 'NL', destCity: 'Groningen',
+    destState: 'NL', loadedMiles: 600, gameRevenue: 1500, weightLbs: 30000, atLocation: true, deadlineHours: 90 });
+  w = (d.evaluations[0].feasibility.warnings || []).join(' | ');
+  ok('a reduced weekly rest in the plan: owed, and that dispatch adds it to the next one', /owed back\. Nothing to do about it now: dispatch adds it/.test(w), w.slice(0, 400));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

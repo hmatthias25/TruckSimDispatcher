@@ -587,6 +587,7 @@ public static class HosEngine
         var sinceWeekly = EuCounters.HoursSinceWeeklyRest(state, start.Value);
         var lastWeeklyReduced = hos.EuLastWeeklyRestReduced;
         var owed = Math.Max(0, hos.EuCompensationOwed);
+        var owedAtStart = owed;
         if (eu)
             cycle = Math.Max(0, Math.Min(euR.WeeklyDriving - weekDriven,
                                          euR.FortnightDriving - lastWeekDriven - weekDriven));
@@ -1557,10 +1558,15 @@ public static class HosEngine
                                     $"not the cab — {result.HotelNights} night(s)" +
                                     (result.HotelCost > 0 ? $", about {Units.Money0(result.HotelCost)} on the company's books" : "") +
                                     ". A reduced one (24 hours) may be taken in the cab.");
-            if (owed > Eps)
-                result.Warnings.Add($"{Hhmm.Of(owed)} of reduced weekly rest is still owed once this load is done. It " +
-                                    "has to be paid back, attached to a rest of at least 9 hours, before the end of the " +
-                                    "third week after the reduced one.");
+            // What is owed, said only where THIS load changes it, and as what it means for the driver. It used to
+            // recite the rule — "attached to a rest of at least 9 hours, before the end of the third week" — on
+            // every load while anything was owed, which is nothing a driver can act on; dispatch pays it back.
+            if (owed > owedAtStart + Eps)
+                result.Warnings.Add($"The weekly rest in this plan is a reduced one, so {Hhmm.Of(owed)} is owed back. " +
+                                    "Nothing to do about it now: dispatch adds it to your next weekly rest, which will be " +
+                                    $"the full {euR.RegularWeeklyRest:0} hours plus that — {Hhmm.Of(euR.RegularWeeklyRest + owed)}.");
+            else if (owedAtStart > Eps && owed < owedAtStart - Eps)
+                result.Warnings.Add($"The weekly rest in this plan pays back the {Hhmm.Of(owedAtStart - owed)} owed from your last reduced one.");
         }
 
         // Recap, told once and only where it changes the answer.
