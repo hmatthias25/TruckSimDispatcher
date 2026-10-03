@@ -4,8 +4,8 @@ Two PDFs ship in the release zip, and both are generated from one source:
 
 | | |
 |---|---|
-| **TruckSim-Dispatcher-User-Manual.pdf** | ~44pp. Somebody who wants to play: get set up, run the loop, know what to type. |
-| **TruckSim-Dispatcher-Operations-Manual.pdf** | ~68pp. Somebody who wants to know how it works: every threshold, every mechanism, and the reasoning. |
+| **TruckSim-Dispatcher-User-Manual.pdf** | ~73pp. Somebody who wants to play: get set up, run the loop, know what to type. |
+| **TruckSim-Dispatcher-Operations-Manual.pdf** | ~73pp. Somebody who wants to know how it works: every threshold, every mechanism, and the reasoning. |
 
 **`manual-full.html` is the source. Edit that.** `manual.html` and `operations.html` are both written
 by `split.py` and any change made to them directly is lost on the next split.

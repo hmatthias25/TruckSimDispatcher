@@ -138,7 +138,7 @@
 <!-- ============================================================ COVER -->
 <!-- ============================================================ FAQ COVER -->
 <div class="page cover">
-  <div class="kicker">Frequently asked &middot; v0.80 alpha</div>
+  <div class="kicker">Frequently asked &middot; v0.81 alpha</div>
   <h1>TruckSim<br>Dispatcher</h1>
   <div class="rulebar"></div>
   <div class="sub">You drive. The company decides, audits and pays.<br>
@@ -156,7 +156,7 @@
   <div class="alphabox">
     <div class="ab-tag">Alpha</div>
     <div>
-      <b>This is v0.80 alpha and is not finished.</b>
+      <b>This is v0.81 alpha and is not finished.</b>
       It is being play-tested. Expect rough edges and expect things to change. If something reads wrong
       or breaks, saying so is the most useful thing you can do with it.
     </div>
@@ -518,6 +518,10 @@
         trip and your clocks are where you left them.</td></tr>
     <tr><th>Does it need to be running while I drive?</th>
       <td>No. Close it and reopen it later. It only ever knows what you have told it.</td></tr>
+    <tr><th>Why did dispatch book a different appointment time than the window opening?</th>
+      <td>Because the truck could not be there at the opening. Dispatch plans your earliest legal arrival,
+        rests and all, and books the slot where you can actually be, on the half hour. You are graded
+        against that slot plus the grace (two hours by default), never against one the plan could not reach.</td></tr>
   </table>
 
   <div class="pfoot"><span>TruckSim Dispatcher &middot; FAQ</span><span class="pn"></span></div>
@@ -558,6 +562,49 @@
         allowance for each day on the road and the same bonuses as ATS.</td></tr>
     <tr><th>Can I have miles, or kilometres in ATS?</th>
       <td>Yes. <b>Settings &rarr; Units</b> works in either game. It changes the display only.</td></tr>
+  </table>
+
+  <div class="pfoot"><span>TruckSim Dispatcher &middot; FAQ</span><span class="pn"></span></div>
+</div>
+
+<!-- ============================================================ ETS2, clocks and ferries -->
+<div class="page">
+  <div class="kicker">Euro Truck Simulator 2</div>
+  <h2>ETS2: the clocks, the ferry and the screenshots</h2>
+
+  <table>
+    <tr><th style="width:2.1in">When should I type my clocks on ETS2?</th>
+      <td>Once a shift, at the end of it: when you stop for the night, type B, D, W and 2W off your HOS
+        companion's status line, all hours left. Then log the daily rest on the trip log with its start and
+        end. A rest of 9 hours or more resets D, B and the spread for the morning, so you do not need to
+        type them again until the next evening. Everything else &mdash; the 10-hour days, the spread, the
+        reduced rests, the weekly rest &mdash; is worked out for you.</td></tr>
+    <tr><th>Does a 9-hour break count as my reduced daily rest?</th>
+      <td>Yes. Time off counts by its length, not by what you logged it as: 9 to 11 hours is a reduced daily
+        rest, 11 a regular one, 24 a reduced weekly rest and 45 a regular one. The trip log entry says what it
+        counted as. On ETS2 a Break is filled in at 45 minutes and a Rest at 11 hours; change the end to what
+        you took.</td></tr>
+    <tr><th>What should my tachograph be set to on a ferry?</th>
+      <td>Enter the ferry/train symbol when you board. <b>With a cabin or bunk</b>, set rest: the crossing
+        can be your daily rest, or a weekly one if it is long enough, and driving on and off may interrupt
+        it at most twice, an hour in all, recorded as driving or other work. <b>Without a cabin</b>, set
+        break: it counts as a break (45 minutes, or part of a 15 + 30 split), never as a daily or weekly
+        rest, and your spread keeps running. The app knows from the route which you have.</td></tr>
+    <tr><th>Why is the weight blank on loads read from screenshots?</th>
+      <td>ETS2's job list does not print the cargo mass; only the selected job's detail panel does. A blank
+        weight does not stop a load being staged or dispatched &mdash; you give the real weight in
+        <b>Report after loading</b>. Screenshot the detail panel too if you want it read.</td></tr>
+    <tr><th>Why is a whole day's wait at the port in my plan?</th>
+      <td>Some sailings run a few times a week. The briefing says so &mdash; <i>"This load crosses the
+        water&hellip;"</i>, with the crossing, the sailing and the wait. A rest held on after you land is
+        shown as rest ashore.</td></tr>
+    <tr><th>Why did it plan a ferry to Corsica by road?</th>
+      <td>It no longer does. The game writes <i>Porto-Vecchio, F</i>, and the <i>F</i> used to read as
+        mainland France. Vehicle codes are now put on the app's own country codes wherever they come in,
+        and a stored career is corrected when it loads.</td></tr>
+    <tr><th>Why are times in 24-hour form?</th>
+      <td>That is the ETS2 default, as the game shows them; ATS defaults to 12-hour. <b>Settings &rarr; Operational
+        assumptions &rarr; Times of day</b> changes it, and either form is understood when you type.</td></tr>
   </table>
 
   <div class="pfoot"><span>TruckSim Dispatcher &middot; FAQ</span><span class="pn"></span></div>

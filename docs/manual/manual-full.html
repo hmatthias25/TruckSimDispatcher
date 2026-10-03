@@ -1750,30 +1750,29 @@
   <p class="lede">ATS shows a delivery window as a range. A dock does not work that way &mdash; it books
     you a slot inside it, and that slot is what the plan aims for.</p>
 
-  <h3>Your slot, not the moment the doors unlock</h3>
-  <p>Where the window gives a range, the app books an appointment a couple of hours into it &mdash; on
-    the half hour, never more than four hours past the opening, and clear of the close so the unloading
-    still fits. Dispatch tells you the time when the load is authorised, and the Active tab keeps it in
-    front of you.</p>
-
-  <p><b>And never earlier than the plan can arrive.</b> If the run has you resting overnight at the
-    shipper and rolling in at 06:30, the slot is 06:30 &mdash; a dock does not book you in before you can
-    physically be there, and neither will the app. Where even that is past the deadline, no slot is quoted
-    at all and the window closing governs on its own.</p>
-
-  <p>Turning up before your slot is sitting on their gate, not slack. Aim for the slot.</p>
+  <h3>Your slot is where the truck can actually be</h3>
+  <p>Where a receiver books slots, dispatch plans the <b>earliest legal arrival at the gate</b> first,
+    with every break and rest in it, and books your slot where the truck can actually be &mdash; a couple of
+    hours into the window, or that arrival if it is later, rounded up to the half hour unless the rounding
+    would cost the load. If the run has you resting overnight and rolling in at 06:30, the slot is 06:30,
+    not the window opening. The briefing leads with it:</p>
+  <p style="margin-top:4pt"><i>"Booked in for Tue 06:30 &mdash; the plan has you at the gate Tue 06:30,
+    and late past Tue 08:30. The window closes Tue 14:00, &hellip;"</i></p>
+  <p>Where there is no slot, it says <b>deadline</b>, not appointment, and the window closing governs on
+    its own. The Active tab keeps the time in front of you. Aim for the slot.</p>
 
   <div class="rule">
     <h4>Grace, then it counts</h4>
-    <p>Missing the appointment is not instantly a service failure. You get <b>two hours</b> past it, and
-      inside that the close-out says so and the load still counts on time &mdash; traffic happens and a
-      receiver with the doors open is not writing you up over ninety minutes.</p>
+    <p>Missing the appointment is not instantly a service failure. You get <b>two hours</b> past it by
+      default (<b>Settings</b>, appointment grace), and inside that the close-out says so and the load
+      still counts on time &mdash; traffic happens and a receiver with the doors open is not writing you
+      up over ninety minutes.</p>
     <p style="margin-top:6pt">Past the grace it counts against you <em>even though the window is still
       open</em>, because the dock was expecting you and you were not there. The window closing is still a
       hard deadline on top of that. Both are editable in Settings.</p>
-    <p style="margin-top:6pt">It can only ever count against you for a slot the plan actually reached. If
-      dispatch's own projected arrival was later than the appointment, the appointment was never yours to
-      make and it is not held against you.</p>
+    <p style="margin-top:6pt">It is never graded against a slot the plan at dispatch could not reach.
+      If dispatch's own projected arrival was later than the slot, it was never yours to make and it is
+      not held against you; the window's close is what counts then.</p>
     <p style="margin-top:6pt"><b>Measured from when you arrive, not when you leave.</b> Dock time is the
       receiver's, so a two-hour unload is never two hours of lateness. Log <b>Begin unload</b> when you
       back in and the close-out takes its delivery time from that.</p>
@@ -1863,6 +1862,53 @@
       including loads already accepted or rolling. The log says which, and the Active tab carries the new
       time.</p>
   </div>
+
+  <div class="pfoot"><span>9 &middot; How a load is judged</span><span>24</span></div>
+</div>
+
+<!-- ============================================================ 9y2 - where the slot is booked -->
+<div class="page">
+  <div class="kicker">Section 9, continued</div>
+  <h2>Booking the slot where the truck can be</h2>
+
+  <p class="lede">A booked slot is a promise to the dock. It is only worth making for a time the truck can
+    actually be there.</p>
+
+  <h3>The plan first, then the slot</h3>
+  <p>The slot used to be chosen first and the plan made to wait for it. A slot at the window opening that
+    the driver's rest could not reach was booked anyway, and the plan came out the far side of the rest
+    hours after its own appointment. Reported from play: Mannheim to Innsbruck, booked for 02:07, the
+    opening, against a rest that had the driver ready at 04:20.</p>
+
+  <p>Now the order is the other way round. Dispatch plans the <b>earliest legal arrival at the gate</b>
+    first, with every break and rest in it and nothing to wait for but the doors. Where that is later than
+    the slot it would have booked, the slot moves to it, and the plan is redone against the slot booked, so
+    the plan aims at it. The slot is rounded up to the half hour, as docks book &mdash; <b>unless the
+    rounding would cost the load</b>, turning a plan that works at the exact minute into one that does not.
+    Then the minute the plan gets there is booked.</p>
+
+  <div class="rule">
+    <h4>What lateness is graded against</h4>
+    <p>The booked slot plus the appointment grace &mdash; two hours by default, in Settings. Never a slot
+      the plan at dispatch could not reach: that was dispatch's mistake, not the driver's. Where there is
+      no slot, the window's close governs, and it is called the <b>deadline</b>.</p>
+  </div>
+
+  <h3>Two times, two names</h3>
+  <p>The dispatch note used to print the window's close under the word "appointment". That is two
+    different times called by one name, and it read as the app booking a slot at the closing edge. The
+    note now leads with what the delivery is graded against:</p>
+  <p style="margin-top:4pt"><i>"Booked in for Tue 06:30 &mdash; the plan has you at the gate Tue 06:30, and
+    late past Tue 08:30. The window closes Tue 14:00, 6:10 after you are done and parked."</i></p>
+  <p>With no slot it says <i>"Projected delivery &hellip; against a &hellip; deadline"</i>, and the word
+    appointment does not appear.</p>
+
+  <h3>Refused for the parking allowance</h3>
+  <p>A load can be refused even though the unload finishes inside the window, because the window closes too
+    soon after it to find legal parking. Saying "done 03:50, window closes 04:07, not deliverable" without
+    the reason reads as the app unable to tell the time, so the refusal names it: <i>"Done at the dock
+    03:50, and the 04:07 window close leaves only 0:17 of that &mdash; under the 1:00 parking allowance
+    &hellip;"</i></p>
 
   <div class="pfoot"><span>9 &middot; How a load is judged</span><span>24</span></div>
 </div>
@@ -2505,8 +2551,10 @@
 
   <div class="rule">
     <h4>The clocks are carried across the unload for you</h4>
-    <p>It always comes off your <b>shift</b> and always leaves your <b>drive</b> clock alone. Sitting at a
-      dock is not a break either, so the thirty-minute counter does not move.</p>
+    <p>It always comes off your <b>shift</b> and always leaves your <b>drive</b> clock and break counter as
+      you reported them. When dispatch <em>plans</em> a run, though, half an hour or more at a dock counts
+      as your <b>30-minute break</b>, whatever the trailer: the federal rule counts any thirty consecutive
+      minutes not driving.</p>
     <p style="margin-top:6pt"><b>Whether it touches your cycle depends on the trailer.</b> Straps,
       tarps and hoses behind a flatbed, tanker, step deck or lowboy are on-duty time and the 70 pays for
       them. Behind a dry van, reefer or container the dock does the work and you are in the bunk &mdash;
@@ -6874,10 +6922,11 @@
     does not have never offers a job, so leaving it on costs nothing. Switch one off and dispatch refuses
     loads that start or end there. That is for the driver who does not want to go all the way to Iceland.</p>
 
-  <h3>What you type is the same</h3>
-  <p>The board, the trip log, the clocks and the close-out work exactly as in ATS. Type what the game shows:
-    kilometres in kilometre mode, the payout in euros, the delivery window in 24-hour time as printed —
-    <code>Mon 14:00 - Mon 22:30</code>. The screenshot reader is told it is reading ETS2 and converts for itself.</p>
+  <h3>What you type is mostly the same</h3>
+  <p>The board, the trip log and the close-out work as in ATS. Type what the game shows: kilometres in
+    kilometre mode, the payout in euros, the delivery window in 24-hour time as printed &mdash;
+    <code>Mon 14:00 - Mon 22:30</code>. The screenshot reader is told it is reading ETS2 and converts for
+    itself. The clocks are the exception: four figures off your HOS companion's status line, two pages on.</p>
 
   <p class="hint">Wherever the app says "ATS" in its own help, an ETS2 career reads "ETS2", "HazMat" reads
     "ADR" and a CDL reads a licence. That is wording only.</p>
@@ -6927,6 +6976,142 @@
 
 <div class="page">
   <div class="kicker">Section 22, continued</div>
+  <h2>Your clocks on ETS2: four figures, once a shift</h2>
+
+  <p class="lede">On an ETS2 career the clocks panel asks for four figures and nothing else: the ones on
+    your HOS companion's status line.</p>
+
+  <table>
+    <tr><th style="width:0.7in">Figure</th><th>What it is &mdash; all four are hours left</th></tr>
+    <tr><td class="mono">B</td><td>Driving before the 45-minute break is due.</td></tr>
+    <tr><td class="mono">D</td><td>Daily driving left.</td></tr>
+    <tr><td class="mono">W</td><td>Weekly driving left: 56 hours, Monday to Sunday.</td></tr>
+    <tr><td class="mono">2W</td><td>Driving left over two weeks: 90 hours.</td></tr>
+  </table>
+
+  <p>Type them as they read &mdash; <code>B 4:30 D 10:00 W 56:00 2W 90</code> is four boxes of
+    <code>4:30</code>, <code>10:00</code>, <code>56:00</code> and <code>90:00</code>. Everything else is worked
+    out from your reports and the trip log and shown read-only under <b>Worked out for you</b>: the 10-hour
+    days used, today's daily limit, the spread, the reduced daily rests used, when the weekly rest is due,
+    and anything owed from a reduced one.</p>
+
+  <p><b>Today's limit is 10 while one of the week's two 10-hour days is left, and 9 after.</b> Type a D
+    above 9 once both are used and it is taken as 9; the panel says so.</p>
+
+  <div class="rule">
+    <h4>The routine: at the end of the shift, then log the rest</h4>
+    <p>Type the status line <b>once per shift, at the end of it</b> &mdash; when you stop for the night,
+      before the daily rest. Then log the rest on the trip log with its start and end. That is enough.</p>
+    <p style="margin-top:6pt">A logged daily rest of 9 hours or more resets D to the day's limit (10 or 9),
+      B to 4:30 and the spread to 13, and the clocks panel notes that those came from the rest. Your next
+      status-line report replaces them. A report typed after the rest ended always takes precedence.</p>
+  </div>
+
+  <h3>A driving day is a shift, not a date</h3>
+  <p>The app works out each day's driving from how far W fell between your reports. A driving day runs
+    from the end of one daily rest to the start of the next, so a shift that crosses midnight is one day,
+    and two shifts on one calendar day are two. That is why one report per shift keeps the 10-hour-day
+    count right.</p>
+
+  <div class="warn">
+    <h4>A report that spans days</h4>
+    <p>If one report covers more driving than one shift can hold &mdash; over 10 hours &mdash; the clocks
+      panel warns that it spans driving days. Those hours are kept out of the 10-hour-day count rather than
+      guessed. Report once a shift and it never comes up.</p>
+  </div>
+
+  <p class="hint">Forgot to log a rest? A status line showing D back at a full day and B at 4:30 is read as
+    the start of a new shift, because only a daily rest does that. The spread starts again from it.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>99</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
+  <h2>Logging time off on ETS2, and what it counts as</h2>
+
+  <p>Rests and breaks go on the trip log as in ATS, with a start and an end. On an ETS2 career the end is
+    filled in for you at the European length. Change it to what you actually took.</p>
+
+  <table>
+    <tr><th style="width:1.2in">Event</th><th style="width:1.1in">Filled in at</th><th>Notes</th></tr>
+    <tr><td>Break</td><td class="mono">0:45</td><td>The 45-minute break after 4&frac12; hours' driving.</td></tr>
+    <tr><td>Rest</td><td class="mono">11:00</td><td>A regular daily rest. Make it 9 for a reduced one.</td></tr>
+    <tr><td>Restart</td><td class="mono">24:00</td><td>The weekly rest, at its reduced length. Make it 45 for a regular one, or what dispatch told you.</td></tr>
+  </table>
+
+  <h3>It counts by how long you stopped</h3>
+  <p>What a stop counts as goes by its <b>length</b>, not by which event you picked. A nine-hour Break is a
+    reduced daily rest; a 24-hour Rest is a weekly one.</p>
+
+  <table>
+    <tr><th style="width:1.6in">Time off</th><th>Counts as</th></tr>
+    <tr><td>45 minutes to 9 hours</td><td>A break.</td></tr>
+    <tr><td>9 to 11 hours</td><td>A <b>reduced daily rest</b> &mdash; one of the three you may take between weekly rests.</td></tr>
+    <tr><td>11 to 24 hours</td><td>A <b>regular daily rest</b>.</td></tr>
+    <tr><td>24 to 45 hours</td><td>A <b>reduced weekly rest</b>. The shortfall to 45 is owed back.</td></tr>
+    <tr><td>45 hours or more</td><td>A <b>regular weekly rest</b>.</td></tr>
+  </table>
+
+  <p>The trip log entry says what it counted as, so you can see it was taken the way you meant.</p>
+
+  <div class="rule">
+    <h4>Time at the dock, and the 45-minute break</h4>
+    <p>The EU counts a break only when you are doing no work at all. So dock time counts as your break
+      <b>only when the warehouse does the loading</b> &mdash; behind a dry van, a curtainsider or a reefer.
+      Take it free of the truck and 45 minutes or more of it is your break.</p>
+    <p style="margin-top:6pt">Behind a flatbed or a tanker you are on the straps or the hoses, which is
+      <b>other work</b>: record it as such on the tachograph (the hammer). It runs the spread down, moves
+      none of your driving limits, and is not a break. The plan says which, before you accept the load.</p>
+    <p style="margin-top:6pt">In ATS the rule is looser: any thirty minutes in a row not driving is the
+      break, whatever the trailer.</p>
+  </div>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>99</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
+  <h2>Where dispatch stops you, in Europe</h2>
+
+  <p>The plan tells you every stop the rules force, the same way it does in ATS. On an ETS2 career there
+    are three.</p>
+
+  <table>
+    <tr><th style="width:1.7in">When</th><th>What the plan does</th></tr>
+    <tr><td>The day is spent</td><td>Stops you for the <b>11-hour daily rest</b>.</td></tr>
+    <tr><td>The weekly rest is due</td><td>Stops you for it. It must start within six 24-hour periods &mdash; 144 hours &mdash; of the end of your last weekly rest. With none logged, the app counts from Monday 00:00.</td></tr>
+    <tr><td>Weekly driving is spent</td><td>Waits for Monday, when W comes back.</td></tr>
+  </table>
+
+  <h3>How long the weekly rest is</h3>
+  <p>Dispatch chooses the length, anywhere from 24 hours (reduced) to 45, and the plan says which:</p>
+  <ul>
+    <li><b>24 hours</b> by default &mdash; the shortest legal weekly rest, and you are rolling again soonest.</li>
+    <li><b>Until Monday</b> when weekly driving is nearly spent, since there is nothing to drive before then.</li>
+    <li><b>45 hours</b> at the home yard.</li>
+    <li><b>45 plus what is owed</b> after a reduced one.</li>
+  </ul>
+  <p>Time owed from a reduced weekly rest is kept on the clocks panel as <b>Owed back</b>, and paid back on a
+    later regular weekly rest.</p>
+
+  <div class="rule">
+    <h4>A full weekly rest away from home is a hotel</h4>
+    <p>Under the Mobility Package a regular weekly rest cannot be taken in the cab. Away from home it is
+      planned as a hotel, at the company's cost. A reduced 24-hour rest can still be taken in the truck.</p>
+  </div>
+
+  <h3>Early at the receiver, with the day nearly gone</h3>
+  <p>Where the truck would reach the receiver early, with too little of the day left to wait for them and
+    then unload, the plan takes the night's rest <b>on arrival</b> and unloads you in the morning. On ETS2
+    that is a <b>reduced 9-hour rest</b> where the full 11 would miss the window, and the full 11 otherwise
+    &mdash; a reduced rest is only spent when it is needed.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>99</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
   <h2>Ferries and the Channel Tunnel</h2>
 
   <p>Europe has water in the way. The app knows which land areas are joined by road and which crossings join
@@ -6937,9 +7122,10 @@
   <div class="rule">
     <h4>Real sailings</h4>
     <p>With <b>Settings &rarr; Real ferry sailings</b> on (the default), a crossing leaves on the operator's
-      timetable, and the wait is part of the plan. Reach Calais at 02:00 with no ferry until 06:00, and the
-      plan says so — and may send you to the tunnel instead, a little further, on a shuttle at 02:30.
-      Switch it off and a crossing leaves when you get there.</p>
+      timetable &mdash; typical real sailings &mdash; and the wait is part of the plan. Reach Calais at 02:00
+      with no ferry until 06:00, and the plan says so &mdash; and may send you to the tunnel instead, a
+      little further, on a shuttle at 02:30. Switch it off and the boat leaves when you arrive, as it does
+      in the game.</p>
   </div>
 
   <h3>At the port</h3>
@@ -6947,11 +7133,11 @@
     sailing you make, what to set the game clock to, and what the crossing counts as. Log the crossing as a
     <b>Ferry</b> event when you board, with the end time when you land. The fare goes on the load's tolls.</p>
 
-  <h3>What a crossing counts as</h3>
-  <p>The game counts any time on a ferry as rest. The law counts it only <b>with a cabin</b>, and only if it
-    is long enough. Eleven hours or more with a cabin is a daily rest, nine a reduced one, and 24 or more a
-    weekly rest. Without a cabin it is never a rest, only a break. The tunnel's 35 minutes can be half of a
-    split break.</p>
+  <h3>The briefing says it</h3>
+  <p>A load that needs a crossing says so when it is dispatched, not only in the plan's timeline:
+    <i>"This load crosses the water. &hellip;"</i>, then the crossing, the sailing and any wait at the port.
+    Where the plan holds a rest on after you land, that is shown as <b>rest ashore</b>, not as a longer
+    ferry. What the crossing counts as, and what to set the tachograph to, is on the next page.</p>
 
   <h3>Shortcuts</h3>
   <p>Some ferries are simply quicker than the road round. Aalborg to Oslo over the Skagerrak beats driving
@@ -6966,6 +7152,45 @@
     refused: there is no road across the sea.</p>
 
   <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>100</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
+  <h2>On the boat: the tachograph, and what a crossing counts as</h2>
+
+  <p class="lede">The game counts any time on a ferry as rest. The law counts it only <b>with a cabin</b>,
+    and only if it is long enough. The app plans on the law.</p>
+
+  <p>The app takes the cabin from the route: long and overnight crossings have one, short hops do not.
+    The plan, and <b>At a port?</b>, say which you have. Whichever it is, enter the <b>ferry/train symbol</b>
+    on the tachograph when you board.</p>
+
+  <table>
+    <tr><th style="width:1.25in"></th><th>With a cabin or bunk</th><th>Without one</th></tr>
+    <tr><td><b>Set the tachograph to</b></td><td>Rest, for the crossing.</td><td>Break.</td></tr>
+    <tr><td><b>It counts as</b></td><td>A daily rest &mdash; 11 hours or more, or 9 for a reduced one &mdash; or a weekly rest if it is long enough: 24 hours reduced, 45 regular.</td><td>A break: 45 minutes, or part of a 15 + 30 split. <b>Never</b> a daily or weekly rest, and the spread keeps running.</td></tr>
+    <tr><td><b>Driving on and off</b></td><td>May interrupt the rest at most <b>twice</b>, an hour in all. Record it as driving or other work.</td><td>Driving, as usual.</td></tr>
+    <tr><td><b>Work on board</b></td><td>&mdash;</td><td>Other work.</td></tr>
+  </table>
+
+  <p>The tunnel's 35 minutes is the same as a ferry without a cabin: it can be half of a split break, and
+    nothing more.</p>
+
+  <div class="rule">
+    <h4>Logging it</h4>
+    <p>Log the crossing as a <b>Ferry</b> event when you board, with the end time when you land. If the
+      plan holds you ashore after that &mdash; resting on until you can make the receiver &mdash; log that
+      as a <b>Rest</b> of its own. The ferry is what you sailed; the rest is what you took after.</p>
+  </div>
+
+  <div class="note">
+    <h4>A long wait for a boat is not dispatch ordering a rest</h4>
+    <p>Some crossings run three times a week. A load that waits a day at Marseille for the Corsica sailing
+      is waiting for the boat, and the briefing says so: the crossing, the sailing, and the wait at the
+      port. Switch <b>Real ferry sailings</b> off if you would rather the boat left when you arrived.</p>
+  </div>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>99</span></div>
 </div>
 
 <div class="page">
@@ -7007,6 +7232,42 @@
 
 <div class="page">
   <div class="kicker">Section 22, continued</div>
+  <h2>Places, screenshots and the time of day on ETS2</h2>
+
+  <h3>City names</h3>
+  <p>Cities are shown and matched by their <b>English names</b>, as on the game's cargo list. Every city in the game has coordinates, ProMods' included, so
+    every distance is a real one.</p>
+
+  <h3>Country codes</h3>
+  <p>The game prints a vehicle code after a city: <i>Parma, I</i> or <i>Porto-Vecchio, F</i>. The app keeps
+    countries by its own two-letter codes, and converts vehicle codes and country names wherever a place
+    comes in &mdash; a screenshot, the board, your status. Type either.</p>
+  <table>
+    <tr><th style="width:1.6in">The game shows</th><th>The app uses</th></tr>
+    <tr><td class="mono">I, F, D, A</td><td class="mono">IT, FR, DE, AT</td></tr>
+    <tr><td class="mono">E, P, S, N</td><td class="mono">ES, PT, SE, NO</td></tr>
+    <tr><td class="mono">GB, SLO</td><td class="mono">UK, SI</td></tr>
+    <tr><td class="mono">CH</td><td class="mono">CH, unchanged</td></tr>
+  </table>
+  <p>A career that already stored a vehicle code is corrected when it loads. Before this, an <i>F</i> made
+    Corsica read as mainland France, and a ferry run was planned by road.</p>
+
+  <h3>The weight is blank on screenshots</h3>
+  <p>ETS2's job list does not print the cargo mass; it shows only on the selected job's detail panel. So
+    loads read from a list screenshot come in with the weight blank. That does not stop a load being
+    staged or dispatched &mdash; give the real weight in <b>Report after loading</b>, as you would anyway.
+    If you want it read, screenshot the detail panel too.</p>
+
+  <h3>The time of day</h3>
+  <p>Times are typed and shown in <b>24-hour</b> form on an ETS2 career and 12-hour on ATS, to match each
+    game. <b>Settings &rarr; Operational assumptions &rarr; Times of day</b> changes it; either form is
+    understood when you type it.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>99</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
   <h2>ETS2 under the hood: the numbers</h2>
 
   <p>Everything the European rules turn on, in one place. All of it lives in the code named, and the plan
@@ -7024,7 +7285,10 @@
     <tr><td>Choosing the way across</td><td>Every crossing that joins the two areas, two in a row where none does alone; best verdict, then earliest arrival. A ferry is tried as a shortcut when the road either side is under 75% of the listing. <code>Crossings</code>.</td></tr>
     <tr><td>Salary</td><td>The loaded rate &times; 5,000 miles (about 8,000 km) a month, to the nearest ten; paid every fourth Friday; a part month pro-rated over 28 days. On-time bonus: the on-time rate &times; 5,000. Safety: four weekly bonuses. <code>PayEngine</code>.</td></tr>
     <tr><td>Allowance and tax</td><td>€30 a day on a load, €50 from a Central or Eastern European carrier; tax-free. One flat 20% deduction. No W-2. <code>PayrollTax</code>.</td></tr>
-    <tr><td>Defaults on a new ETS2 career</td><td>Diesel €2.20 a litre, a 56 mph (90 km/h) limiter, every country, no medical premium. <code>GameSetup</code>.</td></tr>
+    <tr><td>Trip log defaults</td><td>Break 45 min, Rest 11 h, Restart (weekly rest) 24 h; all editable. Time off counts by its length, not its event: 9 h+ reduced daily, 11 h+ daily, 24 h+ reduced weekly, 45 h+ weekly.</td></tr>
+    <tr><td>Weekly rest length</td><td>Chosen by dispatch, 24 to 45 h: 24 by default; to Monday 00:00 when W is nearly spent; 45 at the home yard; 45 plus owed after a reduced one. Due 144 h after the last one ended, or from Monday 00:00 with none logged.</td></tr>
+    <tr><td>Country codes</td><td>Vehicle codes and country names (I, F, D, A, E, P, GB, S, N, SLO&hellip;) put on the app's two-letter codes on every way in, and on load for a stored career. Cities by English name, as on the cargo list.</td></tr>
+    <tr><td>Defaults on a new ETS2 career</td><td>Diesel €2.20 a litre, a 56 mph (90 km/h) limiter, every country, no medical premium, 24-hour times. <code>GameSetup</code>.</td></tr>
   </table>
 
   <p class="hint">Hours rules are modelled for a game. Do not use this software to plan real driving.</p>
@@ -7032,6 +7296,104 @@
   <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>102</span></div>
 </div>
 
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
+  <h2>How the EU clocks are worked out</h2>
+
+  <p class="lede">The driver types four figures. The rest of the European picture &mdash; which days were
+    10-hour days, the spread, the rests &mdash; is reconstructed from those four and the trip log. This is how,
+    and why it is done that way.</p>
+
+  <h3>Four figures, because that is what the companion shows</h3>
+  <p>An HOS companion's status line gives B, D, W and 2W, all hours left. Anything the app asked for beyond
+    that would be a figure the driver had to work out by hand, and a figure worked out by hand disagrees with
+    the app's. So the rest is derived, shown read-only, and never typed.</p>
+
+  <h3>The driving day is the shift</h3>
+  <p>The regulation's daily driving time is the driving between two daily rests, not between two midnights.
+    Counted by date, one night shift from 20:00 to 06:00 became two driving days, and a heavy one could burn
+    both of the week's 10-hour days at once. So each day's driving is the fall in <b>W</b> across a shift
+    &mdash; from the end of one daily rest to the start of the next &mdash; and shifts are keyed by when they
+    began.</p>
+
+  <div class="rule">
+    <h4>Where the shift starts</h4>
+    <p><b>A logged daily rest</b> of 9 hours or more ends one shift and starts the next. It also resets D to
+      the day's limit, B to 4:30 and the spread to 13 &mdash; because a driver who reports at the end of
+      the shift would otherwise start the morning on last night's empty D. Those figures are arithmetic, so
+      the panel says where they came from, and any report typed after the rest ended replaces them.</p>
+    <p style="margin-top:6pt"><b>A status line with D back at a full day and B at 4:30</b> also starts a
+      shift, because only a daily rest produces it. Without that, a rest the driver never logged left the
+      spread running from the rest before it, and the panel showed a spread nearly spent at the start of
+      the day.</p>
+  </div>
+
+  <h3>When a rest falls between two reports</h3>
+  <p>The fall in W is split across it using D. What is gone from D since the rest is the current shift's
+    driving; the remainder of the fall in W was driven before the rest, in the shift before. Both are
+    measured from the last W reading, so nothing is counted twice.</p>
+
+  <h3>When it cannot tell</h3>
+  <p>A single report covering more than ten hours of driving cannot be one shift. Which of the days inside
+    it were 10-hour days is not recoverable from two W readings, and either guess is wrong in a way that
+    matters: one invents a 10-hour day the driver still has, the other spends one they did not use. So the
+    hours are kept out of the 10-hour-day count, and the panel says so and asks for a report per shift.</p>
+
+  <h3>Time off by its length</h3>
+  <p>Reported from play: a reduced nine logged as a <b>Break</b> was not counted as the reduced rest it
+    was. The regulation goes by how long the driver stopped, so the app does too &mdash; 9 to 11 hours is a
+    reduced daily rest, 11 a regular one, 24 a reduced weekly rest, 45 a regular one &mdash; and the log
+    entry says what it counted as. The Break event's default was 30 minutes, ATS's figure, and is 45 now.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>99</span></div>
+</div>
+
+<div class="page">
+  <div class="kicker">Section 22, continued</div>
+  <h2>Choosing the weekly rest, and the rest at the receiver</h2>
+
+  <h3>When dispatch stops a European driver</h3>
+  <p>Three things stop the plan. The day is spent, and an 11-hour daily rest follows. The weekly rest is
+    due: it must start within six 24-hour periods &mdash; 144 hours &mdash; of the end of the last one, and
+    with none logged the app counts from <b>Monday 00:00</b>, the start of the regulation's week, rather
+    than inventing a rest it has no record of. Or weekly driving is spent, and nothing short of Monday gives
+    W back, so the plan waits for it.</p>
+
+  <h3>How long the weekly rest is</h3>
+  <p>The law allows anything from 24 hours (reduced) to 45. Dispatch picks:</p>
+  <table>
+    <tr><th style="width:1.9in">Length</th><th>When, and why</th></tr>
+    <tr><td>24 hours</td><td>By default. It is the shortest legal rest, and a truck resting is a truck earning nothing.</td></tr>
+    <tr><td>Until Monday</td><td>When weekly driving is nearly spent. A 24-hour rest that wakes the driver with nothing to drive is a reduced rest spent for nothing &mdash; and owed back later.</td></tr>
+    <tr><td>45 hours</td><td>At the home yard, where the driver is home anyway and the rest costs nothing extra.</td></tr>
+    <tr><td>45 plus what is owed</td><td>After a reduced one. The shortfall is tracked as <b>Owed back</b> and paid on a later regular weekly rest.</td></tr>
+  </table>
+
+  <div class="rule">
+    <h4>Not in the cab</h4>
+    <p>The Mobility Package forbids taking a regular weekly rest in the vehicle. A reduced one may be. So a
+      45-hour rest away from home is planned as a hotel, booked to the company as Accommodation &mdash;
+      which is also why the 24-hour default is the cheaper answer away from home.</p>
+  </div>
+
+  <h3>Early at the receiver, late in the day</h3>
+  <p>A truck that reaches the receiver hours before they open, with too little of the day left to sit
+    the wait and then unload, cannot do both. The plan takes the night's rest <b>on arrival</b> instead and
+    unloads in the morning. On ETS2 that rest is a <b>reduced 9 hours</b> only where the full 11 would miss
+    the window. There are only three reduced rests between weekly rests, and spending one to gain hours the
+    window did not need takes it from a day that might.</p>
+
+  <h3>Dock time as a break</h3>
+  <p>The two rule books differ. Since 2020 the FMCSA counts any 30 consecutive minutes not driving as the
+    break, on duty at the dock included &mdash; so in ATS half an hour at a dock is the break, whatever the
+    trailer. The EU defines a break as time with <b>no driving and no other work</b>. Behind a van,
+    curtainsider or reefer the warehouse does the loading and the driver is free, so 45 minutes of it is
+    the break. On a flatbed or a tanker the driver is working, and it is other work. Reported from play: a
+    plan that sent the driver on a break minutes after an hour sat at the dock. The plan now says which.</p>
+
+  <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>99</span></div>
+</div>
 
 <!-- ============================================================ 23 -->
 <div class="page">
