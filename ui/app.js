@@ -503,8 +503,12 @@ const isSpanEvent = (kind) => SPAN_EVENTS.has(kind);
  * reads a figure in one place and assumes it in another is an app that disagrees with itself.
  */
 function defaultSpanEnd(kind, beganIso, hos) {
-  const hours = kind === 'Break' ? (hos?.breakLength || 0)
-    : (kind === 'Rest' || kind === 'Restart') ? (hos?.offDutyReset || 0)
+  // ETS2: the EU figures — a 45-minute break, an 11-hour daily rest, a 24-hour (reduced) weekly rest. These
+  // were the US thirty and ten, reported from play as a Break logged at thirty minutes on a Euro career.
+  const eu = S?.game?.id === 'ETS2' ? (S.settings.euHos || {}) : null;
+  const hours = kind === 'Break' ? (eu ? eu.breakLength || 0.75 : hos?.breakLength || 0)
+    : kind === 'Rest' ? (eu ? eu.regularDailyRest || 11 : hos?.offDutyReset || 0)
+    : kind === 'Restart' ? (eu ? eu.reducedWeeklyRest || 24 : hos?.offDutyReset || 0)
     : 0;
   const t = Date.parse(isoUtc(beganIso));
   if (!(hours > 0) || !Number.isFinite(t)) return beganIso;
@@ -529,9 +533,14 @@ function eventNote(kind) {
     case 'Fuel':
       return `The fill goes onto the close-out as you make it. ${VU() === 'L' ? 'Litres' : 'Gallons'} and price below.`;
     case 'Break':
-      return 'The required thirty. The end is filled in for you; change it if you sat longer.';
+      return S?.game?.id === 'ETS2'
+        ? 'The 45-minute break. The end is filled in for you; change it if you stopped longer — nine hours or more counts as a daily rest.'
+        : 'The required thirty. The end is filled in for you; change it if you sat longer.';
     case 'Rest': case 'Restart':
-      return 'A reset in the bunk. The end time is the one thing the app cannot work out for itself — '
+      return S?.game?.id === 'ETS2'
+        ? 'A daily rest (filled in at 11 hours — make it 9 for a reduced one) or a weekly rest. The end time is the one thing '
+          + 'the app cannot work out for itself, and it is what the spread and your counters run from.'
+        : 'A reset in the bunk. The end time is the one thing the app cannot work out for itself — '
            + 'a ten-hour reset and a night waiting for a shipper to open look identical from here.';
     case 'Delay':
       return 'Time the run lost that was not driving, a rest or a break, and NOT at a dock — traffic, a '
