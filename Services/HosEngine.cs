@@ -34,6 +34,15 @@ public class HosTask
     /// <summary>A Crossing task's route (Services.Ferries) and which way it is taken.</summary>
     public string CrossingRoute { get; set; } = "";
     public bool CrossingFromA { get; set; }
+
+    /// <summary>
+    /// EU, a drive: the country the truck is in, and — where the stretch it belongs to changes country — how
+    /// many miles into this task the border falls (half way along the stretch, as near as the app can tell).
+    /// Used for weekend truck bans. Empty where unknown.
+    /// </summary>
+    public string FromCc { get; set; } = "";
+    public string ToCc { get; set; } = "";
+    public double? BorderAtMiles { get; set; }
 }
 
 public class PlanRequest
@@ -412,6 +421,83 @@ public static class HosEngine
         }
     }
 
+    /// <summary>
+    /// Which country each drive is in, for weekend truck bans. A leg runs from one country to another; split by
+    /// a crossing, each side is its own stretch (to the port, from the port). Within a stretch the border is
+    /// taken to fall half way — the app has no route, so that is as near as it can say.
+    /// </summary>
+    private static void AssignCountries(List<HosTask> tasks, string? fromCc, string? originCc, string? destCc)
+    {
+        static string? LegOf(HosTask t) => t.Kind != "Drive" ? null
+            : t.Label.StartsWith("Deadhead", StringComparison.Ordinal) ? "dh"
+            : t.Label.StartsWith("Line haul", StringComparison.Ordinal) ? "ld" : null;
+        var runs = new List<(List<HosTask> Tasks, string From, string To)>();
+        List<HosTask>? run = null;
+        string? runLeg = null, runFrom = null;
+        void Close(string to)
+        {
+            if (run is { Count: > 0 }) runs.Add((run, runFrom ?? "", to));
+            run = null;
+        }
+        foreach (var t in tasks)
+        {
+            if (t.Kind == "Crossing" && run != null && Ferries.Find(t.CrossingRoute) is { } route)
+            {
+                Close(t.CrossingFromA ? route.ACc : route.BCc);
+                runFrom = t.CrossingFromA ? route.BCc : route.ACc;
+                run = new List<HosTask>();
+                continue;
+            }
+            var leg = LegOf(t);
+            if (leg == null) continue;
+            if (leg != runLeg)
+            {
+                Close(runLeg == "dh" ? originCc ?? "" : destCc ?? "");
+                runLeg = leg;
+                runFrom = leg == "dh" ? fromCc : originCc;
+            }
+            run ??= new List<HosTask>();
+            run.Add(t);
+        }
+        Close(runLeg == "dh" ? originCc ?? "" : destCc ?? "");
+
+        foreach (var (list, from, to) in runs)
+        {
+            var total = list.Sum(x => x.Miles);
+            var border = total / 2;
+            var before = 0.0;
+            foreach (var t in list)
+            {
+                t.FromCc = before + t.Miles <= border + 1e-6 ? from : before >= border - 1e-6 ? to : from;
+                t.ToCc = before >= border - 1e-6 ? to : before + t.Miles <= border + 1e-6 ? from : to;
+                t.BorderAtMiles = t.FromCc != t.ToCc ? border - before : null;
+                before += t.Miles;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The weekend truck ban in force in a country at a moment, if any — its end. And the start of the next one
+    /// after it. Off <see cref="Ets2Data.SundayBans"/>.
+    /// </summary>
+    internal static DateTime? BanLiftsAt(string? cc, DateTime at)
+    {
+        if (string.IsNullOrEmpty(cc) || !Ets2Data.SundayBans.TryGetValue(cc, out var ban)) return null;
+        var week = WeekStart(at);
+        foreach (var w in new[] { week, week.AddDays(-7) })
+            if (at >= w.AddHours(ban.Start) && at < w.AddHours(ban.End)) return w.AddHours(ban.End);
+        return null;
+    }
+
+    internal static DateTime? NextBanStarts(string? cc, DateTime at)
+    {
+        if (string.IsNullOrEmpty(cc) || !Ets2Data.SundayBans.TryGetValue(cc, out var ban)) return null;
+        var week = WeekStart(at);
+        foreach (var w in new[] { week, week.AddDays(7) })
+            if (w.AddHours(ban.Start) > at) return w.AddHours(ban.Start);
+        return null;
+    }
+
     public static int FuelStopsNeeded(AppSettings s, double totalMiles, double usableRange)
     {
         if (totalMiles <= usableRange) return 0;
@@ -456,6 +542,10 @@ public static class HosEngine
         }
 
         var tasks = BuildTasks(s, req, mph);
+        if (eu) AssignCountries(tasks,
+            string.IsNullOrWhiteSpace(req.FromState) ? state.Status.LocationState : req.FromState,
+            string.IsNullOrWhiteSpace(req.OriginState) ? (string.IsNullOrWhiteSpace(req.FromState) ? state.Status.LocationState : req.FromState) : req.OriginState,
+            req.DestState);
         result.TotalMiles = req.DeadheadMiles + req.LoadedMiles;
         result.FuelStopsRequired = tasks.Count(t => t.Label == "Fuel stop");
 
@@ -502,6 +592,7 @@ public static class HosEngine
                                          euR.FortnightDriving - lastWeekDriven - weekDriven));
 
         var clock = start.Value;
+        var bansSaid = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Each batch with the moment it actually lands, worked out once from the day the trip starts.
         //
         // This used to be a plain queue, popped whenever a reset crossed midnight — which credited a
@@ -688,6 +779,28 @@ public static class HosEngine
         /// The EU daily rest: eleven hours, or nine where the plan stretched today's spread to fifteen. And the
         /// weekly rest instead, where another day would carry the driver past six days without one.
         /// </summary>
+        // A weekend truck ban sat out where it catches the truck. Long enough to be a daily rest and it is one;
+        // shorter, it is a break off the truck with the spread still running.
+        void WaitOutBan(string cc, double hours)
+        {
+            var name = Ets2Data.Regions.FirstOrDefault(x => x.Code.Equals(cc, StringComparison.OrdinalIgnoreCase))?.Name ?? cc;
+            var text = Ets2Data.SundayBans.TryGetValue(cc, out var b) ? b.Text : "at the weekend";
+            if (!bansSaid.Contains(cc))
+            {
+                bansSaid.Add(cc);
+                result.Warnings.Add($"{name} bans heavy trucks {text}. The plan waits it out where it catches you " +
+                                    $"({Hhmm.Of(hours)}), and takes it as the daily rest where it is long enough to be one.");
+            }
+            if (hours >= euR.ReducedDailyRest - Eps)
+            {
+                TakeEuDailyRest(hours, 0, $"Waiting out {name}'s truck ban, taken as the rest");
+                return;
+            }
+            shift = Math.Max(0, shift - hours);
+            if (hours >= euR.BreakLength - Eps) brk = euR.DrivingBeforeBreak;
+            Step($"Waiting out {name}'s truck ban ({text}) — {Hhmm.Of(hours)}", "Break", hours, 0);
+        }
+
         void TakeEuDailyRest(double cover = 0, double dockAfter = 0, string what = null)
         {
             // A rest that covers a wait for the receiver's opening is as long as the wait — and when the wait is
@@ -1131,6 +1244,20 @@ public static class HosEngine
 
                 if (task.Kind == "Drive")
                 {
+                    // ---- a weekend truck ban where the truck is. Nothing heavy moves on the road during one,
+                    // so the plan waits it out — as the daily rest when the wait is long enough to be one.
+                    // Asked for from play, after the weekly rest learned the same bans.
+                    var banCc = "";
+                    if (eu)
+                    {
+                        var progressed = task.Miles - milesRemaining;
+                        banCc = task.BorderAtMiles is { } b && progressed >= b - 1e-6 ? task.ToCc : task.FromCc;
+                        if (BanLiftsAt(banCc, clock) is { } lifts)
+                        {
+                            WaitOutBan(banCc, (lifts - clock).TotalHours);
+                            continue;
+                        }
+                    }
                     if (eu)
                     {
                         // A 10-hour day, where the nine would end this leg early and the week has one left.
@@ -1152,6 +1279,32 @@ public static class HosEngine
                     var cap = requireBreak
                         ? Min(drive, shift, brk, cycle, remaining, weeklyDue)
                         : Min(drive, shift, cycle, remaining, weeklyDue);
+                    // Stop as a ban starts where the truck is, and at the border of a country with one, so its
+                    // ban is looked at on arrival rather than driven through.
+                    if (eu && cap > Eps)
+                    {
+                        if (NextBanStarts(banCc, clock) is { } banStarts && (banStarts - clock).TotalHours < cap)
+                        {
+                            if ((banStarts - clock).TotalHours <= 0.01 && BanLiftsAt(banCc, banStarts) is { } liftsSoon)
+                            {
+                                WaitOutBan(banCc, (liftsSoon - clock).TotalHours);
+                                continue;
+                            }
+                            cap = (banStarts - clock).TotalHours;
+                        }
+                        var progressed = task.Miles - milesRemaining;
+                        if (task.BorderAtMiles is { } border && progressed < border - 1e-6
+                            && Ets2Data.SundayBans.ContainsKey(task.ToCc ?? "") && task.Miles > 0)
+                        {
+                            var toBorder = (border - progressed) * (task.Hours / task.Miles);
+                            // Only where it matters: the ban is on as the truck gets there, or starts before
+                            // this stretch would end. Otherwise the border is just another mile.
+                            var atBorder = clock.AddHours(toBorder);
+                            var matters = BanLiftsAt(task.ToCc, atBorder) != null
+                                          || (NextBanStarts(task.ToCc, atBorder) is { } nextThere && nextThere < clock.AddHours(cap));
+                            if (matters && toBorder < cap - Eps) cap = Math.Max(Eps * 2, toBorder);
+                        }
+                    }
 
                     // ---- park before the clock runs out, not as it does
                     //
