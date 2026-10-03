@@ -30,12 +30,14 @@ public static class Restart
 
     /// <summary>
     /// EU: the weekly rest is due within a day — six 24-hour periods since the last one, less one more
-    /// working day and its rest. Unknown when the driver never reported when the last one ended.
+    /// working day and its rest. Where no weekly rest is logged the week counts from Monday 00:00, the same
+    /// reading the planner uses — it used to read "unknown" as "not due".
     /// </summary>
     public static bool EuWeeklyRestDueSoon(AppState s)
     {
         var r = s.Settings.EuHos ?? new EuHosRules();
-        return s.Hos.EuHoursSinceWeeklyRest is { } since && since >= r.WeeklyRestDueAfterHours - 24;
+        if (GameClock.TryParse(s.Status.GameTime) is not { } now) return false;
+        return EuCounters.HoursSinceWeeklyRest(s, now) >= r.WeeklyRestDueAfterHours - 24;
     }
 
     /// <summary>EU: how long the next weekly rest is — dispatch's call. See <see cref="EuWeeklyRestPlan"/>.</summary>

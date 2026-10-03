@@ -863,9 +863,13 @@ public static class DispatchEngine
             return $"You have {Hhmm.Of(shift)} of your {euR.Spread:0.#}-hour spread left. Loading " +
                    $"{(trailer?.Type ?? "a trailer").ToLowerInvariant()} freight takes about {Hhmm.Of(dock.Loading)} " +
                    "and you still have to get off their property afterwards, so there is nothing on any board you " +
-                   $"could legally start. Do not bother pulling the job list — find parking and take your " +
-                   $"{euR.RegularDailyRest:0.#}-hour daily rest, then report in with fresh clocks." +
-                   (Restart.EuWeeklyRestDueSoon(s) ? " Your weekly rest is due as well, so make it that instead — I will set how long." : "");
+                   "could legally start. Do not bother pulling the job list — find parking and take " +
+                   // The weekly rest when it is due, said first and plainly. "Take the 11 … make it the weekly
+                   // instead" read as an order for the 11 — reported from play at 133 hours into the week.
+                   (Restart.EuWeeklyRestDueSoon(s)
+                       ? $"your WEEKLY rest, not a daily one: {Hhmm.Of(Restart.EuWeeklyRestHours(s))}, set by dispatch. " +
+                         "An 11-hour rest now would run past the six days, so this one has to be the weekly. The order is on the Dispatch tab."
+                       : $"your {euR.RegularDailyRest:0.#}-hour daily rest, then report in with fresh clocks.");
         return $"You have {Hhmm.Of(shift)} of your {rules.ShiftLimit:0.#}-hour window left. Loading " +
                $"{(trailer?.Type ?? "a trailer").ToLowerInvariant()} freight takes about {Hhmm.Of(dock.Loading)} " +
                $"and you still have to get off their property afterwards, so there is nothing on any board " +

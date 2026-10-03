@@ -493,8 +493,8 @@ public static class HosEngine
             extLeft = Math.Max(0, extLeft - 1);
         var spreadExtended = eu && hos.ShiftRemaining > euR.Spread + Eps;
         var nextRestReduced = spreadExtended;
-        var sinceWeekly = Math.Max(0, hos.EuHoursSinceWeeklyRest
-                                      ?? (start.Value - WeekStart(start.Value)).TotalHours);
+        // As of the plan's start, not of the last report: the stored figure stops when the clocks were typed.
+        var sinceWeekly = EuCounters.HoursSinceWeeklyRest(state, start.Value);
         var lastWeeklyReduced = hos.EuLastWeeklyRestReduced;
         var owed = Math.Max(0, hos.EuCompensationOwed);
         if (eu)
@@ -1560,7 +1560,9 @@ public static class HosEngine
             FortnightRemaining = fortnight,
             ExtensionsLeft = Math.Max(0, r.ExtensionsPerWeek - h.EuExtensionsUsed),
             ReducedRestsLeft = Math.Max(0, r.ReducedRestsBetweenWeekly - h.EuReducedRestsUsed),
-            WeeklyRestDueInHours = h.EuHoursSinceWeeklyRest is { } since ? Math.Max(0, r.WeeklyRestDueAfterHours - since) : null,
+            WeeklyRestDueInHours = GameClock.TryParse(state.Status.GameTime) is { } dueFrom
+                ? Math.Max(0, r.WeeklyRestDueAfterHours - EuCounters.HoursSinceWeeklyRest(state, dueFrom))
+                : null,
             WeeklyRestHours = Restart.EuWeeklyRestHours(state),
             CompensationOwed = Math.Max(0, h.EuCompensationOwed),
             BreakEnforced = true,

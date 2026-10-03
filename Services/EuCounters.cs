@@ -66,6 +66,20 @@ public static class EuCounters
     /// <summary>Driving no single shift could hold, kept out of every shift's count. See <see cref="Derive"/>.</summary>
     public const int Unattributed = -1;
 
+    /// <summary>
+    /// Hours since the last weekly rest ended, as of <paramref name="at"/>. The stored figure is as of the last
+    /// report, and empty where no weekly rest has been logged — in which case the week is counted from its
+    /// Monday 00:00, as the planner always did. Reported from play: with none logged, dispatch read the empty
+    /// figure as "not due" and ordered an 11-hour daily rest at 133 hours, when the next rest had to be the weekly.
+    /// </summary>
+    public static double HoursSinceWeeklyRest(AppState s, DateTime at)
+    {
+        var asOf = GameClock.TryParse(s.Hos.AsOfGameTime) ?? at;
+        if (asOf > at) asOf = at;
+        var basis = s.Hos.EuHoursSinceWeeklyRest is { } h ? h : (asOf - HosEngine.WeekStart(asOf)).TotalHours;
+        return Math.Max(0, basis + (at - asOf).TotalHours);
+    }
+
     /// <summary>What a logged span of time off counts as under EU rules, for the trip log. Empty under a daily rest.</summary>
     public static string RestValue(AppState s, double hours)
     {
