@@ -86,6 +86,35 @@ public static class Migrations
         ReReadWindowsThatNamedTheirDay(s);
         LearnDockTimesWithTheWaitIn(s);
         KeyEuDrivingByTheShift(s);
+        KeyCountriesTheAppsWay(s);
+    }
+
+    /// <summary>
+    /// ETS2: places stored with the game's vehicle codes — "Parma, I", "Porto-Vecchio, F", "Innsbruck, A" off a
+    /// screenshot read — put on the app's own codes, which everything keyed by country reads. Reported from play:
+    /// Corsica stored as "F" was not an island, and a ferry run was planned by road. Each place is rewritten only
+    /// where its code maps; history otherwise untouched.
+    /// </summary>
+    private static void KeyCountriesTheAppsWay(AppState s)
+    {
+        if (s.SchemaVersion >= 34) return;
+        s.SchemaVersion = 34;
+        if (GameProfile.For(s).Id != GameProfile.Ets2.Id) return;
+        static string C(string? x) => Ets2Data.CountryCode(x);
+        foreach (var t in s.Trips) { t.OriginState = C(t.OriginState); t.DestState = C(t.DestState); }
+        foreach (var l in s.Board) { l.OriginState = C(l.OriginState); l.DestState = C(l.DestState); }
+        s.Status.LocationState = C(s.Status.LocationState);
+        s.Company.TerminalState = C(s.Company.TerminalState);
+        foreach (var y in s.Company.Terminals) y.State = C(y.State);
+        foreach (var d in s.Discovered) d.State = C(d.State);
+        foreach (var m in s.MarketExtras) m.State = C(m.State);
+        foreach (var tr in s.Trailers)
+        {
+            // "Parma, I" as one string: the code is what follows the last comma.
+            var at = tr.CurrentLocation ?? "";
+            var comma = at.LastIndexOf(',');
+            if (comma > 0) tr.CurrentLocation = $"{at[..comma]}, {C(at[(comma + 1)..])}";
+        }
     }
 
     /// <summary>

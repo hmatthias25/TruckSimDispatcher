@@ -91,7 +91,7 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     }
 
     if (u.LocationCity != null) s.Status.LocationCity = u.LocationCity.Trim();
-    if (u.LocationState != null) s.Status.LocationState = u.LocationState.Trim().ToUpperInvariant();
+    if (u.LocationState != null) s.Status.LocationState = Ets2Data.Region(s, u.LocationState);
     if (u.LocationKind != null) s.Status.LocationKind = u.LocationKind;
     if (u.LocationDetail != null) s.Status.LocationDetail = u.LocationDetail;
     if (u.GameTime != null) s.Status.GameTime = u.GameTime;
@@ -565,8 +565,8 @@ app.MapPost("/api/board", (List<BoardLoad> loads) => Results.Ok(store.Mutate(s =
     {
         if (string.IsNullOrWhiteSpace(l.Id)) l.Id = Guid.NewGuid().ToString("N")[..8];
         if (string.IsNullOrWhiteSpace(l.OriginCity)) { l.OriginCity = s.Status.LocationCity; l.OriginState = s.Status.LocationState; }
-        l.OriginState = (l.OriginState ?? "").Trim().ToUpperInvariant();
-        l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
+        l.OriginState = Ets2Data.Region(s, l.OriginState);
+        l.DestState = Ets2Data.Region(s, l.DestState);
     }
     return EvaluateBoard(s);
 })));
@@ -575,8 +575,8 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
 {
     if (string.IsNullOrWhiteSpace(l.Id)) l.Id = Guid.NewGuid().ToString("N")[..8];
     if (string.IsNullOrWhiteSpace(l.OriginCity)) { l.OriginCity = s.Status.LocationCity; l.OriginState = s.Status.LocationState; }
-    l.OriginState = (l.OriginState ?? "").Trim().ToUpperInvariant();
-    l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
+    l.OriginState = Ets2Data.Region(s, l.OriginState);
+    l.DestState = Ets2Data.Region(s, l.DestState);
     // Fill a blank trailer type from what is hooked — except the arrangement, which is not a trailer.
     //
     // Drop and hook is modelled as a trailer type, and this is where that leaks: a listing entered
@@ -1921,7 +1921,7 @@ app.MapPost("/api/fleetops/report", (FleetReport report) => Results.Ok(store.Mut
 app.MapPost("/api/terminals", (Terminal t, bool? book) => Results.Ok(store.Mutate<object>(s =>
 {
     var existing = s.Company.Terminals.FirstOrDefault(x => x.Id == t.Id);
-    t.State = (t.State ?? "").Trim().ToUpperInvariant();
+    t.State = Ets2Data.Region(s, t.State);
     string? warning = null;
 
     // A yard already standing that nobody ever priced — the ones the company used to help itself to
@@ -2692,7 +2692,7 @@ app.MapPost("/api/markets", (MarketCity c) => Results.Ok(store.Mutate(s =>
 {
     s.MarketExtras.RemoveAll(x => x.City.Equals(c.City, StringComparison.OrdinalIgnoreCase)
                                   && x.State.Equals(c.State, StringComparison.OrdinalIgnoreCase));
-    c.State = (c.State ?? "").Trim().ToUpperInvariant();
+    c.State = Ets2Data.Region(s, c.State);
     c.Source = "Custom";
     s.MarketExtras.Add(c);
     return c;

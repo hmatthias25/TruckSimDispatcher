@@ -293,7 +293,9 @@ public static class AiService
         """)
         .Swap("- originCity / originState: the pickup city and its two-letter US state code.",
                  "- originCity / originState: the pickup city, spelt as the game spells it, and its two-letter\n" +
-                 "  country code (DE, FR, PL, NL, UK for the United Kingdom, CH, NO and so on).")
+                 "  country code (DE, FR, PL, NL, UK for the United Kingdom, CH, NO and so on). Where the game prints\n" +
+                 "  a vehicle code after the city (\"Parma, I\", \"Lyon, F\", \"Graz, A\"), give the two-letter code\n" +
+                 "  instead: I is IT, F is FR, D is DE, A is AT, E is ES, P is PT, GB is UK, S is SE, N is NO.")
         .Swap("- destCity / destState: the delivery city and its two-letter US state code.",
                  "- destCity / destState: the delivery city, spelt as the game spells it, and its two-letter\n" +
                  "  country code.")
@@ -623,6 +625,10 @@ public static class AiService
     public static ExtractedLoad InterpretLoad(AppState state, ExtractedLoad l)
     {
         l.Unreadable ??= new List<string>();
+        // First, before anything reads them: the game prints vehicle codes ("Parma, I"), and a reader copies
+        // them. Everything below — the window's time zone, the distance — is keyed by the app's own codes.
+        l.OriginState = Ets2Data.Region(state, l.OriginState);
+        l.DestState = Ets2Data.Region(state, l.DestState);
 
         // ETS2: the reader copied kilometres and kilograms as printed. The app stores miles and pounds.
         // Once only — a row interpreted twice must not shrink twice.
@@ -682,8 +688,6 @@ public static class AiService
         if (DeliveryWindow.Implausible(state, l.DeadlineHours, l.LoadedMiles, l.TrailerType) is { } why)
             l.WindowWarning = why;
 
-        l.OriginState = (l.OriginState ?? "").Trim().ToUpperInvariant();
-        l.DestState = (l.DestState ?? "").Trim().ToUpperInvariant();
         return l;
     }
 

@@ -1,3 +1,5 @@
+using TruckSimDispatcher.Models;
+
 namespace TruckSimDispatcher.Services;
 
 /// <summary>
@@ -76,6 +78,48 @@ internal static partial class Ets2Data
         new("LB", "Lebanon", "ProMods Middle-East"), new("PS", "Palestine", "ProMods Middle-East"),
         new("SA", "Saudi Arabia", "ProMods Middle-East"), new("SY", "Syria", "ProMods Middle-East"),
     };
+
+    /// <summary>
+    /// The international vehicle codes — what the game prints after a city, and what a reader copies — mapped to
+    /// the two-letter codes the app keys every country by. Reported from play: a screenshot read stored "Parma, I"
+    /// and "Porto-Vecchio, F", and nothing keyed by country knew them — Corsica was not an island, so a ferry run
+    /// was planned by road; the time zones, cabotage and fuel prices missed them too.
+    /// </summary>
+    private static readonly Dictionary<string, string> VehicleCodes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["A"] = "AT", ["B"] = "BE", ["D"] = "DE", ["E"] = "ES", ["F"] = "FR", ["I"] = "IT", ["L"] = "LU", ["P"] = "PT",
+        ["S"] = "SE", ["N"] = "NO", ["H"] = "HU", ["M"] = "MT", ["GB"] = "UK", ["FIN"] = "FI", ["EST"] = "EE",
+        ["RUS"] = "RU", ["SLO"] = "SI", ["SRB"] = "RS", ["BIH"] = "BA", ["MNE"] = "ME", ["NMK"] = "MK", ["RKS"] = "XK",
+        ["KS"] = "XK", ["IRL"] = "IE", ["AND"] = "AD", ["FL"] = "LI", ["GBG"] = "GG", ["GBJ"] = "JE", ["GBM"] = "IM",
+        ["ALA"] = "AX", ["ET"] = "EG", ["IRQ"] = "IQ", ["HKJ"] = "JO", ["RL"] = "LB", ["KSA"] = "SA", ["SYR"] = "SY",
+        ["GBZ"] = "GI", ["CY"] = "CY",
+    };
+
+    /// <summary>
+    /// A country as the app keys it, from whatever was typed or read: the app's own code, a vehicle code ("I",
+    /// "F", "D", "CH", "SLO"), or the country's name. Anything not recognised is returned trimmed and upper-cased,
+    /// as before.
+    /// </summary>
+    /// <summary>A state or country as typed, made the app's key: <see cref="CountryCode"/> on ETS2, upper-cased on ATS.</summary>
+    public static string Region(AppState s, string? code) =>
+        GameProfile.For(s).Id == GameProfile.Ets2.Id ? CountryCode(code) : (code ?? "").Trim().ToUpperInvariant();
+
+    public static string CountryCode(string? code)
+    {
+        var c = (code ?? "").Trim().TrimEnd('.');
+        if (c.Length == 0) return "";
+        if (Regions.Any(r => r.Code.Equals(c, StringComparison.OrdinalIgnoreCase))) return c.ToUpperInvariant();
+        if (VehicleCodes.TryGetValue(c, out var mapped)) return mapped;
+        var byName = Regions.FirstOrDefault(r => r.Name.Equals(c, StringComparison.OrdinalIgnoreCase)
+                                                 || CityNames.Fold(r.Name).Equals(CityNames.Fold(c), StringComparison.OrdinalIgnoreCase));
+        if (byName != null) return byName.Code;
+        return c.ToUpperInvariant() switch
+        {
+            "GERMANY" or "DEUTSCHLAND" => "DE", "ITALIA" => "IT", "UNITED KINGDOM" or "GREAT BRITAIN" or "ENGLAND" or "SCOTLAND" or "WALES" => "UK",
+            "TURKEY" => "TR", "CZECH REPUBLIC" => "CZ", "MACEDONIA" => "MK", "HOLLAND" => "NL",
+            var u => u,
+        };
+    }
 
     /// <summary>The countries every copy of ETS2 has, before any map DLC.</summary>
     internal static readonly string[] BaseGame = { "AT", "BE", "CZ", "FR", "DE", "IT", "LU", "NL", "PL", "SK", "CH", "UK" };
