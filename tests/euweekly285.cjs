@@ -60,6 +60,21 @@ async function said() {
   s = await said();
   ok('Saturday afternoon off a Friday report: due', /weekly rest is due/i.test(s), s.slice(0, 200));
 
+  head('4. A Sunday truck ban where the weekly rest is taken: it runs to Monday');
+  // Milan, Saturday 13:37: a 24 would end at 13:37 on Sunday, inside Italy's 09:00-22:00 ban.
+  await at('2000-01-06T13:37');
+  await line('2000-01-06T13:37', 0, 0.5, 11.68, 45.68);
+  s = await said();
+  ok('Milan on a Saturday afternoon: until Monday 00:00 (34:23, to the quarter hour)', /weekly rest is due — 34:30/i.test(s), s.slice(0, 200));
+  ok('and the reason names Italy\'s ban', /Italy bans heavy trucks/.test(s) || /Italy bans heavy trucks/.test(JSON.stringify(await api('/bootstrap'))), s.slice(0, 400));
+  // Somewhere with no weekend ban the 24 stands.
+  await api('/status', 'POST', { locationCity: 'Rotterdam', locationState: 'NL', locationKind: 'TruckStop', gameTime: '2000-01-06T13:37',
+    fuelPct: 40, atsOdometer: 1500, truckDamagePct: 7, trailerDamagePct: 5, dutyStatus: 'OffDuty', atsBankBalance: 50000 });
+  await api('/board/clear', 'POST', {});
+  const nl = await api('/board/add', 'POST', { cargo: 'Paper', trailerType: 'Dry Van', originCity: 'Rotterdam', originState: 'NL', destCity: 'Utrecht',
+    destState: 'NL', loadedMiles: 40, gameRevenue: 600, weightLbs: 30000, atLocation: true, deadlineHours: 30 });
+  ok('Rotterdam, no ban: the reduced 24', /weekly rest is due — 24:00/i.test(nl.headline || ''), nl.headline);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

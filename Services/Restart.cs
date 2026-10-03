@@ -41,7 +41,7 @@ public static class Restart
     }
 
     /// <summary>EU: how long the next weekly rest is — dispatch's call. See <see cref="EuWeeklyRestPlan"/>.</summary>
-    public static double EuWeeklyRestHours(AppState s) => EuWeeklyRestPlan(s, false, null).Hours;
+    public static double EuWeeklyRestHours(AppState s) => EuWeeklyRestPlan(s, false, GameClock.TryParse(s.Status.GameTime)).Hours;
 
     /// <summary>
     /// How long the weekly rest is, decided by dispatch — the driver works for the company, and the company
@@ -67,6 +67,28 @@ public static class Restart
                 : $"your last weekly rest was reduced, so this one is a full {r.RegularWeeklyRest:0} hours");
         if (atHome)
             return (r.RegularWeeklyRest, $"you are at the yard, so it is a full {r.RegularWeeklyRest:0} hours at home — no hotel, nothing owed");
+        // A weekend driving ban where the rest is taken: a 24 that ends inside it leaves the truck parked by the
+        // ban anyway, so the rest runs on until Monday 00:00 (or the ban's end, where that is later) — more rest,
+        // less owed, and weekly driving back at the same moment. Asked for from play: a weekly rest ordered in
+        // Milan on a Saturday afternoon that would have ended at midday on Sunday, inside Italy's ban.
+        if (from is { } banFrom && IsEu(s) && Ets2Data.SundayBans.TryGetValue(s.Status.LocationState ?? "", out var ban))
+        {
+            var week = HosEngine.WeekStart(banFrom);
+            var bans = new[] { (week.AddHours(ban.Start), week.AddHours(ban.End)), (week.AddHours(ban.Start - 168), week.AddHours(ban.End - 168)) };
+            var end24 = banFrom.AddHours(r.ReducedWeeklyRest);
+            foreach (var (bs, be) in bans)
+            {
+                if (end24 <= bs || end24 >= be) continue;
+                var monday = HosEngine.WeekStart(bs).AddDays(7);
+                var until = be > monday ? be : monday;
+                var toUntil = (until - banFrom).TotalHours;
+                var len = Math.Clamp(Math.Ceiling(toUntil * 4) / 4, r.ReducedWeeklyRest, r.RegularWeeklyRest);
+                var country = Ets2Data.Regions.FirstOrDefault(x => x.Code.Equals(s.Status.LocationState, StringComparison.OrdinalIgnoreCase))?.Name ?? s.Status.LocationState;
+                return (len, $"{country} bans heavy trucks {ban.Text}, so a 24 would end with you parked by the ban anyway — " +
+                             $"it runs until {(be > monday ? "the ban lifts" : "Monday 00:00, when weekly driving comes back too")}: {Hhmm.Of(len)}" +
+                             (len < r.RegularWeeklyRest - 0.01 ? $", with {Hhmm.Of(r.RegularWeeklyRest - len)} owed rather than {Hhmm.Of(r.RegularWeeklyRest - r.ReducedWeeklyRest)}" : ""));
+            }
+        }
         if (from is { } at && s.Hos.CycleRemaining < r.DailyDriving - 0.01)
         {
             var toMonday = (HosEngine.WeekStart(at).AddDays(7) - at).TotalHours;

@@ -121,6 +121,25 @@ internal static partial class Ets2Data
         };
     }
 
+    /// <summary>
+    /// Weekend driving bans for heavy goods vehicles, as hours from Monday 00:00 (Saturday is 120, Sunday 144),
+    /// with how the ban reads. Typical all-year rules; several countries add summer Saturdays and holidays,
+    /// which are not modelled. The game has no bans; the app uses them only to choose a weekly rest that does
+    /// not end with the truck parked by one.
+    /// </summary>
+    internal static readonly Dictionary<string, (double Start, double End, string Text)> SundayBans = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["DE"] = (144, 144 + 22, "Sunday 00:00–22:00"),
+        ["AT"] = (120 + 15, 144 + 22, "Saturday 15:00 to Sunday 22:00"),
+        ["FR"] = (120 + 22, 144 + 22, "Saturday 22:00 to Sunday 22:00"),
+        ["IT"] = (144 + 9, 144 + 22, "Sunday 09:00–22:00"),
+        ["CH"] = (120 + 22, 168 + 5, "all Sunday and the nights either side, Saturday 22:00 to Monday 05:00"),
+        ["HU"] = (120 + 22, 144 + 22, "Saturday 22:00 to Sunday 22:00"),
+        ["SK"] = (144, 144 + 22, "Sunday 00:00–22:00"),
+        ["CZ"] = (144 + 13, 144 + 22, "Sunday 13:00–22:00"),
+        ["SI"] = (144 + 8, 144 + 22, "Sunday 08:00–22:00"),
+    };
+
     /// <summary>The countries every copy of ETS2 has, before any map DLC.</summary>
     internal static readonly string[] BaseGame = { "AT", "BE", "CZ", "FR", "DE", "IT", "LU", "NL", "PL", "SK", "CH", "UK" };
 
