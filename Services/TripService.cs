@@ -433,6 +433,7 @@ public static class TripService
         if (odometer is > 0)
         {
             trip.StartOdometer = odometer.Value;
+            trip.StartOdometerAtShipper = true;
             s.Status.AtsOdometer = odometer.Value;
             var truck = s.Trucks.FirstOrDefault(x => x.Unit == s.Driver.AssignedTruckUnit);
             if (truck != null) truck.AtsOdometer = odometer.Value;
@@ -1687,11 +1688,35 @@ public static class TripService
     /// before the trip posts. It is a warning and not a block: this app reconciles what the driver saw,
     /// it does not overrule it.
     /// </summary>
+    /// <summary>
+    /// The loaded road miles the odometer is measured against: the dispatched routing, or, where the log has a
+    /// crossing on it, the road either side of the crossing. The odometer counts none of the ship. Reported from
+    /// play: a ferry taken where the routing was by land, and the reading called "well short of the run", the
+    /// land route's miles posted in its place, and the planning speed taught 85 km/h off them.
+    /// </summary>
+    public static double RoadMilesToMeasure(Trip trip, out string? via)
+    {
+        via = null;
+        var crossed = trip.Events.Where(e => e.Kind == "Ferry" && !string.IsNullOrWhiteSpace(e.FerryRoute))
+            .OrderBy(e => GameClock.TryParse(e.GameTime) ?? DateTime.MinValue).Select(e => e.FerryRoute).ToList();
+        if (crossed.Count == 0 || trip.DispatchedMiles <= 0) return Math.Max(0, trip.DispatchedMiles);
+        if (Crossings.RoadMilesVia(crossed, trip.OriginCity, trip.OriginState, trip.DestCity, trip.DestState) is not { } road
+            || road >= trip.DispatchedMiles)
+            return trip.DispatchedMiles;
+        via = string.Join(" and ", crossed.Select(id => Ferries.Find(id)!.Label));
+        return Math.Round(road, 0);
+    }
+
     public static MileageReading DeriveMiles(AppState s, Trip trip, double typedMiles, double endOdometer)
     {
         var m = new MileageReading();
-        var deadhead = Math.Max(0, trip.DeadheadMiles);
-        var planned = Math.Max(0, trip.DispatchedMiles) + deadhead;
+        // Read at the shipper, the start is past the empty run: none of the deadhead is in what the odometer ran.
+        // Reported from play: every load's loaded miles came out short by its own deadhead.
+        var deadhead = trip.StartOdometerAtShipper ? 0 : Math.Max(0, trip.DeadheadMiles);
+        var planned = RoadMilesToMeasure(trip, out var via) + deadhead;
+        if (via != null)
+            m.Explain.Add($"You crossed by {via}: the odometer is measured against the road either side of it, about " +
+                          $"{Units.Distance(planned - deadhead)} loaded, not the {Units.Distance(trip.DispatchedMiles)} routing.");
 
         var start = trip.StartOdometer > 0 ? trip.StartOdometer : LastReportedOdometer(s, trip);
         m.StartOdometer = start;

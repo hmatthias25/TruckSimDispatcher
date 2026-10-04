@@ -95,7 +95,7 @@ public static class SpeedLearning
             return r;
         }
 
-        var miles = trip.ActualMiles > 0 ? trip.ActualMiles : trip.DispatchedMiles;
+        var miles = trip.ActualMiles > 0 ? trip.ActualMiles : TripService.RoadMilesToMeasure(trip, out _);
         r.Miles = miles;
         if (miles < MinMilesToLearn)
         {
@@ -203,7 +203,7 @@ public static class SpeedLearning
     {
         if (s.Settings.SpeedFactorManual) return null;
 
-        var miles = trip.ActualMiles > 0 ? trip.ActualMiles : trip.DispatchedMiles;
+        var miles = trip.ActualMiles > 0 ? trip.ActualMiles : TripService.RoadMilesToMeasure(trip, out _);
         if (miles < MinMilesToLearn) return null;          // too short to be worth a word either way
 
         var r = Measure(s, trip, truck);
@@ -297,6 +297,9 @@ public static class SpeedLearning
                 // A crossing is not driving. The truck is on a ship or a train, and counting the hours as
                 // road time would teach the planner that the map is slower than it is.
                 case "Ferry":
+                    // With no end on it, the crossing's own time: counted as nothing, the whole voyage was driving.
+                    total += measured ?? Ferries.Find(e.FerryRoute)?.Hours ?? 0;
+                    break;
                 case "Delay":
                 case "Breakdown":
                     // Costed at nothing unless the driver said how long, because there is no minimum for

@@ -87,6 +87,69 @@ public static class Migrations
         LearnDockTimesWithTheWaitIn(s);
         KeyEuDrivingByTheShift(s);
         KeyCountriesTheAppsWay(s);
+        MeasureRunsOffTheOdometer(s);
+    }
+
+    /// <summary>
+    /// Loaded miles off the odometer, put right on two counts, reported from play:
+    /// <list type="bullet">
+    /// <item>Where the start was read at the shipper, after loading, the empty run was already behind it, and the
+    /// close-out took the deadhead off a second time: every such load's loaded miles came out short by its deadhead.
+    /// Marked by the deadhead having been measured, which only that reading does.</item>
+    /// <item>ETS2: a ferry taken where the routing was by land had its odometer called "well short of the run" and
+    /// the land route's miles posted in its place.</item>
+    /// </list>
+    /// Pay already posted stands. Where any trip changed, the planning speed is learned again from every delivered
+    /// run in order — it was taught 85 km/h on a 90 km/h governor off the ferry case. A hand-set speed is left alone.
+    /// </summary>
+    private static void MeasureRunsOffTheOdometer(AppState s)
+    {
+        if (s.SchemaVersion >= 35) return;
+        s.SchemaVersion = 35;
+
+        foreach (var t in s.Trips.Where(t => t.DeadheadMeasured && t.StartOdometer > 0))
+            t.StartOdometerAtShipper = true;
+
+        var fixedTrips = new List<string>();
+        var anyTwice = false;
+        var anyFerry = false;
+        foreach (var t in s.Trips.Where(t => t.Status == "Delivered" && t.EndOdometer > 0 && t.StartOdometer > 0))
+        {
+            var ran = t.EndOdometer - t.StartOdometer;
+            if (ran < 0.5) continue;
+            var road = TripService.RoadMilesToMeasure(t, out var via);
+            var twice = t.StartOdometerAtShipper && t.DeadheadMiles >= 1
+                        && Math.Abs(t.ActualMiles - Math.Round(Math.Max(0, ran - t.DeadheadMiles), 0)) < 0.5;
+            var landInstead = via != null && Math.Abs(t.ActualMiles - t.DispatchedMiles) < 0.5;
+            if (!twice && !landInstead) continue;
+            // The same tests the close-out runs, against the road the odometer saw.
+            if (ran < road * 0.5 && road - ran > 50 || ran > Math.Max(road * 2.5, road + 250)) continue;
+            t.ActualMiles = Math.Round(ran, 0);
+            anyTwice |= twice;
+            anyFerry |= landInstead;
+            fixedTrips.Add($"{t.Number} {Units.Distance(t.ActualMiles)}" + (via != null ? $" (by {via})" : ""));
+        }
+        if (fixedTrips.Count == 0) return;
+
+        var why = new List<string>();
+        if (anyTwice) why.Add("the empty run had been taken off twice where you reported the odometer after loading");
+        if (anyFerry) why.Add("a ferry run had the land route posted in its place");
+        var said = string.Join(", and ", why);
+        var note = $"Loaded miles put back on the odometer's reading: {string.Join(", ", fixedTrips)}. " +
+                   $"{char.ToUpper(said[0])}{said[1..]}. Pay already posted stands.";
+        if (!s.Settings.SpeedFactorManual)
+        {
+            var was = s.Settings.SpeedFactor;
+            s.Settings.SpeedFactor = new AppSettings().SpeedFactor;
+            s.Settings.SpeedFactorSamples = 0;
+            foreach (var t in s.Trips.Where(t => t.Status == "Delivered")
+                         .OrderBy(t => GameClock.TryParse(t.DeliveredGameTime) ?? DateTime.MinValue))
+                SpeedLearning.Record(s, t, s.Trucks.FirstOrDefault(u => u.Unit == t.TruckUnit));
+            var governed = s.Settings.GovernedMph > 0 ? s.Settings.GovernedMph : 65;
+            note += $" Planning speed learned again from every delivered run: {Units.Spd(governed * s.Settings.SpeedFactor):0.#} " +
+                    $"{Units.SpeedUnit} over {s.Settings.SpeedFactorSamples} run(s), from {Units.Spd(governed * was):0.#}.";
+        }
+        s.Events.Insert(0, new LogEvent { Channel = "system", GameTime = s.Status.GameTime, Message = note });
     }
 
     /// <summary>

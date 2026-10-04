@@ -140,6 +140,27 @@ public static class Crossings
         return list;
     }
 
+    /// <summary>
+    /// The road a run took either side of the crossings it logged, in order, origin to destination: each crossing
+    /// taken from whichever port is nearer. Null where a crossing or a place is not known. Reported from play: a
+    /// ferry taken where the routing was by land, and the close-out measured the odometer against the land route.
+    /// </summary>
+    public static double? RoadMilesVia(IEnumerable<string> routeIds, string? fromCity, string? fromCc, string? toCity, string? toCc)
+    {
+        var routes = routeIds.Select(Ferries.Find).ToList();
+        if (routes.Count == 0 || routes.Any(r => r == null)) return null;
+        var total = 0.0;
+        var (c, cc) = (fromCity, fromCc);
+        foreach (var r in routes)
+        {
+            if (Geo.MilesBetween(c, cc, r!.ACity, r.ACc) is not { } a || Geo.MilesBetween(c, cc, r.BCity, r.BCc) is not { } b)
+                return null;
+            total += Math.Min(a, b);
+            (c, cc) = a <= b ? (r.BCity, r.BCc) : (r.ACity, r.ACc);
+        }
+        return Geo.MilesBetween(c, cc, toCity, toCc) is { } last ? total + last : null;
+    }
+
     private static IEnumerable<(Ferries.Route Route, bool FromA)> Joining(IEnumerable<Ferries.Route> routes, string a, string b)
     {
         foreach (var r in routes)

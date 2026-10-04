@@ -3159,6 +3159,8 @@ object Snapshot(AppState? given = null)
             startOdometer = TripService.Active(s) is { StartOdometer: > 0 } at
                 ? at.StartOdometer
                 : TripService.LastReportedOdometer(s, TripService.Active(s)),
+            // And the loaded miles it is measured against: the road either side of a crossing on the log.
+            roadMiles = TripService.Active(s) is { } rt ? TripService.RoadMilesToMeasure(rt, out _) : 0,
             nextNumbers = new
             {
                 freight = DispatchEngine.PeekNumber(s, "Freight"),

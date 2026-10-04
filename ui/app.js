@@ -1857,8 +1857,10 @@ function paintOdometerHint() {
 
   const start = +S.views.startOdometer || 0;
   const end = fv('c-odo');
-  const dh = +t.deadheadMiles || 0;
-  const planned = (+t.dispatchedMiles || 0) + dh;
+  // Read at the shipper, the start is already past the empty run.
+  const dh = t.startOdometerAtShipper ? 0 : +t.deadheadMiles || 0;
+  // The road the odometer saw: with a crossing on the log, the road either side of it, not the routing.
+  const planned = (+S.views.roadMiles || +t.dispatchedMiles || 0) + dh;
   const typed = fv('c-miles');
 
   if (typed > 0) {
@@ -2611,7 +2613,8 @@ function ferriesPanel() {
   const f = S.views.ferries;
   if (!f) return '';
   const group = (g) => {
-    const rows = f.routes.filter((r) => r.group === g.key);
+    // By name, so a crossing can be found by its port: "Messina – Villa San Giovanni" under M.
+    const rows = f.routes.filter((r) => r.group === g.key).sort((a, b) => a.label.localeCompare(b.label));
     if (!rows.length) return '';
     const on = rows.filter((r) => r.on).length;
     return `

@@ -61,7 +61,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 34;
+    public const int Current = 35;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
 
@@ -1527,6 +1527,12 @@ public class Trip
 
     /// <summary>True when the deadhead came off the driver's readings rather than the job listing.</summary>
     public bool DeadheadMeasured { get; set; }
+
+    /// <summary>
+    /// True when <see cref="StartOdometer"/> was read at the shipper, after loading: the empty run is already
+    /// behind it, and the close-out does not take the deadhead off the run a second time.
+    /// </summary>
+    public bool StartOdometerAtShipper { get; set; }
 
     public double StartOdometer { get; set; }
     public double EndOdometer { get; set; }
