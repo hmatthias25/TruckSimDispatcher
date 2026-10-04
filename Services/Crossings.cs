@@ -112,7 +112,7 @@ public static class Crossings
                 var (n2, n2cc) = Near(r2, fromA2);
                 var (f2, f2cc) = Far(r2, fromA2);
                 var first = Leg(r1, fromA1, fromCity, fromCc, n2, n2cc);
-                var after = Geo.MilesBetween(f2, f2cc, toCity, toCc) ?? 0;
+                var after = Road(f2, f2cc, toCity, toCc);
                 list.Add(new Option(r1, fromA1, first.MilesBefore, after, r2, fromA2, first.MilesAfter));
             }
         }
@@ -153,12 +153,12 @@ public static class Crossings
         var (c, cc) = (fromCity, fromCc);
         foreach (var r in routes)
         {
-            if (Geo.MilesBetween(c, cc, r!.ACity, r.ACc) is not { } a || Geo.MilesBetween(c, cc, r.BCity, r.BCc) is not { } b)
+            if (RoadOrNull(c, cc, r!.ACity, r.ACc) is not { } a || RoadOrNull(c, cc, r.BCity, r.BCc) is not { } b)
                 return null;
             total += Math.Min(a, b);
             (c, cc) = a <= b ? (r.BCity, r.BCc) : (r.ACity, r.ACc);
         }
-        return Geo.MilesBetween(c, cc, toCity, toCc) is { } last ? total + last : null;
+        return RoadOrNull(c, cc, toCity, toCc) is { } last ? total + last : null;
     }
 
     private static IEnumerable<(Ferries.Route Route, bool FromA)> Joining(IEnumerable<Ferries.Route> routes, string a, string b)
@@ -179,10 +179,18 @@ public static class Crossings
     {
         var (pc, pcc) = Near(r, fromA);
         var (qc, qcc) = Far(r, fromA);
-        var before = Geo.MilesBetween(fromCity, fromCc, pc, pcc) ?? 0;
-        var after = Geo.MilesBetween(qc, qcc, toCity, toCc) ?? 0;
-        return new Option(r, fromA, before, after);
+        return new Option(r, fromA, Road(fromCity, fromCc, pc, pcc), Road(qc, qcc, toCity, toCc));
     }
+
+    /// <summary>
+    /// The road between two places, round a sea where there is one between them. Reported from play: Mostar to Bari
+    /// measured straight across the Adriatic, and a ferry out of Bari planned for a truck in Bosnia.
+    /// </summary>
+    private static double Road(string? fromCity, string? fromCc, string? toCity, string? toCc) =>
+        RoadOrNull(fromCity, fromCc, toCity, toCc) ?? 0;
+
+    private static double? RoadOrNull(string? fromCity, string? fromCc, string? toCity, string? toCc) =>
+        Geo.RoadDetour(fromCity, fromCc, toCity, toCc)?.Miles ?? Geo.MilesBetween(fromCity, fromCc, toCity, toCc);
 
     /// <summary>
     /// The ways to run one leg, the plain one first: every way across when there is water in the way (the
@@ -207,7 +215,26 @@ public static class Crossings
     {
         var have = Ferries.Available(s).ToList();
         var across = Scale(Options(have, fromCity, fromCc, toCity, toCc), listedMiles);
-        if (across.Count > 0) return across.OrderBy(o => o.RoadMiles).Select(o => (Option?)o).ToList();
+        if (across.Count > 0)
+        {
+            // The road to the port can itself go round a sea, and a ferry can cut that short. Reported from play:
+            // Mostar to Messina planned as the Strait of Messina crossing at the end of one long drive, the
+            // Adriatic driven round and never crossed. The road to the port is at least the road round, and each
+            // ferry that cuts it is tried in front of the crossing.
+            var chained = new List<Option>();
+            across = across.Select(o =>
+            {
+                if (o.Route2 != null) return o;
+                var (pc, pcc) = Near(o.Route, o.FromA);
+                if (Geo.RoadDetour(fromCity, fromCc, pc, pcc) is not { } round) return o;
+                var toPort = Math.Max(o.MilesBefore, round.Miles);
+                foreach (var sc in Shortcuts(have, fromCity, fromCc, pc, pcc, toPort))
+                    chained.Add(new Option(sc.Route, sc.FromA, sc.MilesBefore, o.MilesAfter, o.Route, o.FromA, sc.MilesAfter, Shortcut: true));
+                return o with { MilesBefore = toPort };
+            }).ToList();
+            // The plain ways first, the shortest in front: the comparison is made against it.
+            return across.OrderBy(o => o.RoadMiles).Concat(chained).Select(o => (Option?)o).ToList();
+        }
         var a = Area(fromCity, fromCc);
         var b = Area(toCity, toCc);
         if (a != b)
@@ -326,7 +353,10 @@ public static class Crossings
                 // The listing was the ferry's route all along: say that, not "less road" than a distance that
                 // was never the road's.
                 if (ReferenceEquals(now, best.Ld) && RoundNote(now) is { } over) { best.Plan.Warnings.Insert(0, over); continue; }
-                best.Plan.Warnings.Insert(0, now.Shortcut
+                best.Plan.Warnings.Insert(0, now.Shortcut && now.Route2 != null
+                    ? $"Take the {now.Label} ferries rather than driving round to the second: " +
+                      $"{Units.Distance(Math.Max(0, (was?.RoadMiles ?? listed) - now.RoadMiles))} less road, and {sooner}."
+                    : now.Shortcut
                     ? $"Take the {now.Label} ferry rather than driving round: {Units.Distance(Math.Max(0, listed - now.RoadMiles))} " +
                       $"less road, and {sooner}."
                     : $"Cross {now.Label} rather than {was?.Label ?? "the shortest way"}: it is further to drive, but {sooner} — " +

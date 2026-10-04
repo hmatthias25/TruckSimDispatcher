@@ -69,6 +69,22 @@ async function plan(gameTime, miles, deadline) {
   ok('the Bari – Dubrovnik crossing, Friday 11:00', (f.crossingRoutes || []).includes('bari-dubrovnik') && (f.crossings || []).some((c) => /11:00 sailing/.test(c)), steps(f));
   ok('no Trieste – Ancona or Trieste – Bari', !(f.crossingRoutes || []).some((r) => /^trieste-(ancona|bari)$/.test(r)), (f.crossingRoutes || []).join(','));
 
+  head('5. Mostar to Messina (reported from play): across the Adriatic, then onto Sicily');
+  await api('/status', 'POST', { locationCity: 'Mostar', locationState: 'BA', locationKind: 'Shipper', gameTime: '2000-01-05T10:00',
+    fuelPct: 100, atsOdometer: 1000, truckDamagePct: 1, trailerDamagePct: 1, dutyStatus: 'OffDuty', atsBankBalance: 50000 });
+  await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 13, breakRemaining: 4.5, cycleRemaining: 50, asOfGameTime: '2000-01-05T10:00',
+    euWeekDriven: 6, euLastWeekDriven: 20, euHoursSinceWeeklyRest: 20, spreadEstimated: false });
+  await api('/board/clear', 'POST', {});
+  const ms = await api('/board/add', 'POST', { cargo: 'Paper', trailerType: 'Dry Van', shipper: 'S', receiver: 'R', originCity: 'Mostar', originState: 'BA',
+    destCity: 'Messina', destState: 'IT', loadedMiles: 2350 / 1.609344, deadheadMiles: 0, gameRevenue: 5000, weightLbs: 30000, atLocation: true, deadlineHours: 96 });
+  f = ms.evaluations[0].feasibility;
+  const routes = f.crossingRoutes || [];
+  ok('the Strait of Messina, and an Adriatic crossing before it', routes.includes('messina-villa') && routes.length === 2, routes.join(','));
+  // Out of the Balkans, never out of Italy: a truck in Bosnia cannot be at Bari for the first sailing.
+  ok('the first crossing is taken from the Balkan side', (f.crossings || [])[0] && !/^Ferry (Bari|Ancona|Trieste) –/.test(f.crossings[0]), (f.crossings || [])[0]);
+  const road = (f.timeline || []).filter((t) => t.kind === 'Drive').reduce((a, t) => a + t.miles, 0) * 1.609344;
+  ok('and not the Adriatic driven round', road < 1200, `${Math.round(road)} km driven`);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });
