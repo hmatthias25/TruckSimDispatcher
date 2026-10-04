@@ -167,10 +167,8 @@ public static class Ferries
             "Danube ferry", 0.25, false, 30, None, None, 0, "frequent", Note: "Replaced by the Brăila bridge in 2023; the ferry is kept as the game has it."),
 
         // ---- the Adriatic and Greece
-        new("trieste-ancona", "Trieste", "Trieste", "IT", "Ancona", "Ancona", "IT", 10.33, 335, "Italia",
-            "", 0, true, 0, None, None, 1, "game", Note: "No regular truck ferry; the game's time is used."),
-        new("trieste-bari", "Trieste", "Trieste", "IT", "Bari", "Bari", "IT", 19.17, 660, "Italia",
-            "", 0, true, 0, None, None, 1, "game", Note: "No regular truck ferry; the game's time is used."),
+        // Trieste – Ancona and Trieste – Bari were here off the wiki's table. Taken out (reported from play, v0.81):
+        // they are not in the game's ferry list, and the planner was sending loads for the Balkans over them.
         new("ancona-split", "Ancona", "Ancona", "IT", "Split", "Split", "HR", 10, 315, "Italia + West Balkans",
             "Jadrolinija", 11, true, 0, T("Mon,Thu 20:00"), T("Sun,Wed 20:00"), 1.5, "checked",
             Note: "Overnight; Split's days confirmed (the low-season pattern), Ancona's an estimate."),
@@ -178,6 +176,11 @@ public static class Ferries
             "Adria Ferries", 19, true, 0, T("14:00"), T("21:00"), 1.5, "estimate"),
         new("bari-durres", "Bari", "Bari", "IT", "Durrës", "Durrës", "AL", 9, 420, "Italia + West Balkans",
             "Ventouris / Adria Ferries", 9, true, 0, T("22:00"), T("22:00"), 1.5, "estimate", Note: "Overnight, every day."),
+        // Not on the wiki's table; reported from play (v0.81), the game routing Italy to the south of Croatia over
+        // it. The game's time and fare are not known, so the real crossing stands in for both.
+        new("bari-dubrovnik", "Bari", "Bari", "IT", "Dubrovnik", "Dubrovnik", "HR", 8, 420, "Italia + West Balkans",
+            "Jadrolinija", 8, true, 0, T("Fri,Sat 11:00"), T("Fri 22:00", "Sun 11:00"), 1, "checked",
+            Note: "Seasonal, April to October; the spring and autumn pattern. Day sailings 8 hours; Dubrovnik's Friday night one 10, in at 08:00."),
         new("ancona-igoumenitsa", "Ancona", "Ancona", "IT", "Igoumenitsa", "Igoumenitsa", "GR", 18.5, 1425, "Italia + Greece",
             "Minoan Lines / Anek-Superfast", 16, true, 0, T("13:30", "17:30"), T("12:30", "23:59"), 2, "estimate"),
         new("ancona-patra", "Ancona", "Ancona", "IT", "Patra", "Patra", "GR", 25, 1425, "Italia + Greece",
