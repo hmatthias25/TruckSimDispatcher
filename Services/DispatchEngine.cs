@@ -549,12 +549,39 @@ public static class DispatchEngine
         // driver can legally get — so say that instead of "have a look somewhere else".
         if (HomeTime.WhereToLookForHome(s) is { } lookThere)
             decision.DispatchNotes.Add(lookThere);
+        else if (Restart.IsEu(s) && EuWeekEndAdvice(s) is { } weekEnd)
+        {
+            decision.DispatchNotes.Add(weekEnd);
+            decision.OfferWeeklyRestHere = true;
+        }
         else
-            decision.DispatchNotes.Add(decision.ResetWatch
-                ? $"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Reposition toward a restart location rather than chasing this board — see the reset options list."
+            decision.DispatchNotes.Add(decision.ResetWatch && !Restart.IsEu(s)
+                ? $"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Reposition toward a restart location rather than chasing this board — see the reset-capable markets below."
                 : "Reposition and pull a fresh board. I would rather run empty a short distance than tie the truck to bad freight.");
 
         return decision;
+    }
+
+    /// <summary>
+    /// EU, a board with nothing on it and the week nearly done: what to do with the wait. Weekly driving comes back
+    /// at Monday 00:00 and nothing else brings it back, so driving somewhere for a "reset" is no answer; the weekly
+    /// rest, taken here, uses the wait. Null where the week is not close to turning over and has hours in it.
+    /// Reported from play: told to "see the reset options list" at 01:00 on a Sunday with 14 hours left.
+    /// </summary>
+    private static string? EuWeekEndAdvice(AppState s)
+    {
+        if (Restart.Open(s) != null || GameClock.TryParse(s.Status.GameTime) is not { } now) return null;
+        var toMonday = (HosEngine.WeekStart(now).AddDays(7) - now).TotalHours;
+        var low = s.Hos.CycleRemaining <= s.Settings.Scoring.ResetWatchCycleHours;
+        // Out of hours this week, or a Sunday with a weekly rest not long behind it: not one taken yesterday.
+        if (!low && (toMonday > 30 || EuCounters.HoursSinceWeeklyRest(s, now) < 72)) return null;
+        var (hours, why) = Restart.EuWeeklyRestPlan(s, false, now);
+        var here = Place(s.Status.LocationCity, s.Status.LocationState);
+        return $"{Hhmm.Of(Math.Max(0, s.Hos.CycleRemaining))} of driving left this week. The week's driving comes back at " +
+               $"Monday 00:00, {Hhmm.Of(toMonday)} from now — no rest brings it back sooner, and driving somewhere else " +
+               $"does not either. With nothing here to run, use the wait: take your weekly rest in {here} now. " +
+               $"{char.ToUpper(why[0])}{why[1..]}: {Hhmm.Of(hours)}, back on the road {GameClock.Pretty(now.AddHours(hours))}. " +
+               "It starts your six days again too. Press Take my weekly rest here.";
     }
 
     /// <summary>Everything the driver showed us came off the dock they are standing on.</summary>

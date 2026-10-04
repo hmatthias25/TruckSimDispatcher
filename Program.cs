@@ -1663,6 +1663,18 @@ app.MapPost("/api/restart/arrived", (RestartArrivedRequest req) => Results.Ok(st
     return new { snapshot = Snapshot(s), message, order };
 })));
 
+// EU: the weekly rest taken where the truck is, now — offered on a board with nothing to run before Monday.
+app.MapPost("/api/restart/take-here", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var order = Restart.TakeHere(s);
+    var message = $"{order.Number}: weekly rest in {DispatchEngine.Place(order.ArrivedCity, order.ArrivedState)} from " +
+                  $"{GameClock.Pretty(order.ArrivedGameTime)}, {Hhmm.Of(order.RequiredHours)}. Back on the road " +
+                  $"{GameClock.Pretty(order.EligibleGameTime)} — report your clocks then.";
+    store.Log(s, "hos", message, order.Number);
+    s.Board.Clear();
+    return new { snapshot = Snapshot(s), message, order };
+})));
+
 app.MapPost("/api/restart/complete", (RestartCompleteRequest req) => Results.Ok(store.Mutate<object>(s =>
 {
     var (order, accepted, message) = Restart.ReportComplete(s, req.GameTime ?? "");

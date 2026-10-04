@@ -4235,6 +4235,8 @@ public class BoardDecision
     public List<string> DispatchNotes { get; set; } = new();
     public List<string> InfoNeeded { get; set; } = new();
     public bool RejectAll { get; set; }
+    /// <summary>EU: nothing to run before the week turns over — offer the weekly rest where the truck is.</summary>
+    public bool OfferWeeklyRestHere { get; set; }
     /// <summary>
     /// Everything considered was offered at the driver's current location. A rejection here means
     /// "show me the wider city board", not "reposition" â€” the city has not been looked at yet.

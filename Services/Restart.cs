@@ -144,6 +144,37 @@ public static class Restart
         return order;
     }
 
+    /// <summary>
+    /// EU: the driver takes their weekly rest where they are, now — offered when the board has nothing and the
+    /// week is nearly done. Started on the spot: they are parked already. Reported from play: told to "see the
+    /// reset options list" at 01:00 on a Sunday with 14 hours of the week left, and nothing said about the
+    /// weekly rest that would have used the wait.
+    /// </summary>
+    public static RestartOrder TakeHere(AppState s)
+    {
+        if (!IsEu(s)) throw new InvalidOperationException("A weekly rest taken on the spot is an EU rule.");
+        if (Open(s) is { } open)
+            throw new InvalidOperationException($"{open.Number} is already on order — sit that one.");
+        var order = new RestartOrder
+        {
+            Number = $"{(string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code)}-RS-{s.RestartOrders.Count + 1:0000}",
+            OrderedGameTime = s.Status.GameTime,
+            CycleAtOrder = s.Hos.CycleRemaining,
+            Trigger = "Driver",
+            TargetCity = s.Status.LocationCity,
+            TargetState = s.Status.LocationState,
+            AtHomeTerminal = AtYard(s),
+            Reason = "Taken where you were, with nothing on the board to run before the week turns over.",
+            Status = "Ordered",
+        };
+        s.RestartOrders.Insert(0, order);
+        return ReportArrived(s, s.Status.GameTime, s.Status.LocationCity, s.Status.LocationState);
+    }
+
+    private static bool AtYard(AppState s) => HomeTime.HomeTerminal(s) is { } yard
+        && string.Equals(yard.City, s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(yard.State, s.Status.LocationState, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>FNV-1a, so an outcome is stable and cannot be re-rolled by reloading.</summary>
     private static uint Hash(string text)
     {
@@ -169,7 +200,7 @@ public static class Restart
         // back — the driver re-read their display and it was better than we thought, and their display
         // is authoritative — or recap now covers it, which is the whole point of the recap adviser.
         // Holding them against a problem that no longer exists would be the app being stubborn.
-        if (open.Status == "Ordered" && open.Trigger != "Operational" && !Needed(s))
+        if (open.Status == "Ordered" && open.Trigger is not ("Operational" or "Driver") && !Needed(s))
         {
             open.Status = "Cancelled";
             open.CompletedGameTime = s.Status.GameTime;

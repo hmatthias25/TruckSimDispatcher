@@ -2297,6 +2297,8 @@ function decisionHtml() {
       <h4>${esc(d.headline)}</h4>
       ${d.rationale ? `<p>${esc(d.rationale)}</p>` : ''}
       ${d.dispatchNotes.length ? `<ul>${d.dispatchNotes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+      ${d.offerWeeklyRestHere ? `<div class="row-actions">
+        <button class="btn primary" data-act="rest-here">Take my weekly rest here</button></div>` : ''}
     </div>
     ${d.infoNeeded.length ? `<div class="callout warn"><h4>I need this before committing freight</h4>
       <ul>${d.infoNeeded.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''}
@@ -2471,7 +2473,8 @@ function timelineHtml(f) {
 
 function resetOptionsHtml() {
   const opts = S.views.resetOptions || [];
-  if (!opts.length || S.hos.cycleRemaining > S.settings.scoring.resetWatchCycleHours) return '';
+  // Not in the EU: no rest refills weekly driving there, Monday does, so there is nowhere to send the truck for it.
+  if (!opts.length || S.views.hos?.ruleset === 'EU561' || S.hos.cycleRemaining > S.settings.scoring.resetWatchCycleHours) return '';
   return `<div class="panel">
     <div class="panel-head"><h2>Reset-capable markets</h2>
       <span class="sub">Parking, fuel and freight nearby — aim the truck at one of these.</span></div>
@@ -8556,6 +8559,13 @@ async function handleAction(act, d, ev) {
       return run(async () => absorb(await api('/restart/arrived', 'POST', {
         gameTime: readDayTime('rs-arr'), city: sv('rs-city'), state: sv('rs-state'),
       })), 'Clock started on the restart.');
+    }
+    case 'rest-here': {
+      if (!confirm('Take your weekly rest here, starting now?\n\nThe board is cleared, and dispatch tells you when you are back on the road.')) return;
+      return run(async () => {
+        const r = absorb(await api('/restart/take-here', 'POST', {}));
+        toast(r.message || 'Weekly rest started.', 'ok');
+      });
     }
     case 'restart-complete': {
       return run(async () => {
