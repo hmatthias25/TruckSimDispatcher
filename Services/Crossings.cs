@@ -167,6 +167,20 @@ public static class Crossings
     /// The ways to run one leg, the plain one first: every way across when there is water in the way (the
     /// shortest first), or the road (null) and any ferry that might be quicker when there is not.
     /// </summary>
+    /// <summary>
+    /// Where the road goes round a sea and the listing's distance is too short to be that road, the game's route
+    /// is over the water: the listing is the ferry's. Then the road option is planned at the road's real length,
+    /// and the crossings are tried against it. Reported from play: Rome to Dubrovnik planned as a short drive and a
+    /// long wait for the window, where the game routed it by Ancona and Split.
+    /// </summary>
+    private sealed record RoadRound(double Miles, string Via, bool ListingIsTheFerry);
+
+    private static RoadRound? RoadRoundFor(string? fromCity, string? fromCc, string? toCity, string? toCc, double listedMiles)
+    {
+        if (Geo.RoadDetour(fromCity, fromCc, toCity, toCc) is not { } d) return null;
+        return new RoadRound(d.Miles, d.Via, listedMiles > 0 && listedMiles < d.Miles * 0.8);
+    }
+
     private static List<Option?> Ways(AppState s, string? fromCity, string? fromCc, string? toCity, string? toCc,
                                       double listedMiles, List<string> noWay)
     {
@@ -185,7 +199,17 @@ public static class Crossings
             return new List<Option?> { null };
         }
         var ways = new List<Option?> { null };
-        ways.AddRange(Shortcuts(have, fromCity, fromCc, toCity, toCc, listedMiles));
+        // Round a sea, the ferry is weighed against the road's real length, not the listing's — and where the
+        // listing is the ferry's own route, its legs are read at the listing's scale.
+        var round = RoadRoundFor(fromCity, fromCc, toCity, toCc, listedMiles);
+        var shortcuts = Shortcuts(have, fromCity, fromCc, toCity, toCc, Math.Max(listedMiles, round?.Miles ?? 0));
+        if (round is { ListingIsTheFerry: true } && shortcuts.Count > 0)
+        {
+            var k = listedMiles / shortcuts.Min(o => o.RoadMiles);
+            if (k > 0.5 && k < 2)
+                shortcuts = shortcuts.Select(o => o with { MilesBefore = o.MilesBefore * k, MilesAfter = o.MilesAfter * k }).ToList();
+        }
+        ways.AddRange(shortcuts);
         return ways;
     }
 
@@ -227,7 +251,31 @@ public static class Crossings
             stuck.Warnings.InsertRange(0, noWay);
             return stuck;
         }
-        if (dh.All(x => x == null) && ld.All(x => x == null)) return HosEngine.Plan(s, req, truck);
+        // The road round a sea, where the listing's distance is too short to be it: the road option is planned at
+        // the road's real length, so it cannot win on a distance only the ferry has.
+        var dhRound = req.DeadheadMiles > 0 && !string.IsNullOrWhiteSpace(req.OriginCity)
+            ? RoadRoundFor(fromCity, fromCc, req.OriginCity, req.OriginState, req.DeadheadMiles) : null;
+        var ldRound = !string.IsNullOrWhiteSpace(req.DestCity)
+            ? RoadRoundFor(string.IsNullOrWhiteSpace(req.OriginCity) ? fromCity : req.OriginCity,
+                           string.IsNullOrWhiteSpace(req.OriginState) ? fromCc : req.OriginState,
+                           req.DestCity, req.DestState, req.LoadedMiles) : null;
+        PlanRequest ByRoad(PlanRequest r)
+        {
+            if (dhRound is { ListingIsTheFerry: true } && r.DeadheadCrossing == null) r.DeadheadMiles = dhRound.Miles;
+            if (ldRound is { ListingIsTheFerry: true } && r.LoadedCrossing == null) r.LoadedMiles = ldRound.Miles;
+            return r;
+        }
+        string? RoundNote(Option? chosen) => ldRound is { ListingIsTheFerry: true } lr
+            ? chosen != null
+                ? $"The listing's {Units.Distance(req.LoadedMiles)} is the route over the water — {chosen.Label}. By road, {lr.Via}, it would be about {Units.Distance(lr.Miles)}."
+                : $"The listing's {Units.Distance(req.LoadedMiles)} is a route over the water, but the road, {lr.Via}, gets there sooner on this plan: about {Units.Distance(lr.Miles)}, planned at that."
+            : null;
+        if (dh.All(x => x == null) && ld.All(x => x == null))
+        {
+            var only = HosEngine.Plan(s, ByRoad(req.Clone()), truck);
+            if (RoundNote(null) is { } n) only.Warnings.Insert(0, n);
+            return only;
+        }
 
         var tried = new List<(FeasibilityResult Plan, Option? Dh, Option? Ld)>();
         foreach (var d in dh)
@@ -236,7 +284,7 @@ public static class Crossings
             var r = req.Clone();
             if (d != null) { r.DeadheadCrossing = d.Leg; r.DeadheadMiles = d.RoadMiles; }
             if (l != null) { r.LoadedCrossing = l.Leg; r.LoadedMiles = l.RoadMiles; }
-            tried.Add((HosEngine.Plan(s, r, truck), d, l));
+            tried.Add((HosEngine.Plan(s, ByRoad(r), truck), d, l));
         }
 
         static int Rank(string v) => v == "Feasible" ? 0 : v == "Tight" ? 1 : 2;
@@ -254,6 +302,9 @@ public static class Crossings
             foreach (var (was, now, listed) in new[] { (plain.Dh, best.Dh, req.DeadheadMiles), (plain.Ld, best.Ld, req.LoadedMiles) })
             {
                 if (now == null || ReferenceEquals(was, now)) continue;
+                // The listing was the ferry's route all along: say that, not "less road" than a distance that
+                // was never the road's.
+                if (ReferenceEquals(now, best.Ld) && RoundNote(now) is { } over) { best.Plan.Warnings.Insert(0, over); continue; }
                 best.Plan.Warnings.Insert(0, now.Shortcut
                     ? $"Take the {now.Label} ferry rather than driving round: {Units.Distance(Math.Max(0, listed - now.RoadMiles))} " +
                       $"less road, and {sooner}."
@@ -261,6 +312,8 @@ public static class Crossings
                       "the sailing times decide it.");
             }
         }
+        else if (best.Ld == null && RoundNote(null) is { } byRoad)
+            best.Plan.Warnings.Insert(0, byRoad);
         return best.Plan;
     }
 

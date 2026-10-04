@@ -171,6 +171,43 @@ public static class Geo
 
     public static bool Knows(string? city, string? state) => Locate(city, state) != null;
 
+    /// <summary>
+    /// Seas a straight line crosses and the road goes round: the two shores, and the land the road goes by.
+    /// Distances here are straight lines with a road factor, which is fine over land and nonsense over water —
+    /// reported from play: Rome to Dubrovnik read as a short road run, when the road goes round by Trieste and
+    /// the listing's distance was the ferry's route.
+    /// </summary>
+    private static readonly (Func<double, double, string, bool> A, Func<double, double, string, bool> B, double Lat, double Lon, string Via)[] Detours =
+    {
+        // Italy below the Po, and the Balkan coast: round the Adriatic by Trieste.
+        ((lat, lon, cc) => cc == "IT" && lat < 44.2 && lon > 9.5,
+         (lat, lon, cc) => (cc == "HR" && lat < 45.2) || cc is "BA" or "ME" or "AL" or "GR" or "MK" or "XK",
+         45.65, 13.78, "round the Adriatic by Trieste"),
+        // Sweden and Finland: round the top of the Gulf of Bothnia by Haparanda.
+        ((lat, lon, cc) => cc == "SE" && lat < 65.5,
+         (lat, lon, cc) => cc == "FI" && lat < 65.5,
+         65.83, 24.13, "round the Gulf of Bothnia by Haparanda"),
+    };
+
+    /// <summary>
+    /// The road distance where it goes round a sea the straight line crosses, and which way; null where the
+    /// straight line is a fair reading.
+    /// </summary>
+    public static (double Miles, string Via)? RoadDetour(string? cityA, string? stateA, string? cityB, string? stateB)
+    {
+        if (Locate(cityA, stateA) is not { } a || Locate(cityB, stateB) is not { } b) return null;
+        var ca = (stateA ?? "").Trim().ToUpperInvariant();
+        var cb = (stateB ?? "").Trim().ToUpperInvariant();
+        foreach (var d in Detours)
+        {
+            var across = (d.A(a.Lat, a.Lon, ca) && d.B(b.Lat, b.Lon, cb)) || (d.B(a.Lat, a.Lon, ca) && d.A(b.Lat, b.Lon, cb));
+            if (!across) continue;
+            var miles = (Haversine(a.Lat, a.Lon, d.Lat, d.Lon) + Haversine(d.Lat, d.Lon, b.Lat, b.Lon)) * RoadFactor;
+            return (Math.Round(miles, 0), d.Via);
+        }
+        return null;
+    }
+
     public static bool KnowsState(string? state) =>
         !string.IsNullOrWhiteSpace(state) && Centers.ContainsKey(state.Trim());
 
