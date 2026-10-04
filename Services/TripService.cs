@@ -1977,6 +1977,15 @@ public static class TripService
                 $"Facility delay at the shipper. They held you {Hhmm.Of(held)} before loading, against " +
                 $"{Hhmm.Of(f.SlackHours)} of slack — that wait is the lateness. Detention applies; no fault to the driver.");
 
+        // The same, with a slow load on top of the wait (reported from play): what the shipper took past the
+        // loading the plan allowed, waiting and loading together, against the slack.
+        var plannedLoading = f.Timeline.FirstOrDefault(t => t.Label.StartsWith("Loading"))?.Hours ?? trip.LoadingHours;
+        if (TimeAtShipper(trip, plannedLoading, out _, out _, out _) is { } atShipper
+            && atShipper - plannedLoading is var over && over >= f.SlackHours)
+            return ("Unavoidable",
+                $"Facility delay at the shipper. They had you {Hhmm.Of(atShipper)} for {Hhmm.Of(plannedLoading)} of planned loading — " +
+                $"{Hhmm.Of(over)} over, against {Hhmm.Of(f.SlackHours)} of slack. That is the lateness. Detention applies; no fault to the driver.");
+
         // The window closing while they were still at the dock. Judged from the clocks they reported
         // rather than from whether they thought to write "detention" in the notes — a driver stuck on a
         // receiver's property should not have to know the magic word to avoid a mark on their record.
