@@ -492,6 +492,11 @@ public static class HomeTime
         // exactly how it was read in play. Recorded here rather than in the brief because this is the
         // moment the roll happens; the brief only reports it.
         var rig = ConsiderTrailerReassignment(s);
+        // The run home's word on the trailer is spent now it is home, swap or no swap. A "no change" kept on file
+        // sat in the Home time panel for the whole next tour. Reported from play, after #243 had moved the
+        // telling to the run home: the next one is said on the next run home.
+        // A box still named is the arrival brief's to read (how long it is waited on), so only a word with no box.
+        if (rig == null && string.IsNullOrWhiteSpace(s.Driver.ChangeoverUnit)) TrailerChangeover.Forget(s);
         var box = DispatchEngine.AssignedTrailer(s);
         s.Driver.LastTrailerDecision = rig != null
             ? $"Re-rigged: {rig.Instruction} See order {rig.Number}."

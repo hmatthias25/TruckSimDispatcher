@@ -88,6 +88,21 @@ public static class Migrations
         KeyEuDrivingByTheShift(s);
         KeyCountriesTheAppsWay(s);
         MeasureRunsOffTheOdometer(s);
+        ForgetSpentTrailerWord(s);
+    }
+
+    /// <summary>
+    /// The run home's word on the trailer, where no swap followed it, was never cleared at the yard: "No trailer
+    /// change this home time" sat in the Home time panel for the whole next tour. Reported from play. Cleared
+    /// unless a run home is under way now, which is the one time it is current.
+    /// </summary>
+    private static void ForgetSpentTrailerWord(AppState s)
+    {
+        if (s.SchemaVersion >= 36) return;
+        s.SchemaVersion = 36;
+        if (string.IsNullOrWhiteSpace(s.Driver.ChangeoverNote) || !string.IsNullOrWhiteSpace(s.Driver.ChangeoverUnit)) return;
+        if (s.Trips.Any(t => t.IsHomeRun && t.Status is "Authorized" or "InTransit")) return;
+        TrailerChangeover.Forget(s);
     }
 
     /// <summary>

@@ -114,6 +114,7 @@ async function report(city, state, day, hm = '08:00') {
   head('6. Notice of a coming trailer change arrives BEFORE the yard');
   // Walk forward through home times until a reassignment is due, checking the notice precedes it.
   let noticed = null, issuedType = null;
+  const stale = [];
   for (let visit = 2; visit <= 8 && !issuedType; visit++) {
     // Far enough out that home time is genuinely due when the board is pulled. At twenty-day steps the
     // gap between arriving and going out again was eight days of a fortnight, so dispatch quite rightly
@@ -143,7 +144,13 @@ async function report(city, state, day, hm = '08:00') {
       issuedType = order.toTrailerUnit || '(unit unstated)';
       noticed = pending;
     }
+    // The run home's word is spent at the yard, swap or no swap: back out on the road, the Home time panel has
+    // nothing to say until the next run home. Reported from play: "No trailer change this home time" for a tour.
+    await report('Denver', 'CO', away + 16);
+    const after = un(await api('/bootstrap')).views.homeTime?.reassignmentNotice || '';
+    if (after) stale.push(`visit ${visit}: ${after.slice(0, 70)}`);
   }
+  ok('out on the next tour, nothing left over from the last run home', stale.length === 0, stale.join(' | '));
 
   if (issuedType) {
     ok('a reassignment eventually happened', true, issuedType);
