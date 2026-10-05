@@ -273,6 +273,55 @@ public static class TripService
         _ => kind.ToLowerInvariant()
     };
 
+    /// <summary>
+    /// The break clock after a dock stop that counted as the break, as of <paramref name="at"/>: full at the end of
+    /// the loading or unloading, less whatever could have been driven since. Null where no such stop is behind it.
+    ///
+    /// <para>The planner has always counted the dock as the break — FMCSA: any 30 minutes not driving; EU
+    /// 561/2006: only where the dock does the work, behind a van or a reefer. The clocks did not: the companion's B
+    /// never saw the break, so the figure typed after loading carried on from before it, and the next plan sent the
+    /// driver on a break they had already had. Reported from play.</para>
+    /// </summary>
+    public static double? BreakFromTheDock(AppState s, DateTime at)
+    {
+        var eu = HosEngine.Eu(s);
+        var euR = s.Settings.EuHos ?? new EuHosRules();
+        if (!eu && !s.Settings.Hos.RequireBreak) return null;
+        var len = eu ? euR.BreakLength : s.Settings.Hos.BreakLength;
+        var full = eu ? euR.DrivingBeforeBreak : s.Settings.Hos.DrivingBeforeBreak;
+        double? best = null;
+        foreach (var t in s.Trips.Where(t => t.Kind == "Freight" && t.Status != "Cancelled")
+                     .OrderByDescending(t => t.CreatedUtc).Take(2))
+        {
+            if (eu && TrailerSpec.WorksTheDock(t.TrailerType)) continue;
+            foreach (var (begin, end) in new[] { ("BeginLoad", "EndLoad"), ("BeginUnload", "EndUnload") })
+            {
+                var ended = t.Events.Where(e => e.Kind == end).Select(e => GameClock.TryParse(e.GameTime))
+                    .Where(d => d != null && d <= at).Max();
+                if (ended is not { } e1) continue;
+                var began = t.Events.Where(e => e.Kind == begin).Select(e => GameClock.TryParse(e.GameTime))
+                    .Where(d => d != null && d <= e1).Max();
+                if (began is not { } b1 || (e1 - b1).TotalHours < len - 0.01) continue;
+                // Every hour since could have been driving: what is left is at least the full clock less those.
+                var left = full - (at - e1).TotalHours;
+                if (left > 0 && (best == null || left > best)) best = Math.Round(left, 2);
+            }
+        }
+        return best;
+    }
+
+    /// <summary>Puts the break clock up to what the dock gave back, where it reads lower. Says so, or null.</summary>
+    public static string? CreditDockBreak(AppState s, DateTime at)
+    {
+        if (BreakFromTheDock(s, at) is not { } freed || freed <= s.Hos.BreakRemaining + 0.01) return null;
+        var was = s.Hos.BreakRemaining;
+        s.Hos.BreakRemaining = freed;
+        var eu = HosEngine.Eu(s);
+        var mins = (eu ? (s.Settings.EuHos ?? new EuHosRules()).BreakLength : s.Settings.Hos.BreakLength) * 60;
+        return $"The dock time counted as your {mins:0}-minute break{(eu ? " — the dock did the work" : "")}, so the break clock " +
+               $"is {Hhmm.Of(freed)}, not the {Hhmm.Of(was)} {(eu ? "the companion" : "the display")} still shows.";
+    }
+
     public static void LogEvent(AppState s, string tripId, TripEvent ev)
     {
         var trip = s.Trips.FirstOrDefault(t => t.Id == tripId)
@@ -320,6 +369,10 @@ public static class TripService
 
         // A crossing: the fare is the company's, like a toll, and what the crossing counts as under EU rules is
         // said on the log — the game counts any ferry time as rest, and the law does not.
+        if (ev.Kind is "EndLoad" or "EndUnload" && GameClock.TryParse(ev.GameTime) is { } dockDone
+            && CreditDockBreak(s, dockDone) is { } credited)
+            ev.Detail = string.IsNullOrWhiteSpace(ev.Detail) || ev.Detail == ev.Kind ? credited : $"{credited} {ev.Detail}";
+
         if (ev.Kind == "Ferry")
         {
             if (ev.Cost > 0) trip.Tolls = Math.Round(trip.Tolls + ev.Cost, 2);
@@ -1312,6 +1365,12 @@ public static class TripService
 
         var shiftWas = s.Hos.ShiftRemaining;
         var cycleWas = s.Hos.CycleRemaining;
+        // The unload as the break, where it counts as one: said after the carry, which it is part of.
+        void CreditTheUnload()
+        {
+            if (GameClock.TryParse(s.Status.GameTime) is { } now && CreditDockBreak(s, now) is { } c)
+                audit.CarriedForward.Add(c);
+        }
 
         // EU 561/2006: the spread is elapsed time since the daily rest, so the dock runs it down whatever the
         // driver was doing; D, W and 2W count driving only, and an unload is not driving. Nothing is "in the
@@ -1327,6 +1386,7 @@ public static class TripService
                 $"runs on through the {Hhmm.Of(spentAtDock)} at the dock whatever you did with it. D, W and 2W are " +
                 "driving only, so the unload leaves them as you arrived \u2014 your status line will read the same. " +
                 "Worked out, not read; check it.");
+            CreditTheUnload();
             return;
         }
 
@@ -1345,7 +1405,7 @@ public static class TripService
             ? $"Clocks carried across the unload: shift {Hhmm.Of(shiftWas)} \u2192 {Hhmm.Of(s.Hos.ShiftRemaining)}, " +
               $"cycle {Hhmm.Of(cycleWas)} \u2192 {Hhmm.Of(s.Hos.CycleRemaining)}. You were on duty for it \u2014 " +
               $"{TrailerSpec.Describe(trip.TrailerType, null)} work is straps and hoses, not waiting \u2014 so both " +
-              "clocks paid. Your drive clock and break counter are untouched. Worked out, not read; check it " +
+              "clocks paid. Your drive clock is untouched. Worked out, not read; check it " +
               "against your display."
             : $"Clocks carried across the unload: shift {Hhmm.Of(shiftWas)} \u2192 {Hhmm.Of(s.Hos.ShiftRemaining)}, " +
               $"cycle {Hhmm.Of(cycleWas)} \u2192 unchanged. Nothing for you to do behind a " +
@@ -1353,6 +1413,7 @@ public static class TripService
               $"{Hhmm.Of(spentAtDock)} in the bunk: it comes off your fourteen but not your seventy. " +
               "<b>In ATS, take that time in the sleeper</b> and your display will match. Worked out, not " +
               "read \u2014 check it.");
+        CreditTheUnload();
     }
 
     /// <summary>

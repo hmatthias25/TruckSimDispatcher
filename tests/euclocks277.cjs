@@ -116,7 +116,9 @@ const line = (at, b, d, w, w2) => api('/hos', 'POST', {
     hosBreakRemaining: 2.5, hosDriveRemaining: 8, hosEuWeekLeft: 48, hosEuTwoWeeksLeft: 82 });
   h = (await api('/bootstrap')).hos;
   const said = (closed.audit?.carriedForward || []).join(' | ');
-  ok('B and D as typed', near(h.breakRemaining, 2.5) && near(h.driveRemaining, 8), `${h.breakRemaining} / ${h.driveRemaining}`);
+  // D as typed. B was 2:30 as they arrived, and the hour's unload behind a dry van was the 45-minute break: 4:30.
+  ok('D as typed, and B back to 4:30 off the unload', near(h.breakRemaining, 4.5) && near(h.driveRemaining, 8), `${h.breakRemaining} / ${h.driveRemaining}`);
+  ok('the audit says the unload was the break', /counted as your 45-minute break/.test(said), said.slice(0, 300));
   ok('W 48:00 is 8 hours driven this week, 2W 82:00 leaves last week at none', near(h.euWeekDriven, 8) && near(h.euLastWeekDriven, 0),
     `${h.euWeekDriven} / ${h.euLastWeekDriven}`);
   ok('the planner\'s week left is the lesser of W and 2W', near(h.cycleRemaining, 48), `${h.cycleRemaining}`);

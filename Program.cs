@@ -224,6 +224,8 @@ app.MapPost("/api/hos", (HosSnapshot h) => Results.Ok(store.Mutate(s =>
         s.Hos.SpreadEstimated = false;
         s.Hos.EuDriveCapped = false;
     }
+    // A dock stop that counted as the break: the display never saw it.
+    var dockBreak = reportedAt is { } rat ? TripService.CreditDockBreak(s, rat) : null;
     // A reading typed in by the driver is a reading: not a projection, and not stale. Nothing here used
     // to set Confirmed, so once it went false it stayed false and the driver was told their clocks were
     // out of date however many times they reported them.
@@ -238,6 +240,7 @@ app.MapPost("/api/hos", (HosSnapshot h) => Results.Ok(store.Mutate(s =>
     store.Log(s, "dispatch", HosEngine.Eu(s)
         ? $"Clocks reported: B {Hhmm.Of(s.Hos.BreakRemaining)} · D {Hhmm.Of(s.Hos.DriveRemaining)} · W {Hhmm.Of(Math.Max(0, (s.Settings.EuHos ?? new EuHosRules()).WeeklyDriving - (s.Hos.EuWeekDriven ?? 0)))} · 2W {Hhmm.Of(s.Hos.CycleRemaining)}, spread {Hhmm.Of(s.Hos.ShiftRemaining)}"
         : $"HOS reported: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, break {s.Hos.BreakRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
+    if (dockBreak != null) store.Log(s, "hos", dockBreak);
     if (ClockCheck.Capped(s) is { } q)
         store.Log(s, "dispatch",
             $"Queried the drive clock: {Hhmm.Of(s.Hos.DriveRemaining)} reported with the break clock on the " +
