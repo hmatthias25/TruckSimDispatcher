@@ -171,6 +171,83 @@ public static class Geo
 
     public static bool Knows(string? city, string? state) => Locate(city, state) != null;
 
+    // Every known town as a point with its country, for telling which country a stretch of road is in.
+    private static readonly Dictionary<string, (double Lat, double Lon, string Cc)[]> _points = new(StringComparer.OrdinalIgnoreCase);
+
+    private static (double Lat, double Lon, string Cc)[] Points()
+    {
+        var game = GameProfile.Current;
+        lock (Gate)
+        {
+            if (_points.TryGetValue(game.Id, out var cached)) return cached;
+            var arr = Cities().Select(kv => (kv.Value.Lat, kv.Value.Lon, kv.Key[(kv.Key.LastIndexOf('|') + 1)..])).ToArray();
+            _points[game.Id] = arr;
+            return arr;
+        }
+    }
+
+    /// <summary>
+    /// The countries a straight line between two towns passes through, in order, each with the share of the way
+    /// along where it begins. Each step along the line is put in the country of the nearest known town, and
+    /// slivers — a step or two clipping a neighbour near a border — are folded into the country around them.
+    /// Null where either end is unknown.
+    ///
+    /// <para>The app has no road network, so this is the line, not the route. It is enough to see a third country
+    /// in the way. Reported from play: Maribor to Mannheim planned as half Slovenia and half Germany, with
+    /// Austria — whose weekend ban starts on Saturday at 15:00 — nowhere in it.</para>
+    /// </summary>
+    public static List<(string Cc, double From)>? CountriesAlong(string? cityA, string? ccA, string? cityB, string? ccB)
+    {
+        if (Locate(cityA, ccA) is not { } a || Locate(cityB, ccB) is not { } b) return null;
+        var fromCc = (ccA ?? "").Trim().ToUpperInvariant();
+        var toCc = (ccB ?? "").Trim().ToUpperInvariant();
+        var pts = Points();
+        const int n = 48;
+        var cc = new string[n + 1];
+        for (var i = 0; i <= n; i++)
+        {
+            var f = (double)i / n;
+            var lat = a.Lat + (b.Lat - a.Lat) * f;
+            var lon = a.Lon + (b.Lon - a.Lon) * f;
+            var k = Math.Cos(lat * Math.PI / 180);
+            var best = double.MaxValue;
+            var hit = "";
+            foreach (var p in pts)
+            {
+                var dLat = p.Lat - lat;
+                var dLon = (p.Lon - lon) * k;
+                var d = dLat * dLat + dLon * dLon;
+                if (d < best) { best = d; hit = p.Cc; }
+            }
+            cc[i] = hit;
+        }
+        cc[0] = fromCc;
+        cc[n] = toCc;
+        // Heavy freight goes round Switzerland, not through it — the 40-tonne limit and the transit levy send Italy to
+        // Germany over the Brenner. A line clipping the Engadin is not a Swiss transit, so it is put with the country
+        // before it. Starting or ending there is another matter, and is left alone.
+        for (var i = 1; i < n; i++)
+            if (cc[i] == "CH" && fromCc != "CH" && toCc != "CH") cc[i] = cc[i - 1];
+
+        // Runs of one country, then the slivers (under three steps, about a sixteenth of the way) folded away.
+        var runs = new List<(string Cc, int Start, int Len)>();
+        for (var i = 0; i <= n; i++)
+            if (runs.Count > 0 && runs[^1].Cc == cc[i]) runs[^1] = (runs[^1].Cc, runs[^1].Start, runs[^1].Len + 1);
+            else runs.Add((cc[i], i, 1));
+        for (var i = 1; i < runs.Count - 1; i++)
+            if (runs[i].Len < 3)
+            {
+                runs[i - 1] = (runs[i - 1].Cc, runs[i - 1].Start, runs[i - 1].Len + runs[i].Len);
+                runs.RemoveAt(i);
+                i--;
+            }
+        var merged = new List<(string Cc, int Start)>();
+        foreach (var r in runs)
+            if (merged.Count == 0 || merged[^1].Cc != r.Cc) merged.Add((r.Cc, r.Start));
+        // The border falls half a step before the first point found in the next country.
+        return merged.Select((r, i) => (r.Cc, i == 0 ? 0.0 : Math.Max(0, (r.Start - 0.5) / n))).ToList();
+    }
+
     /// <summary>
     /// Seas a straight line crosses and the road goes round: the two shores, and the land the road goes by.
     /// Distances here are straight lines with a road factor, which is fine over land and nonsense over water —
@@ -179,9 +256,12 @@ public static class Geo
     /// </summary>
     private static readonly (Func<double, double, string, bool> A, Func<double, double, string, bool> B, double Lat, double Lon, string Via)[] Detours =
     {
-        // Italy below the Po, and the Balkan coast: round the Adriatic by Trieste.
+        // Italy below the Po, and the land beyond the Adriatic: round it by Trieste. Not only the coast — reported
+        // from play: Novi Sad to Bari read as a 623 km drive straight over the sea, with no ferry, because Serbia was
+        // not on the far side. Inland the road round is still the road; where it is no detour at all (Ljubljana,
+        // Zagreb to the north of Italy) the length check in RoadDetour lets it go.
         ((lat, lon, cc) => cc == "IT" && lat < 44.2 && lon > 9.5,
-         (lat, lon, cc) => (cc == "HR" && lat < 45.2) || cc is "BA" or "ME" or "AL" or "GR" or "MK" or "XK",
+         (lat, lon, cc) => cc is "HR" or "BA" or "ME" or "AL" or "GR" or "MK" or "XK" or "RS" or "BG" or "RO" or "HU" or "TR",
          45.65, 13.78, "round the Adriatic by Trieste"),
         // Sweden and Finland: round the top of the Gulf of Bothnia by Haparanda.
         ((lat, lon, cc) => cc == "SE" && lat < 65.5,
@@ -193,6 +273,9 @@ public static class Geo
     /// The road distance where it goes round a sea the straight line crosses, and which way; null where the
     /// straight line is a fair reading.
     /// </summary>
+    /// <summary>How much longer the way round has to be than the straight line before it counts as going round.</summary>
+    private const double DetourMinRatio = 1.25;
+
     public static (double Miles, string Via)? RoadDetour(string? cityA, string? stateA, string? cityB, string? stateB)
     {
         if (Locate(cityA, stateA) is not { } a || Locate(cityB, stateB) is not { } b) return null;
@@ -202,8 +285,10 @@ public static class Geo
         {
             var across = (d.A(a.Lat, a.Lon, ca) && d.B(b.Lat, b.Lon, cb)) || (d.B(a.Lat, a.Lon, ca) && d.A(b.Lat, b.Lon, cb));
             if (!across) continue;
-            var miles = (Haversine(a.Lat, a.Lon, d.Lat, d.Lon) + Haversine(d.Lat, d.Lon, b.Lat, b.Lon)) * RoadFactor;
-            return (Math.Round(miles, 0), d.Via);
+            var round = Haversine(a.Lat, a.Lon, d.Lat, d.Lon) + Haversine(d.Lat, d.Lon, b.Lat, b.Lon);
+            // The way round is on the way anyway: the straight line is a fair reading.
+            if (round < Haversine(a.Lat, a.Lon, b.Lat, b.Lon) * DetourMinRatio) continue;
+            return (Math.Round(round * RoadFactor, 0), d.Via);
         }
         return null;
     }

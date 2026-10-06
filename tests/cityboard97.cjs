@@ -403,8 +403,10 @@ async function cityBoard(rows) {
     ok('the better-scoring one is named rather than left as a red card with no reason',
       /scored better/i.test(notes), named.slice(0, 200) || '(silent)');
     ok('with the slack that ruled it out', /slack against our/i.test(named), named.slice(0, 200));
-    ok('and the override offered, the same as on a rejected board',
-      /authorize it directly/i.test(named), named.slice(-110));
+    // v0.82: offered only to a rank that may take it. Below that it says to run the booked one — a company driver
+    // cannot overrule the buffer, and being told to was a dead end on probation.
+    ok('and the override offered where the rank allows it, or the booked load named where it does not',
+      /authorize it directly|not yours to do at your rank, so run the one I have booked/i.test(named), named.slice(-110));
     ok('it is offered as the backup, not a reject', kcT?.recommendation === 'Backup',
       kcT?.recommendation || '?');
   } else {

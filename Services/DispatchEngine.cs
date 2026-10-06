@@ -208,8 +208,17 @@ public static class DispatchEngine
         //
         // Same reasoning as the break-even floor: once the company is late, "tight" is measured against
         // a promise already missed rather than against an ordinary day.
+        // EU, home tight but not yet late: a tight window that heads home is dispatch's to take only when nothing
+        // feasible heads home. Reported from play, on probation: the loads toward Mannheim were all tight, the
+        // driver could not overrule the buffer, and nothing else on the board was allowed — so nothing at all.
+        // Where a feasible load heads home it wins, and nobody gambles on a late delivery for points.
+        var feasibleHomeward = decision.Evaluations.Any(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
+                                                             && !e.Feasibility.BeginsWithRest
+                                                             && e.Feasibility.Verdict == "Feasible"
+                                                             && HomeTime.TightAndHeadsHome(s, e.Load));
         bool TightButHeadsHome(LoadEvaluation e) =>
-            e.Feasibility.Verdict == "Tight" && HomeTime.OverdueAndHeadsHome(s, e.Load);
+            e.Feasibility.Verdict == "Tight"
+            && (HomeTime.OverdueAndHeadsHome(s, e.Load) || (!feasibleHomeward && HomeTime.TightAndHeadsHome(s, e.Load)));
 
         // Home-time disqualification sits in its own list so the reason can be told apart from a
         // licence or an out-of-service truck, but it bars a load exactly as hard. Nothing here is a
@@ -271,8 +280,8 @@ public static class DispatchEngine
                 decision.DispatchNotes.Add(
                     $"This one is tight — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack against our " +
                     $"{Hhmm.Of(s.Settings.SafetyBufferHours)} buffer, and on an ordinary day I would not " +
-                    "book it. You are overdue home and this is the load that heads there, so I am taking " +
-                    "it and owning the call. Do not lose time you do not have.");
+                    $"book it. {(HomeTime.Status(s).Overdue ? "You are overdue home" : "Your days left barely cover the run home")} " +
+                    "and this is the load that heads there, so I am taking it and owning the call. Do not lose time you do not have.");
             // A load that scored better and was dropped on feasibility. Refusing it is right — booking
             // something that cannot make its window is a service failure on the driver's record, and the
             // app does not do that on its own. Going quiet about it is not: the driver reads two score
@@ -298,8 +307,10 @@ public static class DispatchEngine
                     $"({beaten.Score:0.0} against {pick.Score:0.0}) and I am not taking it: " +
                     $"{Hhmm.Of(beaten.Feasibility.SlackHours)} of slack against our " +
                     $"{Hhmm.Of(s.Settings.SafetyBufferHours)} buffer, so it is a late delivery waiting to " +
-                    "happen and that lands on your record, not mine. If you want it anyway, authorize it " +
-                    "directly and I will own the call.");
+                    "happen and that lands on your record, not mine. " +
+                    (CareerService.Privileges(s).CanOverrideTightLoad
+                        ? "If you want it anyway, authorize it directly and I will own the call."
+                        : "Overruling the buffer is not yours to do at your rank, so run the one I have booked."));
 
                 // What it would have done differently, where that is the whole point of it.
                 var hs = HomeTime.Status(s);
@@ -311,7 +322,7 @@ public static class DispatchEngine
                     && pickHome - beatenHome > 100)
                     decision.DispatchNotes.Add(
                         $"For what it is worth, it would have finished {Units.Distance(beatenHome)} from {hs.TerminalLabel} " +
-                        $"against {pickHome:N0} on this one, with home time due in {hs.DaysUntilDue:0.#} days.");
+                        $"against {Units.Distance(pickHome)} on this one, with home time due in {hs.DaysUntilDue:0.#} days.");
             }
 
             decision.DispatchNotes.Add($"Run it at {Units.PerDistance(pick.AllInRpm, "0.00")} all-in on {Units.Dist(pick.Load.LoadedMiles + pick.Load.DeadheadMiles):0} total {Units.DistWord}.");
@@ -1114,6 +1125,9 @@ public static class DispatchEngine
         // other check beside the point, and one the driver can act on without reading a board.
         if (NoWindowToWorkBlocker(s, trailer) is { } noWindow) return new List<string> { noWindow };
 
+        // EU: on home time, and the contract has not let them go yet. One reason, said with the date.
+        if (EuHomeContract.HoldBlocker(s) is { } home) return new List<string> { home };
+
         var stops = new List<string>();
         var m = s.Settings.Maintenance;
 
@@ -1710,9 +1724,17 @@ public static class DispatchEngine
         // empty run home on the company's money, or a late one.
         var thinBite = e.DestTier >= 3 ? HomeTime.ThinMarketBite(s, load) : 1.0;
         var posPts = (e.DestTier switch { 1 => 1.0, 2 => 0.0, _ => -1.0 }) * w.Positioning * thinBite;
+        // A strong market is worth a quarter when home is tight: the next load is going home whatever the market
+        // has, and nearer the yard beats busier. Reported from play: Banja Luka's tier-1 bonus put it over Vienna,
+        // three hundred kilometres nearer Mannheim, with the days left barely covering the drive. A thin market
+        // still costs in full — needing a load out of one is still the risk.
+        var homeStatus = HomeTime.Status(s);
+        var homeFirst = homeStatus.Tight && posPts > 0;
+        if (homeFirst) posPts *= 0.25;
         score += posPts;
         detail.Add($"{Place(load.DestCity, load.DestState)} is a tier-{e.DestTier} market{(dest == null ? " (not in the market table)" : "")}" +
                    (thinBite > 1.0 ? ", and home time is close — a thin market is a bad place to need a load out of" : "") +
+                   (homeFirst ? ", worth less with home this close to due — nearer the yard beats busier" : "") +
                    $": {posPts:+0.00;-0.00}");
         if (thinBite > 1.0)
             e.Cons.Add($"{Place(load.DestCity, load.DestState)} is a thin market and you are due home. " +
@@ -1877,7 +1899,6 @@ public static class DispatchEngine
         }
 
         // Home time. Silent until it is close, then it starts outweighing a better rate the wrong way.
-        var homeStatus = HomeTime.Status(s);
         var (homePts, homeDetail, homePro, homeCon) = HomeTime.ScoreLoad(s, load, homeStatus);
         score += homePts;
         if (homeDetail != null) detail.Add(homeDetail);
@@ -2470,7 +2491,7 @@ public static class DispatchEngine
             // button that errored and no way forward, and a driver with it had two buttons on the same
             // load, one broken and one labelled as though they were overruling a decision the app had
             // already made for them.
-            var dispatchOwnsIt = HomeTime.OverdueAndHeadsHome(s, load);
+            var dispatchOwnsIt = HomeTime.OverdueAndHeadsHome(s, load) || HomeTime.TightAndHeadsHome(s, load);
 
             if (!overrideTight && !dispatchOwnsIt)
                 throw new InvalidOperationException(
@@ -2750,6 +2771,64 @@ public static class DispatchEngine
     /// — a driver hooked to a load has a real obligation, and silently cancelling it to make room for a
     /// deadhead would be the app destroying work to tidy its own bookkeeping.</para>
     /// </summary>
+    /// <summary>
+    /// An empty run planned the way a load is: the clocks, the rests, the crossings and — on an EU career — the
+    /// weekend truck bans. Null where there is nothing to plan.
+    ///
+    /// <para>Reported from play: authorised to run home to Mannheim at 13:20 on a Saturday, eleven hours out on six
+    /// hours of driving, and the order said nothing about Austria's ban from 15:00 or Germany's on Sunday. Freight
+    /// was planned around them; an empty run was a destination and a distance.</para>
+    /// </summary>
+    public static FeasibilityResult? PlanEmptyMove(AppState s, string destCity, string destState, double miles)
+    {
+        if (miles <= 0 || !HosEngine.Eu(s)) return null;
+        var truck = AssignedTruck(s);
+        var trailer = AssignedTrailer(s);
+        var plan = Crossings.PlanBest(s, new PlanRequest
+        {
+            OriginCity = s.Status.LocationCity,
+            OriginState = s.Status.LocationState,
+            DestCity = destCity,
+            DestState = destState,
+            LoadedMiles = miles,
+            TrailerType = trailer?.Type ?? "",
+            // No window on an empty run: a fortnight, so the plan is only ever about the clocks and the road.
+            DeadlineHours = 24 * 14,
+            UsableFuelRangeMiles = HosEngine.UsableRange(s.Settings, truck, s.Status.FuelPct),
+            Label = "empty run",
+            EmptyRun = true,
+        }, truck);
+        foreach (var step in plan.Timeline) step.Label = step.Label.Replace("Line haul", "Empty run");
+        plan.EmptyRun = true;
+        plan.DockAdvice = "";
+        return plan;
+    }
+
+    /// <summary>The plan of an empty run in a sentence or two, for the order and the offer.</summary>
+    public static string EmptyMovePlanNote(FeasibilityResult plan)
+    {
+        // Where a ban stops the run, say it as an instruction: where to be parked, by when, until when, and what the
+        // wait counts as. The full working is in the plan underneath; this is the part the driver acts on.
+        var stops = plan.Timeline.Where(x => x.Label.Contains("truck ban", StringComparison.OrdinalIgnoreCase)).Select(x =>
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(x.Label, @"out (.+?)'s truck ban", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var country = m.Success ? m.Groups[1].Value : "";
+            var hours = (GameClock.TryParse(x.EndGameTime) - GameClock.TryParse(x.StartGameTime))?.TotalHours ?? 0;
+            var counts = hours >= 45 - 0.01
+                ? $"Those {Hhmm.Of(hours)} are a full weekly rest — away from home that is a hotel, on the company."
+                : hours >= 24 - 0.01
+                    ? $"Those {Hhmm.Of(hours)} are your weekly rest: a reduced one, so the cab is fine. " +
+                      (plan.CompensationOwedAfter > 45 - hours + 0.1
+                          ? $"With what you already owe, {Hhmm.Of(plan.CompensationOwedAfter)} is paid back at home."
+                          : $"The {Hhmm.Of(45 - hours)} it is short is paid back at home.")
+                    : hours >= 9 - 0.01 ? "That wait is your daily rest." : "";
+            return $"Be parked{(country.Length > 0 ? $" in {country}" : "")} by {GameClock.Pretty(x.StartGameTime)} and stay " +
+                   $"until {GameClock.Pretty(x.EndGameTime)}{(country.Length > 0 ? $" — {country}'s weekend truck ban" : " — a weekend truck ban")}. {counts}".TrimEnd();
+        }).ToList();
+        return string.Join(" ", stops) + (stops.Count > 0 ? " " : "") +
+               $"You get there {GameClock.Pretty(plan.ProjectedArrivalGameTime)}.";
+    }
+
     public static Trip CreateEmptyMove(AppState s, string destCity, string destState, double miles, string reason)
     {
         SupersedeStandingEmptyMove(s, reason);
@@ -2779,6 +2858,13 @@ public static class DispatchEngine
             LoadingHours = 0,
             UnloadingHours = 0
         };
+        // EU: planned, so the order says where the bans and the rests fall and when it actually gets there.
+        if (PlanEmptyMove(s, destCity, destState, miles) is { } plan)
+        {
+            trip.FeasibilityAtDispatch = plan;
+            trip.AuthorizationRationale = $"{reason} {EmptyMovePlanNote(plan)}".Trim();
+            trip.Events.Add(new TripEvent { GameTime = s.Status.GameTime, Kind = "Note", Detail = EmptyMovePlanNote(plan) });
+        }
         s.Trips.Insert(0, trip);
         s.Status.ActiveTripId = trip.Id;
         return trip;

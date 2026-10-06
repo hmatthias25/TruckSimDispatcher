@@ -44,8 +44,11 @@ async function plan(gameTime, city, cc, destCity, destCc, miles) {
 
   head('2. Milan to Munich, Saturday 21:00: into Germany as its Sunday ban starts');
   f = await plan('2000-01-06T21:00', 'Milan', 'IT', 'Munich', 'DE', 300);
-  const de = (f.timeline || []).find((t) => /Waiting out Germany's truck ban/.test(t.label));
-  ok('it stops at the German border and waits for 22:00 on Sunday', !!de, steps(f));
+  // v0.83: the road over the Brenner is through Austria, whose ban is on from Saturday 15:00 — so the truck waits at the
+  // Austrian border, not the German one, and goes on when both lift at 22:00 on Sunday. Before Austria was seen in the
+  // middle of the leg, it was the German border.
+  const de = (f.timeline || []).find((t) => /aiting out (Germany|Austria)'s truck ban/.test(t.label));
+  ok('it stops at the border and waits for 22:00 on Sunday', !!de && de.endGameTime === '2000-01-07T22:00', steps(f));
   ok('no driving in Germany between 00:00 and 22:00 on Sunday',
     !(f.timeline || []).some((t) => t.kind === 'Drive' && t.endGameTime > '2000-01-07T00:00' && t.startGameTime < '2000-01-07T22:00'
       && (f.timeline || []).indexOf(t) > (f.timeline || []).indexOf(de)), steps(f));

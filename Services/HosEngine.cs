@@ -216,6 +216,8 @@ public class PlanRequest
     /// <summary>In-game clock the plan starts from. Falls back to the reported status clock.</summary>
     public string StartGameTime { get; set; } = "";
     public string Label { get; set; } = "load";
+    /// <summary>An empty run: nothing to deliver, so no window to arrive early for and no dock to advise on.</summary>
+    public bool EmptyRun { get; set; }
 }
 
 /// <summary>
@@ -426,25 +428,27 @@ public static class HosEngine
     /// a crossing, each side is its own stretch (to the port, from the port). Within a stretch the border is
     /// taken to fall half way — the app has no route, so that is as near as it can say.
     /// </summary>
-    private static void AssignCountries(List<HosTask> tasks, string? fromCc, string? originCc, string? destCc)
+    private static void AssignCountries(List<HosTask> tasks, string? fromCity, string? fromCc, string? originCity, string? originCc,
+                                        string? destCity, string? destCc)
     {
         static string? LegOf(HosTask t) => t.Kind != "Drive" ? null
             : t.Label.StartsWith("Deadhead", StringComparison.Ordinal) ? "dh"
             : t.Label.StartsWith("Line haul", StringComparison.Ordinal) ? "ld" : null;
-        var runs = new List<(List<HosTask> Tasks, string From, string To)>();
+        var runs = new List<(List<HosTask> Tasks, string FromCity, string From, string ToCity, string To)>();
         List<HosTask>? run = null;
-        string? runLeg = null, runFrom = null;
-        void Close(string to)
+        string? runLeg = null, runFrom = null, runFromCity = null;
+        void Close(string toCity, string to)
         {
-            if (run is { Count: > 0 }) runs.Add((run, runFrom ?? "", to));
+            if (run is { Count: > 0 }) runs.Add((run, runFromCity ?? "", runFrom ?? "", toCity, to));
             run = null;
         }
         foreach (var t in tasks)
         {
             if (t.Kind == "Crossing" && run != null && Ferries.Find(t.CrossingRoute) is { } route)
             {
-                Close(t.CrossingFromA ? route.ACc : route.BCc);
+                Close(t.CrossingFromA ? route.ACity : route.BCity, t.CrossingFromA ? route.ACc : route.BCc);
                 runFrom = t.CrossingFromA ? route.BCc : route.ACc;
+                runFromCity = t.CrossingFromA ? route.BCity : route.ACity;
                 run = new List<HosTask>();
                 continue;
             }
@@ -452,17 +456,28 @@ public static class HosEngine
             if (leg == null) continue;
             if (leg != runLeg)
             {
-                Close(runLeg == "dh" ? originCc ?? "" : destCc ?? "");
+                if (runLeg == "dh") Close(originCity ?? "", originCc ?? ""); else Close(destCity ?? "", destCc ?? "");
                 runLeg = leg;
                 runFrom = leg == "dh" ? fromCc : originCc;
+                runFromCity = leg == "dh" ? fromCity : originCity;
             }
             run ??= new List<HosTask>();
             run.Add(t);
         }
-        Close(runLeg == "dh" ? originCc ?? "" : destCc ?? "");
+        if (runLeg == "dh") Close(originCity ?? "", originCc ?? ""); else Close(destCity ?? "", destCc ?? "");
 
-        foreach (var (list, from, to) in runs)
+        foreach (var (list, fromTown, from, toTown, to) in runs)
         {
+            // A third country in the way: the stretch is cut at each border, so every piece is in one country and
+            // a ban is met where the truck actually meets it — at the Austrian border on a Saturday afternoon, not
+            // in a half-Slovenian, half-German stretch that never touches Austria. Two countries keep the halfway
+            // border, which is as near as the line can say and what every plan without a transit was built on.
+            if (Geo.CountriesAlong(fromTown, from, toTown, to) is { } along
+                && along.Any(x => !x.Cc.Equals(from, StringComparison.OrdinalIgnoreCase) && !x.Cc.Equals(to, StringComparison.OrdinalIgnoreCase)))
+            {
+                SplitAtBorders(tasks, list, along);
+                continue;
+            }
             var total = list.Sum(x => x.Miles);
             var border = total / 2;
             var before = 0.0;
@@ -473,6 +488,48 @@ public static class HosEngine
                 t.BorderAtMiles = t.FromCc != t.ToCc ? border - before : null;
                 before += t.Miles;
             }
+        }
+    }
+
+    /// <summary>
+    /// Cuts a stretch's drives at each border along it, each piece in one country. Hours go with the miles.
+    /// </summary>
+    private static void SplitAtBorders(List<HosTask> tasks, List<HosTask> stretch, List<(string Cc, double From)> along)
+    {
+        var total = stretch.Sum(x => x.Miles);
+        if (total <= 0) return;
+        var cuts = along.Skip(1).Select(x => x.From * total).ToList();
+        string CountryAt(double mile) => along.Last(x => x.From * total <= mile + 1e-6).Cc;
+        var before = 0.0;
+        foreach (var task in stretch)
+        {
+            var start = before;
+            var end = before + task.Miles;
+            before = end;
+            var inside = cuts.Where(c => c > start + 0.5 && c < end - 0.5).ToList();
+            if (inside.Count == 0)
+            {
+                task.FromCc = task.ToCc = CountryAt(start);
+                task.BorderAtMiles = null;
+                continue;
+            }
+            var pieces = new List<HosTask>();
+            var at = start;
+            foreach (var c in inside.Append(end))
+            {
+                var miles = c - at;
+                pieces.Add(new HosTask
+                {
+                    Label = task.Label, Kind = task.Kind, Miles = miles,
+                    Hours = task.Miles > 0 ? task.Hours * miles / task.Miles : 0,
+                    FromCc = CountryAt(at), ToCc = CountryAt(at),
+                });
+                at = c;
+            }
+            var i = tasks.IndexOf(task);
+            if (i < 0) continue;
+            tasks.RemoveAt(i);
+            tasks.InsertRange(i, pieces);
         }
     }
 
@@ -542,10 +599,15 @@ public static class HosEngine
         }
 
         var tasks = BuildTasks(s, req, mph);
-        if (eu) AssignCountries(tasks,
-            string.IsNullOrWhiteSpace(req.FromState) ? state.Status.LocationState : req.FromState,
-            string.IsNullOrWhiteSpace(req.OriginState) ? (string.IsNullOrWhiteSpace(req.FromState) ? state.Status.LocationState : req.FromState) : req.OriginState,
-            req.DestState);
+        if (eu)
+        {
+            var fromCity = string.IsNullOrWhiteSpace(req.FromCity) ? state.Status.LocationCity : req.FromCity;
+            var fromCc = string.IsNullOrWhiteSpace(req.FromState) ? state.Status.LocationState : req.FromState;
+            AssignCountries(tasks, fromCity, fromCc,
+                string.IsNullOrWhiteSpace(req.OriginCity) ? fromCity : req.OriginCity,
+                string.IsNullOrWhiteSpace(req.OriginState) ? fromCc : req.OriginState,
+                req.DestCity, req.DestState);
+        }
         result.TotalMiles = req.DeadheadMiles + req.LoadedMiles;
         result.FuelStopsRequired = tasks.Count(t => t.Label == "Fuel stop");
 
@@ -790,7 +852,14 @@ public static class HosEngine
             {
                 bansSaid.Add(cc);
                 result.Warnings.Add($"{name} bans heavy trucks {text}. The plan waits it out where it catches you " +
-                                    $"({Hhmm.Of(hours)}), and takes it as the daily rest where it is long enough to be one.");
+                                    $"({Hhmm.Of(hours)}): a day or more of it is your weekly rest, nine hours or more your daily rest.");
+            }
+            // A day or more parked is a weekly rest, whatever it is waiting for: Austria from Saturday 15:00 to
+            // Sunday 22:00 is thirty-one hours, which is a reduced weekly rest and resets the six days.
+            if (hours >= euR.ReducedWeeklyRest - Eps)
+            {
+                TakeEuWeeklyRest(hours, $"waiting out {name}'s truck ban", banWait: true);
+                return;
             }
             if (hours >= euR.ReducedDailyRest - Eps)
             {
@@ -848,16 +917,24 @@ public static class HosEngine
         /// with the 21 owed and paid back on a later regular one. Resets the day, the reduced-rest count and
         /// the six-day clock; NOT weekly driving, which belongs to the calendar week.
         /// </summary>
-        void TakeEuWeeklyRest(double atLeast, string why)
+        void TakeEuWeeklyRest(double atLeast, string why, bool banWait = false)
         {
             // A reduced weekly rest is anything from 24 up to 45: a wait that has to be sat anyway (Monday, a
             // window) is taken as a longer reduced rest, with less owed, not a 45 and a hotel.
-            var canReduce = euR.AllowReducedWeeklyRest && !lastWeeklyReduced;
+            //
+            // A ban is sat abroad, on international work, and that is the one case the regulation allows two reduced
+            // weekly rests in a row (561/2006 Art. 8(6) as amended) — the next then has to be a full one with the hours
+            // owed paid back, which is what home time is. Without it, a Saturday ban after a reduced rest held the
+            // truck for forty-five hours and more, to Tuesday, when the law asks only that it waits for the ban.
+            var secondInARow = banWait && lastWeeklyReduced;
+            var canReduce = euR.AllowReducedWeeklyRest && (!lastWeeklyReduced || banWait);
             var len = canReduce ? Math.Max(euR.ReducedWeeklyRest, atLeast) : Math.Max(euR.RegularWeeklyRest + owed, atLeast);
             var reduced = canReduce && len < euR.RegularWeeklyRest - Eps;
             var owedNow = reduced ? euR.RegularWeeklyRest - len : 0;
             var label = reduced
-                ? $"{Hhmm.Of(len)} reduced weekly rest — {why}; {Hhmm.Of(owedNow)} owed back. The cab is allowed"
+                ? $"{Hhmm.Of(len)} reduced weekly rest — {why}; {Hhmm.Of(owedNow)} owed back. The cab is allowed" +
+                  (secondInARow ? ". Your second reduced one in a row, which international work allows outside your home " +
+                                  "country — the next has to be a full 45 with every hour owed paid back: your home time" : "")
                 : owed > Eps
                     ? $"{len:0.#}-hour weekly rest — {why}, with {Hhmm.Of(owed)} of compensation paid back"
                     : $"{len:0.#}-hour weekly rest — {why}";
@@ -1504,7 +1581,7 @@ public static class HosEngine
         // not days, so arriving this far ahead almost certainly means arriving before the receiver will
         // take it — while the slack figure above says the opposite. The difference between slack and
         // sitting at a gate is the whole point of that number, so it cannot go unsaid.
-        if (req.AppointmentOpensHours <= 0 && req.DeadlineHours > 0 && result.SlackHours >= 8)
+        if (!req.EmptyRun && req.AppointmentOpensHours <= 0 && req.DeadlineHours > 0 && result.SlackHours >= 8)
             result.Warnings.Add(
                 $"That plan arrives {Hhmm.Of(result.SlackHours)} before it is due, which is wider than a delivery " +
                 "window usually is. If this one opens tomorrow you will be sitting at the gate for most of that, " +
@@ -1552,7 +1629,7 @@ public static class HosEngine
                                     $"You may take {euR.ReducedRestsBetweenWeekly} between weekly rests, and have {reducedLeft} left after this.");
             if (result.WeeklyRestsRequired > 0)
                 result.Warnings.Add($"This plan includes {result.WeeklyRestsRequired} weekly rest(s)" +
-                                    (result.ReducedWeeklyRests > 0 ? $", {result.ReducedWeeklyRests} of them reduced to 24 hours" : "") + ".");
+                                    (result.ReducedWeeklyRests > 0 ? $", {result.ReducedWeeklyRests} of them reduced (under 45 hours)" : "") + ".");
             if (result.HotelNights > 0)
                 result.Warnings.Add($"A regular weekly rest on this run is away from home, so EU rules put it in a hotel, " +
                                     $"not the cab — {result.HotelNights} night(s)" +
@@ -1605,7 +1682,7 @@ public static class HosEngine
                   $"behind a {TrailerSpec.Describe(req.TrailerType, null)} the dock does it. Take it as a break, free of the truck: " +
                   $"{euR.BreakLength * 60:0} minutes or more of it is your break, and the plan counts it. It still runs your spread " +
                   "down, and none of your driving limits move for it.";
-        else if (result.DockRestHours > 0.01)
+        else if (!eu && !req.EmptyRun && result.DockRestHours > 0.01)
             result.DockAdvice =
                 $"{Hhmm.Of(result.DockRestHours)} of dock time on this one is waiting, not working — behind a " +
                 $"{TrailerSpec.Describe(req.TrailerType, null)} the dock does it and you are in the way. " +

@@ -65,8 +65,11 @@ public static class Restart
             return (r.RegularWeeklyRest + owed, owed > 0.01
                 ? $"your last weekly rest was reduced, so this one is a full {r.RegularWeeklyRest:0} hours plus the {Hhmm.Of(owed)} still owed back"
                 : $"your last weekly rest was reduced, so this one is a full {r.RegularWeeklyRest:0} hours");
+        // At home it is never reduced, and it pays back everything owed: a tour starts with nothing outstanding.
         if (atHome)
-            return (r.RegularWeeklyRest, $"you are at the yard, so it is a full {r.RegularWeeklyRest:0} hours at home — no hotel, nothing owed");
+            return (r.RegularWeeklyRest + owed, owed > 0.01
+                ? $"you are at the yard, so it is a full {r.RegularWeeklyRest:0} hours at home plus the {Hhmm.Of(owed)} owed back — no hotel, nothing left owing"
+                : $"you are at the yard, so it is a full {r.RegularWeeklyRest:0} hours at home — no hotel, nothing owed");
         // A weekend driving ban where the rest is taken: a 24 that ends inside it leaves the truck parked by the
         // ban anyway, so the rest runs on until Monday 00:00 (or the ban's end, where that is later) — more rest,
         // less owed, and weekly driving back at the same moment. Asked for from play: a weekly rest ordered in
@@ -241,7 +244,8 @@ public static class Restart
     {
         // EU: there is no restart that refills weekly driving — that comes back on a Monday. What has to
         // be ordered is the weekly rest, once the six days since the last one are nearly up.
-        if (IsEu(s)) return EuWeeklyRestDueSoon(s);
+        // Not while on home time, though: that IS the weekly rest. See EuHomeContract.
+        if (IsEu(s)) return !EuHomeContract.OnHold(s) && EuWeeklyRestDueSoon(s);
         if (s.Hos.CycleRemaining <= 0) return true;
         if (s.Hos.CycleRemaining > StopDispatchAtCycleHours(s)) return false;
         // Enough coming back soon enough to carry on? Then no restart.

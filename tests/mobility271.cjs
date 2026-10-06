@@ -49,7 +49,8 @@ async function career(game, intervalDays, { lastHomeDay = MONDAY, nowDay = MONDA
   head('1. ETS2: home at least every four weeks, whatever was asked for');
   ht = await career('ETS2', 42);
   ok('six weeks is held to four', ht.intervalDays === 28, `${ht.intervalDays} days`);
-  ok('because of the law', ht.legalCeiling && /EU law|Mobility Package/.test(ht.arrangement), ht.arrangement);
+  // v0.82: an EU contract is written in tours of two to four weeks, so six weeks is put on the four-week tour.
+  ok('as the four-week tour, the longest a European contract writes', /four weeks/.test(ht.arrangement), ht.arrangement);
   ht = await career('ETS2', 0);
   ok('no arrangement still means home inside four weeks', ht.intervalDays === 28 && ht.tracked, `${ht.intervalDays} days, tracked ${ht.tracked}`);
   ht = await career('ETS2', 14);
@@ -60,7 +61,7 @@ async function career(game, intervalDays, { lastHomeDay = MONDAY, nowDay = MONDA
   ok('due soon from three weeks', ht.dueSoon && !ht.overdue, `${ht.daysOut} days out`);
   ht = await career('ETS2', 42, { lastHomeDay: MONDAY, nowDay: MONDAY + 30 });
   ok('overdue past four', ht.overdue, `${ht.daysOut} days out`);
-  ok('against the legal limit, not an arrangement', /28-day legal limit/.test(ht.headline), ht.headline.slice(0, 110));
+  ok('against the four-week tour', /28-day arrangement/.test(ht.headline), ht.headline.slice(0, 110));
 
   head('3. A regular weekly rest away from home is a hotel; a reduced one may be in the cab');
   await career('ETS2', 14);

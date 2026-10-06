@@ -582,6 +582,30 @@ public class Driver
     public int HomeDaysPlanned { get; set; }
 
     /// <summary>
+    /// EU: when this home time began - the report that put the driver on the yard. The weekly rest taken at
+    /// home is counted from here. See <see cref="Services.EuHomeContract"/>.
+    /// </summary>
+    public string HomeArrivedGameTime { get; set; } = "";
+
+    /// <summary>
+    /// EU: the earliest the driver goes back out - the contract's days at home, a full 45 plus what is owed,
+    /// and a fresh week, whichever is latest. Dispatch holds them at the yard until then.
+    /// </summary>
+    public string HomeReadyGameTime { get; set; } = "";
+
+    /// <summary>EU: the weekly rest this home time counts as has been written to the record.</summary>
+    public bool HomeRestRecorded { get; set; }
+
+    /// <summary>
+    /// EU: when the home-time agreement was last renegotiated, changed or kept. Blank = never, so the
+    /// first renegotiation is six months after probation cleared.
+    /// </summary>
+    public string HomeContractRenewedGameTime { get; set; } = "";
+
+    /// <summary>EU: the renegotiation is on the table - the driver is at the yard and it is due.</summary>
+    public bool HomeContractRenewalOpen { get; set; }
+
+    /// <summary>
     /// The promised box was parked with nobody on it, and the driver was told to mark it as their own in
     /// the ATS trailer manager to hold it.
     ///
@@ -3967,6 +3991,11 @@ public class MarketCity
 
 public class FeasibilityResult
 {
+    /// <summary>
+    /// An empty run: no load, no window, no dock. The screen says what the run is — the driving, the stops and the
+    /// arrival — and none of the slack and buffer a load is judged on.
+    /// </summary>
+    public bool EmptyRun { get; set; }
     /// <summary>Feasible | Tight | Infeasible</summary>
     public string Verdict { get; set; } = "Infeasible";
     public List<string> Blockers { get; set; } = new();

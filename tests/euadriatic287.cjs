@@ -85,6 +85,30 @@ async function plan(gameTime, miles, deadline) {
   const road = (f.timeline || []).filter((t) => t.kind === 'Drive').reduce((a, t) => a + t.miles, 0) * 1.609344;
   ok('and not the Adriatic driven round', road < 1200, `${Math.round(road)} km driven`);
 
+  head('6. Novi Sad to Bari (reported from play, v0.82): inland Serbia is across the Adriatic too');
+  await api('/status', 'POST', { locationCity: 'Novi Sad', locationState: 'RS', locationKind: 'Shipper', gameTime: '2000-01-05T10:00',
+    fuelPct: 100, atsOdometer: 1000, truckDamagePct: 1, trailerDamagePct: 1, dutyStatus: 'OffDuty', atsBankBalance: 50000 });
+  await api('/hos', 'POST', { driveRemaining: 9, shiftRemaining: 13, breakRemaining: 4.5, cycleRemaining: 50, asOfGameTime: '2000-01-05T10:00',
+    euWeekDriven: 6, euLastWeekDriven: 20, euHoursSinceWeeklyRest: 20, spreadEstimated: false });
+  await api('/board/clear', 'POST', {});
+  const ns = await api('/board/add', 'POST', { cargo: 'Beer', trailerType: 'Dry Van', shipper: 'S', receiver: 'R', originCity: 'Novi Sad', originState: 'RS',
+    destCity: 'Bari', destState: 'IT', loadedMiles: 623 / 1.609344, deadheadMiles: 0, gameRevenue: 2316, weightLbs: 40000, atLocation: true, deadlineHours: 96 });
+  f = ns.evaluations[0].feasibility;
+  // Whichever wins on the sailings, it is never 623 km of road straight over the sea.
+  ok('the listing is read as a route over the water', (f.warnings || []).some((w) => /route over the water/.test(w) && /by Trieste/.test(w)),
+    (f.warnings || [])[0]);
+  ok('a crossing into Bari, or the road at its real length', (f.crossingRoutes || []).some((r) => /bari/.test(r)) || f.totalMiles * 1.609344 > 1100,
+    `${(f.crossingRoutes || []).join(',') || 'road'} ${Math.round(f.totalMiles * 1.609344)} km`);
+
+  head('7. Ljubljana to Rome: the way round is the way, so no detour and no ferry');
+  await api('/status', 'POST', { locationCity: 'Ljubljana', locationState: 'SI', locationKind: 'Shipper', gameTime: '2000-01-05T10:00',
+    fuelPct: 100, atsOdometer: 1000, truckDamagePct: 1, trailerDamagePct: 1, dutyStatus: 'OffDuty', atsBankBalance: 50000 });
+  await api('/board/clear', 'POST', {});
+  const lj = await api('/board/add', 'POST', { cargo: 'Beer', trailerType: 'Dry Van', shipper: 'S', receiver: 'R', originCity: 'Ljubljana', originState: 'SI',
+    destCity: 'Rome', destState: 'IT', loadedMiles: 770 / 1.609344, deadheadMiles: 0, gameRevenue: 2000, weightLbs: 40000, atLocation: true, deadlineHours: 96 });
+  f = lj.evaluations[0].feasibility;
+  ok('by road', !(f.crossingRoutes || []).length && !(f.warnings || []).some((w) => /over the water/.test(w)), (f.crossings || []).join(' | '));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

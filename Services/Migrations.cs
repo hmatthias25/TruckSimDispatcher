@@ -52,6 +52,7 @@ public static class Migrations
         EnsureDiscoveredCities(s);
         EnsureTripFuelStops(s);
         EnsureHomeTimeArrangement(s);
+        EnsureEuHomeTour(s);
         ClearPhantomBankBalance(s);
         EnsureEquipmentStandard(s);
         EnsureCarrierNetwork(s);
@@ -1851,6 +1852,21 @@ public static class Migrations
     /// otherwise fall back to the common OTR arrangement rather than silently deciding they never go
     /// home. They can change it on the Career tab.
     /// </summary>
+    /// <summary>
+    /// An EU career on an arrangement the contract no longer writes — weekly, monthly, six weeks or none,
+    /// from before home time was a term of a European contract. Put on the nearest tour the law allows, which is
+    /// what the four-week ceiling was already holding most of them to.
+    /// </summary>
+    private static void EnsureEuHomeTour(AppState s)
+    {
+        if (!EuHomeContract.Applies(s) || s.Application == null) return;
+        if (EuHomeContract.IsOption(s.Application.HomeTimePreference)
+            && s.Driver.HomeTimeIntervalDays == HomeTime.DaysFor(s.Application.HomeTimePreference)) return;
+        var key = EuHomeContract.NearestKey(s.Driver.HomeTimeIntervalDays);
+        s.Application.HomeTimePreference = key;
+        s.Driver.HomeTimeIntervalDays = HomeTime.DaysFor(key);
+    }
+
     private static void EnsureHomeTimeArrangement(AppState s)
     {
         if (s.Driver.HomeTimeIntervalDays != 0) return;                 // already set, or deliberately none

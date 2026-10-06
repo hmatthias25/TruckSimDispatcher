@@ -2329,7 +2329,8 @@ function decisionHtml() {
           data-home="${o.isHomeRun ? '1' : ''}"
           data-reason="${esc(o.reason)}">
           ${o.isHomeRun ? 'Run home empty' : 'Reposition'} to ${esc(o.city)}, ${esc(o.state)} — ${dist(o.miles)}</button>
-        <span class="hint" style="margin:0">${esc(o.reason)}</span>
+        <span class="hint" style="margin:0">${esc(o.reason)}${o.planNote
+          ? `<br><b>${esc(o.planNote)}</b>` : ''}</span>
       </div>`).join('')}
       ${/* The trailer verdict, HERE, beside the button that triggers it. It only ever went into the
             dispatch notes at the top of the decision — several screens above the thing it is about —
@@ -2777,11 +2778,16 @@ function viewActive() {
                                  : 'Nothing to wait for — log Begin unload now.'))}</div></dd>` : ''}
       <dt>Rationale</dt><dd style="font-family:inherit">${esc(t.authorizationRationale)}</dd>
     </dl>
-    ${f ? `<h3 class="sect">Plan captured at authorization</h3>
-      <div class="callout ${f.verdict === 'Feasible' ? 'go' : 'warn'}">
-        <p><b>${esc(f.verdict)}</b> — ${hhmm(f.slackHours)} slack against a ${hhmm(f.requiredBufferHours)} required buffer.
+    ${f ? `<h3 class="sect">${f.emptyRun ? 'Plan for the empty run' : 'Plan captured at authorization'}</h3>
+      <div class="callout ${f.emptyRun || f.verdict === 'Feasible' ? 'go' : 'warn'}">
+        ${/* An empty run has nothing to deliver: no window, so no slack or buffer to judge it by. */ ''}
+        <p>${f.emptyRun
+          ? `<b>Planned</b> — ${hhmm(f.driveHours)} driving over ${dist(f.totalMiles)}, with
+             ${f.restsRequired + (f.weeklyRestsRequired || 0)} rest(s), ${f.breaksRequired} break(s) and
+             ${f.fuelStopsRequired} fuel stop(s). You get there ${gt(f.projectedArrivalGameTime)}.`
+          : `<b>${esc(f.verdict)}</b> — ${hhmm(f.slackHours)} slack against a ${hhmm(f.requiredBufferHours)} required buffer.
           ${f.restsRequired} rest(s), ${f.breaksRequired} break(s), ${f.fuelStopsRequired} fuel stop(s),
-          ${hhmm(f.driveHours)} driving over ${dist(f.totalMiles)}.</p>
+          ${hhmm(f.driveHours)} driving over ${dist(f.totalMiles)}.`}</p>
         ${/* Said, because a driver checking the timeline against their own arithmetic will find a leg
               ending before the 11 does, and an unexplained gap reads as the app getting it wrong. */ ''}
         ${f.parkingReserveApplied ? `<p class="hint" style="margin:0">A driving day here stops
@@ -3725,7 +3731,18 @@ function whereaboutsHtml(b) {
  * The second is wanted on every run home, including the ones where no trailer is changing hands.
  */
 function homeDaysBlock(ask) {
-  return `
+  // EU: the contract gives the days, so there is nothing to pick — say what it gives and carry it in the form.
+  const eu = S.views?.euHomeContract;
+  const days = eu ? `
+    <div style="margin-top:10px">
+      <input type="hidden" id="wa-homedays" value="${eu.daysOff}">
+      <p style="margin:0"><b>${eu.daysOff} days at home</b> <span class="sub">&mdash; what your contract gives,
+        and never less than a full 45-hour weekly rest plus anything owed back, held to Monday 00:00 if you
+        drove this week. You go back out on a full week.</span></p>
+      ${ask.length ? `<p class="hint" style="margin:4px 0 0">Mark a box private in ATS and whoever has it
+        finishes their load and drops it, so a trailer a few days out costs you nothing.</p>` : ''}
+    </div>` : null;
+  return `${days ?? `
     <div class="grid3" style="margin-top:10px">
       <label>How long are you home?
         <select id="wa-homedays">
@@ -3741,7 +3758,7 @@ function homeDaysBlock(ask) {
           : `This is what I use to tell you when to be ready to run once you park. Nothing is dispatched
              against you before then.`}</p>
       </div>
-    </div>
+    </div>`}
 
     ${/* ONE button for the lot. A button per row filed the answers one at a time, so dispatch settled the
           changeover off the first row before it had heard about the other four — and re-rendering after
@@ -3757,10 +3774,13 @@ function homeDaysBlock(ask) {
 
 /** The days-off question alone, where there are no trailers to ask about. */
 function homeDaysHtml(ask) {
+  const eu = S.views?.euHomeContract;
   return `<div class="callout info">
-    <h4>How long are you home?</h4>
-    <p>No trailer is changing hands this home time, so there is nothing to look up — but tell me how long
-      you are taking and I will tell you when to be back on the truck when you park.</p>
+    <h4>${eu ? 'Your days at home' : 'How long are you home?'}</h4>
+    <p>${eu ? `No trailer is changing hands this home time, so there is nothing to look up. Your contract
+      sets how long you are home; I will give you the date to be back on the truck when you park.`
+      : `No trailer is changing hands this home time, so there is nothing to look up — but tell me how long
+      you are taking and I will tell you when to be back on the truck when you park.`}</p>
     ${homeDaysBlock(ask)}
   </div>`;
 }
@@ -4669,6 +4689,14 @@ function domicilePrefsHtml() {
       <p style="margin:0"><b>Fixed until your probation is served.</b> This is the arrangement
         ${esc(S.company.name)} signed you to, and it sets when the review that clears you can be
         taken. Ask for a different one once you are off the period.</p></div>` : ''}
+    ${S.views.euHomeContract ? euHomeContractHtml() : usHomeTimeControls()}
+
+`;
+}
+
+/** The US arrangement picker: the driver's to change once probation is cleared. */
+function usHomeTimeControls() {
+  return `
     <div class="grid3">
       <label>Arrangement
         <select id="ht-pref"${S.views.probation?.on ? ' disabled' : ''}>${(S.views.homeTimeOptions || []).map((o) =>
@@ -4680,8 +4708,42 @@ function domicilePrefsHtml() {
         ? `<p class="hint" style="margin-top:22px">${num(S.views.homeTime.daysOut, 1)} days out of
            ${S.views.homeTime.intervalDays}.</p>` : ''}</div>
     </div>
-
 `;
+}
+
+/**
+ * EU: home time as a term of the contract. The days at home by rank and tour, with this driver's own
+ * highlighted, and the agreement — locked until it comes up, then changed or kept at the yard.
+ */
+function euHomeContractHtml() {
+  const c = S.views.euHomeContract;
+  const ht = S.views.homeTime;
+  const cell = (r, k, d) => r === c.rankRow && k === c.tourColumn
+    ? `<td class="num"><b>${d}</b></td>` : `<td class="num">${d}</td>`;
+  return `
+    <div class="tablewrap" style="margin:8px 0"><table class="tl">
+      <thead><tr><th>Days at home</th>${c.tours.map((t) => `<th class="num">${esc(t)}</th>`).join('')}</tr></thead>
+      <tbody>${c.table.map((row, r) => `<tr><td>${r === c.rankRow ? `<b>${esc(row.label)}</b> &larr; you` : esc(row.label)}</td>
+        ${row.days.map((d, k) => cell(r, k, d)).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    <p class="hint" style="margin:0 0 8px">Never less than a full 45-hour weekly rest plus anything owed back,
+      and held to Monday 00:00 if you drove that week &mdash; every tour starts on a full week with nothing owed.
+      ${c.onHold && c.readyGameTime ? `<b>You are home until ${gt(c.readyGameTime)}</b> (${esc(c.readyWhy)}).` : ''}</p>
+    <div class="callout ${c.renewalOpen ? 'warn' : 'info'}" style="margin-bottom:8px">
+      <p style="margin:0">${c.renewalOpen ? '<b>Up for renegotiation.</b> ' : '<b>Fixed by your contract.</b> '}${esc(c.note)}</p></div>
+    <div class="grid3">
+      <label>Agreement
+        <select id="ht-pref"${c.renewalOpen ? '' : ' disabled'}>${(S.views.homeTimeOptions || [])
+          .filter((o) => !S.terms?.homeTimeOffered || S.terms.homeTimeOffered.includes(o.key)).map((o) =>
+          `<option value="${esc(o.key)}" ${(S.application && S.application.homeTimePreference === o.key) ? 'selected' : ''}
+            >${esc(o.label)}</option>`).join('')}</select></label>
+      <label style="align-self:end"><button class="btn primary wide" data-act="save-home-time"
+        ${c.renewalOpen ? '' : 'disabled'}>Change it</button></label>
+      <label style="align-self:end"><button class="btn wide" data-act="keep-home-time"
+        ${c.renewalOpen ? '' : 'disabled'}>Keep it as it is</button></label>
+    </div>
+    ${ht && ht.tracked ? `<p class="hint">${num(ht.daysOut, 1)} days out of ${ht.intervalDays}; ${c.daysOff} days at
+      home when you get there.</p>` : ''}`;
 }
 
 function probationHtml() {
@@ -7728,6 +7790,8 @@ async function handleAction(act, d, ev) {
       { preference: sv('tl-pref') })), 'Trip-length preference updated.');
     case 'save-home-time': return run(async () => absorb(await api('/career/home-time', 'POST',
       { preference: sv('ht-pref') })), 'Home-time arrangement updated.');
+    case 'keep-home-time': return run(async () => absorb(await api('/career/home-time/keep', 'POST', {})),
+      'Home-time agreement kept. It stands for a year.');
 
     /* ---- city discovery */
     // The employer's own yard, at the size the employer runs it. Nothing to fill in: this is not the

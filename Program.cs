@@ -481,7 +481,7 @@ app.MapPost("/api/onboarding/hire", (HireRequest req) => Results.Ok(store.Mutate
     // import, or a career moving employers, carries a real arrangement that should not be flattened.
     if (!string.IsNullOrWhiteSpace(req.Code))
     {
-        var (homeKeys, _) = Carriers.HomeTimeOffer(Carriers.StandingFor(req.Code).HomeTime);
+        var (homeKeys, _) = Carriers.HomeTimeOffer(s, Carriers.StandingFor(req.Code).HomeTime);
         if (string.IsNullOrWhiteSpace(a.HomeTimePreference)
             || !homeKeys.Contains(a.HomeTimePreference, StringComparer.OrdinalIgnoreCase))
         {
@@ -1749,6 +1749,8 @@ app.MapPost("/api/fleetops/whereabouts/all", (WhereaboutsBulkRequest req) => Res
     // Clamped to the range the form offers: two days is a 34 and ten is a long furlough, and a figure
     // outside that is a typo rather than an answer.
     if (req.HomeDays is > 0) s.Driver.HomeDaysPlanned = Math.Clamp(req.HomeDays.Value, 2, 10);
+    // EU: not the driver's to say. The contract gives the days.
+    if (EuHomeContract.Applies(s)) s.Driver.HomeDaysPlanned = EuHomeContract.DaysOff(s);
 
     var filed = new List<object>();
     foreach (var one in req.Trailers ?? new List<WhereaboutsRequest>())
@@ -2546,6 +2548,13 @@ app.MapPost("/api/career/home-time", (HomeTimeArrangementRequest req) => Results
 
     Probation.RefuseTermChange(s, "home-time arrangement");
 
+    // EU: a term of a salaried contract, changed only when it comes up for renegotiation, and only to a tour
+    // the law allows.
+    var eu = EuHomeContract.Applies(s);
+    if (eu && !EuHomeContract.IsOption(req.Preference))
+        throw new InvalidOperationException("On a European contract the tour is two, three or four weeks out.");
+    EuHomeContract.RefuseChange(s);
+
     // Your employer has to agree to it, the same as they did at hire.
     //
     // Refused rather than quietly downgraded, because this one is a deliberate act: the driver is on
@@ -2562,7 +2571,7 @@ app.MapPost("/api/career/home-time", (HomeTimeArrangementRequest req) => Results
     // standing has nothing to hold the driver to.
     if (Carriers.Exists(s.Company.Code))
     {
-        var (offered, note) = Carriers.HomeTimeOffer(Carriers.StandingFor(s.Company.Code).HomeTime);
+        var (offered, note) = Carriers.HomeTimeOffer(s, Carriers.StandingFor(s.Company.Code).HomeTime);
         if (offered.Count > 0
             && !offered.Contains(req.Preference ?? "", StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException(
@@ -2576,7 +2585,26 @@ app.MapPost("/api/career/home-time", (HomeTimeArrangementRequest req) => Results
     if (string.IsNullOrWhiteSpace(s.Driver.LastHomeGameTime))
         s.Driver.LastHomeGameTime = string.IsNullOrWhiteSpace(s.Driver.HiredGameDate) ? s.Status.GameTime : s.Driver.HiredGameDate;
 
+    if (eu)
+    {
+        EuHomeContract.Renewed(s);
+        store.Log(s, "career", $"Home-time agreement renegotiated: {HomeTime.LabelFor(req.Preference)}, " +
+                               $"{EuHomeContract.DaysOff(s)} days at home. It stands for a year.");
+        return Snapshot(s);
+    }
+
     store.Log(s, "career", $"Home-time arrangement changed to {HomeTime.LabelFor(req.Preference)}.");
+    return Snapshot(s);
+})));
+
+/// EU: the renegotiation is on the table and the driver keeps the agreement they have. It stands another year.
+app.MapPost("/api/career/home-time/keep", () => Results.Ok(store.Mutate(s =>
+{
+    if (!EuHomeContract.Applies(s) || !s.Driver.HomeContractRenewalOpen)
+        throw new InvalidOperationException("There is no home-time agreement up for renegotiation.");
+    EuHomeContract.Renewed(s);
+    store.Log(s, "career", $"Home-time agreement kept: {HomeTime.LabelFor(s.Application?.HomeTimePreference)}, " +
+                           $"{EuHomeContract.DaysOff(s)} days at home. It stands for a year.");
     return Snapshot(s);
 })));
 
@@ -2854,10 +2882,10 @@ object Snapshot(AppState? given = null)
         terms = new
         {
             homeTimeOffered = Carriers.Exists(s.Company.Code)
-                ? Carriers.HomeTimeOffer(Carriers.StandingFor(s.Company.Code).HomeTime).Keys
-                : HomeTime.Options.Select(o => o.Key).ToList(),
+                ? Carriers.HomeTimeOffer(s, Carriers.StandingFor(s.Company.Code).HomeTime).Keys
+                : HomeTime.OptionsFor(s).Select(o => o.Key).ToList(),
             homeTimeNote = Carriers.Exists(s.Company.Code)
-                ? Carriers.HomeTimeOffer(Carriers.StandingFor(s.Company.Code).HomeTime).Note : "",
+                ? Carriers.HomeTimeOffer(s, Carriers.StandingFor(s.Company.Code).HomeTime).Note : "",
             tripLengthsOffered = Carriers.Exists(s.Company.Code)
                 ? Carriers.TripLengthOffer(Carriers.SizeOf(s.Company.Code),
                     Carriers.CreditedExperienceFor(s)).Keys
@@ -3005,7 +3033,9 @@ object Snapshot(AppState? given = null)
                 progress = Redemption.Assess(s),
             },
             periodicReviews = s.PeriodicReviews.Take(10).ToList(),
-            homeTimeOptions = HomeTime.Options.Select(o => new { key = o.Key, label = o.Label, days = o.Days, note = o.Note }).ToList(),
+            // EU: the contract — days at home by rank and tour, and when it is next renegotiated.
+            euHomeContract = EuHomeContract.View(s),
+            homeTimeOptions = HomeTime.OptionsFor(s).Select(o => new { key = o.Key, label = o.Label, days = o.Days, note = o.Note }).ToList(),
             backdrop = Backdrop(s),
             hos = HosEngine.Describe(s, truck),
             // Recap versus the 34, weighed for them. The decision drivers get wrong most often.

@@ -92,6 +92,10 @@ public static class Carriers
     /// <summary>
     /// The home-time arrangements this carrier will sign, best first, and how to say it on the card.
     /// </summary>
+    /// <summary>The same, on this career's terms: an EU contract is written in tours of two to four weeks.</summary>
+    public static (List<string> Keys, string Note) HomeTimeOffer(AppState s, int homeTimeStars) =>
+        EuHomeContract.Applies(s) ? EuHomeContract.Offer(homeTimeStars) : HomeTimeOffer(homeTimeStars);
+
     public static (List<string> Keys, string Note) HomeTimeOffer(int homeTimeStars)
     {
         var min = MinHomeDaysFor(homeTimeStars);
@@ -1144,8 +1148,8 @@ public static class Carriers
                 Condition = cond,
                 // The terms, so the card can say what the job IS and not just what it pays.
                 MinHomeTimeDays = MinHomeDaysFor(spec.HomeTimeStars),
-                HomeTimeOffered = HomeTimeOffer(spec.HomeTimeStars).Keys,
-                HomeTimeNote = HomeTimeOffer(spec.HomeTimeStars).Note,
+                HomeTimeOffered = HomeTimeOffer(s, spec.HomeTimeStars).Keys,
+                HomeTimeNote = HomeTimeOffer(s, spec.HomeTimeStars).Note,
                 TripLengthsOffered = TripLengthOffer(spec.Size,
                     CreditedExperience(s, s.Application?.ExperienceYears ?? 0)).Keys,
                 TripLengthNote = TripLengthOffer(spec.Size,

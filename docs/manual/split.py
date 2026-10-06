@@ -102,6 +102,7 @@ PLAYER_TITLES = {
     # Euro Truck Simulator 2
     "Playing Euro Truck Simulator 2",
     "Europe's rules: the clocks, home and cabotage",
+    "Home time on a European contract",
     "Your clocks on ETS2: four figures, once a shift",
     "Logging time off on ETS2, and what it counts as",
     "Where dispatch stops you, in Europe",

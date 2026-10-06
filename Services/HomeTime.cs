@@ -28,14 +28,22 @@ public static class HomeTime
         ("none",       "No arrangement — keep me out", 0, "Dispatch never routes you home. Run until you ask.")
     };
 
+    /// <summary>Both sets of arrangements: an EU career's tours read through the same two lookups.</summary>
+    private static IEnumerable<(string Key, string Label, int Days, string Note)> AllOptions =>
+        Options.Concat(EuHomeContract.Options.Where(e => !Options.Any(o => o.Key == e.Key)));
+
     public static int DaysFor(string? key) =>
-        Options.FirstOrDefault(o => o.Key.Equals((key ?? "").Trim(), StringComparison.OrdinalIgnoreCase)).Days;
+        AllOptions.FirstOrDefault(o => o.Key.Equals((key ?? "").Trim(), StringComparison.OrdinalIgnoreCase)).Days;
 
     public static string LabelFor(string? key)
     {
-        var hit = Options.FirstOrDefault(o => o.Key.Equals((key ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+        var hit = AllOptions.FirstOrDefault(o => o.Key.Equals((key ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
         return hit.Label ?? "No arrangement";
     }
+
+    /// <summary>The arrangements this career can be on: the EU tours on an ETS2 career, the US list otherwise.</summary>
+    public static IEnumerable<(string Key, string Label, int Days, string Note)> OptionsFor(AppState s) =>
+        EuHomeContract.Applies(s) ? EuHomeContract.Options : Options;
 
     /// <summary>Ceiling on the home area's growth, as a multiple of the configured radius.</summary>
     public const double MaxRadiusMultiple = 2.0;
@@ -62,6 +70,39 @@ public static class HomeTime
     /// they get there and back before the date", which is a question about days, not about minutes.
     /// </summary>
     public const double MilesPerDrivingDay = 11 * 55;
+
+    /// <summary>
+    /// A day's driving for this career. EU: the daily limit at the speed the app has learned from the driver's
+    /// own runs. Reported from play: Novi Sad, a thousand kilometres from Mannheim with under four days left,
+    /// planned as if the driver covered 605 miles a day — the US figure — when nine hours at the 37 mph they
+    /// actually average is about 330. The app thought there was a day and more to spare, and ran them between
+    /// Serbia and Bosnia. The US keeps the coarse figure the rest of this file was tuned against.
+    /// </summary>
+    public static double MilesPerDay(AppState s)
+    {
+        if (!EuHomeContract.Applies(s)) return MilesPerDrivingDay;
+        var day = (s.Settings.EuHos ?? new EuHosRules()).DailyDriving;
+        var mph = HosEngine.EffectiveMph(s.Settings, DispatchEngine.AssignedTruck(s));
+        return day > 0 && mph > 0 ? day * mph : MilesPerDrivingDay;
+    }
+
+    /// <summary>
+    /// Days of slack — days left less the days it takes to work home — at or under which home is the only
+    /// direction left. A day: one load that goes nowhere, and the date is gone.
+    /// </summary>
+    public const double TightSlackDays = 1.0;
+
+    /// <summary>The overnight rest, as the driver's own rules name it: "10" in the US, the 11-hour daily rest in the EU.</summary>
+    public static string DailyRestWord(AppState s) => EuHomeContract.Applies(s)
+        ? $"{(s.Settings.EuHos ?? new EuHosRules()).RegularDailyRest:0}-hour daily rest"
+        : $"{s.Settings.Hos.OffDutyReset:0.#}";
+
+    /// <summary>
+    /// How much of a day's driving turns into progress home when the driver is running freight there rather than
+    /// driving straight in: the docks at both ends, and loads that never point exactly at the yard. From play: a
+    /// day of freight across the Balkans moved the truck 250 to 400 km at a nine-hour day of about 535 km.
+    /// </summary>
+    public const double FreightProgressShare = 0.65;
 
     /// <summary>
     /// How late the company is, as a share of what it promised.
@@ -160,8 +201,12 @@ public static class HomeTime
             // The round trip has to fit in HALF the days left, not all of them. The other half is the
             // freight itself: the load out, the docks at both ends, the hours the run actually eats. A
             // detour sized to consume every remaining day is a detour that arrives home late.
-            var recoverable = Math.Max(0, st.DaysUntilDue) * MilesPerDrivingDay / 4;
-            return Math.Round(Math.Clamp(recoverable, MinOutboundWhenDueSoonMiles,
+            // EU: from the slack, not the calendar — the days left after the drive home is taken out of them.
+            // With none, nothing goes further out than the noise the geography cannot resolve.
+            var mpd = st.MilesPerDay > 0 ? st.MilesPerDay : MilesPerDrivingDay;
+            var spare = st.DaysToGetHome is { } g ? st.DaysUntilDue - g : st.DaysUntilDue;
+            var recoverable = Math.Max(0, spare) * mpd / 4;
+            return Math.Round(Math.Clamp(recoverable, st.Tight ? MinOutboundWhenOverdueMiles : MinOutboundWhenDueSoonMiles,
                                          MaxOutboundWhenDueSoonMiles) / 5) * 5;
         }
 
@@ -185,6 +230,15 @@ public static class HomeTime
         public bool DueSoon { get; set; }
         /// <summary>Past the agreed interval. The company is now late.</summary>
         public bool Overdue { get; set; }
+        /// <summary>A day's driving for this career, in miles. See <see cref="MilesPerDay(AppState)"/>.</summary>
+        public double MilesPerDay { get; set; }
+        /// <summary>EU: days it takes to work freight home from here, at the driver's own pace. Null outside the EU.</summary>
+        public double? DaysToGetHome { get; set; }
+        /// <summary>
+        /// EU: the days left barely cover the drive home. Home is due now, whatever share of the tour is gone —
+        /// see <see cref="TightSlackDays"/>.
+        /// </summary>
+        public bool Tight { get; set; }
         /// <summary>Rough miles from where the truck is now to the home terminal. Null = unknown.</summary>
         public double? MilesFromHome { get; set; }
 
@@ -311,6 +365,17 @@ public static class HomeTime
         st.DueSoon = st.DaysOut >= st.IntervalDays * 0.75;
         st.Overdue = st.DaysOut >= st.IntervalDays;
 
+        // EU: how far home is, in days at the driver's own pace. A thousand kilometres out with four days left
+        // is not the same as fifty with four, and only one of them leaves time for freight going elsewhere.
+        st.MilesFromHome = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
+        st.MilesPerDay = MilesPerDay(s);
+        if (EuHomeContract.Applies(s) && st.MilesFromHome is { } far && st.MilesPerDay > 0)
+        {
+            st.DaysToGetHome = far / (st.MilesPerDay * FreightProgressShare);
+            st.Tight = !st.Overdue && st.DaysUntilDue - st.DaysToGetHome.Value <= TightSlackDays;
+            if (st.Tight) st.DueSoon = true;
+        }
+
         // Operations approved a request, so they are going home whether the clock says due or not.
         // For a driver on no arrangement this is the only thing that ever puts them on the road home.
         if (s.Driver.HomeTimeGranted)
@@ -326,7 +391,6 @@ public static class HomeTime
         st.HomeRadius = EffectiveHomeRadius(s, st);
         st.OutboundAllowance = OutboundAllowance(st);
 
-        st.MilesFromHome = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
         st.AtHome = st.MilesFromHome is { } m && m <= st.HomeRadius;
         st.AtYard = st.MilesFromHome is { } y && y <= AtYardMiles;
 
@@ -392,6 +456,10 @@ public static class HomeTime
               (st.AtYard ? "You are at the yard — take it now."
                   : st.AtHome ? "You are close; bring it in to {0} and report in at the yard.".Replace("{0}", st.TerminalLabel)
                   : $"{cap}, and getting you back outranks the rate.")
+            : st.Tight
+                ? $"Home time due in {st.DaysUntilDue:0.#} days, and {st.TerminalLabel} is {Units.Distance(st.MilesFromHome ?? 0)} " +
+                  $"away — about {st.DaysToGetHome:0.#} days of working freight home at your pace. That leaves no day for freight going " +
+                  $"anywhere else. {cap}, and a load that gets you no nearer counts against itself."
             : st.DueSoon
                 ? $"Home time due in {st.DaysUntilDue:0.#} days. {cap}, and freight that closes the " +
                   $"distance to {st.TerminalLabel} scores ahead of freight that does not."
@@ -436,9 +504,16 @@ public static class HomeTime
 
         if (!atYard)
         {
+            // EU: the time at home goes on the record as the weekly rest, and an agreement left on the table
+            // is kept as it is.
+            if (s.Driver.AtHomeYard) EuHomeContract.OnLeaving(s);
             s.Driver.AtHomeYard = false;
             return false;
         }
+
+        // EU: whether this is a home time the contract owes — the tour due or overdue, or operations having
+        // approved one. Asked before anything below resets the clock or spends the approval.
+        var euEarned = !s.Driver.AtHomeYard && EuHomeContract.Applies(s) && Status(s) is { Tracked: true, DueSoon: true };
 
         // An approved request is satisfied by actually getting to the yard — the same mile that counts
         // as taking home time. Clearing it on the planning radius spent the trip while the driver was
@@ -486,6 +561,10 @@ public static class HomeTime
             s.Driver.Rank = "terminated";
             s.Driver.Status = "Terminated";
         }
+
+        // EU: the contract's days at home, and the weekly rest they include — where the tour has earned them.
+        // After the reviews, so a driver cleared on this arrival is home on the terms they have just earned.
+        EuHomeContract.OnArrival(s, euEarned);
 
         // Either way. "No change" is a decision the company made about your equipment, and saying
         // nothing about it is indistinguishable from the message having been swallowed — which is
@@ -839,7 +918,7 @@ public static class HomeTime
     public const double DeadBandPerDayMiles = 25;
 
     public static double DeadBandMiles(HomeStatus st) =>
-        st.Overdue
+        st.Overdue || st.Tight
             ? DeadBandWhenOverdueMiles
             : Math.Clamp(DeadBandWhenOverdueMiles + Math.Max(0, st.DaysUntilDue) * DeadBandPerDayMiles,
                          DeadBandWhenOverdueMiles, DeadBandMaxMiles);
@@ -858,7 +937,8 @@ public static class HomeTime
         var radius = st.HomeRadius > 0 ? st.HomeRadius : s.Settings.Scoring.HomeRadiusMiles;
         var w = s.Settings.Scoring.HomeTime;
         // Overdue doubles the weight — at that point the company is breaking its own promise.
-        var urgency = st.Overdue ? 1.0 : 0.55;
+        // Tight is nearly overdue: the date can still be kept, but only by going home now.
+        var urgency = st.Overdue ? 1.0 : st.Tight ? 0.85 : 0.55;
 
         var nowMiles = st.MilesFromHome ?? destMiles.Value;
         var closes = nowMiles - destMiles.Value;   // positive = ends up nearer home
@@ -893,9 +973,14 @@ public static class HomeTime
 
         if (closes > deadBand)
         {
-            var pts = 0.5 * w * urgency;
+            // Tight, a load is worth the days of working home it saves — Vienna, four hundred and fifty kilometres
+            // nearer Mannheim, against Banja Luka at a hundred and sixty. Reported from play: with a flat reward the
+            // better rate out of Bosnia won. Capped at two days, past which every load is going home anyway.
+            var pts = st.Tight
+                ? w * urgency * Math.Min(2.0, closes / Math.Max(1, st.MilesPerDay * FreightProgressShare))
+                : 0.5 * w * urgency;
             return (pts,
-                $"Closes {Units.Distance(closes)} toward {st.TerminalLabel} ({nowMiles:N0} → {Units.Distance(destMiles.Value)} out): {pts:+0.00;-0.00}",
+                $"Closes {Units.Distance(closes)} toward {st.TerminalLabel} ({Units.Dist(nowMiles):N0} → {Units.Distance(destMiles.Value)} out): {pts:+0.00;-0.00}",
                 $"Works you back toward {st.TerminalLabel}.", null);
         }
 
@@ -911,16 +996,28 @@ public static class HomeTime
             var severity = 1.0 + Math.Clamp((wrongWay - deadBand) / 500.0, 0, 1.0);
             var pts = -1.0 * w * urgency * severity;
             return (pts,
-                $"Runs {Units.Distance(wrongWay)} further from {st.TerminalLabel} ({nowMiles:N0} → {Units.Distance(destMiles.Value)} out) with home time {(st.Overdue ? "overdue" : "close")}: {pts:+0.00;-0.00}",
+                $"Runs {Units.Distance(wrongWay)} further from {st.TerminalLabel} ({Units.Dist(nowMiles):N0} → {Units.Distance(destMiles.Value)} out) with home time {(st.Overdue ? "overdue" : "close")}: {pts:+0.00;-0.00}",
                 null,
                 st.Overdue
                     ? $"Takes you {Units.Distance(Math.Abs(closes))} further out and your home time is already {st.DaysOut - st.IntervalDays:0.#} days late. That is the company breaking its word."
                     : $"Takes you {Units.Distance(Math.Abs(closes))} further from {st.TerminalLabel} with home time due in {st.DaysUntilDue:0.#} days.");
         }
 
+        // No nearer, with no day to spare: not neutral. A load that leaves the driver where they are has spent a day
+        // of the few the drive home needs — Novi Sad to Tuzla, three days out from Mannheim, is how that looked.
+        if (st.Tight)
+        {
+            var pts = -0.4 * w * urgency;
+            return (pts,
+                $"Gets you no nearer {st.TerminalLabel} ({Units.Dist(nowMiles):N0} → {Units.Distance(destMiles.Value)} out), and with " +
+                $"{st.DaysUntilDue:0.#} days left against about {st.DaysToGetHome:0.#} to work home there is no day to spend on it: {pts:+0.00;-0.00}",
+                null,
+                $"No nearer {st.TerminalLabel}, and you have no day to spare for it.");
+        }
+
         // The band is quoted, because "roughly neutral" is the one verdict here with no number in it and
         // it is the verdict a driver is most likely to want to argue with.
-        return (0, $"Roughly neutral on home time ({nowMiles:N0} → {Units.Distance(destMiles.Value)} from " +
+        return (0, $"Roughly neutral on home time ({Units.Dist(nowMiles):N0} → {Units.Distance(destMiles.Value)} from " +
                    $"{st.TerminalLabel}, inside the {Units.Distance(deadBand)} either way I treat as lateral).", null, null);
     }
 
@@ -990,6 +1087,19 @@ public static class HomeTime
                    $"{where0} leaves you {Units.Distance(destMiles.Value)} out, which is no nearer — so it is another day " +
                    "on the road to end up where you are. Run it in empty and take your home time; if something " +
                    "turns up that actually finishes near the yard, show me and I will put you under it.";
+        }
+
+        // EU, with the days left barely covering the drive home: a load has to get the driver meaningfully nearer.
+        // Anything else spends a day the date does not have. Reported from play: Novi Sad, 3.9 days left and 3.4 of
+        // them needed, and dispatch authorised Zenica — sideways — over Vienna, because Vienna's window was tight
+        // and Zenica's was not. If nothing on the board goes that way, the empty run home is on offer.
+        if (st.Tight && !damageIsTighter && further > -DeadBandWhenOverdueMiles)
+        {
+            var wh = DispatchEngine.Place(load.DestCity, load.DestState);
+            return $"{wh} leaves you {Units.Distance(destMiles.Value)} from {st.TerminalLabel}, and you are {Units.Distance(nowMiles)} now — " +
+                   $"no real progress. Home time is due in {st.DaysUntilDue:0.#} days and working home from here takes about " +
+                   $"{st.DaysToGetHome:0.#}, so there is no day to spend going sideways. Show me freight heading toward " +
+                   $"{st.TerminalLabel}, or take the empty run home.";
         }
 
         if (further <= allowance) return null;
@@ -1157,7 +1267,22 @@ public static class HomeTime
     public static bool OverdueAndHeadsHome(AppState s, BoardLoad load)
     {
         var st = Status(s);
-        if (!st.Tracked || !st.Overdue) return false;
+        return st.Tracked && st.Overdue && HeadsHome(s, load, st);
+    }
+
+    /// <summary>
+    /// EU: the days left barely cover working home, and this load gets the driver there or well on the way.
+    /// See <see cref="HomeStatus.Tight"/>.
+    /// </summary>
+    public static bool TightAndHeadsHome(AppState s, BoardLoad load)
+    {
+        var st = Status(s);
+        return st.Tracked && st.Tight && HeadsHome(s, load, st);
+    }
+
+    /// <summary>Finishes inside the home area, or a real distance nearer it than the driver is now.</summary>
+    public static bool HeadsHome(AppState s, BoardLoad load, HomeStatus st)
+    {
 
         var home = HomeTerminal(s);
         if (home == null) return false;
@@ -1293,6 +1418,9 @@ public static class HomeTime
         public string ReadyToRunGameTime { get; set; } = "";
         public string ReadyToRunNote { get; set; } = "";
 
+        /// <summary>EU: the home-time contract, for the brief to show the days and any renegotiation.</summary>
+        public object? HomeContract { get; set; }
+
         /// <summary>
         /// A better tractor is sitting here and can be asked for. The brief used to say "ask operations"
         /// with nothing behind it; these let the UI put the ask in front of the driver.
@@ -1365,7 +1493,27 @@ public static class HomeTime
             b.Parking.Add($"Your arrangement is home every {s.Driver.HomeTimeIntervalDays} days. Take the time — " +
                           "the clock on the next one starts when you report in here again.");
         var restart = s.Settings.Hos.CycleRestartHours;
-        if (s.Hos.CycleRemaining < s.Settings.Hos.CycleLimit * 0.5)
+
+        // EU: the contract says how long, and the time at home is the weekly rest. Nothing for the driver to
+        // pick and no restart to advise — the hold covers both.
+        var eu = EuHomeContract.Applies(s);
+        if (eu)
+        {
+            b.HomeContract = EuHomeContract.View(s);
+            if (GameClock.TryParse(s.Driver.HomeArrivedGameTime) is { } arrived)
+            {
+                var (ready, why) = EuHomeContract.Ready(s, arrived);
+                b.ReadyToRunGameTime = GameClock.Format(ready);
+                b.ReadyToRunNote = $"Your contract gives you {EuHomeContract.DaysOff(s)} days at home; what sets the date is {why}.";
+                b.Parking.Add($"You are home until {GameClock.Pretty(b.ReadyToRunGameTime)}. {b.ReadyToRunNote} " +
+                              "It counts as your weekly rest, so you go back out with a full week, nothing owed and the " +
+                              "six days starting fresh. Nothing is dispatched before then.");
+            }
+            if (s.Driver.HomeContractRenewalOpen)
+                b.Parking.Add("Your home-time agreement is up for renegotiation. Change it or keep it on the Career tab " +
+                              "before you leave; it then stands for a year. Leave without saying and it is kept as it is.");
+        }
+        else if (s.Hos.CycleRemaining < s.Settings.Hos.CycleLimit * 0.5)
             b.Parking.Add($"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Sit a {restart:0.#}-hour restart while you " +
                           "are stopped and you go back out with a full 70.");
 
@@ -1375,7 +1523,7 @@ public static class HomeTime
         // out. That answer was then used for the trailer decision and never said back to them, which
         // leaves them holding a number the app is planning around and they are not. Reported from play.
         var off = Math.Max(0, s.Driver.HomeDaysPlanned);
-        if (off > 0 && GameClock.TryParse(s.Status.GameTime) is { } parked)
+        if (!eu && off > 0 && GameClock.TryParse(s.Status.GameTime) is { } parked)
         {
             var ready = parked.Date.AddDays(off).AddHours(7);
 
@@ -1474,8 +1622,9 @@ public static class HomeTime
             b.Shop.Add($"This is the repair that stopped your dispatch — reckon on about {Hhmm.Of(quote.WaitHours)} in the shop.");
             b.Shop.Add("Fixing it here counts as your home time. You are at the yard with the truck in pieces; " +
                        "that is home time, and the clock on the next one has already started over from today.");
-            b.Shop.Add($"Same expectation as any home time: sit the {restart:0.#}-hour restart while you are here. " +
-                       "You are not going anywhere until the shop is finished, so take the reset and go back out on a full 70.");
+            if (!eu)
+                b.Shop.Add($"Same expectation as any home time: sit the {restart:0.#}-hour restart while you are here. " +
+                           "You are not going anywhere until the shop is finished, so take the reset and go back out on a full 70.");
         }
 
         // ---- equipment waiting on them
@@ -1579,6 +1728,8 @@ public static class HomeTime
         public string Reason { get; set; } = "";
         /// <summary>True when this is the last empty leg to the yard rather than a move to chase freight.</summary>
         public bool IsHomeRun { get; set; }
+        /// <summary>EU: the run planned — where a ban stops it and when it gets there. Shown beside the reason, not in it.</summary>
+        public string PlanNote { get; set; } = "";
     }
 
     /// <summary>
@@ -1623,19 +1774,31 @@ public static class HomeTime
         // The run home. Allowed to span a rest, unlike the market legs below — see HomeRunShifts.
         var homeReach = reach * HomeRunShifts;
         var offeredHome = false;
-        if (!alreadyHome && toHome is { } hm && hm <= homeReach)
+        // EU, home tight: offered at any distance. Reported from play, on probation: a thousand kilometres out with
+        // nothing on the board allowed, and the run home not offered because it was more than two shifts — which
+        // left the driver with no instruction at all. It is days of driving, and it is still the way to keep the date.
+        if (!alreadyHome && toHome is { } hm && (hm <= homeReach || st.Tight))
         {
             offeredHome = true;
             var overnight = hm > reach;
+            var days = hm / Math.Max(1, st.MilesPerDay);
+            // EU: planned, so the weekend bans and the rests are said before the run is taken, not discovered on it.
+            var planned = DispatchEngine.PlanEmptyMove(s, home.City, home.State, hm) is { } p
+                ? DispatchEngine.EmptyMovePlanNote(p) : "";
             offers.Add(new RepositionOffer
             {
                 City = home.City, State = home.State, Miles = Math.Round(hm, 0), IsHomeRun = true,
                 Reason = $"Empty to the yard for home time — {(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}, " +
                          "and nothing on the board is worth staying out for." +
-                         (overnight
-                             ? $" That is further than one shift, so take your {s.Settings.Hos.OffDutyReset:0.#} on the way — " +
+                         (planned.Length > 0 ? ""
+                         : hm > homeReach
+                             ? $" That is about {days:0.#} days of driving — take your daily rests on the way. It is still " +
+                               "the only way to keep the date."
+                             : overnight
+                             ? $" That is further than one shift, so take your {DailyRestWord(s)} on the way — " +
                                "it is still the shortest way to end this."
-                             : "")
+                             : ""),
+                PlanNote = planned
             });
         }
 
@@ -1754,14 +1917,14 @@ public static class HomeTime
         // Reachable across a rest, not just on the clock in hand — the same allowance the offer itself
         // gets. Judged on one shift, this went quiet at 615 miles and started naming markets instead,
         // which is how a driver ends up running further empty than the trip home would have been.
-        if (toHome is { } miles && miles <= reach * HomeRunShifts)
+        if (toHome is { } miles && (miles <= reach * HomeRunShifts || st.Tight))
             return $"Nothing on this board goes home and your home time is " +
                    $"{(st.Overdue ? "overdue" : $"due in {st.DaysUntilDue:0.#} days")}. " +
                    $"{DispatchEngine.Place(home.City, home.State)} is {Units.Distance(miles)} — " +
                    (miles <= reach
                        ? $"inside what you can drive on {Hhmm.Of(drivable)}. "
                        : $"further than the {Hhmm.Of(drivable)} you have, so take your " +
-                         $"{s.Settings.Hos.OffDutyReset:0.#} on the way. ") +
+                         $"{DailyRestWord(s)} on the way. ") +
                    "Run it in empty and take your home time; the empty miles are on the " +
                    "Dispatch tab and they are paid. If something going that way turns up before you roll, show me " +
                    "and I will put you under it instead.";
@@ -1804,6 +1967,10 @@ public static class HomeTime
             return $"Home time is overdue — {st.DaysOut:0.#} days out on a {st.IntervalDays}-day arrangement. " +
                    $"I am weighting freight toward {st.TerminalLabel} and will argue against anything running further out. " +
                    "If nothing on the board works, say so and I will run you home empty rather than keep you out.";
+        if (st.Tight)
+            return $"Home time is due in {st.DaysUntilDue:0.#} days and {st.TerminalLabel} is about {st.DaysToGetHome:0.#} days of " +
+                   "freight away. Only freight that gets you nearer is worth taking now — anything going sideways costs a day " +
+                   "you do not have, and if nothing on the board heads that way, say so and I will run you home.";
         return $"Home time is due in {st.DaysUntilDue:0.#} days. I am favouring loads that finish within " +
                $"{st.TerminalLabel}'s area so you are positioned to get home on time.";
     }

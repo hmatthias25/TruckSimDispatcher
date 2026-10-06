@@ -182,6 +182,8 @@ public static class EuCounters
         }
 
         // ---- the weekly rest, and what has happened since, from the trip log.
+        // A home time that has run its length goes on first: the yard is a rest the trip log never sees.
+        EuHomeContract.Settle(s, now);
         var rests = s.Trips.SelectMany(t => t.Events)
             .Where(IsTimeOff)
             .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
