@@ -141,7 +141,9 @@ async function run(miles, realMph,
 
 (async () => {
   const app = { driverName: 'M. Okonjo', preferredDivision: 'Dry Van', experienceYears: 9,
-    homeCity: 'Denver', homeState: 'CO', acceptsProbation: true, homeTimePreference: 'biweekly' };
+    homeCity: 'Denver', homeState: 'CO', acceptsProbation: true, homeTimePreference: 'none' };
+  // v0.86: no home-time arrangement. US home time now refuses a load that gets no nearer when the days left barely
+  // cover working home, and this suite's runs back and forth would bring that due partway through. Not what it tests.
   await api('/onboarding/market', 'POST', app);
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: at(2) }));
   await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });

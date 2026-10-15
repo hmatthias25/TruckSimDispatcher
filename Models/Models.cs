@@ -61,7 +61,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 36;
+    public const int Current = 37;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
 
@@ -108,6 +108,9 @@ public class AppState
     public List<LedgerEntry> Ledger { get; set; } = new();
 
     public List<Trip> Trips { get; set; } = new();
+
+    /// <summary>Road miles between pairs of places as actually driven, off the odometer. See Services.RoadLearning.</summary>
+    public List<RoadLeg> RoadLegs { get; set; } = new();
     public List<BoardLoad> Board { get; set; } = new();
     public List<Settlement> Settlements { get; set; } = new();
     public List<Incident> Incidents { get; set; } = new();
@@ -1227,6 +1230,14 @@ public class DriverStatus
     public string BoardClearedReason { get; set; } = "";
     public double BoardClearedAtShiftHours { get; set; }
     /// <summary>
+    /// A rejected board whose loads only failed on the driver's hours: said again when the city board comes up empty,
+    /// so the next step is "rest here" rather than "reposition". Kept with the place and the shift clock it was said
+    /// on, and dropped once either moves on. See DispatchEngine.RestFirst.
+    /// </summary>
+    public string RestFirstNote { get; set; } = "";
+    public string RestFirstWhere { get; set; } = "";
+    public double RestFirstAtShiftHours { get; set; }
+    /// <summary>
     /// The bank balance shown in ATS. This IS the company's cash â€” the game already deducts fuel,
     /// repairs, garages, trucks and AI driver wages from it, so the app reconciles to it rather than
     /// keeping a parallel pot of imaginary money.
@@ -1548,6 +1559,9 @@ public class Trip
     /// differenced against and those miles came off the job listing's estimate instead.
     /// </summary>
     public double DispatchOdometer { get; set; }
+    /// <summary>Where the truck was when the load was dispatched: the start of the pickup leg, for the road table.</summary>
+    public string DispatchCity { get; set; } = "";
+    public string DispatchState { get; set; } = "";
 
     /// <summary>True when the deadhead came off the driver's readings rather than the job listing.</summary>
     public bool DeadheadMeasured { get; set; }
@@ -1741,6 +1755,14 @@ public class Trip
     public bool IsHomeRun { get; set; }
     /// <summary>Feasibility analysis snapshot captured at authorization, for later audit.</summary>
     public FeasibilityResult? FeasibilityAtDispatch { get; set; }
+    /// <summary>
+    /// The plan as it stands after the driver last asked for a re-plan from where they were — a missed sailing, a
+    /// late start. The plan at authorization stays as it was; this is the one to drive to. Null where never asked.
+    /// </summary>
+    public FeasibilityResult? Replan { get; set; }
+    /// <summary>When the re-plan was asked for, and the ways across it weighed, best first, one line each.</summary>
+    public string ReplanGameTime { get; set; } = "";
+    public List<string> ReplanOptions { get; set; } = new();
     public string AuthorizationRationale { get; set; } = "";
     public string CancelReason { get; set; } = "";
     /// <summary>Driver | Dispatcher | Unavoidable | Mechanical | GameLimitation | None</summary>
@@ -1799,6 +1821,12 @@ public class TripEvent
     /// <summary>A Ferry event's crossing, by route id (Services.Ferries), and whether the driver had a cabin.</summary>
     public string FerryRoute { get; set; } = "";
     public bool Cabin { get; set; }
+    /// <summary>
+    /// EU: what a 24-to-45-hour stretch off counts as — "weekly" or "daily" — decided when it is logged and kept, so
+    /// the log is never read differently later. Blank on anything logged before v0.87, which counts by its length.
+    /// The driver may switch it. See <see cref="Services.EuCounters.Decide"/>.
+    /// </summary>
+    public string WeeklyRest { get; set; } = "";
     public string LoggedUtc { get; set; } = DateTime.UtcNow.ToString("o");
 }
 
@@ -2926,6 +2954,17 @@ public class TrailerRequest
 /// is done â€” and the app checks the elapsed game time and the cycle before it puts freight back on the
 /// truck. An interrupted one is recoverable because the order persists between the two reports.
 /// </summary>
+/// <summary>One pair of places and the miles the driver's last runs between them read on the odometer.</summary>
+public class RoadLeg
+{
+    public string Key { get; set; } = "";
+    public string A { get; set; } = "";
+    public string B { get; set; } = "";
+    /// <summary>The last few runs, oldest first.</summary>
+    public List<double> Miles { get; set; } = new();
+    public string LastGameTime { get; set; } = "";
+}
+
 public class RestartOrder
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
@@ -3269,6 +3308,13 @@ public class AppSettings
     /// eastbound authorises loads that cannot be made. See <see cref="Services.GameZones"/>.
     /// </summary>
     public bool TimeZonesOn { get; set; }
+
+    /// <summary>
+    /// The game's clocks keep daylight time — the job board prints PDT, MDT, CDT. Arizona does not change its
+    /// clocks, so on daylight time it reads the same as California, and on standard time the same as Denver.
+    /// On by default, because that is what ATS shows. See <see cref="Services.GameZones"/>.
+    /// </summary>
+    public bool GameDaylightTime { get; set; } = true;
 
     /// <summary>
     /// How often a receiver takes a load ahead of its appointment, as a percentage of loads.

@@ -53,7 +53,9 @@ async function addLoad(extra = {}) {
 
 (async () => {
   const app = { driverName: 'Hook Test', preferredDivision: 'Dry Van', transmissionPreference: 'either',
-    experienceYears: 8, homeCity: 'Denver', homeState: 'CO', acceptsProbation: true, homeTimePreference: 'biweekly' };
+    experienceYears: 8, homeCity: 'Denver', homeState: 'CO', acceptsProbation: true, homeTimePreference: 'none' };
+  // v0.86: no home-time arrangement. US home time now refuses a load that gets no nearer when the days left barely
+  // cover working home, and this suite's runs back and forth would bring that due partway through. Not what it tests.
   await api('/onboarding/market', 'POST', app);
   S = un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(0), code: 'SFL' }));
   await place(1);

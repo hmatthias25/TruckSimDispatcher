@@ -1100,7 +1100,7 @@ public static class FleetOpsService
         var (min, max, how) = CompanyHealth.HiringBandFor(s, CompanyHealth.Assess(s).Band);
 
         report.Instructions.Add(spendable >= 15_000m
-            ? $"**Hire a driver for unit {label}** in ATS — look for **level {min}-{max}**: {how}. " +
+            ? $"**Hire a driver for unit {label}** in ATS — look for **{CompanyHealth.SkillsAsk(min, max)}**: {how}. " +
               $"Add them on the Fleet tab once you have. {Units.Money0(spendable)} spendable; the real price is " +
               "in the game. It earns nothing standing at the yard."
             : $"Leave unit {label} standing for now — only {Units.Money0(spendable)} spendable after earmarks and " +

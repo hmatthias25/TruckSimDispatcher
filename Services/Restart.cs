@@ -40,6 +40,36 @@ public static class Restart
         return EuCounters.HoursSinceWeeklyRest(s, now) >= r.WeeklyRestDueAfterHours - 24;
     }
 
+    /// <summary>
+    /// EU: the driver's day is done here, and the rest they are about to take would end inside a weekend truck
+    /// ban where they are parked — one long enough that the stop is a weekly rest anyway. So it is ordered as the
+    /// weekly rest now, at the length <see cref="EuWeeklyRestPlan"/> sets, rather than an eleven that wakes them
+    /// in the middle of the ban. Reported from play: Saturday 15:21 in Frankfurt with 0:55 of spread left, told to
+    /// take the eleven — up at 02:30 Sunday with the German ban on until 22:00 and the weekly rest due Monday.
+    /// </summary>
+    public static bool EuRestRunsIntoBan(AppState s)
+    {
+        if (!IsEu(s) || GameClock.TryParse(s.Status.GameTime) is not { } now) return false;
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        if (!EuDayDone(s)) return false;
+        var cc = s.Status.LocationState;
+        var lifts = HosEngine.BanLiftsAt(cc, now.AddHours(r.RegularDailyRest)) ?? HosEngine.BanLiftsAt(cc, now);
+        return lifts is { } l && (l - now).TotalHours >= r.ReducedWeeklyRest - 0.01;
+    }
+
+    /// <summary>
+    /// EU: nothing more can be worked today — the driving or the spread is gone, or what is left of the spread
+    /// will not cover loading and getting off the property (the same line as DispatchEngine.NoWindowToWorkBlocker).
+    /// </summary>
+    public static bool EuDayDone(AppState s)
+    {
+        var stop = Math.Max(0, s.Settings.Hos.StopDispatchAtDriveHours);
+        if (Math.Min(s.Hos.DriveRemaining, s.Hos.ShiftRemaining) <= stop + 0.01) return true;
+        var trailer = DispatchEngine.AssignedTrailer(s);
+        var dock = FacilityLearning.For(s, trailer?.Type);
+        return s.Hos.ShiftRemaining < Math.Max(s.Settings.HookHours, dock.Loading) + Math.Max(0, s.Settings.ParkingBufferHours);
+    }
+
     /// <summary>EU: how long the next weekly rest is — dispatch's call. See <see cref="EuWeeklyRestPlan"/>.</summary>
     public static double EuWeeklyRestHours(AppState s) => EuWeeklyRestPlan(s, false, GameClock.TryParse(s.Status.GameTime)).Hours;
 
@@ -245,7 +275,7 @@ public static class Restart
         // EU: there is no restart that refills weekly driving — that comes back on a Monday. What has to
         // be ordered is the weekly rest, once the six days since the last one are nearly up.
         // Not while on home time, though: that IS the weekly rest. See EuHomeContract.
-        if (IsEu(s)) return !EuHomeContract.OnHold(s) && EuWeeklyRestDueSoon(s);
+        if (IsEu(s)) return !EuHomeContract.OnHold(s) && (EuWeeklyRestDueSoon(s) || EuRestRunsIntoBan(s));
         if (s.Hos.CycleRemaining <= 0) return true;
         if (s.Hos.CycleRemaining > StopDispatchAtCycleHours(s)) return false;
         // Enough coming back soon enough to carry on? Then no restart.

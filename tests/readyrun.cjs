@@ -202,11 +202,13 @@ async function comeHome(day) {
     await api('/import', 'POST', st);
     await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 55 });
 
-    // A board of freight that runs the wrong way — rejected, and the yard offered instead.
+    // A board of freight that runs the wrong way — rejected, and the yard offered instead. The city's board:
+    // off one dock the city is asked for first and the run home waits for it (cityfirst295), so this is the
+    // board that offers the yard.
     await api('/board/clear', 'POST', {});
     for (const [c, stt, mi] of [['Amarillo', 'TX', 430], ['Lubbock', 'TX', 520]]) {
       await api('/board/add', 'POST', {
-        cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
+        cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: false,
         originCity: 'Junction City', originState: 'KS', destCity: c, destState: stt,
         loadedMiles: mi, deadheadMiles: 0, gameRevenue: Math.round(mi * 1.4),
         deadlineHours: 40, weightLbs: 30000,

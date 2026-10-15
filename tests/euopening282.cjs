@@ -8,7 +8,7 @@
  *   - not where the eleven still makes it with the buffer: a reduced rest is not spent for nothing
  *   - a wait of eleven or more is a regular rest of that length
  *   - the board does not tell the driver to wait at the gate as other work on top of the rest
- *   - a finish inside the window that only the parking allowance tips over says so
+ *   - a gate arrival after the window closes says so, at the gate (v0.86: the window is judged at the gate)
  */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5981}/api`;
 async function api(p, m = 'GET', b) {
@@ -45,7 +45,10 @@ async function offer(windowText) {
     euWeekDriven: 0, euLastWeekDriven: 0, euHoursSinceWeeklyRest: 0 });
 
   head('1. A 02:07 opening the eleven would miss: a reduced nine');
-  let { d, f } = await offer('Thu 02:07 - Thu 08:07');
+  // v0.86: the window is judged at the gate, so it closes at 05:30 here — the eleven (at the gate about 04:30) is
+  // inside it but short of the buffer; the nine (about 02:30) is not. It closed at 08:07 when the unload and an
+  // hour's parking still came off the slack.
+  let { d, f } = await offer('Thu 02:07 - Thu 05:30');
   const tl = f.timeline || [];
   ok('feasible', f.verdict === 'Feasible', `${f.verdict}, slack ${f.slackHours}`);
   // Nine, or a few minutes more to land on the half-hour slot booked after it.
@@ -77,11 +80,13 @@ async function offer(windowText) {
   ok('one rest covering the wait, over eleven', r3 && r3.hours > 11, steps(f));
   ok('not reduced', !f.reducedDailyRests && r3 && !/reduced/.test(r3.label), r3 && r3.label);
 
-  head('4. Done inside the window, tipped over by the parking allowance: said that way');
-  ({ f } = await offer('Thu 02:07 - Thu 04:07'));
+  head('4. At the gate after the window closes: said at the gate');
+  // Was "done inside the window, tipped over by the parking allowance" until v0.86, when the window came to be
+  // judged at the gate and the parking allowance stopped coming off it.
+  ({ f } = await offer('Thu 01:00 - Thu 02:00'));
   const why = (f.blockers || []).join(' | ');
   ok('infeasible', f.verdict === 'Infeasible', f.verdict);
-  ok('the blocker names the parking allowance rather than calling 03:50 past 04:07', /parking allowance/.test(why) && !/is past the/.test(why), why);
+  ok('the blocker gives the gate time against the window close', /^At the gate .* after the .* window closes/.test(why), why);
 
   head('5. Reported from play: Parma to Porto-Vecchio — the ferry is said in the briefing, not only in the plan');
   await api('/status', 'POST', { locationCity: 'Parma', locationState: 'IT', locationKind: 'TruckStop', gameTime: '2000-01-10T08:00',

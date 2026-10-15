@@ -151,6 +151,16 @@ public static class CompanyHealth
     /// the seat with the cheapest hand who would take it. Both are the app giving advice its own job
     /// market would not recognise.
     /// </summary>
+    /// <summary>
+    /// The band put the way the hiring screen shows it. ATS's recruitment agency lists a candidate's skills, not a
+    /// level — reported from play, "there is no way to do this, no level is indicated, only skills". A driver earns
+    /// one skill point a level, so the points they come with are the level in all but name.
+    /// </summary>
+    public static string SkillsAsk(int min, int max) => max <= 1
+        ? "a candidate with no more than one skill point"
+        : $"a candidate with {min}–{max} skill points between them (count the filled skill pips on the hiring screen — " +
+          "ATS shows skills there, not a level, and each level brings a point)";
+
     public static (int Min, int Max, string How) HiringBandFor(AppState s, string band)
     {
         var code = s.Company.Code;
@@ -159,7 +169,7 @@ public static class CompanyHealth
         // A cap, not a preference: there is no quarter good enough to put a veteran in a training
         // fleet's seat, because the veteran was never applying here.
         if (Carriers.IsWayIn(code, s.Company.PayStars))
-            return (0, 1, "somebody starting out. This is a fleet people BEGIN at — level 0 or 1 is who " +
+            return (0, 1, "somebody starting out. This is a fleet people BEGIN at — no skills or one is who " +
                           "comes to us, the wage is what we can carry, and the freight is forgiving " +
                           "enough to learn on");
 
@@ -174,7 +184,7 @@ public static class CompanyHealth
             ? "this is specialised freight and it does not go to somebody learning on it"
             : $"{s.Company.Name} is a {s.Company.PayStars}-star seat and the work expects it";
         return (floor, Math.Max(max, floor + 3),
-                $"somebody who has done it before — {why}. Under level {floor}, leave the seat standing " +
+                $"somebody who has done it before — {why}. Under {floor} skill points, leave the seat standing " +
                 "rather than fill it cheap; a driver who cannot do the work costs more than an empty truck");
     }
 
@@ -201,9 +211,9 @@ public static class CompanyHealth
         var more = empty.Count > 3 ? $" and {empty.Count - 3} more" : "";
 
         v.Actions.Add($"{empty.Count} tractor(s) standing with nobody in them — {units}{more}. Hire in ATS " +
-                      $"and look for <b>level {min}–{max}</b>: {how}. Add them on the Fleet tab once you " +
+                      $"and look for <b>{SkillsAsk(min, max)}</b>: {how}. Add them on the Fleet tab once you " +
                       "have, and they go on the next report.");
-        report.Findings.Add($"{empty.Count} seat(s) empty — hire at level {min}–{max}.");
+        report.Findings.Add($"{empty.Count} seat(s) empty — hire with {min}–{max} skill points.");
     }
 
     public static void Act(AppState s, FleetReport report, Verdict v)
@@ -251,7 +261,7 @@ public static class CompanyHealth
         {
             var grow = cramped[0].Yard;
             var was = grow.Level;
-            var to = was == "Small" ? "Medium" : "Large";
+            var to = Yards.NextLevel(grow);
             var where = DispatchEngine.Place(grow.City, grow.State);
 
             // Asked for, not done. This used to call ApplyLevel straight away and tell the player to buy
@@ -270,8 +280,10 @@ public static class CompanyHealth
                 }) != null)
             {
                 v.Actions.Add($"The company wants {where} taken from a {was.ToLowerInvariant()} yard to a " +
-                              $"{to.ToLowerInvariant()} one. Buy the garage upgrade in ATS and tell me what " +
-                              "it cost, and I will move it on the books.");
+                              $"{to.ToLowerInvariant()} one, because it is full and it wants more trucks running out " +
+                              $"of it. Step one: buy the garage upgrade in ATS and tell me what it cost. Step two: that " +
+                              $"leaves {Yards.SlotsGained(grow, to)} empty slot(s) there — buy tractors for them in ATS, " +
+                              "hire drivers into them, and add them with Stock on the Terminals tab.");
                 report.Findings.Add($"Upgrade wanted at {where} — {was.ToLowerInvariant()} to {to.ToLowerInvariant()}.");
             }
             return;

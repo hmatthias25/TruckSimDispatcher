@@ -314,8 +314,10 @@
 
   <div class="rule">
     <h4>No load is planned to consume every remaining minute</h4>
-    <p>A safety buffer is required between projected arrival and the deadline, plus a parking allowance
-      at the end of a shift. Two hours by default, and you can raise it.</p>
+    <p>A safety buffer is required between reaching the receiver and the window closing. Two hours by
+      default, and you can raise it. The window is the time to be <i>there</i> by &mdash; the same way a
+      delivered load is graded &mdash; so the unload is not taken off it. The unload still has to fit in what
+      is left of your shift or spread, and the plan checks that separately.</p>
   </div>
 
   <div class="rule">
@@ -1899,16 +1901,15 @@
     different times called by one name, and it read as the app booking a slot at the closing edge. The
     note now leads with what the delivery is graded against:</p>
   <p style="margin-top:4pt"><i>"Booked in for Tue 06:30 &mdash; the plan has you at the gate Tue 06:30, and
-    late past Tue 08:30. The window closes Tue 14:00, 6:10 after you are done and parked."</i></p>
-  <p>With no slot it says <i>"Projected delivery &hellip; against a &hellip; deadline"</i>, and the word
+    late past Tue 08:30. The window closes Tue 14:00, 7:30 after you get there."</i></p>
+  <p>With no slot it says <i>"At the receiver &hellip; against a &hellip; window close"</i>, and the word
     appointment does not appear.</p>
 
-  <h3>Refused for the parking allowance</h3>
-  <p>A load can be refused even though the unload finishes inside the window, because the window closes too
-    soon after it to find legal parking. Saying "done 03:50, window closes 04:07, not deliverable" without
-    the reason reads as the app unable to tell the time, so the refusal names it: <i>"Done at the dock
-    03:50, and the 04:07 window close leaves only 0:17 of that &mdash; under the 1:00 parking allowance
-    &hellip;"</i></p>
+  <h3>Judged at the gate, not after the unload</h3>
+  <p>The window is when you have to be at the receiver by. Until v0.86 the plan took the unload and an
+    hour's parking allowance off every load's slack as well, which the close-out never counted: a driver on
+    fresh clocks could be shut out of a whole board over hours that would not have made a single load late.
+    A refusal now reads <i>"At the gate Fri 20:02, 2:57 after the Fri 17:05 window closes."</i></p>
 
   <div class="pfoot"><span>9 &middot; How a load is judged</span><span>24</span></div>
 </div>
@@ -2821,7 +2822,8 @@
       you, and how late your home time already is.</li>
     <li><b>The close-out repeats the instruction</b>, so it is in front of you when the trailer comes
       off.</li>
-    <li><b>If nothing works</b>, say so and operations will run you home empty rather than keep you out.</li>
+    <li><b>If nothing works</b>, operations runs you home empty, however far, planned with the rests. Once the
+      days left barely cover working home at your pace, a load that gets you no nearer is refused.</li>
     <li><b>A thin destination costs more</b> once home time is close &mdash; a quiet town is the worst
       place to be needing a load out of when you are due back.</li>
   </ul>
@@ -7007,6 +7009,10 @@
     bans in every country on the way, including the ones you only pass through. Austria's starts at 15:00 on
     Saturday. If a ban will stop you, the order says where to be parked, by when, and until when. A ban that holds
     you for a day or more is your weekly rest, and the full rest owed after it is your home time.</p>
+  <p><b>A day that ends into a ban.</b> If your day is done and an 11-hour rest would end inside a truck ban
+    where you are parked, dispatch tells you to take your weekly rest now, as soon as you report your clocks.
+    Its length is set the same way as any other weekly rest. The screenshot reader won't read a board while
+    you can't take anything on it, so you don't spend tokens finding that out.</p>
 
   <div class="pfoot"><span>22 &middot; Euro Truck Simulator 2</span><span>99</span></div>
 </div>

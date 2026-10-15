@@ -21,9 +21,11 @@ namespace TruckSimDispatcher.Services;
 /// so the load is authorised and the driver is late through no fault of their own. Westbound the error
 /// reverses and merely turns down freight that was comfortable.</para>
 ///
-/// <para><b>Standard time, always.</b> ATS does not observe daylight saving, so an offset here is a
-/// fixed property of a state and never of a date. That is the whole reason this can be an exact lookup
-/// rather than a calendar.</para>
+/// <para><b>Daylight time, and Arizona.</b> ATS has no seasons: its job board prints daylight time — PDT,
+/// MDT, CDT — all year. Arizona does not change its clocks, so on daylight time it keeps MST, which is the
+/// same clock as California's PDT, not Denver's MDT. Reported from play: Arizona was being treated as Mountain
+/// daylight time, an hour out. <see cref="AppSettings.GameDaylightTime"/> says which the game is on (daylight,
+/// by default); on standard time Arizona is back with Denver.</para>
 ///
 /// <para><b>The game's map, not the real one.</b> ATS assigns a zone to a whole state. Reality splits
 /// several of them — northern Idaho is Pacific, western Kansas and the Texas panhandle are Mountain,
@@ -69,11 +71,35 @@ public static class GameZones
         ["NH"] = Eastern, ["ME"] = Eastern,
     };
 
-    /// <summary>The zone a state keeps, or null for one the table cannot place.</summary>
+    /// <summary>The zone a state keeps on standard time, or null for one the table cannot place.</summary>
     public static int? ZoneOf(string? state)
     {
         var key = (state ?? "").Trim();
         return key.Length > 0 && ByState.TryGetValue(key, out var z) ? z : null;
+    }
+
+    /// <summary>States in the ATS table that do not change their clocks for daylight time.</summary>
+    private static readonly HashSet<string> NoDaylightTime = new(StringComparer.OrdinalIgnoreCase) { "AZ" };
+
+    private static bool IsAts => ReferenceEquals(GameProfile.Current.TimeZones, AtsZones);
+
+    /// <summary>
+    /// Where a state's clock sits against the others in the game as it is set: Arizona, on standard time all
+    /// year, sits with Pacific while everybody else is on daylight time.
+    /// </summary>
+    public static int? ZoneIn(AppState s, string? state)
+    {
+        if (ZoneOf(state) is not { } z) return null;
+        return IsAts && s.Settings.GameDaylightTime && NoDaylightTime.Contains((state ?? "").Trim()) ? z - 1 : z;
+    }
+
+    /// <summary>What the game calls the clock in a state: MST in Arizona, the daylight names elsewhere on ATS.</summary>
+    public static string NameIn(AppState s, string? state)
+    {
+        if (ZoneOf(state) is not { } z) return "";
+        if (!IsAts) return NameOf(z);
+        if (NoDaylightTime.Contains((state ?? "").Trim())) return AtsZoneNames[z];
+        return s.Settings.GameDaylightTime && AtsDaylightNames.TryGetValue(z, out var n) ? n : AtsZoneNames[z];
     }
 
     /// <summary>Whether the player runs with the game's time zones switched on.</summary>
@@ -90,7 +116,7 @@ public static class GameZones
     public static double ShiftHours(AppState s, string? fromState, string? toState)
     {
         if (!On(s)) return 0;
-        if (ZoneOf(fromState) is not { } from || ZoneOf(toState) is not { } to) return 0;
+        if (ZoneIn(s, fromState) is not { } from || ZoneIn(s, toState) is not { } to) return 0;
         return to - from;
     }
 
@@ -134,6 +160,12 @@ public static class GameZones
         [Pacific] = "PST", [Mountain] = "MST", [Central] = "CST", [Eastern] = "EST",
     };
 
+    /// <summary>ATS's zone names on daylight time, which is what the game's board prints.</summary>
+    internal static readonly Dictionary<int, string> AtsDaylightNames = new()
+    {
+        [Pacific] = "PDT", [Mountain] = "MDT", [Central] = "CDT", [Eastern] = "EDT",
+    };
+
     /// <summary>
     /// The sentence to put in front of a driver whose load crosses a boundary, or empty where it does
     /// not. The hours are the point, not the zone names: gaining two is two more hours of window and
@@ -144,15 +176,15 @@ public static class GameZones
         var shift = ShiftHours(s, fromState, toState);
         if (shift == 0) return "";
 
-        var from = ZoneOf(fromState)!.Value;
-        var to = ZoneOf(toState)!.Value;
+        var from = NameIn(s, fromState);
+        var to = NameIn(s, toState);
         var hours = Hhmm.Of(Math.Abs(shift));
         return shift > 0
-            ? $"You cross from {NameOf(from)} into {NameOf(to)} on this run, so the clock jumps {hours} " +
-              $"forward and you lose {hours} of the day. The delivery time on the board is {NameOf(to)} " +
+            ? $"You cross from {from} into {to} on this run, so the clock jumps {hours} " +
+              $"forward and you lose {hours} of the day. The delivery time on the board is {to} " +
               "— it is nearer than it looks."
-            : $"You cross from {NameOf(from)} into {NameOf(to)} on this run, so the clock goes {hours} " +
+            : $"You cross from {from} into {to} on this run, so the clock goes {hours} " +
               $"back and you get {hours} of the day returned. The delivery time on the board is " +
-              $"{NameOf(to)}, so there is more room here than the clock in the truck suggests.";
+              $"{to}, so there is more room here than the clock in the truck suggests.";
     }
 }

@@ -273,12 +273,17 @@ public static class ReceiverCall
                 WorkStartsGameTime = GameClock.Format(at),
                 WaitHours = Math.Round(held, 2),
                 Headline = $"Past your slot — start at {GameClock.Pretty(GameClock.Format(at))}",
+                // Said the way the close-out will judge it (TripService.LateByTheClock): a booked slot missed by
+                // more than the grace is a late delivery, window or no window. This used to say it was not a
+                // service failure at all — reported from play as "what is the point of the appointment then".
                 Instruction =
-                    $"You are past the {GameClock.Pretty(slot)} you were booked for, " +
-                    $"so they have given the door to somebody else and you wait {Hhmm.Of(held)} for the next " +
-                    $"one. Set the game clock to {GameClock.Pretty(GameClock.Format(at))} and log Begin unload " +
-                    "then. It is not a service failure — the load is judged on when it is DUE — but it is " +
-                    "your window it comes out of.",
+                    $"You are {Hhmm.Of(-earlyBy)} past the {GameClock.Pretty(slot)} you were booked for" +
+                    (-earlyBy > Math.Max(0, s.Settings.AppointmentGraceHours)
+                        ? $" — beyond the {Hhmm.Of(s.Settings.AppointmentGraceHours)} grace, so this goes down as a late " +
+                          "delivery; whose fault it was is settled at close-out. "
+                        : $", inside the {Hhmm.Of(s.Settings.AppointmentGraceHours)} grace, so it is not a late delivery. ") +
+                    $"They have given the door to somebody else and you wait {Hhmm.Of(held)} for the next " +
+                    $"one. Set the game clock to {GameClock.Pretty(GameClock.Format(at))} and log Begin unload then.",
             };
         }
 

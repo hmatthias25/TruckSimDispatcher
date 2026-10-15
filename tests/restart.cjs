@@ -276,7 +276,9 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
   // company parks the driver of its own accord. Seeded on the trip number, so a green run stays green.
   await api('/reset', 'POST', { confirm: 'RESET', keepSettings: true });
   const app4 = { driverName: 'Ops Park', preferredDivision: 'Dry Van', transmissionPreference: 'either',
-    experienceYears: 8, homeCity: 'Denver', homeState: 'CO', acceptsProbation: true, homeTimePreference: 'biweekly' };
+    experienceYears: 8, homeCity: 'Denver', homeState: 'CO', acceptsProbation: true, homeTimePreference: 'none' };
+  // v0.86: no home-time arrangement. US home time now refuses a load that gets no nearer when the days left barely
+  // cover working home, and this suite's runs back and forth would bring that due partway through. Not what it tests.
   await api('/onboarding/market', 'POST', app4);
   S = un(await api('/onboarding/hire', 'POST', { application: app4, force: true, gameTime: at(1), code: 'SFL' }));
   await place('Denver', 'CO', 1);

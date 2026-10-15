@@ -576,7 +576,8 @@ public static class Seed
             // Only ever suggest a tier that is actually bigger than the one the yard is on.
             var next = yard.Level switch
             {
-                "Small" => "Upgrade it to Medium (3) or Large (5) here — in ATS that means buying the garage upgrade.",
+                "Small" when yard.IsHeadquarters => "Upgrade it to Medium (3) or Large (5) here — in ATS that means buying the garage upgrade.",
+                "Small" => "Upgrade it to Large (5) here — in ATS that means buying the garage upgrade.",
                 "Medium" => "Upgrade it to Large (5) here — in ATS that means buying the garage upgrade.",
                 _ => "It is already at the largest tier, so base these units at another yard."
             };

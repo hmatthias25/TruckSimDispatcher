@@ -139,6 +139,20 @@ public static class MapCoverage
     }
 
     /// <summary>
+    /// Countries a map mod's freight reaches that no company here runs to, whatever the map setting says. Reported
+    /// from play: Kokkola to Yevlakh, Azerbaijan, read as an unknown region and so allowed, then planned as 682 km
+    /// ending at Tallinn — the app has no Azerbaijan, and the real way there is a second ferry across the Black Sea
+    /// from Constanța. The player's call: never deliver there.
+    /// </summary>
+    private static readonly Dictionary<string, string> Ets2Never = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["AZ"] = "Azerbaijan",
+    };
+
+    private static string? Never(AppState s, string code) =>
+        GameProfile.For(s).Id == GameProfile.Ets2.Id && Ets2Never.TryGetValue(code, out var name) ? name : null;
+
+    /// <summary>
     /// Why this load is off the table, or null where it is not.
     ///
     /// Both ends, origin first, because that is the one the driver is standing next to. Where both are
@@ -148,6 +162,11 @@ public static class MapCoverage
     {
         var from = Norm(load.OriginState);
         var to = Norm(load.DestState);
+        if (Never(s, to) is { } far)
+            return $"{load.DestCity}, {far} is past anywhere the company runs: there is no way there the app can plan, and " +
+                   "nobody here sends a truck that far. Leave it on the board.";
+        if (Never(s, from) is { } farFrom)
+            return $"{load.OriginCity}, {farFrom} is past anywhere the company runs. Leave it on the board.";
         var fromBad = from.Length > 0 && !Allows(s, from);
         var toBad = to.Length > 0 && !Allows(s, to);
 

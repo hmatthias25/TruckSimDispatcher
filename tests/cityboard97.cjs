@@ -40,6 +40,14 @@ async function place(city, state, day, kind = 'Receiver') {
 }
 
 /** The dock board: a handful of loads out of where the driver is standing. */
+/** Puts the career on a different tour, as an import: the arrangement and its interval together. */
+async function setTour(days, key) {
+  const st = await api('/export');
+  st.application.homeTimePreference = key;
+  st.driver.homeTimeIntervalDays = days;
+  await api('/import', 'POST', st);
+}
+
 async function dockBoard(rows) {
   await api('/board/clear', 'POST', {});
   let last;
@@ -95,7 +103,13 @@ async function cityBoard(rows) {
   // about: loads that are merely argued with, so there is still something to hold and name as a backup.
   // Once the arrangement is actually broken, #101/#109 disqualify a wrong-way load outright and there is
   // no backup to offer — that case has its own suite.
-  for (const d of [10, 12]) await place('Oklahoma City', 'OK', d);
+  //
+  // v0.86: the room to go further out now counts the drive home too (HomeTime.OutboundAllowance), and on a
+  // fortnight three days out of Springfield is already too close for Sonora — the hold would have nothing left to
+  // name. So this part of the story runs on a three-week tour, where "due, not broken" leaves five days and the
+  // reported board still has one load that is argued with rather than refused.
+  await setTour(21, 'threeweeks');
+  for (const d of [10, 17]) await place('Oklahoma City', 'OK', d);
   hs = (await api('/bootstrap')).views.homeTime;
   ok('home time is due but not yet broken', hs.dueSoon === true && hs.overdue === false,
     `due in ${hs.daysUntilDue?.toFixed?.(1)} days, overdue ${hs.overdue}`);
@@ -127,10 +141,10 @@ async function cityBoard(rows) {
   await api(`/trips/${auth.trip.id}/cancel`, 'POST', { reason: 'fixture' });
 
   head('4b. #115 Closer to the date, nothing here is takeable — and it still says to show the city');
-  // With two days left rather than three, the outbound room drops to 300 mi and none of these three
-  // qualifies. There is no backup to name, so the hold cannot fire — but the advice it exists to give
+  // With two days left rather than five, the outbound room drops to a couple of hundred miles and none of these
+  // three qualifies. There is no backup to name, so the hold cannot fire — but the advice it exists to give
   // must survive: this is one dock, go and look at the town.
-  await place('Oklahoma City', 'OK', 13);
+  await place('Oklahoma City', 'OK', 20);
   const tight = await dockBoard([['San Francisco', 'CA', 1650, 4200],
                                  ['Sonora', 'TX', 480, 1500],
                                  ['Cody', 'WY', 980, 2900]]);
@@ -141,7 +155,7 @@ async function cityBoard(rows) {
   ok('and the driver is still told to open the city board',
     /open the full freight board for/i.test((tight.dispatchNotes || []).join(' ')),
     'said');
-  await place('Oklahoma City', 'OK', 12);      // back to where the rest of the suite expects him
+  await place('Oklahoma City', 'OK', 17);      // back to where the rest of the suite expects him
 
   head('5. Pull the city board and it commits');
   bd = await cityBoard([['San Francisco', 'CA', 1650, 4200],
@@ -187,6 +201,7 @@ async function cityBoard(rows) {
   // Home again resets the arrangement, so the same load should be judged more gently.
   await place('Springfield', 'MO', 27, 'Terminal');
   await api('/hometime/take', 'POST', {}).catch(() => {});
+  await setTour(14, 'biweekly');               // the fortnight again, for everything after this
   await place('Oklahoma City', 'OK', 28);
   hs = (await api('/bootstrap')).views.homeTime;
   bd = await dockBoard([['Cody', 'WY', 980, 2900]]);
@@ -359,7 +374,7 @@ async function cityBoard(rows) {
     (kc?.scoreDetail || []).some((d) => /inside our .* home radius/i.test(d)),
     (kc?.scoreDetail || []).find((d) => /home radius/i.test(d)) || '(no home term)');
   ok('while Ottumwa is no nearer home than Oklahoma City already was',
-    (ott?.scoreDetail || []).some((d) => /neutral on home time/i.test(d)),
+    (ott?.scoreDetail || []).some((d) => /neutral on home time|Gets you no nearer/i.test(d)),  // v0.86: tight says it as "no nearer"
     (ott?.scoreDetail || []).find((d) => /home time/i.test(d)) || '(no home term)');
   ok('both can hold a restart, so the reset watch does not pick between them',
     kc?.destResetFriendly === true && ott?.destResetFriendly === true,
@@ -382,12 +397,13 @@ async function cityBoard(rows) {
     originCity: 'Oklahoma City', originState: 'OK', destCity: 'Ottumwa', destState: 'IA',
     loadedMiles: 561, deadheadMiles: 10, gameRevenue: 2136, deadlineHours: 40, weightLbs: 30000,
   });
-  // Deliverable, but inside the safety buffer: 343 miles plus the dock at both ends is about 10:30,
-  // so twelve hours leaves under the 2:00 we want. That is Tight, not impossible.
+  // Deliverable, but inside the safety buffer: 343 miles plus the dock at the shipper is about 8:00 to
+  // the receiver's gate, so nine hours leaves under the 2:00 we want. That is Tight, not impossible.
+  // (v0.86: slack runs to the gate, so the unload no longer comes off it; the window was 12 hours.)
   const tightBoard = await api('/board/add', 'POST', {
     cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: false,
     originCity: 'Oklahoma City', originState: 'OK', destCity: 'Kansas City', destState: 'MO',
-    loadedMiles: 343, deadheadMiles: 10, gameRevenue: 1237, deadlineHours: 12, weightLbs: 30000,
+    loadedMiles: 343, deadheadMiles: 10, gameRevenue: 1237, deadlineHours: 9, weightLbs: 30000,
   });
   const kcT = (tightBoard.evaluations || []).find((e) => e.load.destCity === 'Kansas City');
   const ottT = (tightBoard.evaluations || []).find((e) => e.load.destCity === 'Ottumwa');

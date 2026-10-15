@@ -72,16 +72,15 @@ public static class HomeTime
     public const double MilesPerDrivingDay = 11 * 55;
 
     /// <summary>
-    /// A day's driving for this career. EU: the daily limit at the speed the app has learned from the driver's
-    /// own runs. Reported from play: Novi Sad, a thousand kilometres from Mannheim with under four days left,
-    /// planned as if the driver covered 605 miles a day — the US figure — when nine hours at the 37 mph they
-    /// actually average is about 330. The app thought there was a day and more to spare, and ran them between
-    /// Serbia and Bosnia. The US keeps the coarse figure the rest of this file was tuned against.
+    /// A day's driving for this career: the daily limit — nine hours in the EU, eleven in the US — at the speed
+    /// the app has learned from the driver's own runs. Reported from play: Novi Sad, a thousand kilometres from
+    /// Mannheim with under four days left, planned as if the driver covered 605 miles a day when nine hours at the
+    /// 37 mph they actually average is about 330. The app thought there was a day and more to spare, and ran them
+    /// between Serbia and Bosnia. The same arithmetic, at eleven hours, is what a US driver covers.
     /// </summary>
     public static double MilesPerDay(AppState s)
     {
-        if (!EuHomeContract.Applies(s)) return MilesPerDrivingDay;
-        var day = (s.Settings.EuHos ?? new EuHosRules()).DailyDriving;
+        var day = EuHomeContract.Applies(s) ? (s.Settings.EuHos ?? new EuHosRules()).DailyDriving : s.Settings.Hos.DriveLimit;
         var mph = HosEngine.EffectiveMph(s.Settings, DispatchEngine.AssignedTruck(s));
         return day > 0 && mph > 0 ? day * mph : MilesPerDrivingDay;
     }
@@ -239,6 +238,10 @@ public static class HomeTime
         /// see <see cref="TightSlackDays"/>.
         /// </summary>
         public bool Tight { get; set; }
+        /// <summary>
+        /// EU: brought forward to the next weekly rest, because the last two were reduced — see <see cref="Status"/>.
+        /// </summary>
+        public bool ForTheWeeklyRest { get; set; }
         /// <summary>Rough miles from where the truck is now to the home terminal. Null = unknown.</summary>
         public double? MilesFromHome { get; set; }
 
@@ -365,15 +368,34 @@ public static class HomeTime
         st.DueSoon = st.DaysOut >= st.IntervalDays * 0.75;
         st.Overdue = st.DaysOut >= st.IntervalDays;
 
-        // EU: how far home is, in days at the driver's own pace. A thousand kilometres out with four days left
-        // is not the same as fifty with four, and only one of them leaves time for freight going elsewhere.
+        // How far home is, in days at the driver's own pace. A thousand miles out with four days left is not the
+        // same as fifty with four, and only one of them leaves time for freight going elsewhere. Built for the EU
+        // (v0.83) and the same in the US: a driver in Seattle with three days to Springfield is out of time.
         st.MilesFromHome = Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, home.City, home.State);
         st.MilesPerDay = MilesPerDay(s);
-        if (EuHomeContract.Applies(s) && st.MilesFromHome is { } far && st.MilesPerDay > 0)
+        if (st.MilesFromHome is { } far && st.MilesPerDay > 0)
         {
             st.DaysToGetHome = far / (st.MilesPerDay * FreightProgressShare);
             st.Tight = !st.Overdue && st.DaysUntilDue - st.DaysToGetHome.Value <= TightSlackDays;
             if (st.Tight) st.DueSoon = true;
+        }
+
+        // EU, two reduced weekly rests in a row: the Mobility Package (561/2006 Art. 8(8a)) has the driver home
+        // before the regular weekly rest that pays them back. So home time is due when that rest is, if that is
+        // sooner — and the 45 and everything owed is taken at the yard, not three nights in a hotel. Asked for
+        // from play: a 75-hour rest coming due in Finland with home time still six days off.
+        if (MobilityPackage.Applies(s) && now is { } n && EuCounters.ReducedWeeklyUsedUp(s, n))
+        {
+            var euR = s.Settings.EuHos ?? new EuHosRules();
+            var restDue = (euR.WeeklyRestDueAfterHours - EuCounters.HoursSinceWeeklyRest(s, n)) / 24;
+            if (restDue < st.DaysUntilDue)
+            {
+                st.ForTheWeeklyRest = true;
+                st.DaysUntilDue = restDue;
+                st.DueSoon = true;
+                st.Overdue = restDue <= 0;
+                st.Tight = !st.Overdue && st.DaysToGetHome is { } dh && restDue - dh <= TightSlackDays;
+            }
         }
 
         // Operations approved a request, so they are going home whether the clock says due or not.
@@ -387,7 +409,7 @@ public static class HomeTime
 
         // How late we are, and therefore how near counts as home. Worked out once here so the scorer,
         // the board notes and the empty-run offer cannot disagree about where home ends.
-        st.DaysLate = st.Overdue ? Math.Max(0, st.DaysOut - st.IntervalDays) : 0;
+        st.DaysLate = st.Overdue ? Math.Max(0, -st.DaysUntilDue) : 0;
         st.HomeRadius = EffectiveHomeRadius(s, st);
         st.OutboundAllowance = OutboundAllowance(st);
 
@@ -451,7 +473,16 @@ public static class HomeTime
         var against = st.LegalCeiling
             ? $"the {MobilityPackage.HomeCeilingDays}-day legal limit (EU rules: home at least every four weeks)"
             : $"a {st.IntervalDays}-day arrangement";
-        st.Headline = st.Overdue
+        var why = st.ForTheWeeklyRest
+            ? " Brought forward: your last two weekly rests were reduced, so the next is a full 45 with what is owed " +
+              "paid back, and EU rules have you home for it."
+            : "";
+        st.Headline = (st.Overdue && st.ForTheWeeklyRest
+            ? $"Home time is due now — your weekly rest is. " +
+              (st.AtYard ? "You are at the yard — take it now."
+                  : st.AtHome ? $"You are close; bring it in to {st.TerminalLabel} and report in at the yard."
+                  : $"{cap}, and getting you back outranks the rate.")
+            : st.Overdue
             ? $"Home time is OVERDUE — {st.DaysOut:0.#} days out against {against}. " +
               (st.AtYard ? "You are at the yard — take it now."
                   : st.AtHome ? "You are close; bring it in to {0} and report in at the yard.".Replace("{0}", st.TerminalLabel)
@@ -464,7 +495,7 @@ public static class HomeTime
                 ? $"Home time due in {st.DaysUntilDue:0.#} days. {cap}, and freight that closes the " +
                   $"distance to {st.TerminalLabel} scores ahead of freight that does not."
                 : $"{st.DaysOut:0.#} days out, home time in {st.DaysUntilDue:0.#} days" +
-                  (st.LegalCeiling ? " — EU rules bring you home at least every four weeks." : ".");
+                  (st.LegalCeiling ? " — EU rules bring you home at least every four weeks." : ".")) + why;
 
         return st;
     }
@@ -1019,6 +1050,39 @@ public static class HomeTime
         // it is the verdict a driver is most likely to want to argue with.
         return (0, $"Roughly neutral on home time ({Units.Dist(nowMiles):N0} → {Units.Distance(destMiles.Value)} from " +
                    $"{st.TerminalLabel}, inside the {Units.Distance(deadBand)} either way I treat as lateral).", null, null);
+    }
+
+    /// <summary>
+    /// EU, home time brought forward to the weekly rest (see <see cref="Status"/>): the load has to leave the driver
+    /// able to reach the yard by the time that rest falls due, the run home after it included. Reported from play:
+    /// Kokkola to Portree authorised on that rule's first board, delivering on Day 44 with the 75-hour rest due on
+    /// Day 45 — sat in Scotland, three nights in a hotel, the opposite of what bringing home time forward is for.
+    /// </summary>
+    public static string? WeeklyRestRefusal(AppState s, BoardLoad load, FeasibilityResult plan)
+    {
+        var st = Status(s);
+        if (!st.ForTheWeeklyRest || HomeTerminal(s) is not { } home) return null;
+        if (GameClock.TryParse(s.Status.GameTime) is not { } now) return null;
+        var due = now.AddDays(st.DaysUntilDue);
+        var done = plan.Timeline.Count > 0 && GameClock.TryParse(plan.Timeline[^1].EndGameTime) is { } end ? end
+            : GameClock.TryParse(plan.ProjectedArrivalGameTime) ?? now;
+        var where = DispatchEngine.Place(load.DestCity, load.DestState);
+        var tail = $" Your last two weekly rests were reduced, so the next one is a full 45 with what is owed paid back, " +
+                   $"and EU rules have you home for it — due {GameClock.Pretty(GameClock.Format(due))}.";
+        if (plan.WeeklyRestsRequired > 0)
+            return $"This one has your weekly rest in the middle of it, away from {st.TerminalLabel}." + tail;
+
+        var miles = Geo.MilesBetween(load.DestCity, load.DestState, home.City, home.State) ?? 0;
+        var hoursHome = 0.0;
+        if (miles > AtYardMiles)
+        {
+            var run = DispatchEngine.PlanEmptyMove(s, home.City, home.State, miles, load.DestCity, load.DestState);
+            hoursHome = run?.ElapsedHours ?? miles / Math.Max(1, MilesPerDay(s)) * 24;
+        }
+        if (done.AddHours(hoursHome) <= due) return null;
+        return $"Finishes at {where} {GameClock.Pretty(GameClock.Format(done))}" +
+               (hoursHome > 0 ? $", and {st.TerminalLabel} is about {Hhmm.Of(hoursHome)} on from there" : "") +
+               " — too late to be home for the weekly rest." + tail;
     }
 
     /// <summary>
@@ -1777,7 +1841,7 @@ public static class HomeTime
         // EU, home tight: offered at any distance. Reported from play, on probation: a thousand kilometres out with
         // nothing on the board allowed, and the run home not offered because it was more than two shifts — which
         // left the driver with no instruction at all. It is days of driving, and it is still the way to keep the date.
-        if (!alreadyHome && toHome is { } hm && (hm <= homeReach || st.Tight))
+        if (!alreadyHome && toHome is { } hm && (hm <= homeReach || st.Tight || st.ForTheWeeklyRest))
         {
             offeredHome = true;
             var overnight = hm > reach;

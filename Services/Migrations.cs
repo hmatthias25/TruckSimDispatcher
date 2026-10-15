@@ -53,6 +53,7 @@ public static class Migrations
         EnsureTripFuelStops(s);
         EnsureHomeTimeArrangement(s);
         EnsureEuHomeTour(s);
+        EnsureRoadTable(s);
         ClearPhantomBankBalance(s);
         EnsureEquipmentStandard(s);
         EnsureCarrierNetwork(s);
@@ -90,6 +91,35 @@ public static class Migrations
         KeyCountriesTheAppsWay(s);
         MeasureRunsOffTheOdometer(s);
         ForgetSpentTrailerWord(s);
+        RepairHiredTrucksOnTheCompany(s);
+    }
+
+    /// <summary>
+    /// A hired driver's accident used to be put on their tractor as damage, which the player cannot repair — they do
+    /// not own it in ATS. Reported from play. The damage each conduct line left on a unit still run by a hired driver
+    /// is taken back off and billed to the company as a yard repair instead, on the report it happened on. A write-off
+    /// is left as it is: that one the player is told to replace.
+    /// </summary>
+    private static void RepairHiredTrucksOnTheCompany(AppState s)
+    {
+        if (s.SchemaVersion >= 37) return;
+        s.SchemaVersion = 37;
+        foreach (var r in s.FleetReports)
+        foreach (var c in r.Conduct.Where(c => c.Severity is "NotAtFault" or "Minor" or "Serious" or "Terminal" && c.DamagePct > 0))
+        {
+            var t = s.Trucks.FirstOrDefault(x => x.Unit.Equals(c.TruckUnit, StringComparison.OrdinalIgnoreCase));
+            if (t == null || t.DamagePct <= 0 || t.Status == "OutOfService") continue;
+            if (s.Driver.AssignedTruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase)) continue;
+            var pct = Math.Min(t.DamagePct, c.DamagePct);
+            var cost = DriverConduct.RepairCost(s, pct);
+            t.DamagePct = Math.Round(Math.Max(0, t.DamagePct - pct), 2);
+            if (cost <= 0) continue;
+            LedgerService.Post(s, LedgerService.Operating, -cost, "FleetMaintenance",
+                $"Repair — unit {t.Ref}, {pct:0}% damage", r.Number, gameTime: r.PeriodEndGame);
+            t.LifetimeRepairCost = Math.Round(t.LifetimeRepairCost + cost, 2);
+            c.Outcome = c.Outcome.Replace(" and wants a shop.",
+                $" and went through the yard shop, {Units.Money0(cost)} on the company.");
+        }
     }
 
     /// <summary>
@@ -1857,6 +1887,19 @@ public static class Migrations
     /// from before home time was a term of a European contract. Put on the nearest tour the law allows, which is
     /// what the four-week ceiling was already holding most of them to.
     /// </summary>
+    /// <summary>
+    /// The driven-distance table, built from the trips already on file the first time a career loads with it, and made
+    /// the one the distance lookups read.
+    /// </summary>
+    private static void EnsureRoadTable(AppState s)
+    {
+        s.RoadLegs ??= new List<RoadLeg>();
+        // The game's city table, so the driven distances are checked against the right map.
+        GameProfile.Activate(s);
+        if (s.RoadLegs.Count == 0 && s.Trips.Any(t => t.Status == "Delivered")) RoadLearning.Backfill(s);
+        RoadLearning.Activate(s);
+    }
+
     private static void EnsureEuHomeTour(AppState s)
     {
         if (!EuHomeContract.Applies(s) || s.Application == null) return;

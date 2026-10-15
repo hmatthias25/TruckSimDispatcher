@@ -171,9 +171,9 @@ public static class DriverConduct
                     ev.DamagePct = 8 + (Hash(seed + "|dmg") % 22);
                     ev.Outcome = $"{d.Name} {ev.What}. Nothing on them — they were hit. " +
                                  (truck != null
-                                     ? $"{truck.Ref} took {ev.DamagePct:0}% and wants a shop."
-                                     : "The tractor wants a shop.");
-                    Bump(s, truck, ev.DamagePct);
+                                     ? $"{truck.Ref} took {ev.DamagePct:0}% and went through the yard shop"
+                                     : "The tractor went through the yard shop") +
+                                 Repair(s, report, truck, ev.DamagePct);
                     break;
 
                 case "NotAtFaultWriteOff":
@@ -196,8 +196,7 @@ public static class DriverConduct
                     ev.What = Minor[(int)(Hash(seed + "|what") % (uint)Minor.Length)];
                     ev.DamagePct = 2 + (Hash(seed + "|dmg") % 5);
                     ev.Outcome = $"{d.Name} {ev.What}. A word and a note on the file — nothing that " +
-                                 "follows them.";
-                    Bump(s, truck, ev.DamagePct);
+                                 "follows them. The yard fixed the tractor" + Repair(s, report, truck, ev.DamagePct);
                     break;
 
                 case "Serious":
@@ -205,18 +204,17 @@ public static class DriverConduct
                     ev.DamagePct = 10 + (Hash(seed + "|dmg") % 18);
                     PutOnProbation(s, d, report, $"{d.Name} {ev.What}.");
                     ev.Outcome = $"{d.Name} {ev.What}. That is a preventable — they are on probation, and " +
-                                 "the next one ends it.";
-                    Bump(s, truck, ev.DamagePct);
+                                 "the next one ends it. The yard fixed the tractor" + Repair(s, report, truck, ev.DamagePct);
                     break;
 
                 case "Terminal":
                     ev.What = Serious[(int)(Hash(seed + "|what") % (uint)Serious.Length)];
                     ev.DamagePct = 15 + (Hash(seed + "|dmg") % 25);
-                    Bump(s, truck, ev.DamagePct);
+                    var bill = Repair(s, report, truck, ev.DamagePct);
                     FleetOpsService.Separate(s, d, "Terminated", $"Preventable: {ev.What}.");
-                    ev.Outcome = d.OnProbation
+                    ev.Outcome = (d.OnProbation
                         ? $"{d.Name} {ev.What} — on probation already, so that is the job. Let go."
-                        : $"{d.Name} {ev.What}. Bad enough on its own. Let go.";
+                        : $"{d.Name} {ev.What}. Bad enough on its own. Let go.") + " The yard fixed the tractor" + bill;
                     break;
 
                 default:  // WriteOff
@@ -243,11 +241,43 @@ public static class DriverConduct
         return events;
     }
 
-    /// <summary>Damage the company can see because one of its own drivers reported it.</summary>
-    private static void Bump(AppState s, Truck? t, double pct)
+    /// <summary>
+    /// What a point of tractor damage costs to put right at the company's own yard. Taken off what ATS charged the
+    /// player for their own body work (about $880 a point at a dealer) and brought down by the yard's shop factor.
+    /// </summary>
+    public const decimal RepairPerPoint = 880m;
+
+    /// <summary>
+    /// A hired driver's tractor that got knocked about is the company's bill, not a figure on the truck.
+    ///
+    /// <para>It used to be added to the unit's damage. Reported from play: the player does not own a hired driver's
+    /// truck in ATS and cannot put it through a shop, so the damage just sat on the Equipment tab with nothing anybody
+    /// could do about it. ATS repairs a hired driver's truck itself; what is left for the app to say is what it cost.
+    /// Posted as fleet maintenance — the company's own cost, which the bank comparison already leaves out.</para>
+    ///
+    /// Returns the sentence tail: ", $X." for the outcome line.
+    /// </summary>
+    internal static string Repair(AppState s, FleetReport report, Truck? t, double pct)
     {
-        if (t == null) return;
-        t.DamagePct = Math.Clamp(t.DamagePct + pct, 0, 100);
+        var cost = RepairCost(s, pct);
+        if (cost <= 0) return ".";
+        var label = t?.Ref ?? "a hired driver's tractor";
+        LedgerService.Post(s, LedgerService.Operating, -cost, "FleetMaintenance",
+            $"Repair — unit {label}, {pct:0}% damage", report.Number, gameTime: report.PeriodEndGame);
+        if (t != null)
+        {
+            t.LifetimeRepairCost = Math.Round(t.LifetimeRepairCost + cost, 2);
+            var line = report.Lines.FirstOrDefault(l => l.TruckUnit.Equals(t.Unit, StringComparison.OrdinalIgnoreCase));
+            if (line != null) line.Repairs = Math.Round(line.Repairs + cost, 2);
+        }
+        report.TotalRepairs = Math.Round(report.TotalRepairs + cost, 2);
+        return $", {Units.Money0(cost)} on the company. Nothing for you to do in ATS — the game fixes a hired driver's truck itself.";
+    }
+
+    public static decimal RepairCost(AppState s, double pct)
+    {
+        var factor = (decimal)Math.Clamp(s.Settings.Maintenance.CompanyShopFactor, 0.1, 1.0);
+        return Math.Round((decimal)Math.Max(0, pct) * RepairPerPoint * factor, 0);
     }
 
     /// <summary>

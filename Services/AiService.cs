@@ -627,8 +627,8 @@ public static class AiService
         l.Unreadable ??= new List<string>();
         // First, before anything reads them: the game prints vehicle codes ("Parma, I"), and a reader copies
         // them. Everything below — the window's time zone, the distance — is keyed by the app's own codes.
-        l.OriginState = Ets2Data.Region(state, l.OriginState);
-        l.DestState = Ets2Data.Region(state, l.DestState);
+        l.OriginState = Ets2Data.RegionFor(state, l.OriginCity, l.OriginState);
+        l.DestState = Ets2Data.RegionFor(state, l.DestCity, l.DestState);
 
         // ETS2: the reader copied kilometres and kilograms as printed. The app stores miles and pounds.
         // Once only — a row interpreted twice must not shrink twice.

@@ -104,6 +104,35 @@ internal static partial class Ets2Data
     public static string Region(AppState s, string? code) =>
         GameProfile.For(s).Id == GameProfile.Ets2.Id ? CountryCode(code) : (code ?? "").Trim().ToUpperInvariant();
 
+    /// <summary>
+    /// The territories a country's flag is shown for in the game, which the app keeps as regions of their own because the
+    /// sea is in the way: Svalbard is Norway's, the Faroes and Greenland Denmark's, Åland Finland's, the Channel Islands
+    /// and Man the UK's.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> Territories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["NO"] = new[] { "SJ" }, ["DK"] = new[] { "FO", "GL" }, ["FI"] = new[] { "AX" }, ["UK"] = new[] { "GG", "JE", "IM" },
+    };
+
+    /// <summary>
+    /// A load's region, put right where the city only exists in one of the country's territories. Reported from play:
+    /// Kokkola to Longyearbyen listed as Norway, so the island was planned as a drive into mainland Norway. Svalbard is
+    /// its own region and the sea is in the way; read as Norway, nothing about the plan was true.
+    /// </summary>
+    public static string RegionFor(AppState s, string? city, string? code)
+    {
+        var cc = Region(s, code);
+        if (GameProfile.For(s).Id != GameProfile.Ets2.Id || string.IsNullOrWhiteSpace(city)) return cc;
+        var c = city.Trim();
+        bool Same(MarketCity m) => m.City.Equals(c, StringComparison.OrdinalIgnoreCase)
+                                   || CityNames.Fold(m.City).Equals(CityNames.Fold(c), StringComparison.OrdinalIgnoreCase);
+        if (Markets.Ets2BuiltIn.Any(m => m.State == cc && Same(m))) return cc;
+        if (Territories.TryGetValue(cc, out var ts)
+            && Markets.Ets2BuiltIn.FirstOrDefault(m => ts.Contains(m.State) && Same(m)) is { } hit)
+            return hit.State;
+        return cc;
+    }
+
     public static string CountryCode(string? code)
     {
         var c = (code ?? "").Trim().TrimEnd('.');

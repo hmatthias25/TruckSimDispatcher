@@ -90,7 +90,8 @@ let S;
     // The deadline was 14.5 while the fixture was spending a reefer's 6:00 of dock time on this run;
     // on the flatbed this driver was actually hired onto that is 3:30, so 14.5 stopped being tight and
     // the load simply authorized. The margin is what this fixture is pinning, not the figure.
-    loadedMiles: 343, deadheadMiles: 0, gameRevenue: 1237, deadlineHours: 12.0, weightLbs: 30000,
+    // v0.86: 12.0 down to 9.25 — slack is now to the gate, so the unload and the parking hour no longer come off it.
+    loadedMiles: 343, deadheadMiles: 0, gameRevenue: 1237, deadlineHours: 9.25, weightLbs: 30000,
   });
 
   const kc = (bd.evaluations || []).find((e) => e.load.destCity === 'Kansas City');
@@ -99,7 +100,7 @@ let S;
   console.log(`     headline: ${bd.headline}`);
   console.log(`     authorized: ${(bd.evaluations || []).find((e) => e.load.id === bd.authorizedLoadId)?.load.destCity || 'NONE'}`);
   for (const e of (bd.evaluations || []))
-    console.log(`     ${e.load.destCity}: ${e.feasibility.verdict}, score ${e.score?.toFixed?.(2)}, ` +
+    console.log(`     ${e.load.destCity}: ${e.feasibility.verdict} ${e.feasibility.slackHours}, score ${e.score?.toFixed?.(2)}, ` +
                 `rec ${e.recommendation}, homeTimeFails=${(e.homeTimeFails || []).length}, atLocation=${e.load.atLocation}`);
 
   ok('both loads are flagged as coming off this dock',
@@ -143,7 +144,7 @@ let S;
     cargo: 'Machinery', trailerType: S.trailers[0].type, atLocation: true,
     originCity: 'Oklahoma City', originState: 'OK', destCity: 'Kansas City', destState: 'MO',
     // Same load as section 2, same deadline: Tight is the state this section is re-entering.
-    loadedMiles: 343, deadheadMiles: 0, gameRevenue: 1237, deadlineHours: 12.0, weightLbs: 30000,
+    loadedMiles: 343, deadheadMiles: 0, gameRevenue: 1237, deadlineHours: 9.25, weightLbs: 30000,
   });
   ok('a row left over from Amarillo does not answer for Oklahoma City',
     stale.wantCityBoard === true, `wantCityBoard=${stale.wantCityBoard}`);

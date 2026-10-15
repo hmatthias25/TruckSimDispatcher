@@ -80,12 +80,130 @@ public static class EuCounters
         return Math.Max(0, basis + (at - asOf).TotalHours);
     }
 
+    /// <summary>
+    /// Reduced weekly rests in a row, international work abroad: two at most (561/2006 Art. 8(6) as amended), and the
+    /// next has to be a regular one with the hours owed paid back.
+    /// </summary>
+    public const int MaxReducedWeeklyInARow = 2;
+
+    /// <summary>
+    /// Every logged span of time off that ended by <paramref name="now"/>, oldest first, rest orders included, with
+    /// what it was decided to count as where that was decided: "weekly", "daily", or blank to go by its length.
+    /// </summary>
+    private static List<(DateTime Start, DateTime End, double Hours, string Counts)> TimeOff(AppState s, DateTime now) =>
+        s.Trips.SelectMany(t => t.Events)
+            .Where(IsTimeOff)
+            .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime),
+                          Counts: e.WeeklyRest is { Length: > 0 } w ? w : e.Kind == "Restart" ? "weekly" : ""))
+            .Where(x => x.Start is { } a && x.End is { } b && b > a && b <= now)
+            .Select(x => (Start: x.Start!.Value, End: x.End!.Value, Hours: (x.End!.Value - x.Start!.Value).TotalHours, x.Counts))
+            .Concat(s.RestartOrders
+                .Where(o => o.Status == "Completed")
+                .Select(o => (Start: GameClock.TryParse(o.ArrivedGameTime), End: GameClock.TryParse(o.CompletedGameTime)))
+                .Where(x => x.Start is { } a && x.End is { } b && b > a && b <= now)
+                .Select(x => (Start: x.Start!.Value, End: x.End!.Value, Hours: (x.End!.Value - x.Start!.Value).TotalHours, Counts: "weekly")))
+            .OrderBy(x => x.End)
+            .ToList();
+
+    /// <summary>
+    /// The spans that count as weekly rests, oldest first. Twenty-four hours off is a reduced weekly rest only where
+    /// the last two were not both reduced: a third in a row is not one, and the six days run on through it as through
+    /// a long daily rest. Reported from play: a 29-hour ferry after two reduced weekly rests, which the log would
+    /// have taken as the weekly rest and started the six days again.
+    /// </summary>
+    private static List<(DateTime Start, DateTime End, double Hours, string Counts)> Weeklies(
+        List<(DateTime Start, DateTime End, double Hours, string Counts)> rests, EuHosRules r)
+    {
+        var list = new List<(DateTime Start, DateTime End, double Hours, string Counts)>();
+        var inARow = 0;
+        foreach (var x in rests.Where(x => x.Hours >= r.ReducedWeeklyRest - 0.01
+                                           && !(x.Counts == "daily" && x.Hours < r.RegularWeeklyRest - 0.01)))
+        {
+            var reduced = x.Hours < r.RegularWeeklyRest - 0.01;
+            if (reduced && inARow >= MaxReducedWeeklyInARow) continue;
+            inARow = reduced ? inARow + 1 : 0;
+            list.Add(x);
+        }
+        return list;
+    }
+
+    /// <summary>The reduced weekly rests in a row on the log as of <paramref name="at"/>, since the last regular one.</summary>
+    public static int ReducedWeeklyInARow(AppState s, DateTime at)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        var n = 0;
+        foreach (var w in Enumerable.Reverse(Weeklies(TimeOff(s, at), r)))
+        {
+            if (w.Hours >= r.RegularWeeklyRest - 0.01) break;
+            n++;
+        }
+        return n;
+    }
+
+    /// <summary>Whether a reduced weekly rest starting at <paramref name="at"/> would be one too many in a row.</summary>
+    public static bool ReducedWeeklyUsedUp(AppState s, DateTime at) => ReducedWeeklyInARow(s, at) >= MaxReducedWeeklyInARow;
+
+    /// <summary>
+    /// How near the end of the six days a stretch off has to leave the driver, taken as a daily rest, before it is
+    /// worth counting as a reduced weekly one: two driving days.
+    /// </summary>
+    public const double WorthAWeeklyHours = 48;
+
+    /// <summary>
+    /// Whether 24 to 45 hours off — a long crossing, a long wait — is better counted as the weekly rest than as a long
+    /// daily one. The law lets it be either. Counted as weekly it starts the six days again, but a reduced one owes
+    /// hours back and two in a row bring the driver home; counted as daily it costs nothing and the six days run on.
+    /// So it is the weekly rest only where the six days are nearly gone — would run out within two driving days of
+    /// it, or during it — and, where the last weekly rest was reduced too, only where they run out within a day.
+    /// Asked for from play: the 29:30 Travemünde – Helsinki ferry was taken as a reduced weekly rest two days after
+    /// one at Frankfurt, owed 15:30 back for nothing, and was the second in a row that then called the driver home.
+    /// </summary>
+    public static bool CountAsWeekly(EuHosRules r, double hours, double sinceWeeklyAtStart, int reducedInARow)
+    {
+        if (hours >= r.RegularWeeklyRest - 0.01) return true;
+        if (hours < r.ReducedWeeklyRest - 0.01 || !r.AllowReducedWeeklyRest) return false;
+        if (reducedInARow >= MaxReducedWeeklyInARow) return false;
+        var leftAfter = r.WeeklyRestDueAfterHours - (sinceWeeklyAtStart + hours);
+        return leftAfter < (reducedInARow > 0 ? 24 : WorthAWeeklyHours);
+    }
+
+    /// <summary>What a stretch off starting at <paramref name="start"/> counts as, by <see cref="CountAsWeekly"/>.</summary>
+    public static string Decide(AppState s, DateTime start, double hours)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        var weeklies = Weeklies(TimeOff(s, start), r);
+        var since = weeklies.Count > 0 ? (start - weeklies[^1].End).TotalHours : HoursSinceWeeklyRest(s, start);
+        return CountAsWeekly(r, hours, since, ReducedWeeklyInARow(s, start)) ? "weekly" : "daily";
+    }
+
+    /// <summary>What 24 to 45 hours off counts as, for the trip log, once decided.</summary>
+    public static string Counted(AppState s, double hours, DateTime start, string counts)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        if (ReducedWeeklyUsedUp(s, start)) return NotAThirdReduced;
+        if (counts == "weekly")
+            return $"a reduced weekly rest ({Hhmm.Of(r.RegularWeeklyRest - hours)} owed back). It starts your six days again";
+        var weeklies = Weeklies(TimeOff(s, start), r);
+        var since = weeklies.Count > 0 ? (start - weeklies[^1].End).TotalHours : HoursSinceWeeklyRest(s, start);
+        return $"a long daily rest, not your weekly one: {Hhmm.Of(Math.Max(0, r.WeeklyRestDueAfterHours - since - hours))} of " +
+               "your six days are left after it, so counting it as weekly would only owe hours back. Your six days run on — " +
+               "switch it on the log if you want it as the weekly rest";
+    }
+
+    /// <summary>What a third reduced weekly rest in a row counts as, for the trip log.</summary>
+    public const string NotAThirdReduced =
+        "a long daily rest, not a weekly one: you have had two reduced weekly rests in a row, so the next weekly rest " +
+        "has to be a regular 45 hours with what is owed paid back. Your six days run on";
+
     /// <summary>What a logged span of time off counts as under EU rules, for the trip log. Empty under a daily rest.</summary>
-    public static string RestValue(AppState s, double hours)
+    public static string RestValue(AppState s, double hours, DateTime? start = null)
     {
         var r = s.Settings.EuHos ?? new EuHosRules();
         if (hours >= r.RegularWeeklyRest - 0.01) return "a regular weekly rest";
-        if (hours >= r.ReducedWeeklyRest - 0.01) return $"a reduced weekly rest ({Hhmm.Of(r.RegularWeeklyRest - hours)} owed back)";
+        if (hours >= r.ReducedWeeklyRest - 0.01)
+            return start is { } at
+                ? Counted(s, hours, at, Decide(s, at, hours))
+                : $"a reduced weekly rest ({Hhmm.Of(r.RegularWeeklyRest - hours)} owed back)";
         if (hours >= r.RegularDailyRest - 0.01) return "a regular daily rest";
         if (hours >= r.ReducedDailyRest - 0.01) return "a reduced daily rest";
         return "";
@@ -184,25 +302,15 @@ public static class EuCounters
         // ---- the weekly rest, and what has happened since, from the trip log.
         // A home time that has run its length goes on first: the yard is a rest the trip log never sees.
         EuHomeContract.Settle(s, now);
-        var rests = s.Trips.SelectMany(t => t.Events)
-            .Where(IsTimeOff)
-            .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
-            .Where(x => x.Start is { } a && x.End is { } b && b > a && b <= now)
-            .Select(x => (Start: x.Start!.Value, End: x.End!.Value, Hours: (x.End!.Value - x.Start!.Value).TotalHours))
-            .Concat(s.RestartOrders
-                .Where(o => o.Status == "Completed")
-                .Select(o => (Start: GameClock.TryParse(o.ArrivedGameTime), End: GameClock.TryParse(o.CompletedGameTime)))
-                .Where(x => x.Start is { } a && x.End is { } b && b > a && b <= now)
-                .Select(x => (Start: x.Start!.Value, End: x.End!.Value, Hours: (x.End!.Value - x.Start!.Value).TotalHours)))
-            .OrderBy(x => x.End)
-            .ToList();
-        var weekly = rests.LastOrDefault(x => x.Hours >= r.ReducedWeeklyRest - 0.01);
+        var rests = TimeOff(s, now);
+        var weeklies = Weeklies(rests, r);
+        var weekly = weeklies.LastOrDefault();
         if (weekly.Hours > 0)
         {
             h.EuHoursSinceWeeklyRest = Math.Round((now - weekly.End).TotalHours, 2);
             h.EuLastWeeklyRestReduced = weekly.Hours < r.RegularWeeklyRest - 0.01;
             var owed = 0.0;
-            foreach (var w in rests.Where(x => x.Hours >= r.ReducedWeeklyRest - 0.01))
+            foreach (var w in weeklies)
                 owed = w.Hours < r.RegularWeeklyRest - 0.01
                     ? owed + (r.RegularWeeklyRest - w.Hours)
                     : Math.Max(0, owed - (w.Hours - r.RegularWeeklyRest));

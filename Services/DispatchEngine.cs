@@ -71,6 +71,10 @@ public static class DispatchEngine
 
         decision.InfoNeeded.AddRange(MissingContext(s));
 
+        // A note left by an earlier board is not about this one. An empty board leaves it: that is the city board
+        // being pulled after the dock's, and the note is what "nothing in the city either" falls back on.
+        if (s.Board.Count > 0) RememberRestFirst(s, null);
+
         // Parked in a region the driver has switched off. Every load on the board then fails on its
         // origin, correctly and identically, which reads as the app having lost its mind rather than as
         // one setting doing its job. Said once, at the top, as the thing that explains the rest of the
@@ -234,6 +238,22 @@ public static class DispatchEngine
                         && !e.Feasibility.BeginsWithRest
                         && (e.Feasibility.Verdict == "Feasible" || TightButHeadsHome(e)))
             .ToList();
+        // Nothing clears the buffer, but something makes the window: book the best of those rather than reject the
+        // board. Tight is still on time — the buffer is a preference, and a driver on probation with nothing to run
+        // has no use for it. Reported from play: a board rejected outright, "what am I supposed to do, just drive
+        // around randomly?" Said on the load, so the thin margin is known.
+        if (clear.Count == 0
+            && decision.Evaluations.FirstOrDefault(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
+                                                        && !e.Feasibility.BeginsWithRest
+                                                        && e.Feasibility.Verdict == "Tight"
+                                                        && e.Feasibility.SlackHours >= 0) is { } onTime)
+        {
+            clear.Add(onTime);
+            decision.DispatchNotes.Add(
+                $"Nothing on this board clears our {Hhmm.Of(onTime.Feasibility.RequiredBufferHours)} buffer, so I have booked the best " +
+                $"one that still makes the window: {Hhmm.Of(onTime.Feasibility.SlackHours)} to spare at the gate. No room for a bad day " +
+                "on this one — keep it moving.");
+        }
 
         // A handful of loads at one dock is not the town. The board screen has always said "show me these
         // first; if none of them work I will ask for the whole city" — but the asking only ever happened
@@ -294,7 +314,9 @@ public static class DispatchEngine
             var beaten = decision.Evaluations
                 .Where(e => e.Load.Id != pick.Load.Id
                             && e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
-                            && e.Feasibility.Verdict != "Feasible"
+                            // Tight only: a load that cannot make its window at all is not "a late delivery
+                            // waiting to happen", and its negative slack read as "0:00" on the note.
+                            && e.Feasibility.Verdict == "Tight"
                             && e.Score > pick.Score)
                 .OrderByDescending(e => e.Score)
                 .FirstOrDefault();
@@ -338,8 +360,8 @@ public static class DispatchEngine
             decision.DispatchNotes.Add(!string.IsNullOrWhiteSpace(pick.AppointmentGameTime) && GateArrivalOf(pick.Feasibility) is { } atGate
                 ? $"Booked in for {GameClock.Pretty(pick.AppointmentGameTime)} — the plan has you at the gate {GameClock.Pretty(atGate)}, " +
                   $"and late past {GameClock.Pretty(GameClock.Format(GameClock.TryParse(pick.AppointmentGameTime)!.Value.AddHours(Math.Max(0, s.Settings.AppointmentGraceHours))))}. " +
-                  $"The window closes {GameClock.Pretty(pick.Feasibility.DueGameTime)}, {Hhmm.Of(pick.Feasibility.SlackHours)} after you are done and parked."
-                : $"Projected delivery {GameClock.Pretty(pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} deadline — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack after parking allowance.");
+                  $"The window closes {GameClock.Pretty(pick.Feasibility.DueGameTime)}, {Hhmm.Of(pick.Feasibility.SlackHours)} after you get there."
+                : $"At the receiver {GameClock.Pretty(GateArrivalOf(pick.Feasibility) is { } gateAt ? GameClock.Format(gateAt) : pick.Feasibility.ProjectedArrivalGameTime)} against a {GameClock.Pretty(pick.Feasibility.DueGameTime)} window close — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack.");
             if (pick.Feasibility.RestsRequired > 0)
                 decision.DispatchNotes.Add(Restart.IsEu(s)
                     ? $"Plan on {pick.Feasibility.RestsRequired} daily rest(s) and {pick.Feasibility.BreaksRequired} break(s) en route — the timeline says which are 11 hours and which 9."
@@ -515,8 +537,6 @@ public static class DispatchEngine
         //
         // Gated on a run home actually being on offer. A board rejected mid-tour with no yard run in it
         // has nothing to settle, and asking there is the noise the retired drop-side ask was removed for.
-        if (HomeTime.RepositionOffers(s).Any(o => o.IsHomeRun))
-            AskAboutTrailersHome(s, decision);
         var tight = decision.Evaluations.FirstOrDefault(
             e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0 && e.Feasibility.Verdict == "Tight");
 
@@ -546,14 +566,25 @@ public static class DispatchEngine
             decision.DispatchNotes.Add($"Closest to runnable: {Place(tight.Load.OriginCity, tight.Load.OriginState)} → {Place(tight.Load.DestCity, tight.Load.DestState)} {tight.Load.Cargo}, but it leaves only {Hhmm.Of(tight.Feasibility.SlackHours)} of slack against our {Hhmm.Of(s.Settings.SafetyBufferHours)} buffer. I will not authorize that on a normal day. If you want it, say so and I will authorize it as an exception and own the call.");
         }
 
+        // The receiver's board, then the city's, then somewhere else or home — in that order, whatever the reason the
+        // dock failed. Reported from play: the run home was on offer off one dock's board, with the trailer question
+        // asked beside it, before the city had been looked at. So nothing about the run home is raised here; it is
+        // raised once the city has been seen, or the driver has said there is nothing in it (AfterCityBoard).
+        var restFirst = RestFirst(s, decision.Evaluations);
+        RememberRestFirst(s, restFirst);
         if (onlyLocal)
         {
             decision.DispatchNotes.Add(
                 $"That was only what is on offer at this location. Before I send you anywhere empty, open the full " +
                 $"freight board for {Place(s.Status.LocationCity, s.Status.LocationState)} and show me that — " +
                 "there is usually more in the city than at the dock you are sitting on.");
+            if (restFirst != null)
+                decision.DispatchNotes.Add("If the city board comes up the same way: " + restFirst);
             return decision;
         }
+
+        if (HomeTime.RepositionOffers(s).Any(o => o.IsHomeRun))
+            AskAboutTrailersHome(s, decision);
 
         // The board is rejected and the search has to move. Where to move it is a question the app can
         // actually answer when home time is close, because it knows which way home is and how far the
@@ -565,6 +596,8 @@ public static class DispatchEngine
             decision.DispatchNotes.Add(weekEnd);
             decision.OfferWeeklyRestHere = true;
         }
+        else if (restFirst != null)
+            decision.DispatchNotes.Add(restFirst);
         else
             decision.DispatchNotes.Add(decision.ResetWatch && !Restart.IsEu(s)
                 ? $"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Reposition toward a restart location rather than chasing this board — see the reset-capable markets below."
@@ -579,6 +612,158 @@ public static class DispatchEngine
     /// rest, taken here, uses the wait. Null where the week is not close to turning over and has hours in it.
     /// Reported from play: told to "see the reset options list" at 01:00 on a Sunday with 14 hours left.
     /// </summary>
+    /// <summary>
+    /// The third step, when the driver says the city board has nothing either: where to go instead. The same answer a
+    /// rejected city board gets — home, a named market on the way, the weekly rest here, or a fresh board somewhere
+    /// better — with the run home's trailer question where the run home is on offer. Before this, pressing "nothing in
+    /// the city either" cleared the board and said nothing at all.
+    /// </summary>
+    public static BoardDecision AfterCityBoard(AppState s)
+    {
+        var d = new BoardDecision
+        {
+            NextTripNumberPreview = PeekNumber(s, "Freight"),
+            RejectAll = true,
+            ResetWatch = s.Hos.CycleRemaining > 0 && s.Hos.CycleRemaining <= s.Settings.Scoring.ResetWatchCycleHours,
+            Headline = $"Nothing in {Place(s.Status.LocationCity, s.Status.LocationState)} either.",
+        };
+        if (HomeTime.RepositionOffers(s).Any(o => o.IsHomeRun)) AskAboutTrailersHome(s, d);
+        if (HomeTime.WhereToLookForHome(s) is { } lookThere)
+            d.DispatchNotes.Add(lookThere);
+        else if (Restart.IsEu(s) && EuWeekEndAdvice(s) is { } weekEnd)
+        {
+            d.DispatchNotes.Add(weekEnd);
+            d.OfferWeeklyRestHere = true;
+        }
+        else if ((RememberedRestFirst(s) ?? LowClocksNote(s)) is { } rest)
+            d.DispatchNotes.Add(rest);
+        else
+            d.DispatchNotes.Add(d.ResetWatch && !Restart.IsEu(s)
+                ? $"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Reposition toward a restart location rather than chasing this board."
+                : "Reposition and pull a fresh board somewhere better placed. I would rather run empty a short distance than sit here.");
+        d.Rationale = d.DispatchNotes[0];
+        return d;
+    }
+
+    /// <summary>
+    /// A board turned down because of the driver's hours, not because of where the truck is. Reported from play: three
+    /// hours of driving left at Corpus Christi, every load on the board landing a few hours past its window, and the
+    /// answer was "reposition and pull a fresh board" — which spends the three hours and fixes nothing. Freight on a
+    /// board is posted with its window counted from now; after the rest the same sort of load is posted with the same
+    /// sort of window, and the driver has the clocks to make it.
+    ///
+    /// <para>Tested rather than guessed: the late loads are planned again on full daily clocks (and on a full cycle too
+    /// where the cycle is what is short). If any of them makes its window that way, it is the hours, and the note says
+    /// to rest here — the 10, or the 34 where only a full cycle does it. Null where the clocks are already full or
+    /// fresh ones would not have saved anything, which is when moving really is the answer.</para>
+    /// </summary>
+    public static string? RestFirst(AppState s, IReadOnlyList<LoadEvaluation> evals)
+    {
+        var eu = Restart.IsEu(s);
+        var driveLimit = eu ? s.Settings.EuHos.DailyDriving : s.Settings.Hos.DriveLimit;
+        var shiftLimit = eu ? s.Settings.EuHos.Spread : s.Settings.Hos.ShiftLimit;
+        var dailySpent = s.Hos.DriveRemaining < driveLimit - 0.5 || s.Hos.ShiftRemaining < shiftLimit - 0.5;
+        var cycleShort = !eu && s.Hos.CycleRemaining < s.Settings.Hos.CycleLimit - 0.5
+                         && s.Hos.CycleRemaining <= s.Settings.Scoring.ResetWatchCycleHours;
+        if (!dailySpent && !cycleShort) return null;
+
+        var late = evals.Where(e => e.Feasibility.Verdict == "Infeasible" || e.Feasibility.SlackHours < 0).Take(8).ToList();
+        if (late.Count == 0) return null;
+
+        var truck = AssignedTruck(s);
+        var trailer = AssignedTrailer(s);
+        var saved = s.Hos;
+        bool Clean(LoadEvaluation r) => r.HardFails.Count == 0 && r.HomeTimeFails.Count == 0
+                                         && r.Feasibility.Verdict is "Feasible" or "Tight" && r.Feasibility.SlackHours >= 0;
+        int OnFresh(bool fullCycle)
+        {
+            var fresh = System.Text.Json.JsonSerializer.Deserialize<HosSnapshot>(
+                System.Text.Json.JsonSerializer.Serialize(saved))!;
+            fresh.DriveRemaining = driveLimit;
+            fresh.ShiftRemaining = shiftLimit;
+            fresh.BreakRemaining = eu ? s.Settings.EuHos.DrivingBeforeBreak : s.Settings.Hos.DrivingBeforeBreak;
+            if (fullCycle) fresh.CycleRemaining = s.Settings.Hos.CycleLimit;
+            fresh.AsOfGameTime = s.Status.GameTime;
+            fresh.Projected = false;
+            s.Hos = fresh;
+            try { return late.Count(e => Clean(Evaluate(s, e.Load, truck, trailer))); }
+            finally { s.Hos = saved; }
+        }
+
+        var where = Place(s.Status.LocationCity, s.Status.LocationState);
+        var daily = dailySpent ? OnFresh(false) : 0;
+        if (daily > 0)
+            return $"{daily} of the {late.Count} that missed {(late.Count == 1 ? "its" : "their")} window would have made it on fresh " +
+                   $"clocks. It is your hours that sank {(daily == 1 ? "it" : "them")} — {Hhmm.Of(s.Hos.DriveRemaining)} of driving " +
+                   $"left — not {where}. Do not reposition: running empty now spends the hours you have and fixes nothing. " +
+                   $"Take your {(eu ? "daily rest" : "10")} here, report your clocks, and pull a fresh board. The listings " +
+                   "turn over while you rest, and the same sort of load will fit then.";
+
+        var reset = cycleShort ? OnFresh(true) : 0;
+        if (reset > 0)
+            return $"{reset} of the {late.Count} that missed {(late.Count == 1 ? "its" : "their")} window would have made it on a " +
+                   $"full cycle. It is your {Hhmm.Of(s.Hos.CycleRemaining)} of cycle that is short, not {where}. Do not chase a " +
+                   "fresh board somewhere else — sit your 34 here if there is parking, report your clocks, and pull a fresh " +
+                   "board after it.";
+        return null;
+    }
+
+    /// <summary>Kept for the city board's "nothing here either", which has no board of its own to test.</summary>
+    private static void RememberRestFirst(AppState s, string? note)
+    {
+        s.Status.RestFirstNote = note ?? "";
+        s.Status.RestFirstWhere = note == null ? "" : Place(s.Status.LocationCity, s.Status.LocationState);
+        s.Status.RestFirstAtShiftHours = s.Hos.ShiftRemaining;
+    }
+
+    private static string? RememberedRestFirst(AppState s) =>
+        !string.IsNullOrWhiteSpace(s.Status.RestFirstNote)
+        && s.Status.RestFirstWhere == Place(s.Status.LocationCity, s.Status.LocationState)
+        && s.Hos.ShiftRemaining <= s.Status.RestFirstAtShiftHours + 0.01
+            ? s.Status.RestFirstNote
+            : null;
+
+    /// <summary>
+    /// Nothing in the city and nothing remembered to test: where the day is mostly gone, the rest still comes before
+    /// any running about. Under four hours of driving, or of the day, is not enough to reach a better board and run
+    /// something off it.
+    /// </summary>
+    private static string? LowClocksNote(AppState s)
+    {
+        var left = Math.Min(s.Hos.DriveRemaining, s.Hos.ShiftRemaining);
+        if (left >= 4) return null;
+        var eu = Restart.IsEu(s);
+        return $"You have {Hhmm.Of(left)} left on the day — not enough to get somewhere better and run a load off it. " +
+               $"Do not reposition: take your {(eu ? "daily rest" : "10")} here, report your clocks, and pull a fresh board. " +
+               "The listings turn over while you rest.";
+    }
+
+    /// <summary>
+    /// The run home, straight after the load that was run to get the driver home — no board in between. That load
+    /// ends with "deadhead to the yard and report in", so asking for a board next contradicts it, and the empty-run
+    /// button and the trailer and days-off question only ever came up on a rejected board. Reported from play: a
+    /// home-run load closed out at Grand Rapids, told "you will deadhead home after this load", then asked to show
+    /// the board before either appeared. Null where there is no run home to offer.
+    /// </summary>
+    public static BoardDecision? RunHomeNow(AppState s)
+    {
+        if (s.Trips.Any(t => t.Status is "Authorized" or "InTransit")) return null;
+        var home = HomeTime.RepositionOffers(s).FirstOrDefault(o => o.IsHomeRun);
+        if (home == null) return null;
+        var d = new BoardDecision
+        {
+            NextTripNumberPreview = PeekNumber(s, "Freight"),
+            RejectAll = true,
+            ResetWatch = s.Hos.CycleRemaining > 0 && s.Hos.CycleRemaining <= s.Settings.Scoring.ResetWatchCycleHours,
+            Headline = $"Your run home: empty to {Place(home.City, home.State)}.",
+            Rationale = $"That load was run to get you home. No board this time — take the empty run to the {Place(home.City, home.State)} " +
+                        "yard below, and report in when you are parked there.",
+        };
+        d.DispatchNotes.Add(d.Rationale);
+        AskAboutTrailersHome(s, d);
+        return d;
+    }
+
     private static string? EuWeekEndAdvice(AppState s)
     {
         if (Restart.Open(s) != null || GameClock.TryParse(s.Status.GameTime) is not { } now) return null;
@@ -802,12 +987,10 @@ public static class DispatchEngine
         // which left four minutes over the safety buffer and came out Tight — for want of booking the
         // same load at the front of the same window.
         //
-        // So the slot never sits later than leaves the dock work, the parking allowance and the buffer
-        // before the doors shut. The opening always wins over that, because inventing a time earlier
-        // than the receiver opens helps nobody.
-        var tail = FacilityLearning.For(s, load.TrailerType).Unloading
-                   + Math.Max(0, s.Settings.ParkingBufferHours)
-                   + Math.Max(0, s.Settings.SafetyBufferHours);
+        // So the slot never sits later than leaves the safety buffer before the doors shut — to the gate, because
+        // the window is the time to be there by, not to be unloaded by (see HosEngine's slack). The opening always
+        // wins over that, because inventing a time earlier than the receiver opens helps nobody.
+        var tail = Math.Max(0, s.Settings.SafetyBufferHours);
         var latestForSlack = DeliveryWindow.PrevHalfHour(dueAt.AddHours(-tail));
         if (slot > latestForSlack && latestForSlack >= opensAt) slot = latestForSlack;
 
@@ -907,7 +1090,11 @@ public static class DispatchEngine
                    (Restart.EuWeeklyRestDueSoon(s)
                        ? $"your WEEKLY rest, not a daily one: {Hhmm.Of(Restart.EuWeeklyRestHours(s))}, set by dispatch. " +
                          "An 11-hour rest now would run past the six days, so this one has to be the weekly. The order is on the Dispatch tab."
-                       : $"your {euR.RegularDailyRest:0.#}-hour daily rest, then report in with fresh clocks.");
+                       : Restart.EuRestRunsIntoBan(s)
+                           ? $"your WEEKLY rest, not a daily one, set by dispatch: " +
+                             $"{Restart.EuWeeklyRestPlan(s, false, GameClock.TryParse(s.Status.GameTime)).Why}. An 11-hour rest " +
+                             "would wake you inside the ban with nowhere to go, so the stop is your weekly rest. The order is on the Dispatch tab."
+                           : $"your {euR.RegularDailyRest:0.#}-hour daily rest, then report in with fresh clocks.");
         return $"You have {Hhmm.Of(shift)} of your {rules.ShiftLimit:0.#}-hour window left. Loading " +
                $"{(trailer?.Type ?? "a trailer").ToLowerInvariant()} freight takes about {Hhmm.Of(dock.Loading)} " +
                $"and you still have to get off their property afterwards, so there is nothing on any board " +
@@ -1451,6 +1638,27 @@ public static class DispatchEngine
 
         var planDeadhead = quoted > 0 ? quoted : Math.Max(0, guessedDeadhead ?? 0);
 
+        // The loaded leg: where the driver has run this road and the odometer said it was longer than the listing, the
+        // plan runs on what they drove. Reported from play: a mileage that came up short, and the appointment missed.
+        var routeFrom = (City: string.IsNullOrWhiteSpace(load.OriginCity) ? s.Status.LocationCity : load.OriginCity,
+                      State: string.IsNullOrWhiteSpace(load.OriginState) ? s.Status.LocationState : load.OriginState);
+        var driven = RoadLearning.Known(routeFrom.City, routeFrom.State, load.DestCity, load.DestState);
+        var plannedLoaded = driven is { } dv && dv > load.LoadedMiles * 1.05 ? dv : load.LoadedMiles;
+        var routeNote = plannedLoaded > load.LoadedMiles
+            ? $"Planned at {Units.Distance(plannedLoaded)} — what you actually drove {Place(routeFrom.City, routeFrom.State)} to " +
+              $"{Place(load.DestCity, load.DestState)} before, off the odometer. The listing says {Units.Distance(load.LoadedMiles)}."
+            : "";
+
+        // How long getting to the shipper really takes, off the driver's own pickups (PickupLearning). A listed or
+        // measured leg runs at the speed those legs make; a shipper with no distance at all, in the town the truck is
+        // in, is not where the truck stands — it gets the time pickups here usually take. Reported from play: a city
+        // board load an hour and forty minutes across town, planned as no time at all, and delivered late.
+        var pickupMph = planDeadhead > 0 ? PickupLearning.ListedPickupMph(s) : null;
+        var pickup = !load.AtLocation && planDeadhead <= 0.5
+            ? PickupLearning.PlannedUnlistedPickup(s, load, string.IsNullOrWhiteSpace(load.OriginCity) ? s.Status.LocationCity : load.OriginCity,
+                                           string.IsNullOrWhiteSpace(load.OriginState) ? s.Status.LocationState : load.OriginState)
+            : null;
+
         var planReq = new PlanRequest
         {
             // Where the legs run, so an ETS2 plan can find the water in the way. See Crossings.
@@ -1459,7 +1667,15 @@ public static class DispatchEngine
             DestCity = load.DestCity,
             DeadheadMiles = planDeadhead,
             DeadheadIsEstimate = quoted <= 0 && planDeadhead > 0.5,
-            LoadedMiles = load.LoadedMiles,
+            DeadheadMph = pickupMph?.Mph ?? 0,
+            PickupHours = pickup?.Hours ?? 0,
+            PickupMiles = pickup is { } pk ? pk.Hours * (PickupLearning.ListedPickupMph(s)?.Mph ?? 30) : 0,
+            PickupNote = pickup is { } pn
+                ? $"No distance to the shipper on the listing, so getting there is planned at {Hhmm.Of(pn.Hours)} — {pn.Basis}. " +
+                  "If this one is further, put the distance on the load and I will plan it properly."
+                : "",
+            LoadedMiles = plannedLoaded,
+            RouteNote = routeNote,
             LoadingHours = pickupHours,
             UnloadingHours = dock.Unloading,
             // What is on the back decides whether the dock is duty or rest. A van waits, a flatbed works.
@@ -1601,6 +1817,11 @@ public static class DispatchEngine
                     "Ring ahead if you can.");
             }
         }
+
+        // EU, home time brought forward to the weekly rest: a load is only worth it if the driver can still be at the
+        // yard when the rest falls due. See HomeTime.WeeklyRestRefusal.
+        if (HomeTime.WeeklyRestRefusal(s, load, e.Feasibility) is { } notHomeInTime)
+            e.HomeTimeFails.Add(notHomeInTime);
 
         // ---- economics
         // Said on the card, before the load is picked. A receiver taking it early is worth hours, and
@@ -2609,6 +2830,8 @@ public static class DispatchEngine
         // What the odometer read when this load was booked. The driver has not driven to the shipper
         // yet, so this is the baseline the post-loading reading gets measured against.
         trip.DispatchOdometer = s.Status.AtsOdometer;
+        trip.DispatchCity = s.Status.LocationCity;
+        trip.DispatchState = s.Status.LocationState;
 
         if (Repositioning.Measure(s, trip, s.Status.AtsOdometer) is { } leg)
         {
@@ -2779,15 +3002,16 @@ public static class DispatchEngine
     /// hours of driving, and the order said nothing about Austria's ban from 15:00 or Germany's on Sunday. Freight
     /// was planned around them; an empty run was a destination and a distance.</para>
     /// </summary>
-    public static FeasibilityResult? PlanEmptyMove(AppState s, string destCity, string destState, double miles)
+    public static FeasibilityResult? PlanEmptyMove(AppState s, string destCity, string destState, double miles,
+        string? fromCity = null, string? fromState = null)
     {
-        if (miles <= 0 || !HosEngine.Eu(s)) return null;
+        if (miles <= 0) return null;
         var truck = AssignedTruck(s);
         var trailer = AssignedTrailer(s);
         var plan = Crossings.PlanBest(s, new PlanRequest
         {
-            OriginCity = s.Status.LocationCity,
-            OriginState = s.Status.LocationState,
+            OriginCity = fromCity ?? s.Status.LocationCity,
+            OriginState = fromState ?? s.Status.LocationState,
             DestCity = destCity,
             DestState = destState,
             LoadedMiles = miles,
@@ -2825,8 +3049,20 @@ public static class DispatchEngine
             return $"Be parked{(country.Length > 0 ? $" in {country}" : "")} by {GameClock.Pretty(x.StartGameTime)} and stay " +
                    $"until {GameClock.Pretty(x.EndGameTime)}{(country.Length > 0 ? $" — {country}'s weekend truck ban" : " — a weekend truck ban")}. {counts}".TrimEnd();
         }).ToList();
+        // A restart or weekly rest the clocks call for on the way — the US 34 most of all, where there are no bans.
+        var resets = plan.Timeline.Where(x => x.Kind == "Restart" && !x.Label.Contains("truck ban", StringComparison.OrdinalIgnoreCase))
+            .Select(x =>
+            {
+                var hours = (GameClock.TryParse(x.EndGameTime) - GameClock.TryParse(x.StartGameTime))?.TotalHours ?? 0;
+                var what = HosWords.Eu ? "weekly rest" : "restart";
+                return $"Your clocks call for a {Hhmm.Of(hours)} {what} on the way, from {GameClock.Pretty(x.StartGameTime)}.";
+            });
+        stops.AddRange(resets);
+        // And the overnight rests, so a run home that takes more than one shift says so.
+        var rests = plan.Timeline.Count(x => x.Kind == "Rest" && !x.Label.Contains("truck ban", StringComparison.OrdinalIgnoreCase));
         return string.Join(" ", stops) + (stops.Count > 0 ? " " : "") +
-               $"You get there {GameClock.Pretty(plan.ProjectedArrivalGameTime)}.";
+               $"You get there {GameClock.Pretty(plan.ProjectedArrivalGameTime)}" +
+               (rests > 0 ? $", with {rests} {(HosWords.Eu ? "daily rest" : $"{plan.Timeline.First(x => x.Kind == "Rest").Hours:0.#}-hour rest")}(s) on the way" : "") + ".";
     }
 
     public static Trip CreateEmptyMove(AppState s, string destCity, string destState, double miles, string reason)

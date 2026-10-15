@@ -93,7 +93,9 @@ const miles = async (a, b, c, d) =>
     `due in ${hs.daysUntilDue?.toFixed?.(1)} days`);
   ok('a ceiling exists now', hs.outboundAllowance > 0, `${Math.round(hs.outboundAllowance)} mi`);
 
-  bd = await board([['Amarillo', 'TX', 380, 1250]]);
+  // v0.86: the room counts the drive home too, so three days out of Tulsa leaves about 390 mi, not 450 — Amarillo,
+  // 413 further, is past it now. Wichita Falls is a normal leg out that still fits.
+  bd = await board([['Wichita Falls', 'TX', 300, 1000]]);
   ok('a normal leg out is still taken', !!bd.authorizedLoadId, bd.authorizedLoadId || 'none');
 
   bd = await board([['El Paso', 'TX', 780, 3400]]);
@@ -216,17 +218,19 @@ const miles = async (a, b, c, d) =>
   ok('due soon, so both of these are allowed to be taken',
     hs.dueSoon === true && hs.overdue === false, `due in ${hs.daysUntilDue?.toFixed?.(1)} days`);
 
-  bd = await board([['Des Moines', 'IA', 200, 700], ['Amarillo', 'TX', 560, 1950]]);
+  // v0.86: the long hop is Sioux City, about 300 mi further, where it was Amarillo — past the room once the drive
+  // home is counted against the three days left.
+  bd = await board([['Des Moines', 'IA', 200, 700], ['Sioux City', 'IA', 300, 1050]]);
   const line = (e) => ((e.scoreDetail || []).find((x) => /further from/i.test(x)) || '');
   const pts = (e) => parseFloat((line(e).match(/(-?\d+\.\d\d)$/) || [])[1] || '0');
   const near = pts(byCity(bd, 'Des Moines'));
-  const far = pts(byCity(bd, 'Amarillo'));
+  const far = pts(byCity(bd, 'Sioux City'));
   ok('both are scored as running further out', near < 0 && far < 0, `${near} vs ${far}`);
   ok('and the longer one is punished harder', far < near - 0.1,
-    `Amarillo ${far} against Des Moines ${near}`);
+    `Sioux City ${far} against Des Moines ${near}`);
   ok('neither is refused, so the score is what decided it',
-    !refusal(byCity(bd, 'Des Moines')) && !refusal(byCity(bd, 'Amarillo')),
-    refusal(byCity(bd, 'Amarillo')).slice(0, 80) || 'both permitted');
+    !refusal(byCity(bd, 'Des Moines')) && !refusal(byCity(bd, 'Sioux City')),
+    refusal(byCity(bd, 'Sioux City')).slice(0, 80) || 'both permitted');
 
   head('9. #109 Disqualified means disqualified — there is no override');
   // From Denver, which stays outside the home area however late the driver runs — so the refusal here is
@@ -439,8 +443,10 @@ const miles = async (a, b, c, d) =>
   ok('the run home is offered anyway', !!goHome,
     goHome ? `${Math.round(goHome.miles)} mi` : runs.map((o) => o.city).join(', ') || '(nothing offered)');
   if (goHome) {
+    // v0.86: planned, so the rest is in the plan line beside the reason rather than in it.
     ok('and it says a rest is needed on the way rather than pretending otherwise',
-      /take your .* on the way/i.test(goHome.reason), goHome.reason.slice(-100));
+      /take your .* on the way|rest\(s\) on the way/i.test(`${goHome.reason} ${goHome.planNote || ''}`),
+      `${goHome.reason} ${goHome.planNote || ''}`.slice(-120));
     ok('no empty leg to a market is offered that is not meaningfully shorter',
       runs.filter((o) => !o.isHomeRun).every((o) => o.miles < goHome.miles * 0.6),
       runs.filter((o) => !o.isHomeRun).map((o) => `${o.city} ${Math.round(o.miles)}mi`).join(', ') || 'none offered');

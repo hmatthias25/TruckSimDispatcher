@@ -23,7 +23,8 @@ public class StateStore
     private AppState _state
     {
         get => __state;
-        set { __state = value; GameProfile.Activate(value); Units.Activate(value); }
+        // The road table last: its learned factors are measured against the game's own city table.
+        set { __state = value; GameProfile.Activate(value); Units.Activate(value); RoadLearning.Activate(value); }
     }
 
     /// <summary>
@@ -448,6 +449,7 @@ public class StateStore
             // again before anything else asks a table.
             GameProfile.Activate(_state);
             Units.Activate(_state);
+            RoadLearning.Activate(_state);
             Save();
             return result;
         }

@@ -72,7 +72,8 @@ const line = (at, b, d, w, w2) => api('/hos', 'POST', {
     destCity: 'Bremen', destState: 'DE', loadedMiles: 80, deadheadMiles: 0, gameRevenue: 1500, deadlineHours: 200, weightLbs: 30000, atLocation: true });
   const ev = (await api('/board/evaluate')).evaluations[0];
   const trip = (await api('/dispatch/authorize', 'POST', { loadId: ev.load.id, overrideTight: true })).trip;
-  await api(`/trips/${trip.id}/event`, 'POST', { kind: 'Rest', gameTime: iso(10, '08:00'), endGameTime: iso(11, '08:00') });
+  // Taken as the weekly rest by the driver: since v0.87 a 24 early in the six days is a long daily rest unless they say so.
+  await api(`/trips/${trip.id}/event`, 'POST', { kind: 'Rest', gameTime: iso(10, '08:00'), endGameTime: iso(11, '08:00'), weeklyRest: 'weekly' });
   await api(`/trips/${trip.id}/event`, 'POST', { kind: 'Rest', gameTime: iso(11, '20:00'), endGameTime: iso(12, '05:30') });
   h = await line(iso(12, '15:30'), 4.5, 7, 30, 64);
   ok('a 24-hour rest is a reduced weekly rest, 21 hours owed', h.euLastWeeklyRestReduced === true && near(h.euCompensationOwed, 21),

@@ -60,7 +60,9 @@ async function runOne(trailerType, city, day) {
 (async () => {
   const app = { driverName: 'D. Halvorsen', preferredDivision: 'Flatbed', transmissionPreference: 'either',
     experienceYears: 12, homeCity: 'Omaha', homeState: 'NE', acceptsProbation: true,
-    homeTimePreference: 'biweekly' };
+    homeTimePreference: 'none' };
+  // v0.86: no home-time arrangement. US home time now refuses a load that gets no nearer when the days left barely
+  // cover working home, and this suite's runs back and forth would bring that due partway through. Not what it tests.
   await api('/onboarding/market', 'POST', app);
   un(await api('/onboarding/hire', 'POST', { application: app, force: true, gameTime: iso(1), code: 'PRI' }));
   await api('/career/clear-probation', 'POST', { force: true, note: 'fixture' });

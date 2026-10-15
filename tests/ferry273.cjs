@@ -169,7 +169,9 @@ async function sailings(on) {
   p = await plan({ originCity: 'Aalborg', originState: 'DK', destCity: 'Oslo', destState: 'NO', loadedMiles: 620, deadlineHours: 200 });
   ok('Aalborg to Oslo is a long way round by road; a ferry over the Skagerrak is quicker', p.crossings.length === 1, p.crossings.join(' | ') || 'none');
   ok('and the plan says why', p.warnings.some((w) => /ferry rather than driving round/.test(w)), p.warnings.find((w) => /ferry/.test(w)));
-  p = await plan({ originCity: 'Aalborg', originState: 'DK', destCity: 'Oslo', destState: 'NO', loadedMiles: 280 });
+  // Aalborg to Oslo was the case here, at 280 mi, and it is not a road: the drive is round through Sweden, about
+  // 900 km, so a listing that short is a sailing. Göteborg to Oslo is a road that really is short.
+  p = await plan({ originCity: 'Göteborg', originState: 'SE', destCity: 'Oslo', destState: 'NO', loadedMiles: 180 });
   ok('but where the listing says the road is short, it is the road', p.crossings.length === 0, p.crossings.join(' | '));
 
   head('10. The ferries list: a crossing not in your game');

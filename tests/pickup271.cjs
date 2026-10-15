@@ -34,9 +34,9 @@ let FREE = 2, QFREE = 0.5;
 
 /** Take one load out of `from` and return the trip. */
 async function take(day, { from = ['Wichita', 'KS'], to = ['Topeka', 'KS'], shipper = 'Prairie Mill',
-                           receiver = 'Midwest Steel', atLocation = false, hm = '06:00' } = {}) {
+                           receiver = 'Midwest Steel', atLocation = false, hm = '06:00', kind = 'Shipper' } = {}) {
   await api('/status', 'POST', {
-    locationCity: from[0], locationState: from[1], locationKind: 'Shipper', gameTime: iso(day, hm),
+    locationCity: from[0], locationState: from[1], locationKind: kind, gameTime: iso(day, hm),
     fuelPct: 95, atsOdometer: 90000, truckDamagePct: 2, trailerDamagePct: 2,
     dutyStatus: 'OnDuty', atsBankBalance: 90000,
   });
@@ -115,17 +115,17 @@ const tripOf = async (id) => ((await api('/bootstrap')).trips || []).find((t) =>
     if (!t) continue;
     const r = await api(`/trips/${t.id}/at-shipper`, 'POST', { gameTime: iso(day, '10:00') });
     if (r.call.waitHours > QFREE + 0.25) { found.push({ t, call: r.call, day }); break; }
-    // Not held long enough to matter — run it anyway so the day moves on, and try the next.
+    // Not held long enough to matter â€” run it anyway so the day moves on, and try the next.
     await logEvent(t, 'BeginLoad', r.call.workStartsGameTime);
     await logEvent(t, 'EndLoad', plus(r.call.workStartsGameTime, 1));
     const c = await close(t, plus(r.call.workStartsGameTime, 5));
     if (r.call.waitHours < 0.01)
-      ok(`straight in (day ${day}) — loading alone is the shipper's time`, c.done.detentionHours === 0, hhmm(c.done.detentionHours));
+      ok(`straight in (day ${day}) â€” loading alone is the shipper's time`, c.done.detentionHours === 0, hhmm(c.done.detentionHours));
   }
   ok('some pickup in two weeks was held long enough to pay', found.length === 1);
   if (found.length) {
     const { t, call } = found[0];
-    console.log(`  ..    ${call.headline} — waited ${hhmm(call.waitHours)}`);
+    console.log(`  ..    ${call.headline} â€” waited ${hhmm(call.waitHours)}`);
     const starts = call.workStartsGameTime;
     await logEvent(t, 'BeginLoad', starts);
     await logEvent(t, 'EndLoad', plus(starts, 2.5));
@@ -165,7 +165,7 @@ const tripOf = async (id) => ((await api('/bootstrap')).trips || []).find((t) =>
   await logEvent(reload, 'EndLoad', plus(reload.loadStartsGameTime, 1));
   await close(reload, plus(reload.loadStartsGameTime, 5));
 
-  head('3b. Same city, somebody else — they drove across town, so they report');
+  head('3b. Same city, somebody else â€” they drove across town, so they report');
   const back = await take(29, { from: ['Wichita', 'KS'], to: ['Topeka', 'KS'], receiver: 'Midwest Steel' });
   await api(`/trips/${back.id}/arrived`, 'POST', { gameTime: iso(30, '09:00') });
   await logEvent(back, 'BeginUnload', iso(30, '10:00'));
@@ -176,13 +176,26 @@ const tripOf = async (id) => ((await api('/bootstrap')).trips || []).find((t) =>
     across?.shipperArrivedGameTime || 'not set');
   await api(`/trips/${across.id}/cancel`, 'POST', {}).catch(() => {});
 
+  head('3c. Dropped, then reported in at a truck stop â€” a reload from the same dock is not "still there"');
+  // Reported from play (ETS2): delivered, drove to a truck stop and checked in there, and the next day a load out
+  // of the dock from the day before came up as at the shipper straight away.
+  const drop = await take(31, { from: ['Wichita', 'KS'], to: ['Topeka', 'KS'], receiver: 'Midwest Steel' });
+  await api(`/trips/${drop.id}/arrived`, 'POST', { gameTime: iso(32, '09:00') });
+  await logEvent(drop, 'BeginUnload', iso(32, '10:00'));
+  await logEvent(drop, 'EndUnload', iso(32, '11:00'));
+  await close(drop, iso(32, '09:00'));
+  const nextDay = await take(33, { from: ['Topeka', 'KS'], to: ['Wichita', 'KS'], shipper: 'Midwest Steel', kind: 'TruckStop' });
+  ok('the arrival is left for them to report', !!nextDay && !nextDay.shipperArrivedGameTime,
+    nextDay?.shipperArrivedGameTime || 'not set');
+  await api(`/trips/${nextDay.id}/cancel`, 'POST', {}).catch(() => {});
+
   head('4. What dispatch plans on is the stay, wait included');
   // "add the DETENTION piece to both the loading and unloading time calculations we do on every load".
   // The learned figure moves toward what this trip cost at each end: the span plus the hold.
   const flatbed = async () => ((await api('/bootstrap')).views.facilityTimes || [])
     .find((x) => x.trailerType.toLowerCase() === 'flatbed');
   let held = null;
-  for (let day = 32; day <= 50 && !held; day++) {
+  for (let day = 35; day <= 53 && !held; day++) {
     const t = await take(day, { from: ['Wichita', 'KS'], to: ['Topeka', 'KS'], shipper: 'Prairie Mill',
                                 receiver: 'Midwest Steel', hm: '09:00' });
     if (!t) continue;

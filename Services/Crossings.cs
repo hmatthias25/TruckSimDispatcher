@@ -80,6 +80,14 @@ public static class Crossings
                                 bool Shortcut = false)
     {
         public double RoadMiles => MilesBefore + MilesBetween + MilesAfter;
+        /// <summary>
+        /// The water, port to port: the straight line, a tenth longer for the way a ship actually goes. A job's distance
+        /// in ETS2 counts the crossing, so the road either side is the listing less this — not the whole listing.
+        /// </summary>
+        public double SeaMiles => Sea(Route) + (Route2 is { } r2 ? Sea(r2) : 0);
+        public double ListedMiles => RoadMiles + SeaMiles;
+        private static double Sea(Ferries.Route r) =>
+            r.Train ? 31 : (Geo.StraightMiles(r.ACity, r.ACc, r.BCity, r.BCc) ?? 0) * 1.1;
         public string Label => Route2 == null ? Name(Route, FromA) : $"{Name(Route, FromA)} and {Name(Route2, FromA2)}";
         private static string Name(Ferries.Route r, bool fromA) => fromA ? $"{r.A} – {r.B}" : $"{r.B} – {r.A}";
         public CrossingLeg Leg => new(Route.Id, FromA, MilesBefore, MilesAfter, Route2?.Id ?? "", FromA2, MilesBetween);
@@ -131,6 +139,13 @@ public static class Crossings
         foreach (var r in routes)
         {
             if (Area(r.ACity, r.ACc) != a || Area(r.BCity, r.BCc) != a) continue;
+            // Only a ferry that cuts off a road going round water: the road between its own ports has to be well over
+            // the sea it sails. Found in a ferry audit: Rotterdam to Kokkola planned over Skutvik – Svolvær, a Lofoten
+            // ferry whose ports are an hour apart by road, because the road either side happened to fit the listing.
+            // Both ports have to be on the map: one the app cannot place was measured from its country's middle.
+            if (Geo.StraightMiles(r.ACity, r.ACc, r.BCity, r.BCc) is not { } sea
+                || RoadOrNull(r.ACity, r.ACc, r.BCity, r.BCc) is not { } portToPort
+                || portToPort < Math.Max(30, sea * 1.5)) continue;
             foreach (var fromA in new[] { true, false })
             {
                 var o = Leg(r, fromA, fromCity, fromCc, toCity, toCc);
@@ -251,15 +266,29 @@ public static class Crossings
         // listing is the ferry's own route, its legs are read at the listing's scale.
         var round = RoadRoundFor(fromCity, fromCc, toCity, toCc, listedMiles);
         var shortcuts = Shortcuts(have, fromCity, fromCc, toCity, toCc, Math.Max(listedMiles, round?.Miles ?? 0));
+        // A crossing the player's game may not have does not take a road leg off one it certainly does. The ProMods
+        // list is on by default and not confirmed against ProMods' map, so as an optional shortcut it is only tried
+        // where nothing confirmed is. Reported from play: Rotterdam to Kokkola planned over Stockholm – Turku, a
+        // ProMods sailing, where the game routes by Kapellskär and Naantali.
+        if (shortcuts.Any(o => !IsProMods(o)))
+            shortcuts = shortcuts.Where(o => !IsProMods(o)).ToList();
         if (round is { ListingIsTheFerry: true } && shortcuts.Count > 0)
         {
-            var k = listedMiles / shortcuts.Min(o => o.RoadMiles);
-            if (k > 0.5 && k < 2)
-                shortcuts = shortcuts.Select(o => o with { MilesBefore = o.MilesBefore * k, MilesAfter = o.MilesAfter * k }).ToList();
+            // Read at the scale of the crossing whose road matches the listing — that one is the game's route. The
+            // shortest was used, which stretched the game's own route out of the running whenever a longer sailing
+            // with less road was on offer. Reported from play: Rotterdam to Kokkola, routed by Kapellskär and
+            // Naantali, scaled to Travemünde – Helsinki's road and planned as the drive round instead.
+            // The listing counts the sea as well as the road, so it is matched against both, and only the road is
+            // scaled. Matched against the road alone, the road either side came out as the whole listing — found in a
+            // ferry audit: Stockholm to Helsinki planned at 400 mi of road, where the road is about 160.
+            var near = shortcuts.OrderBy(o => Math.Abs(o.ListedMiles - listedMiles)).First();
+            shortcuts = ScaleRoad(shortcuts, near, listedMiles);
         }
         ways.AddRange(shortcuts);
         return ways;
     }
+
+    private static bool IsProMods(Option o) => o.Route.Confidence == "promods" || o.Route2?.Confidence == "promods";
 
     /// <summary>A land area in words.</summary>
     private static string Name(string area) => area switch
@@ -273,7 +302,8 @@ public static class Crossings
     /// The plan for a load with its crossings chosen: every way across tried, the best kept. A career not on
     /// EU rules, or a load with no water in the way and no ferry worth trying, is planned exactly as it always was.
     /// </summary>
-    public static FeasibilityResult PlanBest(AppState s, PlanRequest req, Truck? truck)
+    public static FeasibilityResult PlanBest(AppState s, PlanRequest req, Truck? truck,
+        List<(FeasibilityResult Plan, string Via)>? every = null)
     {
         if (GameProfile.For(s).Id != "ETS2") return HosEngine.Plan(s, req, truck);
         // A crossing already chosen is planned as given.
@@ -313,15 +343,25 @@ public static class Crossings
             if (ldRound is { ListingIsTheFerry: true } && r.LoadedCrossing == null) r.LoadedMiles = ldRound.Miles;
             return r;
         }
+        // Which crossing the game's own route takes cannot be read off the distance — two can fit it. So the note says
+        // what the plan takes and why, not that it is the game's route. Reported from play: Rotterdam to Kokkola, routed
+        // by Kapellskär and Naantali in the game, planned by Travemünde and called the listing's route.
+        var crossingsTried = 0;
         string? RoundNote(Option? chosen) => ldRound is { ListingIsTheFerry: true } lr
             ? chosen != null
-                ? $"The listing's {Units.Distance(req.LoadedMiles)} is the route over the water — {chosen.Label}. By road, {lr.Via}, it would be about {Units.Distance(lr.Miles)}."
+                ? crossingsTried > 1
+                    ? $"The listing's {Units.Distance(req.LoadedMiles)} is a route over the water. Of the {crossingsTried} crossings that could carry it, " +
+                      $"{chosen.Label} gets you there soonest on the sailings, so the plan takes that: {Units.Distance(chosen.RoadMiles)} of road. " +
+                      $"By road all the way, {lr.Via}, it would be about {Units.Distance(lr.Miles)}. If your game routes you over another crossing, " +
+                      "the times below are not that route — plan on its sailing instead."
+                    : $"The listing's {Units.Distance(req.LoadedMiles)} is the route over the water — {chosen.Label}. By road, {lr.Via}, it would be about {Units.Distance(lr.Miles)}."
                 : $"The listing's {Units.Distance(req.LoadedMiles)} is a route over the water, but the road, {lr.Via}, gets there sooner on this plan: about {Units.Distance(lr.Miles)}, planned at that."
             : null;
         if (dh.All(x => x == null) && ld.All(x => x == null))
         {
             var only = HosEngine.Plan(s, ByRoad(req.Clone()), truck);
             if (RoundNote(null) is { } n) only.Warnings.Insert(0, n);
+            every?.Add((only, "by road"));
             return only;
         }
 
@@ -334,6 +374,10 @@ public static class Crossings
             if (l != null) { r.LoadedCrossing = l.Leg; r.LoadedMiles = l.RoadMiles; }
             tried.Add((HosEngine.Plan(s, ByRoad(r), truck), d, l));
         }
+        if (every != null)
+            foreach (var t in tried)
+                every.Add((t.Plan, string.Join(" then ", new[] { t.Dh?.Label, t.Ld?.Label }.Where(x => x != null)) is { Length: > 0 } v
+                    ? $"over {v}" : "by road"));
 
         static int Rank(string v) => v == "Feasible" ? 0 : v == "Tight" ? 1 : 2;
         static DateTime Arrives(FeasibilityResult p) => GameClock.TryParse(p.ProjectedArrivalGameTime) ?? DateTime.MaxValue;
@@ -342,6 +386,7 @@ public static class Crossings
         var best = tried.Select((t, i) => (t, i))
                         .OrderBy(x => Rank(x.t.Plan.Verdict)).ThenBy(x => Arrives(x.t.Plan)).ThenBy(x => x.i)
                         .First().t;
+        crossingsTried = ld.Count(x => x != null);
 
         if (!ReferenceEquals(best.Plan, plain.Plan))
         {
@@ -368,14 +413,27 @@ public static class Crossings
         return best.Plan;
     }
 
-    /// <summary>Legs scaled so the shortest way across reads the listing's own distance.</summary>
+    /// <summary>Legs scaled so the way across nearest the listing reads the listing's own distance, sea and road.</summary>
     private static List<Option> Scale(List<Option> options, double listedMiles)
     {
         if (options.Count == 0 || listedMiles <= 0) return options;
-        var shortest = options.Min(o => o.RoadMiles);
-        if (shortest <= 0.01)
-            return options.Select(o => o with { MilesBefore = listedMiles / 2, MilesBetween = 0, MilesAfter = listedMiles / 2 }).ToList();
-        var k = listedMiles / shortest;
+        var near = options.OrderBy(o => Math.Abs(o.ListedMiles - listedMiles)).First();
+        return ScaleRoad(options, near, listedMiles);
+    }
+
+    /// <summary>
+    /// The road either side of every crossing on the scale the listing puts the nearest one on: its road is what the
+    /// listing leaves once its sea is taken off. Port to port (Tallinn to Helsinki), whatever road the listing leaves is
+    /// split either end. A listing that would put the road at under half or over twice the estimate is not this
+    /// route's, and the estimates stand.
+    /// </summary>
+    private static List<Option> ScaleRoad(List<Option> options, Option near, double listedMiles)
+    {
+        var roadLeft = Math.Max(0, listedMiles - near.SeaMiles);
+        if (near.RoadMiles <= 0.01)
+            return options.Select(o => o.RoadMiles <= 0.01 ? o with { MilesBefore = roadLeft / 2, MilesBetween = 0, MilesAfter = roadLeft / 2 } : o).ToList();
+        var k = roadLeft / near.RoadMiles;
+        if (k <= 0.5 || k >= 2) return options;
         return options.Select(o => o with { MilesBefore = o.MilesBefore * k, MilesBetween = o.MilesBetween * k, MilesAfter = o.MilesAfter * k }).ToList();
     }
 }

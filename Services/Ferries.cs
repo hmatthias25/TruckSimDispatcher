@@ -35,7 +35,15 @@ public static class Ferries
         double CheckInHours, string Confidence, bool Train = false, string Note = "")
     {
         /// <summary>The crossing time the app plans on: the real one where there is a real route.</summary>
-        public double Hours => RealHours > 0 ? RealHours : GameHours;
+        public double Hours => RealHours > 0 ? RealHours : GameHours > 0 ? GameHours : EstimatedHours;
+
+        /// <summary>
+        /// A crossing with no time on file (the ProMods list) at a freight ferry's pace, about 18 knots, port to port.
+        /// It was planned at no time at all, so a ProMods sailing always arrived soonest and won — found in a ferry
+        /// audit: Liverpool to Dublin and Cherbourg to Dublin at 0:00 across.
+        /// </summary>
+        private double EstimatedHours =>
+            Math.Max(0.5, Math.Round((Geo.StraightMiles(ACity, ACc, BCity, BCc) ?? 40) * 1.1 / 20.7 * 4) / 4);
         public bool HasTimetable => EveryMinutes > 0 || FromA.Length > 0 || FromB.Length > 0;
         public string Label => $"{A} – {B}";
     }
@@ -127,8 +135,8 @@ public static class Ferries
         new("travemunde-priwall", "Travemünde", "Travemünde", "DE", "Priwall", "Travemünde", "DE", 0.5, 65, "",
             "Priwallfähre", 0.1, false, 15, None, None, 0, "frequent", Note: "The river crossing at the mouth of the Trave."),
         new("umea-vaasa", "Umeå", "Umeå", "SE", "Vaasa", "Vaasa", "FI", 5, 680, "Nordic Horizons",
-            "Wasaline", 5, false, 0, T("08:00", "11:30", "18:15"), T("14:00", "20:00", "23:45"), 1, "checked",
-            Note: "The times vary by weekday; the usual ones here. About 4 h at sea, and Finland is an hour ahead."),
+            "Wasaline", 4, false, 0, T("08:00", "11:30", "18:15"), T("14:00", "20:00", "23:45"), 1, "checked",
+            Note: "The times vary by weekday; the usual ones here. About 4 h at sea — the timetable reads 5 eastbound only because Finland is an hour ahead, and ETS2 has one clock."),
 
         // ---- Norway's fjords (Nordic Horizons): short, frequent, no cabin
         new("anda-lote", "Anda", "Anda", "NO", "Lote", "Lote", "NO", 0.25, 31, "Nordic Horizons", "Fjord1", 0.17, false, 30, None, None, 0, "frequent"),
@@ -409,7 +417,20 @@ public static class Ferries
         !(s.Settings.FerriesOff ?? new()).Contains(r.Id, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The crossings the planner may use: every one the player has not switched off.</summary>
-    public static IEnumerable<Route> Available(AppState s) => All.Where(r => IsOn(s, r));
+    public static IEnumerable<Route> Available(AppState s) => All.Where(r => IsOn(s, r) && (r.Confidence != "promods" || RunsProMods(s)));
+
+    /// <summary>
+    /// Whether the career runs ProMods at all: any of the countries only ProMods adds is in "Where you run" (or that list
+    /// is empty, which means everything). The ProMods crossings follow it — reported from play: no ProMods in the game,
+    /// and a ProMods sailing chosen for the run.
+    /// </summary>
+    public static bool RunsProMods(AppState s)
+    {
+        var run = s.Settings.RunnableStates ?? new();
+        if (run.Count == 0) return true;
+        return Ets2Data.Regions.Any(r => r.Country.StartsWith("ProMods", StringComparison.Ordinal)
+                                         && run.Contains(r.Code, StringComparer.OrdinalIgnoreCase));
+    }
 
     /// <summary>The switched-off list tidied on the way in: known ids only, once each, in table order.</summary>
     public static List<string> Clean(IEnumerable<string>? off)

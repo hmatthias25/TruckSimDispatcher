@@ -2254,8 +2254,13 @@ function extractHtml() {
       as a day number rather than as the weekday on the card is the usual reason a load lands a week
       out. Correcting it is enough &mdash; the two figures are re-derived from it.</p>
     <div class="row-actions">
-      <button class="btn go" data-act="extract-commit">Add ticked rows to the board</button>
-      <button class="btn ghost" data-act="extract-cancel">Discard</button>
+      <button class="btn go" data-act="extract-commit" ${BUSY ? 'disabled' : ''}>
+        ${BUSY === 'commit' ? 'Adding to the board and planning each load…' : 'Add ticked rows to the board'}</button>
+      <button class="btn ghost" data-act="extract-cancel" ${BUSY ? 'disabled' : ''}>Discard</button>
+    </div>
+    ${BUSY === 'commit' ? `<div class="callout"><h4>Working…</h4><p>Putting the rows on the board and planning every
+      load against your clocks. Dispatch's decision shows here when it is done.</p></div>` : ''}
+    <div>
     </div>
   </div>`;
 }
@@ -2318,7 +2323,8 @@ function decisionHtml() {
         copy if it is one; ignore this if the shipper really has two of them.</p>
     </div>` : ''}
     ${d.evaluations.map((e) => loadCardHtml(e, d)).join('')}
-    ${d.rejectAll && (S.views.repositionOffers || []).length ? `<div class="callout info">
+    ${/* Not off one dock's board: the city comes first (see AfterCityBoard). */ ''}
+    ${d.rejectAll && !d.localOnly && (S.views.repositionOffers || []).length ? `<div class="callout info">
       <h4>Running empty from here</h4>
       <p>Nothing on this board is worth the truck. These are the empty moves I would raise — to the yard
         for home time, or to wherever the ${num(S.settings.hos.cycleRestartHours, 0)} is being sat. The
@@ -2376,7 +2382,7 @@ function decisionHtml() {
         list than what is offered where you are parked.</p>
       <div class="row-actions">
         <button class="btn primary" data-act="board-stage" data-stage="city">Show the city board</button>
-        <button class="btn ghost" data-act="reject-all">Nothing in the city either — log it</button>
+        <button class="btn ghost" data-act="city-empty">Nothing in the city either — log it</button>
       </div></div>`
     : d.rejectAll && !d.infoNeeded.length ? `<div class="row-actions">
       <button class="btn danger" data-act="reject-all">Reject the board &amp; log it</button></div>` : ''}
@@ -2694,6 +2700,39 @@ function atPortHtml(t) {
   </div>`;
 }
 
+/**
+ * Running late — a sailing that will not be made, out of the shipper hours behind — and the plan from
+ * authorization no longer says how to get there. Planned again from where the truck is, every way across side
+ * by side, with the sailing the driver says they will miss taken out. Asked for from play: out of Kokkola late
+ * for Groningen, the 17:00 out of Helsinki gone, and the question was whether Naantali would do better.
+ */
+function replanHtml(t) {
+  const routes = (S.views.ferries || {}).routes || [];
+  const planned = [...new Set([...((t.replan || {}).crossingRoutes || []), ...((t.feasibilityAtDispatch || {}).crossingRoutes || [])])];
+  const rp = t.replan;
+  return `<div class="panel">
+    <div class="panel-head"><h2>Running late? Plan it again from here</h2></div>
+    <p class="hint">Missed a sailing, or out of the shipper late? Say where you are and when, and I will plan the rest
+      of ${esc(t.number)} again — every way across, side by side.</p>
+    <div class="grid3">
+      <label>Where you are<input id="rp-city" value="${esc(S.status.locationCity || '')}"></label>
+      <label>Country<input id="rp-state" value="${esc(S.status.locationState || '')}" maxlength="3"></label>
+      ${dayTimeInput('rp-time', S.status.gameTime, 'Game day and time')}
+    </div>
+    ${planned.length ? `<label>The sailing you will miss
+      <select id="rp-miss"><option value="">None — just plan it from here</option>${planned.map((id) => {
+        const r = routes.find((x) => x.id === id);
+        return `<option value="${esc(id)}">the next ${esc(r ? r.label : id)}</option>`;
+      }).join('')}</select></label>` : ''}
+    <div class="row-actions"><button class="btn primary" data-act="replan" data-id="${esc(t.id)}">Plan it again</button></div>
+    ${rp ? `<h3 class="sect">Re-planned ${gt(t.replanGameTime)} (${esc(rp.verdict)})</h3>
+      <ul class="reasons">${(t.replanOptions || []).map((l) => `<li>${/^BEST/.test(l) ? `<b>${esc(l)}</b>` : esc(l)}</li>`).join('')}</ul>
+      ${(rp.crossings || []).length ? `<p><b>Crossings:</b> ${rp.crossings.map(esc).join(' ')}</p>` : ''}
+      ${rp.warnings.length ? `<ul>${rp.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+      <details class="score"><summary>The new plan, step by step</summary>${timelineHtml(rp)}</details>` : ''}
+  </div>`;
+}
+
 function viewActive() {
   const t = S.views.activeTrip;
   if (!t) return `<div class="panel"><div class="empty">No open load. Head to the Dispatch tab, enter the board
@@ -2804,6 +2843,7 @@ function viewActive() {
   </div>
 
   ${strandedHtml()}
+  ${replanHtml(t)}
   ${loadedReportHtml(t)}
 
   ${/* Two named columns rather than a flow. The left one is the run as it happens — you arrive, then you
@@ -2899,7 +2939,14 @@ function viewActive() {
         } — ${esc(e.detail)}${
           e.gallons ? ` <b>${vol(e.gallons)}</b>${e.pricePerGal ? ` @ ${SYM()}${num(fuelPriceN(e.pricePerGal), 3)}` : ''}` : ''
         } <button class="btn tiny ghost" data-act="amend-event" data-trip="${esc(t.id)}"
-            data-ev="${esc(e.id)}" title="Correct or drop this entry">fix</button></span></div>`).join('')}</div>
+            data-ev="${esc(e.id)}" title="Correct or drop this entry">fix</button>${
+          // EU: 24 to 45 hours off goes either way, and the driver may switch what it counts as.
+          e.weeklyRest === 'weekly' || e.weeklyRest === 'daily'
+            ? ` <button class="btn tiny ghost" data-act="weekly-event" data-trip="${esc(t.id)}" data-ev="${esc(e.id)}"
+                data-weekly="${e.weeklyRest === 'weekly' ? '0' : '1'}"
+                title="24 to 45 hours off can be your weekly rest or a long daily rest">${
+                e.weeklyRest === 'weekly' ? 'count as a daily rest' : 'count as my weekly rest'}</button>` : ''
+        }</span></div>`).join('')}</div>
         <p class="hint">Typed a stamp wrong? <b>fix</b> it here. On a load already closed out I work the
           dock times out again from the corrected log, and re-derive the learned averages from every trip
           &mdash; one AM/PM slip is otherwise permanent.</p>` : ''}
@@ -5633,7 +5680,7 @@ function editHireModal(id) {
     <p class="hint">Add them here after you have hired them in ATS and put them on a truck, so the unit
       numbers match between the game and the app.</p>
     ${isNew ? (() => { const hb = S.views.fleetOps?.hireBand; return `<div class="callout info">
-      ${hb ? `<p style="margin:0 0 6px"><b>Hire at level ${hb.min}&ndash;${hb.max}.</b> ${esc(hb.how)}.${
+      ${hb ? `<p style="margin:0 0 6px"><b>Hire with ${hb.min}&ndash;${hb.max} skill points.</b> ATS's hiring screen shows skills, not a level &mdash; each level brings a skill point, so count the pips. ${esc(hb.how)}.${
         hb.wayIn ? '' : ' Under that, leave the seat standing rather than fill it cheap.'}</p>` : ''}
       <p style="margin:0">Every hire starts as a <b>Probationary Company Driver</b>, whatever level they
         come in at &mdash; the level says how much driving they have done, the grade is what they earn
@@ -7097,6 +7144,55 @@ function facilityTimesHtml() {
   </div>`;
 }
 
+/**
+ * Getting to the shipper, learned from the driver's own pickups (Services/PickupLearning.cs). Read-only: it is worked
+ * out from the trips every time, from the dispatch and "at the shipper" stamps and the odometer between them.
+ */
+function pickupLearningHtml() {
+  const p = S.views.pickupLearning;
+  if (!p || !p.samples) return '';
+  return `<details class="score" style="margin-top:10px">
+    <summary>Getting to the shipper — learned from your pickups</summary>
+    <p class="hint">Both figures are the cautious one: what 3 in 4 of your recent pickups came in under. Taken
+      from when the load was authorised to when you reported being at the shipper.</p>
+    <ul style="margin:4px 0 0">
+      <li><b>No distance on the listing:</b> ${p.unlistedHours != null
+        ? `${hhmm(p.unlistedHours)} planned to get to the shipper, from ${p.unlistedCount} pickup(s)`
+        : `not enough pickups yet (${p.unlistedCount} of 3) — planned as no time until there are`}.</li>
+      ${(p.cities || []).map((c) => `<li style="margin-left:14px">${esc(c.place)}: ${hhmm(c.hours)}, from ${c.count}</li>`).join('')}
+      <li><b>Distance on the listing:</b> ${p.listedMph != null
+        ? `planned at ${spd(p.listedMph)}, from ${p.listedCount} pickup leg(s) — slower than the highway, as town roads are`
+        : `not enough pickup legs yet (${p.listedCount} of 3) — planned at the highway speed until there are`}.</li>
+    </ul>
+  </details>`;
+}
+
+/**
+ * Road miles between places as the driver actually drove them (Services/RoadLearning.cs), beside what the app would
+ * have estimated. Read-only: it fills in from the odometer at every close-out.
+ */
+function roadLegsHtml() {
+  const v = S.views.roadLegs || {};
+  const rows = v.roads || [];
+  if (!rows.length) return '';
+  const x = (f) => `${num(f, 2)}×`;
+  return `<details class="score" style="margin-top:10px">
+    <summary>Roads you have driven — ${rows.length} learned off the odometer</summary>
+    <p class="hint">Every distance the app works out for itself is a straight line with a road factor. Where you have
+      driven between two places it uses what the odometer said instead &mdash; the middle of your last five runs, so a
+      wrong turn does not become the distance. Legs with a ferry are left out: the odometer does not count the crossing.</p>
+    <p class="hint">Roads you have not driven yet: ${v.factor != null
+      ? `planned at ${x(v.factor)} the estimate, which is how your driven roads have come out${(v.byCountry || []).length
+          ? ` &mdash; by country where there are ${v.minRoads}+ roads: ${v.byCountry.map((c) => `${esc(c.cc)} ${x(c.factor)}`).join(', ')}` : ''}.`
+      : `the estimate as it is, until you have driven ${v.minRoads} roads to learn from.`}</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Between</th><th class="num">Driven</th><th class="num">Estimate</th><th class="num">Runs</th></tr></thead>
+      <tbody>${rows.map((r) => `<tr><td>${esc(r.a)} &harr; ${esc(r.b)}</td><td class="num">${dist(r.miles)}</td>
+        <td class="num">${r.estimate != null ? dist(r.estimate) : '—'}</td><td class="num">${r.runs}</td></tr>`).join('')}</tbody>
+    </table></div>
+  </details>`;
+}
+
 /* ============================================================ SETTINGS */
 /* Which states and provinces — or, in ETS2, countries — the driver actually runs.
  *
@@ -7192,6 +7288,10 @@ function viewSettings() {
         <span class="sub">Match whatever your game is set to.</span></div>
       <label class="chk"><input type="checkbox" id="se-tz" ${s.timeZonesOn ? 'checked' : ''}>
         ATS time zones are switched on</label>
+      <label class="chk"><input type="checkbox" id="se-dst" ${s.gameDaylightTime !== false ? 'checked' : ''}>
+        The game shows daylight time (PDT, MDT, CDT)</label>
+      <p class="hint">Arizona does not change its clocks, so on daylight time it is on California time, and on
+        standard time on Denver time. ATS shows daylight time, so leave this ticked unless your board prints PST, CST.</p>
       <p class="hint">In ATS this lives under Gameplay as <b>Disabled</b>, <b>Only time</b> or
         <b>Full info</b>. Tick this for either of the last two — they differ only in whether the game
         names the zone on screen, and both move the clock when you cross a state line.</p>
@@ -7282,6 +7382,8 @@ function viewSettings() {
         <label>Fuel price ${SYM()}/${VU()}<input id="op-fuelprice" data-u="pervol" type="number" step="0.01" value="${uv(s.fuelPricePerGal, 'pervol', 3)}"></label>
       </div>
       ${facilityTimesHtml()}
+      ${pickupLearningHtml()}
+      ${roadLegsHtml()}
       <p class="hint">Effective planning speed is governed speed × speed factor — currently
         <b>${spd(s.governedMph * s.speedFactor, 1)}</b>. Every hour the app projects is distance divided
         by that, so it decides whether a load is feasible, what it leaves on your cycle and how much slack
@@ -7905,6 +8007,16 @@ async function handleAction(act, d, ev) {
       toast(r.message, 'ok');
     });
     case 'amend-event': return amendEventModal(d.trip, d.ev);
+    case 'replan': return run(async () => {
+      const r = absorb(await api(`/trips/${d.id}/replan`, 'POST', {
+        city: sv('rp-city'), state: sv('rp-state'), gameTime: readDayTime('rp-time'), missRoute: $('rp-miss') ? sv('rp-miss') : '',
+      }));
+      toast(r.result.headline, r.result.plan.verdict === 'Infeasible' ? 'bad' : 'ok');
+    });
+    case 'weekly-event': return run(async () => {
+      absorb(await api(`/trips/${d.trip}/event/${d.ev}/weekly`, 'POST', { weekly: d.weekly === '1' }));
+      toast(d.weekly === '1' ? 'Counted as your weekly rest.' : 'Counted as a long daily rest — your six days run on.', 'ok');
+    });
     case 'amend-event-save': return run(async () => {
       // Only sent when the form actually had the field — otherwise null, which leaves it alone. Set
       // back to the start time it means "I do not know", which is a blank rather than a zero-length stop.
@@ -8202,27 +8314,25 @@ async function handleAction(act, d, ev) {
             : 'No rows ticked.', duplicated.length ? 'ok' : 'bad');
       }
 
+      // All the rows in one call, and the board planned once at the end — one call a row re-planned the whole
+      // board every time, and the button gave no sign anything was happening. Reported from play.
+      BUSY = 'commit'; render();
       return run(async () => {
-        // One row the server will not take must not abort the other nine. A listing under the floor is
-        // refused by design, and a refusal here is information rather than a failure.
-        let added = 0;
-        const expired = [];
-        for (const load of chosen) {
-          try {
-            DECISION = await api('/board/add', 'POST', load);
-            added += 1;
-          } catch (err) {
-            if (!/listing/i.test(err?.message || '')) throw err;
-            expired.push(`${load.cargo} to ${load.destCity}`);
-          }
+        try {
+          // A row the server will not take does not abort the others: a listing under the expiry floor is
+          // refused by design, and comes back named rather than as a failure.
+          const r = await api('/board/add-many', 'POST', chosen);
+          DECISION = r.decision;
+          absorb(await api('/bootstrap'));
+          EXTRACT = null; SHOTS = [];
+          const notes = [];
+          if (rejected.length) notes.push(`skipped ${rejected.join(', ')} — incomplete`);
+          if (r.refused.length) notes.push(`dropped ${r.refused.length} too close to expiring (${r.refused.map((x) => `${x.cargo} to ${x.destCity}`).join(', ')})`);
+          toast(`Done — ${r.added} load(s) added${notes.length ? '; ' + notes.join('; ') : ''}. ${r.decision?.headline || ''}`,
+            r.added ? 'ok' : 'bad');
+        } finally {
+          BUSY = '';
         }
-        absorb(await api('/bootstrap'));
-        EXTRACT = null; SHOTS = [];
-        const notes = [];
-        if (rejected.length) notes.push(`skipped ${rejected.join(', ')} — incomplete`);
-        if (expired.length) notes.push(`dropped ${expired.length} too close to expiring (${expired.join(', ')})`);
-        toast(`${added} load(s) added to the board${notes.length ? '. ' + notes.join('; ') + '.' : '.'}`,
-          added ? 'ok' : 'bad');
       });
     }
 
@@ -8266,6 +8376,14 @@ async function handleAction(act, d, ev) {
         absorb(await api('/bootstrap'));
       });
     }
+
+    // The dock board was rejected and the city has nothing either: log it, and show where to go next.
+    case 'city-empty': return run(async () => {
+      const res = await api('/dispatch/reject-all', 'POST',
+        { reason: DECISION?.rationale || 'Nothing at the dock or in the city.', cityChecked: true });
+      absorb(res);
+      DECISION = res.next || null;
+    }, 'Board rejected and logged.');
 
     case 'reject-all': return run(async () => {
       absorb(await api('/dispatch/reject-all', 'POST', { reason: DECISION?.rationale || 'Nothing operationally sensible on the board.' }));
@@ -8439,6 +8557,9 @@ async function handleAction(act, d, ev) {
         hosEuWeekLeft: hvn('c-hwleft'), hosEuTwoWeeksLeft: hvn('c-h2wleft'),
       });
       absorb(r); TRIP_AUDIT = r.audit;
+      // A load run to get you home ends with the run home on the Dispatch tab — the empty-run button and the
+      // trailer and days-off question — rather than a request for a board. Reported from play at Grand Rapids.
+      if (r.runHome) DECISION = r.runHome;
       FUEL = { tripId: null, seeded: 0, rows: [] };
       // New dock, new starting point: show me what is going out from here before the whole city.
       BOARD_STAGE = 'local';
@@ -9337,6 +9458,7 @@ function collectSettings() {
     usesHosMod: s.usesHosMod, hosModName: s.hosModName, usesEconomyMod: s.usesEconomyMod,
     carrierRoster: sv('se-roster') || s.carrierRoster,
     timeZonesOn: bv('se-tz'),
+    gameDaylightTime: document.getElementById('se-dst') ? bv('se-dst') : s.gameDaylightTime !== false,
     // The boxes if the panel is on screen, and whatever the career already had if it is not. Reading an
     // absent panel as "no regions" would quietly reset somebody's map from a screen that never showed
     // it — and the server treats empty as unset, so the damage would be silent rather than obvious.

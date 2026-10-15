@@ -90,10 +90,15 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
             $"in {movedTo} now. Enter what is on offer here.");
     }
 
+    // The place in the last town is not the place in this one. The form fills the detail in from what is on file, so
+    // a move that left it alone would carry the old receiver's name into the new town — and a dock row is checked
+    // against that name (see AtThisDock). Cleared on a move unless a new one was given.
+    var moved = movedTo.Length > 0 && !movedTo.Equals(s.Status.LocationCity ?? "", StringComparison.OrdinalIgnoreCase);
+    if (moved && (u.LocationDetail == null || u.LocationDetail == s.Status.LocationDetail)) s.Status.LocationDetail = "";
+    else if (u.LocationDetail != null) s.Status.LocationDetail = u.LocationDetail;
     if (u.LocationCity != null) s.Status.LocationCity = u.LocationCity.Trim();
     if (u.LocationState != null) s.Status.LocationState = Ets2Data.Region(s, u.LocationState);
     if (u.LocationKind != null) s.Status.LocationKind = u.LocationKind;
-    if (u.LocationDetail != null) s.Status.LocationDetail = u.LocationDetail;
     if (u.GameTime != null) s.Status.GameTime = u.GameTime;
     if (u.FuelPct.HasValue) s.Status.FuelPct = Math.Clamp(u.FuelPct.Value, 0, 100);
     if (u.TruckDamagePct.HasValue) s.Status.TruckDamagePct = Math.Clamp(u.TruckDamagePct.Value, 0, 100);
@@ -568,18 +573,58 @@ app.MapPost("/api/board", (List<BoardLoad> loads) => Results.Ok(store.Mutate(s =
     {
         if (string.IsNullOrWhiteSpace(l.Id)) l.Id = Guid.NewGuid().ToString("N")[..8];
         if (string.IsNullOrWhiteSpace(l.OriginCity)) { l.OriginCity = s.Status.LocationCity; l.OriginState = s.Status.LocationState; }
-        l.OriginState = Ets2Data.Region(s, l.OriginState);
-        l.DestState = Ets2Data.Region(s, l.DestState);
+        l.OriginState = Ets2Data.RegionFor(s, l.OriginCity, l.OriginState);
+        l.DestState = Ets2Data.RegionFor(s, l.DestCity, l.DestState);
     }
     return EvaluateBoard(s);
 })));
 
 app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
 {
+    AddToBoard(s, l);
+    return EvaluateBoard(s);
+})));
+
+// The screenshot importer's rows, all at once: each added as /api/board/add would add it, and the board evaluated
+// ONCE at the end. One call per row re-planned the whole board every time, which is what made "Add ticked rows"
+// sit there for a long while on a full board. A row under the expiry floor is refused on its own and said, and
+// the rest still go on.
+app.MapPost("/api/board/add-many", (List<BoardLoad> loads) => Results.Ok(store.Mutate(s =>
+{
+    var refused = new List<object>();
+    var added = 0;
+    foreach (var l in loads ?? new())
+    {
+        try { AddToBoard(s, l); added++; }
+        catch (InvalidOperationException ex) { refused.Add(new { cargo = l.Cargo, destCity = l.DestCity, reason = ex.Message }); }
+    }
+    return new { added, refused, decision = EvaluateBoard(s) };
+})));
+
+/// <summary>One listing onto the board, normalised — without evaluating. Throws when it is under the expiry floor.</summary>
+/// <summary>
+/// Whether a row flagged as offered at the driver's location really is: it starts in the town the truck is in,
+/// and the shipper it names is the place the truck is parked at. A row that names no shipper, or a position with
+/// no place on it, is taken at its word.
+/// </summary>
+static bool AtThisDock(AppState s, BoardLoad l)
+{
+    if (!string.Equals(l.OriginCity.Trim(), (s.Status.LocationCity ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
+        return false;
+    return !PickupLearning.NamedElsewhere(s, l);
+}
+
+static void AddToBoard(AppState s, BoardLoad l)
+{
     if (string.IsNullOrWhiteSpace(l.Id)) l.Id = Guid.NewGuid().ToString("N")[..8];
     if (string.IsNullOrWhiteSpace(l.OriginCity)) { l.OriginCity = s.Status.LocationCity; l.OriginState = s.Status.LocationState; }
-    l.OriginState = Ets2Data.Region(s, l.OriginState);
-    l.DestState = Ets2Data.Region(s, l.DestState);
+    l.OriginState = Ets2Data.RegionFor(s, l.OriginCity, l.OriginState);
+    l.DestState = Ets2Data.RegionFor(s, l.DestCity, l.DestState);
+    // "At this dock" only when it is this dock. The flag came from the tab the rows were entered on, and the tab
+    // goes to the local board on its own at a customer — so a city board pasted while parked at a receiver came in
+    // as freight under the truck. Reported from play: parked at Amazon in Phoenix, a FedEx load across town booked
+    // as no pickup at all, and the forty-five minutes to get there cost a whole extra rest and the window.
+    if (l.AtLocation && !AtThisDock(s, l)) l.AtLocation = false;
     // Fill a blank trailer type from what is hooked — except the arrangement, which is not a trailer.
     //
     // Drop and hook is modelled as a trailer type, and this is where that leaks: a listing entered
@@ -632,8 +677,7 @@ app.MapPost("/api/board/add", (BoardLoad l) => Results.Ok(store.Mutate(s =>
         && Math.Abs(b.GameRevenue - l.GameRevenue) < 1);
 
     s.Board.Add(l);
-    return EvaluateBoard(s);
-})));
+}
 
 app.MapPost("/api/board/{id}/pass", (string id, PassRequest? req) => Results.Ok(store.Mutate(s =>
 {
@@ -685,6 +729,12 @@ app.MapGet("/api/board/evaluate", () => Results.Ok(store.Mutate(EvaluateBoard)))
 /// corrupt every feasibility and rate decision downstream.
 app.MapPost("/api/board/extract", async (ExtractRequest req, CancellationToken ct) =>
 {
+    // Not clear to run: nothing on any board could be taken, so the screenshots are not read — reading them costs
+    // the driver API tokens for a board that would only be rejected. Asked for from play. Said in the reply, with
+    // the reason, the same one the Dispatch tab shows.
+    var notClear = DispatchEngine.DispatchBlockers(store.State, DispatchEngine.AssignedTruck(store.State), DispatchEngine.AssignedTrailer(store.State));
+    if (notClear.Count > 0 && (req.Images?.Count ?? 0) > 0)
+        return Results.Ok(new ExtractionResult { Ok = false, Error = "Not read — you are not clear to run, so nothing on the board could be taken. " + notClear[0] });
     var result = await AiService.ExtractLoadsAsync(store.State, req.Images ?? new(), ct);
     if (result.Ok)
         store.Mutate(s => store.Log(s, "dispatch",
@@ -864,7 +914,9 @@ app.MapPost("/api/dispatch/reject-all", (RejectRequest req) => Results.Ok(store.
     var count = s.Board.Count;
     store.Log(s, "dispatch", $"Board of {count} job(s) rejected: {req.Reason}");
     s.Board.Clear();
-    return new { rejected = count, snapshot = Snapshot(s) };
+    // The dock was rejected and the driver says the city has nothing either: the next step, not silence.
+    var next = req.CityChecked ? DispatchEngine.AfterCityBoard(s) : null;
+    return new { rejected = count, next, snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/moves", (MoveRequest req) => Results.Ok(store.Mutate(s =>
@@ -1013,6 +1065,23 @@ app.MapPost("/api/trips/{id}/event/{eventId}", (string id, string eventId, Amend
     return new { message, ev, rebuilt, snapshot = Snapshot(s) };
 })));
 
+/// The rest of a running load planned again from where the driver is — a missed sailing, a late start. See Replan.
+app.MapPost("/api/trips/{id}/replan", (string id, Replan.Request req) =>
+    Results.Ok(store.Mutate<object>(s =>
+{
+    var result = Replan.Run(s, id, req);
+    return new { result, snapshot = Snapshot(s) };
+})));
+
+/// EU: a long stretch off, 24 to 45 hours, counted as the weekly rest or as a long daily one — the driver's call.
+app.MapPost("/api/trips/{id}/event/{eventId}/weekly", (string id, string eventId, WeeklyRestRequest req) =>
+    Results.Ok(store.Mutate<object>(s =>
+{
+    var ev = TripService.SetWeeklyRest(s, id, eventId, req.Weekly);
+    store.Log(s, "hos", ev.WeeklyRest == "weekly" ? "Counted as the weekly rest, at your word." : "Counted as a long daily rest, at your word.");
+    return new { ev, snapshot = Snapshot(s) };
+})));
+
 /// Working the dock averages out again from every trip log. Offered on its own because a career that
 /// already learned from a bad reading needs a way back that does not involve editing the reading.
 app.MapPost("/api/facility/rebuild", () => Results.Ok(store.Mutate<object>(s =>
@@ -1086,7 +1155,9 @@ app.MapPost("/api/trips/{id}/complete", (string id, CompleteTripRequest req) => 
 
     // The commonest way the clock crosses a Friday, and the one that never used to pay.
     var paid = SettleDue(s);
-    return new { audit, paid, wentHome, homeBrief, rerig, snapshot = Snapshot(s) };
+    // The load that was run to get them home: the run home next, not a board. See DispatchEngine.RunHomeNow.
+    var runHome = audit.Trip.IsHomeRun && !wentHome ? DispatchEngine.RunHomeNow(s) : null;
+    return new { audit, paid, wentHome, homeBrief, rerig, runHome, snapshot = Snapshot(s) };
 })));
 
 /// <summary>
@@ -1604,6 +1675,10 @@ app.MapPost("/api/fleetops/yard-request/confirm", (YardBoughtRequest req) => Res
     var message = req.PaidPrice > 0
         ? $"{where} on the books as a {yard.Level.ToLowerInvariant()} yard — {Units.Money0(req.PaidPrice)}."
         : $"{where} on the books as a {yard.Level.ToLowerInvariant()} yard.";
+    var room = Migrations.RoomAt(s, yard);
+    if (room > 0)
+        message += $" {room} empty slot(s) there now — buy the tractors in ATS, hire drivers into them, and add " +
+                   "them with Stock on the Terminals tab.";
     store.Log(s, "ledger", message);
     return new { snapshot = Snapshot(s), message };
 })));
@@ -2927,6 +3002,10 @@ object Snapshot(AppState? given = null)
             networkSummary = DiscoveryService.NetworkSummary(s),
             unacknowledged = SafetyService.Unacknowledged(s),
             facilityTimes = FacilityLearning.View(s),
+            // How long getting to the shipper takes, learned from the driver's own pickups.
+            pickupLearning = PickupLearning.View(s),
+            // Road miles between places as actually driven, off the odometer.
+            roadLegs = RoadLearning.View(s),
             // Empty moves worth offering when the board is rejected and home time is close: the run
             // to the yard, and markets on the way worth pulling a board from. Miles included, so the
             // driver never types a distance the app already knows.
@@ -3350,7 +3429,7 @@ record StatusUpdate(string? LocationCity, string? LocationState, string? Locatio
 
 record HireRequest(DriverApplication Application, bool Force, string? GameTime, string? Code);
 record AuthorizeRequest(string LoadId, string? Rationale, bool OverrideTight);
-record RejectRequest(string Reason);
+record RejectRequest(string Reason, bool CityChecked = false);
 record AlternateRequest(string LoadId, string Reason);
 record PassRequest(string? Reason);
 /// <param name="CostPaid">
@@ -3427,6 +3506,7 @@ record TripLengthRequest(string? Preference);
 record TrueUpRequest(decimal? AtsBalance);
 record ClockCheckRequest(bool? Uncap, bool? StopAsking);
 record ChangeoverRequest(string? StepId);
+record WeeklyRestRequest(bool Weekly);
 record AmendEventRequest(string? GameTime, string? Detail, bool? Remove, string? EndGameTime = null);
 record AssignAccountRequest(string? Company, string? AsTheGameCallsIt, string? RenamesCompanies);
 record ModReadRequest(string? Path);

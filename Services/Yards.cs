@@ -23,6 +23,24 @@ public static class Yards
         s.YardRequests.FirstOrDefault(r => r.Status == "Open");
 
     /// <summary>
+    /// The tier a yard goes to next. A garage bought in ATS is small and its one upgrade is to large — only the
+    /// company's original yard is ever medium. Asking for "small to medium" anywhere else was asking for an upgrade
+    /// the game does not sell. Reported from play.
+    /// </summary>
+    public static string NextLevel(Terminal t) => t.Level switch
+    {
+        "Small" when t.IsHeadquarters => "Medium",
+        "Small" => "Large",
+        _ => "Large",
+    };
+
+    /// <summary>Tractor slots a yard gains going to <paramref name="level"/>.</summary>
+    public static int SlotsGained(Terminal t, string level) =>
+        Math.Max(0, CapacityFor(level) - t.TruckCapacity);
+
+    public static int CapacityFor(string level) => level switch { "Small" => 1, "Medium" => 3, _ => 5 };
+
+    /// <summary>
     /// Roughly what an ATS garage runs to, used only to say whether the company can afford to ask.
     /// Never posted — what actually lands on the books is what the player reports paying.
     /// </summary>
@@ -52,9 +70,13 @@ public static class Yards
 
         req.Instruction = req.Kind == "Upgrade"
             ? $"Buy the {req.Level.ToLowerInvariant()} garage upgrade at {label} in ATS, then tell me what " +
-              "it cost and I will move the yard up on the books."
+              "it cost and I will move the yard up on the books. The point of it is more trucks: once it is " +
+              $"done, {label} has {SlotsGained(Migrations.TerminalOf(s, req.TerminalId) ?? new Terminal(), req.Level)} " +
+              "empty slot(s). Buy tractors for them in ATS, hire drivers into them, and add them with Stock on " +
+              "the Terminals tab."
             : $"Buy the {req.Level.ToLowerInvariant()} garage at {label} in ATS, then tell me what it cost " +
-              "and I will put the yard on the books.";
+              "and I will put the yard on the books. Then buy a tractor for it, hire a driver into it, and add " +
+              "it with Stock on the Terminals tab — an empty yard earns nothing.";
 
         if (req.Unaffordable)
             req.Instruction += $" No rush — spendable cash is {Units.Money0(spendable)} and a garage runs somewhere " +

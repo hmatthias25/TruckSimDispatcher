@@ -84,7 +84,9 @@ const barred = (e) => (e.homeTimeFails || []).join(' | ');
               `${hs.milesFromHome?.toFixed(0)} mi from ${hs.terminalLabel}, allowance ${hs.outboundAllowance} mi`);
   ok('home time is in view', hs.dueSoon === true && hs.overdue === false, `dueSoon=${hs.dueSoon}`);
   ok('roughly two days to go', Math.abs(hs.daysUntilDue - 2) < 0.6, hs.daysUntilDue.toFixed(2));
-  ok('and the enforced ceiling is about 300 miles', Math.abs(hs.outboundAllowance - 305) < 10,
+  // v0.86: the room counts the drive home as well as the days. Two days out with Springfield most of a day's
+  // freight away leaves about 205 mi, where it was 305 off the calendar alone.
+  ok('and the enforced ceiling is about 200 miles', Math.abs(hs.outboundAllowance - 205) < 10,
     `${hs.outboundAllowance} mi`);
 
   head('2. The headline says what is enforced, not what sounds reassuring');
@@ -104,9 +106,10 @@ const barred = (e) => (e.homeTimeFails || []).join(' | ');
   ok('not merely scored down', cal.recommendation === 'Reject', cal.recommendation);
 
   head('4. A load that passes the ceiling can still run the wrong way');
-  // This is the gap between what the old headline promised and what the rule does. Sioux Falls is 295 mi
-  // further out against an allowance of 305 — legal, and nobody should read it as going home.
-  const sioux = await offer('Sioux Falls', 'SD');
+  // This is the gap between what the old headline promised and what the rule does. Dodge City is well over a
+  // hundred miles further out, under an allowance of 205 — legal, and nobody should read it as going home.
+  // (Sioux Falls was the example, 295 further against 305; v0.86's tighter room bars it now.)
+  const sioux = await offer('Dodge City', 'KS');
   console.log(`  ..    ${homeLine(sioux)}`);
   ok('it is not barred', !barred(sioux), barred(sioux).slice(0, 80) || 'allowed');
   ok('but it is scored as running away from home', /further from/i.test(homeLine(sioux)));

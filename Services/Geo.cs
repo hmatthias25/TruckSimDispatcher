@@ -29,6 +29,8 @@ public static class Geo
     /// under-stating it is the dangerous direction — it makes a deadhead look cheaper than it is.
     /// </summary>
     private const double RoadFactor = 1.2;
+    /// <summary>The road factor, for checking a driven distance against the straight line.</summary>
+    public const double RoadFactorValue = RoadFactor;
 
     private const double EarthRadiusMiles = 3958.8;
 
@@ -254,7 +256,7 @@ public static class Geo
     /// reported from play: Rome to Dubrovnik read as a short road run, when the road goes round by Trieste and
     /// the listing's distance was the ferry's route.
     /// </summary>
-    private static readonly (Func<double, double, string, bool> A, Func<double, double, string, bool> B, double Lat, double Lon, string Via)[] Detours =
+    private static readonly (Func<double, double, string, bool> A, Func<double, double, string, bool> B, (double Lat, double Lon)[] By, string Via)[] Detours =
     {
         // Italy below the Po, and the land beyond the Adriatic: round it by Trieste. Not only the coast — reported
         // from play: Novi Sad to Bari read as a 623 km drive straight over the sea, with no ferry, because Serbia was
@@ -262,12 +264,62 @@ public static class Geo
         // Zagreb to the north of Italy) the length check in RoadDetour lets it go.
         ((lat, lon, cc) => cc == "IT" && lat < 44.2 && lon > 9.5,
          (lat, lon, cc) => cc is "HR" or "BA" or "ME" or "AL" or "GR" or "MK" or "XK" or "RS" or "BG" or "RO" or "HU" or "TR",
-         45.65, 13.78, "round the Adriatic by Trieste"),
-        // Sweden and Finland: round the top of the Gulf of Bothnia by Haparanda.
-        ((lat, lon, cc) => cc == "SE" && lat < 65.5,
+         new[] { (45.65, 13.78) }, "round the Adriatic by Trieste"),
+        // Sweden or Norway and Finland: round the top of the Gulf of Bothnia by Haparanda. Norway too — Oslo to
+        // Kokkola read as a straight line over Sweden and the sea.
+        ((lat, lon, cc) => cc is "SE" or "NO" && lat < 65.5,
          (lat, lon, cc) => cc == "FI" && lat < 65.5,
-         65.83, 24.13, "round the Gulf of Bothnia by Haparanda"),
+         new[] { (65.83, 24.13) }, "round the Gulf of Bothnia by Haparanda"),
+        // The mainland and Finland: round the Baltic, either up through Sweden by the Øresund and Haparanda or east by
+        // St Petersburg and Vyborg — whichever is shorter. Reported from play: Rotterdam to Kokkola read as a 2,032 km
+        // drive straight over the sea, with no ferry, where the game routes it by Kapellskär and Naantali. Tallinn to
+        // Helsinki was 98 km of road across the Gulf of Finland.
+        ((lat, lon, cc) => OnTheMainland(cc), (lat, lon, cc) => cc == "FI",
+         new[] { (55.6, 12.9), (65.83, 24.13) }, "round the Baltic through Sweden by Haparanda"),
+        ((lat, lon, cc) => OnTheMainland(cc), (lat, lon, cc) => cc == "FI",
+         new[] { (60.71, 28.75) }, "round the Gulf of Finland by St Petersburg"),
+        // The Continent and Zealand, Sweden and Norway: by road through Jutland and over the Great Belt and the Øresund,
+        // and on up the Swedish coast for Norway. Found in a ferry audit: Berlin to Malmö, Rostock to København, Riga to
+        // Stockholm and Aalborg to Bergen all read as a drive straight over the Baltic or the Skagerrak, so the plan
+        // never took the ferry the game routes them on (Rostock – Trelleborg, Gedser, Ventspils, Hirtshals) and had
+        // no sailing in it at all.
+        ((lat, lon, cc) => SouthOfTheLittleBelt(lat, lon, cc), (lat, lon, cc) => OnTheDanishIslands(lat, lon, cc),
+         new[] { (55.52, 9.75), (55.34, 11.0) }, "through Jutland and over the Great Belt"),
+        ((lat, lon, cc) => SouthOfTheLittleBelt(lat, lon, cc), (lat, lon, cc) => cc == "SE",
+         new[] { (55.52, 9.75), (55.34, 11.0), (55.6, 12.9) }, "through Denmark by the Great Belt and the Øresund"),
+        ((lat, lon, cc) => SouthOfTheLittleBelt(lat, lon, cc), (lat, lon, cc) => cc == "NO",
+         new[] { (55.52, 9.75), (55.34, 11.0), (55.6, 12.9), (57.7, 11.97), (59.91, 10.75) }, "through Denmark and Sweden by Oslo"),
+        // Funen is already over the Little Belt: the Great Belt is all that is left.
+        ((lat, lon, cc) => OnFunen(lat, lon, cc), (lat, lon, cc) => cc == "SE",
+         new[] { (55.34, 11.0), (55.6, 12.9) }, "over the Great Belt and the Øresund"),
+        ((lat, lon, cc) => OnFunen(lat, lon, cc), (lat, lon, cc) => cc == "NO",
+         new[] { (55.34, 11.0), (55.6, 12.9), (57.7, 11.97), (59.91, 10.75) }, "over the Great Belt and up through Sweden by Oslo"),
+        ((lat, lon, cc) => OnTheDanishIslands(lat, lon, cc), (lat, lon, cc) => cc == "NO",
+         new[] { (55.6, 12.9), (57.7, 11.97), (59.91, 10.75) }, "over the Øresund and up through Sweden by Oslo"),
+        // The Baltic states and Sweden the other way round, through Finland, where that is shorter (Tallinn).
+        ((lat, lon, cc) => cc is "EE" or "LV" or "LT", (lat, lon, cc) => cc is "SE" or "NO",
+         new[] { (60.71, 28.75), (65.83, 24.13) }, "round the Gulf of Finland and the Gulf of Bothnia"),
     };
+
+    /// <summary>
+    /// Zealand, Lolland and Falster, east of the Great Belt — Danish, but not joined to the Continent by road except
+    /// through Jutland. Bornholm is left out: it is its own island, and nothing here routes to it.
+    /// </summary>
+    private static bool OnTheDanishIslands(double lat, double lon, string cc) =>
+        cc == "DK" && lon > 10.95 && lon < 12.8 && lat < 56.2;
+
+    /// <summary>Funen: Danish, between the Little Belt and the Great Belt.</summary>
+    private static bool OnFunen(double lat, double lon, string cc) =>
+        cc == "DK" && lon > 9.75 && lon <= 10.95 && lat > 54.8 && lat < 55.65;
+
+    /// <summary>The Continent short of the Little Belt — Jutland and everything south and east of it.</summary>
+    private static bool SouthOfTheLittleBelt(double lat, double lon, string cc) =>
+        OnTheMainland(cc) && !OnTheDanishIslands(lat, lon, cc) && !OnFunen(lat, lon, cc);
+
+    /// <summary>Continental Europe below the Baltic: not Scandinavia, Finland or Russia, and not an island.</summary>
+    private static bool OnTheMainland(string cc) =>
+        cc.Length == 2 && cc is not ("SE" or "NO" or "FI" or "RU" or "AX" or "UK" or "IE" or "IS" or "FO" or "SJ" or "GL"
+                                     or "MT" or "CY" or "IM" or "GG" or "JE");
 
     /// <summary>
     /// The road distance where it goes round a sea the straight line crosses, and which way; null where the
@@ -281,16 +333,27 @@ public static class Geo
         if (Locate(cityA, stateA) is not { } a || Locate(cityB, stateB) is not { } b) return null;
         var ca = (stateA ?? "").Trim().ToUpperInvariant();
         var cb = (stateB ?? "").Trim().ToUpperInvariant();
+        (double Miles, string Via)? best = null;
         foreach (var d in Detours)
         {
-            var across = (d.A(a.Lat, a.Lon, ca) && d.B(b.Lat, b.Lon, cb)) || (d.B(a.Lat, a.Lon, ca) && d.A(b.Lat, b.Lon, cb));
-            if (!across) continue;
-            var round = Haversine(a.Lat, a.Lon, d.Lat, d.Lon) + Haversine(d.Lat, d.Lon, b.Lat, b.Lon);
+            var fromA = d.A(a.Lat, a.Lon, ca) && d.B(b.Lat, b.Lon, cb);
+            if (!fromA && !(d.B(a.Lat, a.Lon, ca) && d.A(b.Lat, b.Lon, cb))) continue;
+            // The waypoints are listed from the A shore; taken the other way, they are walked backwards.
+            var by = fromA ? d.By : d.By.Reverse().ToArray();
+            var round = 0.0;
+            var at = (a.Lat, a.Lon);
+            foreach (var w in by) { round += Haversine(at.Lat, at.Lon, w.Lat, w.Lon); at = w; }
+            round += Haversine(at.Lat, at.Lon, b.Lat, b.Lon);
             // The way round is on the way anyway: the straight line is a fair reading.
             if (round < Haversine(a.Lat, a.Lon, b.Lat, b.Lon) * DetourMinRatio) continue;
-            return (Math.Round(round * RoadFactor, 0), d.Via);
+            // Where there is more than one way round, the shorter.
+            // On the same learned factor as every other road estimate (MilesBetween): the way round was read at the
+            // plain 1.2 while the legs to a port carried the driver's own factor, so a ferry route could measure
+            // longer than driving round. Reported from play: Rotterdam to Kokkola, where Kapellskär lost to the road.
+            var miles = Math.Round(round * RoadFactor * RoadLearning.FactorFor(ca, cb), 0);
+            if (best == null || miles < best.Value.Miles) best = (miles, d.Via);
         }
-        return null;
+        return best;
     }
 
     public static bool KnowsState(string? state) =>
@@ -300,7 +363,26 @@ public static class Geo
     /// Road miles between two places, near enough. Null when neither the city table nor the state
     /// centroids can answer, so callers can say "I do not know" rather than guess.
     /// </summary>
-    public static double? MilesBetween(string? cityA, string? stateA, string? cityB, string? stateB)
+    /// <summary>
+    /// Road miles between two places: as the driver actually drove them where they have (Services.RoadLearning), the
+    /// straight-line estimate otherwise.
+    /// </summary>
+    public static double? MilesBetween(string? cityA, string? stateA, string? cityB, string? stateB) =>
+        RoadLearning.Known(cityA, stateA, cityB, stateB)
+        ?? (EstimatedMiles(cityA, stateA, cityB, stateB) is { } est
+            ? Math.Round(est * RoadLearning.FactorFor(stateA, stateB), 0) : null);
+
+    /// <summary>The estimate from a pair's road-table key ("city|CC>city|CC"), for showing beside what was driven.</summary>
+    public static double? EstimatedMilesByPlace(string key)
+    {
+        var parts = key.Split('>');
+        if (parts.Length != 2) return null;
+        var a = parts[0].Split('|'); var b = parts[1].Split('|');
+        return a.Length == 2 && b.Length == 2 ? EstimatedMiles(a[0], a[1], b[0], b[1]) : null;
+    }
+
+    /// <summary>The straight line with a road factor, near enough. Null when nothing can answer.</summary>
+    public static double? EstimatedMiles(string? cityA, string? stateA, string? cityB, string? stateB)
     {
         var ca = (cityA ?? "").Trim();
         var cb = (cityB ?? "").Trim();
@@ -333,6 +415,10 @@ public static class Geo
     /// </summary>
     public static bool IsMeasured(string? cityA, string? stateA, string? cityB, string? stateB) =>
         Knows(cityA, stateA) && Knows(cityB, stateB);
+
+    /// <summary>The straight line between two places, in miles; null where either is not known. For a sea crossing.</summary>
+    public static double? StraightMiles(string? cityA, string? stateA, string? cityB, string? stateB) =>
+        Locate(cityA, stateA) is { } a && Locate(cityB, stateB) is { } b ? Haversine(a.Lat, a.Lon, b.Lat, b.Lon) : null;
 
     private static double Haversine(double lat1, double lon1, double lat2, double lon2)
     {

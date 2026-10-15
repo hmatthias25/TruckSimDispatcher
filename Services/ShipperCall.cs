@@ -192,6 +192,12 @@ public static class ShipperCall
     {
         if (trip.Kind != "Freight" || !string.IsNullOrWhiteSpace(trip.ShipperArrivedGameTime)) return null;
 
+        // Still on their property only if the truck has not been reported anywhere else since. Reported from play
+        // (ETS2): delivered, drove to a truck stop and reported in there, and the next day a load out of the same
+        // dock came up as "at the shipper" straight away — the driver was across town.
+        if (s.Status.LocationKind is not ("Shipper" or "Receiver")) return null;
+        if (PickupLearning.NamedElsewhere(s, new BoardLoad { Shipper = trip.Shipper })) return null;
+
         var last = s.Trips
             .Where(t => t.Id != trip.Id && t.Kind == "Freight" && t.Status == "Delivered")
             .OrderByDescending(t => GameClock.TryParse(t.DeliveredGameTime) ?? DateTime.MinValue)

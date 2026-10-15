@@ -74,15 +74,19 @@ const km = (k) => k / 1.609344;
   const from = +((closes.match(/\(([\d,]+) →/) || [])[1] || '0').replace(/,/g, '');
   ok('distances in one unit', from > 900, closes);
 
-  head('3. The only homeward load is tight on its window: dispatch books it, on probation');
+  // v0.86: the EU plan carries no buffer on top of itself — a load that makes the gate is deliverable — so the
+  // homeward load that used to come out tight is simply feasible now, and booked on its merits.
+  head('3. The only homeward load is thin on its window: dispatch books it, on probation');
   d = await board([
     { destCity: 'Zenica', destState: 'BA', loadedMiles: km(230), gameRevenue: 900, deadlineHours: 40 },
-    { destCity: 'Vienna', destState: 'AT', loadedMiles: km(505), gameRevenue: 900, deadlineHours: 13.2 },
+    // v0.86: 13.2 down to 10.2 — slack now runs to the gate, so the unload and the parking hour no longer come off it.
+    { destCity: 'Vienna', destState: 'AT', loadedMiles: km(505), gameRevenue: 900, deadlineHours: 10.2 },
   ]);
   const vienna = d.evaluations.find((e) => e.load.destCity === 'Vienna');
-  ok('Vienna is tight on its window', vienna.feasibility.verdict === 'Tight', `${vienna.feasibility.verdict}, slack ${vienna.feasibility.slackHours}`);
-  ok('and dispatch takes it anyway', d.authorizedLoadId === vienna.load.id, d.headline);
-  ok('saying why', (d.dispatchNotes || []).some((n) => /barely cover the run home/.test(n)), (d.dispatchNotes || []).join(' | ').slice(0, 300));
+  ok('Vienna makes its window with under two hours in hand', vienna.feasibility.verdict === 'Feasible'
+    && vienna.feasibility.slackHours >= 0 && vienna.feasibility.slackHours < 2, `${vienna.feasibility.verdict}, slack ${vienna.feasibility.slackHours}`);
+  ok('and dispatch takes it', d.authorizedLoadId === vienna.load.id, d.headline);
+  ok('no buffer held against it on EU rules', vienna.feasibility.requiredBufferHours === 0, `${vienna.feasibility.requiredBufferHours}`);
   let refusedAccept = null;
   try { await api('/dispatch/authorize', 'POST', { loadId: vienna.load.id, overrideTight: false }); } catch (e) { refusedAccept = e.message; }
   ok('a probationer can accept it', !refusedAccept, refusedAccept || 'accepted');

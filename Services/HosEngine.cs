@@ -82,6 +82,11 @@ public class PlanRequest
     /// because a number the app worked out and a number the game stated are not the same kind of thing.
     /// </summary>
     public bool DeadheadIsEstimate { get; set; }
+    /// <summary>
+    /// EU: take each daily rest as a reduced one of nine while any are left before the weekly rest. Set by
+    /// <see cref="HosEngine.Plan"/> itself on a second try, where the full elevens make the delivery late.
+    /// </summary>
+    public bool PreferReducedRests { get; set; }
     public double LoadedMiles { get; set; }
     public double LoadingHours { get; set; }
     public double UnloadingHours { get; set; }
@@ -215,9 +220,32 @@ public class PlanRequest
     public double UsableFuelRangeMiles { get; set; } = 9999;
     /// <summary>In-game clock the plan starts from. Falls back to the reported status clock.</summary>
     public string StartGameTime { get; set; } = "";
+
+    /// <summary>
+    /// Sailings the driver will not make, by route id: nothing on that route leaves at or before the time given. Set
+    /// by a re-plan where the driver has said "I will miss that one" — see <see cref="Services.Replan"/>.
+    /// </summary>
+    public Dictionary<string, DateTime>? MissedSailings { get; set; }
     public string Label { get; set; } = "load";
     /// <summary>An empty run: nothing to deliver, so no window to arrive early for and no dock to advise on.</summary>
     public bool EmptyRun { get; set; }
+
+    /// <summary>
+    /// The pickup leg's own speed, learned from the driver's pickups (Services.PickupLearning). Used where it is
+    /// slower than the highway speed the rest of the plan runs at. Zero = not known.
+    /// </summary>
+    public double DeadheadMph { get; set; }
+
+    /// <summary>
+    /// Time to get to a shipper the listing gives no distance for, learned from the driver's pickups. Planned as a
+    /// drive before loading; zero = none. <see cref="PickupNote"/> says where the figure came from.
+    /// </summary>
+    public double PickupHours { get; set; }
+    public double PickupMiles { get; set; }
+    public string PickupNote { get; set; } = "";
+
+    /// <summary>Said where the loaded leg is planned on a driven distance rather than the listing's.</summary>
+    public string RouteNote { get; set; } = "";
 }
 
 /// <summary>
@@ -316,8 +344,19 @@ public static class HosEngine
             {
                 Label = $"Deadhead {Units.Dist(req.DeadheadMiles):0} {Units.DistUnit}{(req.DeadheadIsEstimate ? " (estimated)" : "")}",
                 Kind = "Drive",
-                Hours = driveHours * dhShare,
+                // At the speed the driver's own pickup legs make, where that is slower than the highway figure.
+                Hours = req.DeadheadMph > 0 ? Math.Max(driveHours * dhShare, req.DeadheadMiles / req.DeadheadMph) : driveHours * dhShare,
                 Miles = req.DeadheadMiles
+            });
+        else if (req.PickupHours > 0)
+            // No distance on the listing, so the shipper is not where the truck stands just because the town is the
+            // same: the time the driver's own pickups take, learned. See Services.PickupLearning.
+            tasks.Add(new HosTask
+            {
+                Label = "Deadhead to the shipper (no distance listed)",
+                Kind = "Drive",
+                Hours = req.PickupHours,
+                Miles = req.PickupMiles
             });
 
         // Behind a van or a reefer the dock does the work and the driver waits it out in the bunk;
@@ -349,8 +388,11 @@ public static class HosEngine
                     Hours = loadedDrive / segments,
                     Miles = req.LoadedMiles / segments
                 });
+                // Fuel goes on a break or a rest, not on the clock: the truck is stopped then anyway. Reported from
+                // play: "don't count fuel stops, these can be done on a break or a rest" — a quarter of an hour of
+                // spread each was the difference on loads that missed by minutes. Still counted and said.
                 if (i < fuelStops)
-                    tasks.Add(new HosTask { Label = "Fuel stop", Kind = "OnDuty", Hours = s.FuelStopHours });
+                    tasks.Add(new HosTask { Label = "Fuel stop", Kind = "OnDuty", Hours = 0 });
             }
         }
         else if (req.LoadedMiles > 0)
@@ -371,6 +413,21 @@ public static class HosEngine
             tasks.Add(new HosTask { Label = handsOff ? (HosWords.Eu ? "Unloading — waiting while the dock works" : "Unloading — in the bunk") : "Unload / drop",
                                     Kind = "OnDuty", Hours = req.UnloadingHours,
                                     IsUnload = true, AtDock = true, HandsOff = handsOff });
+
+        // A crossing with no road either side of it (Bari to Durrës, port to port) still has to be sailed. With no
+        // drive to split there was nothing to put it in, and the plan came out as a loading and an unloading five
+        // hours apart — which then won as the soonest way across. Found in a ferry audit. A leg of no miles is put in
+        // for it; InsertCrossing leaves no empty drive behind.
+        if (req.LoadedCrossing != null && !tasks.Any(t => t.Kind == "Drive" && t.Label.StartsWith("Line haul")))
+        {
+            var at = tasks.FindIndex(t => t.IsUnload);
+            tasks.Insert(at < 0 ? tasks.Count : at, new HosTask { Label = "Line haul", Kind = "Drive", Hours = 0, Miles = 0 });
+        }
+        if (req.DeadheadCrossing != null && !tasks.Any(t => t.Kind == "Drive" && t.Label.StartsWith("Deadhead")))
+        {
+            var at = tasks.FindIndex(t => t.AtDock);
+            tasks.Insert(at < 0 ? 0 : at, new HosTask { Label = "Deadhead to the shipper", Kind = "Drive", Hours = 0, Miles = 0 });
+        }
 
         // A crossing splits its leg at the port: the road to it, the ship or the train, the road from it.
         if (req.DeadheadCrossing is { } dc) InsertCrossing(tasks, t => t.Label.StartsWith("Deadhead"), dc);
@@ -563,7 +620,33 @@ public static class HosEngine
         return 1 + (int)Math.Floor(Math.Max(0, after - 0.01) / plannedRange);
     }
 
+    /// <summary>
+    /// The plan, with the EU's reduced daily rests used where the full eleven would make the delivery late. The law
+    /// allows three between weekly rests and they are there for exactly this: a plan that rests eleven and misses the
+    /// window, where nine would have made it, is the planner refusing a legal load. Reported from play: Rotterdam to
+    /// Brno at the gate 1:08 after the close, behind an eleven-hour rest with three reduced ones in hand.
+    /// </summary>
     public static FeasibilityResult Plan(AppState state, PlanRequest req, Truck? truck = null)
+    {
+        var first = PlanOnce(state, req, truck);
+        if (req.PreferReducedRests || GameProfile.For(state).HosRuleset != "EU561") return first;
+        // Only worth a second look where it could change something: short of the buffer, with a full rest in it.
+        if (first.SlackHours >= first.RequiredBufferHours || first.RestsRequired <= first.ReducedDailyRests) return first;
+        var r = req.Clone();
+        r.PreferReducedRests = true;
+        var second = PlanOnce(state, r, truck);
+        static int Rank(string v) => v == "Feasible" ? 0 : v == "Tight" ? 1 : 2;
+        var better = Rank(second.Verdict) < Rank(first.Verdict)
+                     || (Rank(second.Verdict) == Rank(first.Verdict) && second.SlackHours > first.SlackHours + 0.01);
+        if (!better) return first;
+        second.Warnings.Insert(0,
+            $"The daily rest{(second.ReducedDailyRests > 1 ? "s" : "")} on this run {(second.ReducedDailyRests > 1 ? "are reduced ones" : "is a reduced one")} " +
+            $"of {Hhmm.Of((state.Settings.EuHos ?? new EuHosRules()).ReducedDailyRest)}: the full eleven would put you at the gate " +
+            (first.SlackHours < 0 ? $"{Hhmm.Of(-first.SlackHours)} after the window closes." : $"with only {Hhmm.Of(first.SlackHours)} to spare."));
+        return second;
+    }
+
+    private static FeasibilityResult PlanOnce(AppState state, PlanRequest req, Truck? truck)
     {
         var s = state.Settings;
         // EU careers plan on Regulation 561/2006. The shared paths below read `rules`, which for EU is the EU
@@ -648,6 +731,8 @@ public static class HosEngine
         // As of the plan's start, not of the last report: the stored figure stops when the clocks were typed.
         var sinceWeekly = EuCounters.HoursSinceWeeklyRest(state, start.Value);
         var lastWeeklyReduced = hos.EuLastWeeklyRestReduced;
+        // Two reduced in a row already: a ban wait may not make it three.
+        var reducedInARow = eu ? EuCounters.ReducedWeeklyInARow(state, start.Value) : 0;
         var owed = Math.Max(0, hos.EuCompensationOwed);
         var owedAtStart = owed;
         if (eu)
@@ -655,6 +740,12 @@ public static class HosEngine
                                          euR.FortnightDriving - lastWeekDriven - weekDriven));
 
         var clock = start.Value;
+        // The country the truck is standing in, as the plan moves it — for a rest that a weekend ban would
+        // stretch into a weekly one (TakeEuDailyRest).
+        var hereCc = eu ? (string.IsNullOrWhiteSpace(req.FromState) ? state.Status.LocationState ?? "" : req.FromState) : "";
+        // When the truck reaches the receiver's gate: what the delivery window is judged against. Null for a plan
+        // with no unload in it (an empty move), where the end of the plan is the arrival.
+        DateTime? gateAt = null;
         var bansSaid = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Each batch with the moment it actually lands, worked out once from the day the trip starts.
         //
@@ -883,12 +974,31 @@ public static class HosEngine
             if (!nextRestReduced && cover > Eps && cover < euR.RegularDailyRest - Eps && reducedLeft > 0)
             {
                 var keepsWindow = req.DeadlineHours <= 0
-                    || (start.Value.AddHours(req.DeadlineHours) - clock.AddHours(euR.RegularDailyRest + dockAfter)).TotalHours
-                       - Math.Max(0, s.ParkingBufferHours) >= Math.Max(0, s.SafetyBufferHours) - Eps;
+                    || (start.Value.AddHours(req.DeadlineHours) - clock.AddHours(euR.RegularDailyRest)).TotalHours
+                       >= Math.Max(0, s.SafetyBufferHours) - Eps;
                 reduceForWait = !keepsWindow;
             }
+            // The second try (see Plan): every daily rest a reduced one while any are left.
+            if (!nextRestReduced && !reduceForWait && req.PreferReducedRests && reducedLeft > 0
+                && cover < euR.RegularDailyRest - Eps)
+                reduceForWait = true;
             var reduced = nextRestReduced || reduceForWait;
             var len = Math.Max(cover, reduced ? euR.ReducedDailyRest : euR.RegularDailyRest);
+            // A rest that would end inside a weekend truck ban where the truck is parked: the ban holds it there
+            // anyway, and a day or more parked is the weekly rest. So it is one, from now until the ban lifts —
+            // not an eleven, then the ban, then a weekly rest on top. Reported from play: a Saturday-afternoon
+            // delivery in Frankfurt planned as an eleven ending at 02:30 Sunday, a load, then a separate 24.
+            if (!string.IsNullOrEmpty(hereCc) && BanLiftsAt(hereCc, clock.AddHours(len)) is { } liftsAfter
+                && (liftsAfter - clock).TotalHours >= euR.ReducedWeeklyRest - Eps)
+            {
+                // As long as dispatch orders it (Restart.EuWeeklyRestPlan): on to Monday 00:00 where that is later
+                // than the ban, when weekly driving comes back too — and no more than a full 45.
+                var monday = WeekStart(liftsAfter).AddDays(7);
+                var until = liftsAfter > monday ? liftsAfter : monday;
+                var hours = Math.Clamp(Math.Ceiling((until - clock).TotalHours * 4) / 4, euR.ReducedWeeklyRest, euR.RegularWeeklyRest);
+                WaitOutBan(hereCc, Math.Max(cover, hours));
+                return;
+            }
             if (sinceWeekly + len + euR.Spread > euR.WeeklyRestDueAfterHours)
             {
                 TakeEuWeeklyRest(cover, "your six days since the last weekly rest are up");
@@ -927,7 +1037,8 @@ public static class HosEngine
             // owed paid back, which is what home time is. Without it, a Saturday ban after a reduced rest held the
             // truck for forty-five hours and more, to Tuesday, when the law asks only that it waits for the ban.
             var secondInARow = banWait && lastWeeklyReduced;
-            var canReduce = euR.AllowReducedWeeklyRest && (!lastWeeklyReduced || banWait);
+            var canReduce = euR.AllowReducedWeeklyRest && (!lastWeeklyReduced || banWait)
+                            && reducedInARow < EuCounters.MaxReducedWeeklyInARow;
             var len = canReduce ? Math.Max(euR.ReducedWeeklyRest, atLeast) : Math.Max(euR.RegularWeeklyRest + owed, atLeast);
             var reduced = canReduce && len < euR.RegularWeeklyRest - Eps;
             var owedNow = reduced ? euR.RegularWeeklyRest - len : 0;
@@ -954,6 +1065,7 @@ public static class HosEngine
             if (reduced) { owed += owedNow; result.ReducedWeeklyRests++; }
             else owed = 0;
             lastWeeklyReduced = reduced;
+            reducedInARow = reduced ? reducedInARow + 1 : 0;
             result.WeeklyRestsRequired++;
             drive = euR.DailyDriving;
             shift = euR.Spread;
@@ -1015,7 +1127,10 @@ public static class HosEngine
             var arrive = clock;
             var real = Ferries.RealSailings(state) && route.HasTimetable;
             var ready = real ? arrive.AddHours(route.CheckInHours) : arrive;
-            var departs = Ferries.NextDeparture(state, route, task.CrossingFromA, ready);
+            // The next sailing, past any the driver has said they will miss.
+            DateTime NextSailing(DateTime at) => Ferries.NextDeparture(state, route, task.CrossingFromA,
+                req.MissedSailings?.TryGetValue(route.Id, out var missed) == true && at <= missed ? missed.AddMinutes(1) : at);
+            var departs = NextSailing(ready);
             var wait = Math.Max(0, (departs - arrive).TotalHours);
             var h = route.Hours;
             var cabinRest = eu && route.Cabin && (h >= euR.RegularDailyRest - Eps || (h >= euR.ReducedDailyRest - Eps && reducedLeft > 0));
@@ -1026,10 +1141,21 @@ public static class HosEngine
             {
                 result.Warnings.Add($"Your spread will not last to the far side of {route.Label} with no cabin to rest in, so " +
                                     "the daily rest is taken before you board.");
-                TakeReset();
+                // Timed to end at check-in for the sailing after it, not at the eleven. A rest that ends hours before
+                // the boat leaves sits the gap on the new spread, and the driver comes off the far side with none
+                // left — a second rest ashore. Reported from play: Sundsvall to Vaasa, rest at Umeå 12:45–23:45, then
+                // 8:15 at the terminal for the 08:00, and another eleven in Vaasa; so Kapellskär – Naantali, 1,114 km,
+                // won over the 402 km the game routes by Umeå.
+                var restEnds = clock.AddHours(euR.RegularDailyRest);
+                var boat = NextSailing(real ? restEnds.AddHours(route.CheckInHours) : restEnds);
+                var cover = (boat - clock).TotalHours - (real ? route.CheckInHours : 0);
+                if (cover > euR.RegularDailyRest + Eps && cover < euR.ReducedWeeklyRest - Eps)
+                    TakeEuDailyRest(cover, what: $"Rest until check-in for the {GameClock.Pretty(boat)} {what}");
+                else
+                    TakeReset();
                 arrive = clock;
                 ready = real ? arrive.AddHours(route.CheckInHours) : arrive;
-                departs = Ferries.NextDeparture(state, route, task.CrossingFromA, ready);
+                departs = NextSailing(ready);
                 wait = Math.Max(0, (departs - arrive).TotalHours);
             }
 
@@ -1052,11 +1178,35 @@ public static class HosEngine
                 result.FerryWaitHours += Math.Round(wait, 2);
             }
 
-            if (cabinRest)
+            // A day or more in a cabin may be the weekly rest — only where it is worth one: the same rule the log uses
+            // (EuCounters.CountAsWeekly), so the plan and the log never count the crossing differently.
+            var asWeekly = cabinRest && h >= euR.ReducedWeeklyRest - Eps
+                           && EuCounters.CountAsWeekly(euR, h, sinceWeekly, reducedInARow);
+            if (asWeekly)
+            {
+                var regular = h >= euR.RegularWeeklyRest - Eps;
+                var owedNow = regular ? 0 : euR.RegularWeeklyRest - h;
+                Step($"{task.Label} — {Hhmm.Of(h)} with a cabin, taken as the " +
+                     (regular ? "weekly rest" : $"reduced weekly rest: your six days were nearly up, {Hhmm.Of(owedNow)} owed back") +
+                     (!regular && reducedInARow > 0 ? ". Your second reduced one in a row — the next weekly rest is at home" : ""),
+                     "Restart", h, 0);
+                if (regular) owed = Math.Max(0, owed - (h - euR.RegularWeeklyRest));
+                else { owed += owedNow; result.ReducedWeeklyRests++; }
+                lastWeeklyReduced = !regular;
+                reducedInARow = regular ? 0 : reducedInARow + 1;
+                result.WeeklyRestsRequired++;
+                drive = euR.DailyDriving; shift = euR.Spread; brk = euR.DrivingBeforeBreak;
+                sinceWeekly = 0;
+                reducedLeft = euR.ReducedRestsBetweenWeekly;
+                extendedToday = false; spreadExtended = false; nextRestReduced = false;
+                drivenToday = 0;
+            }
+            else if (cabinRest)
             {
                 var reduced = h < euR.RegularDailyRest - Eps;
                 if (reduced) { reducedLeft--; result.ReducedDailyRests++; }
-                Step($"{task.Label} — {Hhmm.Of(h)} with a cabin, taken as the {(reduced ? "reduced " : "")}daily rest", "Rest", h, 0);
+                Step($"{task.Label} — {Hhmm.Of(h)} with a cabin, taken as the {(reduced ? "reduced " : "")}daily rest" +
+                     (eu && h >= euR.ReducedWeeklyRest - Eps ? " — a long one, not your weekly rest: your six days run on" : ""), "Rest", h, 0);
                 drive = euR.DailyDriving; shift = euR.Spread; brk = euR.DrivingBeforeBreak;
                 result.RestsRequired++;
             }
@@ -1070,7 +1220,7 @@ public static class HosEngine
             result.CrossingRoutes.Add(route.Id);
             result.Crossings.Add($"{task.Label}: the {GameClock.Pretty(departs)} {what}, {Hhmm.Of(h)} across" +
                                  (wait > 0.01 ? $" after {Hhmm.Of(wait)} at the port" : "") +
-                                 (cabinRest ? ", which is the daily rest" : "") + ".");
+                                 (asWeekly ? ", which is the weekly rest" : cabinRest ? ", which is the daily rest" : "") + ".");
         }
 
         foreach (var task in tasks)
@@ -1296,7 +1446,7 @@ public static class HosEngine
             // plan, unloading included, and quoting a slot against that pushed every appointment out by
             // the dock hours: a slot correctly clamped to 19:30 to fit the fourteen came back to the
             // driver as 21:00, which is when they would have been finished, not when they were due.
-            if (task.IsUnload) result.ProjectedDockStartGameTime = Shown(clock);
+            if (task.IsUnload) { result.ProjectedDockStartGameTime = Shown(clock); gateAt = clock; }
 
             var queue = 0.0;
             if (task.IsUnload && task.AtDock && req.SiteQueuePeakHours > 0 && req.SiteOpenHour >= 0)
@@ -1330,6 +1480,7 @@ public static class HosEngine
                     {
                         var progressed = task.Miles - milesRemaining;
                         banCc = task.BorderAtMiles is { } b && progressed >= b - 1e-6 ? task.ToCc : task.FromCc;
+                        if (!string.IsNullOrEmpty(banCc)) hereCc = banCc;
                         if (BanLiftsAt(banCc, clock) is { } lifts)
                         {
                             WaitOutBan(banCc, (lifts - clock).TotalHours);
@@ -1434,6 +1585,7 @@ public static class HosEngine
                     drive -= cap; shift -= cap; cycle -= cap;
                     if (requireBreak) brk -= cap;
                     remaining -= cap; milesRemaining -= miles;
+                    if (eu && remaining <= Eps && !string.IsNullOrEmpty(task.ToCc)) hereCc = task.ToCc;
                     // The truck has moved, so wherever it was standing it is not standing there now.
                     atFacility = null;
                     drivenToday += cap;
@@ -1562,10 +1714,23 @@ public static class HosEngine
 
         var due = start.Value.AddHours(req.DeadlineHours);
         result.DueGameTime = Shown(due);
-        var parking = Math.Max(0, s.ParkingBufferHours);
-        result.RequiredBufferHours = Math.Max(0, s.SafetyBufferHours)
-                                     + (req.WideMarketPickup ? PlanRequest.WideMarketExtraBufferHours : 0);
-        result.SlackHours = Math.Round((due - clock).TotalHours - parking, 2);
+        // EU: no buffer on top. The plan already counts every break, rest and hour at the dock, and ETS2's windows
+        // were never set with the EU's hours in mind — a buffer on top turned away load after legal load. Reported
+        // from play, on probation: Rotterdam with nothing to run, Brno at the gate with 1:10 in hand rejected
+        // against two hours. A load that makes the gate is deliverable; how thin it is gets said, not refused.
+        result.RequiredBufferHours = eu ? 0
+            : Math.Max(0, s.SafetyBufferHours) + (req.WideMarketPickup ? PlanRequest.WideMarketExtraBufferHours : 0);
+        // Slack is to the GATE, not to the end of the unload. The window closing is the time to be there by: that
+        // is how a delivered load is graded (TripService.LateByTheClock, on the time you arrived), and how the game
+        // grades it. Reported from play: a fresh-clocked driver shut out of a 32-load board, because every load had
+        // the unload and a parking hour taken off its slack — over three hours a load that the close-out would
+        // never have counted. The unload still runs the spread down; that is checked where it belongs, against
+        // the hours left on arrival.
+        var gate = gateAt ?? clock;
+        result.SlackHours = Math.Round((due - gate).TotalHours, 2);
+        if (eu && req.DeadlineHours > 0 && result.SlackHours >= 0 && result.SlackHours < 1)
+            result.Warnings.Add($"Only {Hhmm.Of(result.SlackHours)} to spare at the gate. It is legal and it makes the window, " +
+                                "but there is no room for a closed road or a slow dock — keep moving.");
 
         // Said out loud, because the step list below and the arrival time above are now on two different
         // clocks and the driver would otherwise have to work out why they do not add up. The steps cannot
@@ -1576,6 +1741,10 @@ public static class HosEngine
             result.Warnings.Add(
                 $"{crossing} The step times below run on the clock you are reading now; the arrival, the " +
                 "window and any slot are the receiver's.");
+
+        if (req.PickupHours > 0 && req.DeadheadMiles <= 0 && !string.IsNullOrWhiteSpace(req.PickupNote))
+            result.Warnings.Add(req.PickupNote);
+        if (!string.IsNullOrWhiteSpace(req.RouteNote)) result.Warnings.Add(req.RouteNote);
 
         // No opening time on file, and a plan that lands most of a day early. ATS windows are hours wide,
         // not days, so arriving this far ahead almost certainly means arriving before the receiver will
@@ -1597,16 +1766,8 @@ public static class HosEngine
             // reading "window 21:26 -> 04:06" beside "misses the 04:06 appointment", which reads as the
             // app booking a slot at the closing edge — and invited exactly the question of why the
             // appointment sits where it does. It is the deadline; say deadline.
-            // When the finish itself is inside the window, it is the parking allowance that tips it over — and
-            // saying "03:50 is past 04:07" without that reads as the app unable to tell the time.
-            var parkingAllowance = Math.Max(0, s.ParkingBufferHours);
-            result.Blockers.Add(clock <= due && parkingAllowance > 0
-                ? $"Done at the dock {GameClock.Pretty(There(clock))}, and the {GameClock.Pretty(There(due))} window close leaves " +
-                  $"only {Hhmm.Of((due - clock).TotalHours)} of that — under the {Hhmm.Of(parkingAllowance)} parking allowance " +
-                  $"by {Hhmm.Of(Math.Abs(result.SlackHours))}. Not deliverable legally."
-                : $"Projected arrival {GameClock.Pretty(There(clock))} is past the {GameClock.Pretty(There(due))} window " +
-                  $"closing by {Hhmm.Of(Math.Abs(result.SlackHours))} after parking allowance. " +
-                  "Not deliverable legally.");
+            result.Blockers.Add($"At the gate {GameClock.Pretty(There(gate))}, {Hhmm.Of(Math.Abs(result.SlackHours))} after the " +
+                                $"{GameClock.Pretty(There(due))} window closes. Not deliverable legally.");
         }
         else if (result.SlackHours < result.RequiredBufferHours)
         {
@@ -1756,6 +1917,10 @@ public static class HosEngine
                 $"nothing to do with the delivery window. If they hold you {Hhmm.Of(shift)} longer than " +
                 $"planned, the {(eu ? "spread runs out" : "window shuts")} while you are on the property. {berth}");
 
+        if (result.FuelStopsRequired > 0)
+            result.Warnings.Add(result.FuelStopsRequired == 1
+                ? "One fuel stop on this run. Take it on a break or a rest — the plan gives it no time of its own."
+                : $"{result.FuelStopsRequired} fuel stops on this run. Take them on your breaks or rests — the plan gives them no time of their own.");
         if (result.FuelStopsRequired == 0 && result.TotalMiles > req.UsableFuelRangeMiles)
             result.Warnings.Add("Fuel range check could not be resolved — confirm the fuel level.");
 

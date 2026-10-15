@@ -381,6 +381,9 @@ public static class TripService
                 ? (end - start).TotalHours
                 : route?.Hours ?? 0;
             var value = route != null ? Ferries.RestValue(route, hours, ev.Cabin) : "";
+            // 24 to 45 hours in a cabin may be the weekly rest or a long daily one: decided now, kept on the event.
+            if (LongOff(s, ev, hours) is { } boarded)
+                value = EuCounters.Counted(s, hours, boarded, ev.WeeklyRest);
             var what = route?.Train == true ? "Channel Tunnel" : route != null ? route.Label : "Ferry";
             ev.Detail = string.Join(" ", new[]
             {
@@ -394,13 +397,18 @@ public static class TripService
         // rest. Said on the log, and the counters that come off the log (reduced rests used, the weekly rest,
         // the spread) are worked out again now rather than at the next status-line report. Reported from play:
         // a reduced nine logged as a Break went uncounted.
-        if (HosEngine.Eu(s) && ev.Kind is "Rest" or "Restart" or "Break"
+        // A crossing in a cabin is time off too, and is worked into the counters now: a long one is the daily or the
+        // weekly rest, and the clocks waited for the next status line to hear about it.
+        if (HosEngine.Eu(s) && (ev.Kind is "Rest" or "Restart" or "Break" || (ev.Kind == "Ferry" && ev.Cabin))
             && GameClock.TryParse(ev.EndGameTime) is { } offEnd && GameClock.TryParse(ev.GameTime) is { } offStart && offEnd > offStart)
         {
             var offHours = (offEnd - offStart).TotalHours;
             var euR = s.Settings.EuHos ?? new EuHosRules();
-            var value = EuCounters.RestValue(s, offHours);
-            if (value.Length > 0)
+            if (ev.Kind != "Ferry") LongOff(s, ev, offHours);
+            var value = offHours >= euR.ReducedWeeklyRest - 0.01 && offHours < euR.RegularWeeklyRest - 0.01 && ev.WeeklyRest.Length > 0
+                ? EuCounters.Counted(s, offHours, offStart, ev.WeeklyRest)
+                : EuCounters.RestValue(s, offHours, offStart);
+            if (value.Length > 0 && ev.Kind != "Ferry")
                 ev.Detail = string.Join(" ", new[] { $"{Hhmm.Of(offHours)} off: under EU rules that is {value}.", ev.Detail }
                     .Where(x => !string.IsNullOrWhiteSpace(x)));
 
@@ -431,6 +439,47 @@ public static class TripService
         // Events carry a location when the driver gives one — that is a city we have now been to.
         if (!string.IsNullOrWhiteSpace(ev.City))
             DiscoveryService.Note(s, ev.City, ev.State, ev.GameTime, trip.Number);
+    }
+
+    /// <summary>
+    /// EU, 24 to 45 hours off: settle whether it is the weekly rest or a long daily one, once, on the event — the
+    /// driver's own choice where they made one, a Restart logged as such, otherwise <see cref="EuCounters.Decide"/>.
+    /// Returns when it started, or null where the event is not that.
+    /// </summary>
+    private static DateTime? LongOff(AppState s, TripEvent ev, double hours)
+    {
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        if (!HosEngine.Eu(s) || (ev.Kind == "Ferry" && !ev.Cabin)
+            || hours < r.ReducedWeeklyRest - 0.01 || hours >= r.RegularWeeklyRest - 0.01
+            || GameClock.TryParse(ev.GameTime) is not { } start) return null;
+        if (ev.WeeklyRest is not ("weekly" or "daily"))
+            ev.WeeklyRest = ev.Kind == "Restart" ? "weekly" : EuCounters.Decide(s, start, hours);
+        return start;
+    }
+
+    /// <summary>
+    /// The driver's say on a long stretch off: the weekly rest, or a long daily one. Rewrites what the log says it
+    /// counts as and works the counters out again.
+    /// </summary>
+    public static TripEvent SetWeeklyRest(AppState s, string tripId, string eventId, bool weekly)
+    {
+        var trip = s.Trips.FirstOrDefault(t => t.Id == tripId) ?? throw new InvalidOperationException("Trip not found.");
+        var ev = trip.Events.FirstOrDefault(e => e.Id == eventId) ?? throw new InvalidOperationException("Event not found.");
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        if (GameClock.TryParse(ev.GameTime) is not { } start || GameClock.TryParse(ev.EndGameTime) is not { } end || end <= start)
+            throw new InvalidOperationException("That entry has no end time, so it is not a stretch off.");
+        var hours = (end - start).TotalHours;
+        if (hours < r.ReducedWeeklyRest - 0.01 || hours >= r.RegularWeeklyRest - 0.01)
+            throw new InvalidOperationException("Only 24 to 45 hours off can go either way.");
+        if (weekly && EuCounters.ReducedWeeklyUsedUp(s, start))
+            throw new InvalidOperationException("You have had two reduced weekly rests in a row — a third cannot be one.");
+        var old = EuCounters.Counted(s, hours, start, ev.WeeklyRest);
+        ev.WeeklyRest = weekly ? "weekly" : "daily";
+        var said = EuCounters.Counted(s, hours, start, ev.WeeklyRest);
+        ev.Detail = ev.Detail.Contains(old) ? ev.Detail.Replace(old, said) : $"{ev.Detail} Now counted as {said}.".Trim();
+        if (GameClock.TryParse(s.Status.GameTime) is { } now)
+            EuCounters.Derive(s, now, s.Hos.EuWeekDriven, s.Hos.EuDayWeek, report: false);
+        return ev;
     }
 
     /// <summary>
@@ -831,7 +880,7 @@ public static class TripService
         audit.Warnings.AddRange(mileage.Warnings);
 
         if (trip.FeasibilityAtDispatch is { } f && GameClock.TryParse(trip.DeliveredGameTime) is DateTime del
-            && GameClock.TryParse(f.ProjectedArrivalGameTime) is DateTime proj)
+            && DispatchEngine.GateArrivalOf(f) is DateTime proj)
         {
             var driftHours = (del - proj).TotalHours;
             audit.ServiceFindings.Add($"Projected arrival was {GameClock.Pretty(proj)}; you delivered {GameClock.Pretty(del)} ({driftHours:+0.#;-0.#;0} h vs plan).");
@@ -854,6 +903,9 @@ public static class TripService
         // ---- ledger
         trip.Status = "Delivered";
         trip.ClosedUtc = DateTime.UtcNow.ToString("o");
+        // What the odometer says the road was, for every plan on it from here. See RoadLearning.
+        foreach (var leg in RoadLearning.RecordTrip(s, trip))
+            audit.ServiceFindings.Add($"Driven distance recorded — {leg}. I plan this road on it from now on.");
         // The truck's cabotage, on an EU career: an international delivery abroad opens a period, a domestic
         // load abroad spends one, a delivery home ends it.
         Cabotage.Record(s, trip);
@@ -1985,7 +2037,7 @@ public static class TripService
         // happening at dispatch, but a plan can change underneath a load — a reroute, a breakdown,
         // an operational 34 — and leave an old slot behind it. This produced a false strike on a
         // real career once; it does not get to happen twice.
-        var plannedArrival = GameClock.TryParse(trip.FeasibilityAtDispatch?.ProjectedArrivalGameTime ?? "");
+        var plannedArrival = trip.FeasibilityAtDispatch is { } atDispatch ? DispatchEngine.GateArrivalOf(atDispatch) : null;
 
         if (margin >= 0 && !trip.ReceiverTakesEarly
             && GameClock.TryParse(trip.AppointmentGameTime) is { } slot
