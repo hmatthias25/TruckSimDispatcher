@@ -29,6 +29,10 @@ including the home-time ceiling that stops a load running the wrong way.
 European place coordinates come from [GeoNames](https://www.geonames.org/) too (CC BY 4.0) — about
 96,600 places across every country ETS2 and ProMods drive.
 
+Road distances between the ETS2 and ProMods cities are measured on real roads with
+[OSRM](https://project-osrm.org/) over [OpenStreetMap](https://www.openstreetmap.org/copyright) data
+(© OpenStreetMap contributors, ODbL), built by `tools/ets2-data/build_roads.py`.
+
 ---
 
 ## Running it

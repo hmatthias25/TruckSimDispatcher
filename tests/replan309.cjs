@@ -49,9 +49,12 @@ const KM = 1.609344;
   ok('more than one way across weighed', rp.options.length >= 2, rp.options.join(' | '));
   ok('  the best one marked', rp.options.filter((l) => /^BEST/.test(l)).length === 1, rp.options[0]);
   ok('  and an arrival given', /At the receiver/.test(rp.headline), rp.headline);
-  ok('close arrivals go to the way with less driving: the Helsinki boat, not Naantali and 860 km more road',
-    rp.plan.crossingRoutes.includes('travemunde-helsinki') && /more driving — not worth it/.test(rp.plan.warnings[0] || ''),
-    rp.plan.warnings[0]);
+  // On real road distances (v0.87) Kapellskär to Groningen is the long way through Sweden: the Helsinki boat is not
+  // only less driving but the soonest, by hours.
+  const naantali = rp.options.find((l) => /Naantali/.test(l)) || '';
+  ok('the Helsinki boat is best, and Naantali gets there later with far more road',
+    rp.plan.crossingRoutes.includes('travemunde-helsinki') && /^BEST — Over Helsinki/.test(rp.options[0]) && !/^BEST/.test(naantali),
+    `${rp.options[0]} | ${naantali}`);
   const firstRoutes = rp.plan.crossingRoutes;
   const firstArr = rp.plan.projectedArrivalGameTime;
   let ex = (await api('/export')).trips.find((t) => t.id === trip.id);

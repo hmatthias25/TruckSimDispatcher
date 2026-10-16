@@ -121,7 +121,9 @@ async function story(name, eu, A, Bp, km, extra) {
   await api('/onboarding/market', 'POST', eu);
   await api('/onboarding/hire', 'POST', { application: eu, force: true, gameTime: iso(1, '06:00') });
   await story('ETS2', true, { city: 'Mannheim', state: 'DE' }, { city: 'Stuttgart', state: 'DE' }, true,
-    { B2: { city: 'Würzburg', state: 'DE' }, B3: { city: 'Karlsruhe', state: 'DE' }, C: { city: 'Nürnberg', state: 'DE' } });
+    { B2: { city: 'Würzburg', state: 'DE' }, B3: { city: 'Karlsruhe', state: 'DE' }, C: { city: 'Fulda', state: 'DE' } });
+  // Fulda rather than Nürnberg: a game city is on the road table (v0.87), measured, and a learned factor corrects
+  // only a straight-line estimate.
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

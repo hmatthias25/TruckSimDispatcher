@@ -77,7 +77,7 @@ public static class Crossings
     /// </summary>
     public sealed record Option(Ferries.Route Route, bool FromA, double MilesBefore, double MilesAfter,
                                 Ferries.Route? Route2 = null, bool FromA2 = false, double MilesBetween = 0,
-                                bool Shortcut = false)
+                                bool Shortcut = false, bool RoadMeasured = false)
     {
         public double RoadMiles => MilesBefore + MilesBetween + MilesAfter;
         /// <summary>
@@ -194,7 +194,8 @@ public static class Crossings
     {
         var (pc, pcc) = Near(r, fromA);
         var (qc, qcc) = Far(r, fromA);
-        return new Option(r, fromA, Road(fromCity, fromCc, pc, pcc), Road(qc, qcc, toCity, toCc));
+        return new Option(r, fromA, Road(fromCity, fromCc, pc, pcc), Road(qc, qcc, toCity, toCc),
+            RoadMeasured: Measured(fromCity, fromCc, pc, pcc) != null && Measured(qc, qcc, toCity, toCc) != null);
     }
 
     /// <summary>
@@ -205,7 +206,15 @@ public static class Crossings
         RoadOrNull(fromCity, fromCc, toCity, toCc) ?? 0;
 
     private static double? RoadOrNull(string? fromCity, string? fromCc, string? toCity, string? toCc) =>
-        Geo.RoadDetour(fromCity, fromCc, toCity, toCc)?.Miles ?? Geo.MilesBetween(fromCity, fromCc, toCity, toCc);
+        Measured(fromCity, fromCc, toCity, toCc)
+        ?? Geo.RoadDetour(fromCity, fromCc, toCity, toCc)?.Miles ?? Geo.MilesBetween(fromCity, fromCc, toCity, toCc);
+
+    /// <summary>
+    /// The road as driven (Services.RoadLearning) or as measured on real roads (Services.RoadTable): a figure, not a
+    /// guess. Null where neither knows the pair.
+    /// </summary>
+    private static double? Measured(string? fromCity, string? fromCc, string? toCity, string? toCc) =>
+        RoadLearning.Known(fromCity, fromCc, toCity, toCc) ?? Geo.TableRoad(fromCity, fromCc, toCity, toCc);
 
     /// <summary>
     /// The ways to run one leg, the plain one first: every way across when there is water in the way (the
@@ -429,6 +438,10 @@ public static class Crossings
     /// </summary>
     private static List<Option> ScaleRoad(List<Option> options, Option near, double listedMiles)
     {
+        // The road either side measured, not guessed: it stands as it is. Fitting it to the listing leaned on the sea's
+        // length, which is a guess of its own — and squeezed Travemünde to Groningen to 247 km after the Helsinki boat,
+        // where the road is nearer 400. Reported from play; the driver was late.
+        if (near.RoadMeasured) return options;
         var roadLeft = Math.Max(0, listedMiles - near.SeaMiles);
         if (near.RoadMiles <= 0.01)
             return options.Select(o => o.RoadMiles <= 0.01 ? o with { MilesBefore = roadLeft / 2, MilesBetween = 0, MilesAfter = roadLeft / 2 } : o).ToList();

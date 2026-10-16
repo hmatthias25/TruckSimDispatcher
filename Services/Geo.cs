@@ -330,6 +330,25 @@ public static class Geo
 
     public static (double Miles, string Via)? RoadDetour(string? cityA, string? stateA, string? cityB, string? stateB)
     {
+        if (ByWaypoints(cityA, stateA, cityB, stateB) is not { } way) return null;
+        // The way round, measured, where the road table has it: the waypoints only say which way it goes.
+        return TableRoad(cityA, stateA, cityB, stateB) is { } road ? (Math.Round(road, 0), way.Via) : way;
+    }
+
+    /// <summary>
+    /// The road table's figure for a pair (Services.RoadTable), unless it plainly took a boat: the router uses short
+    /// ferries where they are quicker, and Tallinn to Helsinki came back as 98 km "by road". Where the straight line
+    /// crosses a sea and the figure is well under the way round, it is not a road, and the app plans the crossing.
+    /// </summary>
+    public static double? TableRoad(string? cityA, string? stateA, string? cityB, string? stateB)
+    {
+        if (RoadTable.Miles(cityA, stateA, cityB, stateB) is not { } road) return null;
+        if (ByWaypoints(cityA, stateA, cityB, stateB) is { } round && road < round.Miles * 0.7) return null;
+        return road;
+    }
+
+    private static (double Miles, string Via)? ByWaypoints(string? cityA, string? stateA, string? cityB, string? stateB)
+    {
         if (Locate(cityA, stateA) is not { } a || Locate(cityB, stateB) is not { } b) return null;
         var ca = (stateA ?? "").Trim().ToUpperInvariant();
         var cb = (stateB ?? "").Trim().ToUpperInvariant();
@@ -369,6 +388,9 @@ public static class Geo
     /// </summary>
     public static double? MilesBetween(string? cityA, string? stateA, string? cityB, string? stateB) =>
         RoadLearning.Known(cityA, stateA, cityB, stateB)
+        // ETS2: measured on real roads, between the game's own cities (Services.RoadTable). Not scaled by the learned
+        // factor — that corrects a straight line, and this is not one.
+        ?? (TableRoad(cityA, stateA, cityB, stateB) is { } road ? Math.Round(road, 0) : (double?)null)
         ?? (EstimatedMiles(cityA, stateA, cityB, stateB) is { } est
             ? Math.Round(est * RoadLearning.FactorFor(stateA, stateB), 0) : null);
 
