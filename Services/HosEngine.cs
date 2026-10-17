@@ -927,6 +927,11 @@ public static class HosEngine
             drive -= hop; shift -= hop; cycle = Math.Max(0, cycle - hop);
             if (requireBreak) brk -= hop;
             Step($"Back to {where}", "Drive", hop, 0);
+
+            // Gone and come back, so the gate time that counts is the second one. Slack was measured from the
+            // first, which is how a receiver whose window shut at 12:28 was planned as 0:27 to spare when the
+            // truck was back at its gate at 23:00. Reported from play, Kansas City to Oklahoma City.
+            if (task.IsUnload) { result.ProjectedDockStartGameTime = Shown(clock); gateAt = clock; }
         }
 
         /// <summary>

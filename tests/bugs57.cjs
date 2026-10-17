@@ -102,7 +102,9 @@ async function place(city, state, day, hm, cycle = 70, drive = 11, shift = 14) {
     cargo: 'Steel', trailerType: S.trailers[0].type,
     originCity: 'Sonora', originState: 'TX', destCity: 'DeRidder', destState: 'LA',
     loadedMiles: 509, deadheadMiles: 0, gameRevenue: 1939, weightLbs: 19000,
-    deadlineHours: 30.1,   // due next day, but only the deadline given
+    // Due next day, but only the deadline given. 32.1 rather than 30.1 since slack has been measured from
+    // coming back after the reset this plan takes away from the receiver, not from first pulling up.
+    deadlineHours: 32.1,
   });
   ev = bd.evaluations[0];
   const warn = (ev.feasibility.warnings || []).join(' | ');

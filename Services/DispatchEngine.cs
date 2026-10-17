@@ -60,6 +60,62 @@ public static class DispatchEngine
 
     // ------------------------------------------------------------- board evaluation
 
+    /// <summary>Feasible first, then score — the order the board is read in.</summary>
+    private static List<LoadEvaluation> Ranked(IEnumerable<LoadEvaluation> evaluations) => evaluations
+        .OrderBy(e => e.HardFails.Count > 0 ? 3 : e.Feasibility.Verdict == "Infeasible" ? 3
+            : e.HomeTimeFails.Count > 0 ? 2
+            : e.Feasibility.Verdict == "Tight" ? 1 : 0)
+        .ThenByDescending(e => e.Score)
+        .ToList();
+
+    /// <summary>
+    /// The loads dispatch will book on its own say-so, best first. Feasible ones, plus a tight one where dispatch
+    /// owns the call: it heads home on a late or tight arrangement, or nothing on the board clears the buffer and
+    /// it is the best that still makes the window (<paramref name="onTime"/>).
+    ///
+    /// <para>One rule for the board and for <see cref="Authorize"/>. They were two, and the nothing-clears case
+    /// lived only in the board: it booked a 0:27 load and Authorize refused it against the buffer, leaving a
+    /// driver on probation with one assigned load they could not accept. Reported from play.</para>
+    /// </summary>
+    private static List<LoadEvaluation> DispatchTakes(AppState s, List<LoadEvaluation> ranked, out LoadEvaluation? onTime)
+    {
+        var feasibleHomeward = ranked.Any(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
+                                               && !e.Feasibility.BeginsWithRest
+                                               && e.Feasibility.Verdict == "Feasible"
+                                               && HomeTime.TightAndHeadsHome(s, e.Load));
+        bool TightButHeadsHome(LoadEvaluation e) =>
+            e.Feasibility.Verdict == "Tight"
+            && (HomeTime.OverdueAndHeadsHome(s, e.Load) || (!feasibleHomeward && HomeTime.TightAndHeadsHome(s, e.Load)));
+
+        // Home-time disqualification sits in its own list so the reason can be told apart from a
+        // licence or an out-of-service truck, but it bars a load exactly as hard. Nothing here is a
+        // load dispatch will take, and nothing here is a load the driver can overrule it on.
+        // A plan that opens with a ten-hour reset is not a load dispatch takes either. It is legal and it
+        // is not now: the driver sleeps first, and by the time they are legal this board has turned over.
+        // Committing to one books today's rate against tomorrow's freight and parks the truck at a
+        // shipper's gate to do it. Reported from play as freight offered on forty-four minutes of drive
+        // clock — the out-of-hours check further down says exactly that, and never saw the board, because
+        // authorisation happens up here and "feasible after you sleep" counted as feasible.
+        var clear = ranked
+            .Where(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
+                        && !e.Feasibility.BeginsWithRest
+                        && (e.Feasibility.Verdict == "Feasible" || TightButHeadsHome(e)))
+            .ToList();
+        // Nothing clears the buffer, but something makes the window: book the best of those rather than reject the
+        // board. Tight is still on time — the buffer is a preference, and a driver on probation with nothing to run
+        // has no use for it. Reported from play: a board rejected outright, "what am I supposed to do, just drive
+        // around randomly?" Said on the load, so the thin margin is known.
+        onTime = null;
+        if (clear.Count == 0
+            && ranked.FirstOrDefault(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
+                                          && !e.Feasibility.BeginsWithRest
+                                          && e.Feasibility.Verdict == "Tight"
+                                          && e.Feasibility.SlackHours >= 0) is { } fallback)
+            onTime = fallback;
+        if (onTime != null) clear.Add(onTime);
+        return clear;
+    }
+
     public static BoardDecision EvaluateBoard(AppState s)
     {
         var decision = new BoardDecision
@@ -87,13 +143,7 @@ public static class DispatchEngine
         foreach (var load in s.Board)
             decision.Evaluations.Add(Evaluate(s, load, truck, trailer));
 
-        // Rank: feasible first, then score.
-        decision.Evaluations = decision.Evaluations
-            .OrderBy(e => e.HardFails.Count > 0 ? 3 : e.Feasibility.Verdict == "Infeasible" ? 3
-                : e.HomeTimeFails.Count > 0 ? 2
-                : e.Feasibility.Verdict == "Tight" ? 1 : 0)
-            .ThenByDescending(e => e.Score)
-            .ToList();
+        decision.Evaluations = Ranked(decision.Evaluations);
 
         if (s.Board.Count == 0)
         {
@@ -216,44 +266,12 @@ public static class DispatchEngine
         // feasible heads home. Reported from play, on probation: the loads toward Mannheim were all tight, the
         // driver could not overrule the buffer, and nothing else on the board was allowed — so nothing at all.
         // Where a feasible load heads home it wins, and nobody gambles on a late delivery for points.
-        var feasibleHomeward = decision.Evaluations.Any(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
-                                                             && !e.Feasibility.BeginsWithRest
-                                                             && e.Feasibility.Verdict == "Feasible"
-                                                             && HomeTime.TightAndHeadsHome(s, e.Load));
-        bool TightButHeadsHome(LoadEvaluation e) =>
-            e.Feasibility.Verdict == "Tight"
-            && (HomeTime.OverdueAndHeadsHome(s, e.Load) || (!feasibleHomeward && HomeTime.TightAndHeadsHome(s, e.Load)));
-
-        // Home-time disqualification sits in its own list so the reason can be told apart from a
-        // licence or an out-of-service truck, but it bars a load exactly as hard. Nothing here is a
-        // load dispatch will take, and nothing here is a load the driver can overrule it on.
-        // A plan that opens with a ten-hour reset is not a load dispatch takes either. It is legal and it
-        // is not now: the driver sleeps first, and by the time they are legal this board has turned over.
-        // Committing to one books today's rate against tomorrow's freight and parks the truck at a
-        // shipper's gate to do it. Reported from play as freight offered on forty-four minutes of drive
-        // clock — the out-of-hours check further down says exactly that, and never saw the board, because
-        // authorisation happens up here and "feasible after you sleep" counted as feasible.
-        var clear = decision.Evaluations
-            .Where(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
-                        && !e.Feasibility.BeginsWithRest
-                        && (e.Feasibility.Verdict == "Feasible" || TightButHeadsHome(e)))
-            .ToList();
-        // Nothing clears the buffer, but something makes the window: book the best of those rather than reject the
-        // board. Tight is still on time — the buffer is a preference, and a driver on probation with nothing to run
-        // has no use for it. Reported from play: a board rejected outright, "what am I supposed to do, just drive
-        // around randomly?" Said on the load, so the thin margin is known.
-        if (clear.Count == 0
-            && decision.Evaluations.FirstOrDefault(e => e.HardFails.Count == 0 && e.HomeTimeFails.Count == 0
-                                                        && !e.Feasibility.BeginsWithRest
-                                                        && e.Feasibility.Verdict == "Tight"
-                                                        && e.Feasibility.SlackHours >= 0) is { } onTime)
-        {
-            clear.Add(onTime);
+        var clear = DispatchTakes(s, decision.Evaluations, out var onTime);
+        if (onTime != null)
             decision.DispatchNotes.Add(
                 $"Nothing on this board clears our {Hhmm.Of(onTime.Feasibility.RequiredBufferHours)} buffer, so I have booked the best " +
                 $"one that still makes the window: {Hhmm.Of(onTime.Feasibility.SlackHours)} to spare at the gate. No room for a bad day " +
                 "on this one — keep it moving.");
-        }
 
         // A handful of loads at one dock is not the town. The board screen has always said "show me these
         // first; if none of them work I will ask for the whole city" — but the asking only ever happened
@@ -296,7 +314,9 @@ public static class DispatchEngine
 
             // Never quietly. A tight window taken because home time is late is a judgement call, and the
             // driver is told it was made and why.
-            if (pick.Feasibility.Verdict == "Tight")
+            // Only where home time is the reason. The nothing-clears fallback has said its own piece above, and
+            // this sentence on it told a driver nowhere near due home that the load was taking them there.
+            if (pick.Feasibility.Verdict == "Tight" && pick != onTime)
                 decision.DispatchNotes.Add(
                     $"This one is tight — {Hhmm.Of(pick.Feasibility.SlackHours)} of slack against our " +
                     $"{Hhmm.Of(s.Settings.SafetyBufferHours)} buffer, and on an ordinary day I would not " +
@@ -961,7 +981,7 @@ public static class DispatchEngine
         // So take the latest slot that still leaves room to unload and get parked, and prefer that to
         // whatever the seed picked. Earlier is always safe here; later is what took the driver's day.
         var room = s.Hos.ShiftRemaining
-                   - FacilityLearning.For(s, load.TrailerType).Unloading
+                   - FacilityLearning.For(s, DockTrailerType(s, load, AssignedTrailer(s))).Unloading
                    - s.Settings.ParkingBufferHours;
         var latest = DeliveryWindow.PrevHalfHour(now.AddHours(Math.Max(0, room)));
         if (slot > latest)
@@ -1015,6 +1035,23 @@ public static class DispatchEngine
     /// <summary>Feasible above Tight above Infeasible, for "did this make the plan worse".</summary>
     private static int VerdictRank(string verdict) => verdict switch { "Feasible" => 2, "Tight" => 1, _ => 0 };
 
+    /// <summary>
+    /// The trailer type whose dock times plan this load: what is actually hooked, unless the listing names
+    /// something it covers.
+    ///
+    /// <para>ATS only lists freight the hooked trailer can pull, so a listing that disagrees with the trailer
+    /// is a misread, and the trailer is the truth. Reported from play: milk and juice off a food-grade tanker's
+    /// board read in as Reefer, planned on the reefer default of 3:00 each end instead of the tanker's
+    /// learned twenty minutes, which turned a comfortable run into a reset at the receiver.</para>
+    /// </summary>
+    public static string? DockTrailerType(AppState s, BoardLoad load, Trailer? trailer)
+    {
+        if (DropHook.Active(s) || string.IsNullOrWhiteSpace(load.TrailerType)) return trailer?.Type ?? load.TrailerType;
+        if (trailer != null && !DropHook.Is(trailer.Type) && !EquipmentService.TypeCovers(trailer.Type, load.TrailerType))
+            return trailer.Type;
+        return load.TrailerType;
+    }
+
     public static DateTime? GateArrivalOf(FeasibilityResult f) =>
         GameClock.TryParse(string.IsNullOrWhiteSpace(f.ProjectedDockStartGameTime)
             ? f.ProjectedArrivalGameTime
@@ -1028,7 +1065,7 @@ public static class DispatchEngine
     {
         var slotHours = AppointmentHoursFor(s, load);
         if (slotHours <= 0) return false;
-        var need = slotHours + FacilityLearning.For(s, load.TrailerType).Unloading
+        var need = slotHours + FacilityLearning.For(s, DockTrailerType(s, load, AssignedTrailer(s))).Unloading
                              + s.Settings.ParkingBufferHours;
         return need > s.Hos.ShiftRemaining;
     }
@@ -1547,7 +1584,8 @@ public static class DispatchEngine
         {
             e.Cons.Add($"Listed as a {load.TrailerType} and you are on {trailer.Ref} ({trailer.Type}). " +
                        "Taking it anyway — ATS only shows you freight your trailer can pull, so if it was on " +
-                       "your board it fits. Worth a second look at the trailer type if you typed it by hand.");
+                       $"your board it fits, and the dock time is planned on the {trailer.Type.ToLowerInvariant()}. " +
+                       "Worth a second look at the trailer type if you typed it by hand.");
         }
 
         // ---- HOS feasibility
@@ -1559,9 +1597,7 @@ public static class DispatchEngine
         // paper that the driver was never going to spend, which is enough to plan a reset that is not
         // needed or refuse a load that is comfortably legal. The loading end was already handled through
         // PreLoaded; this is the other one.
-        var dock = FacilityLearning.For(s, DropHook.Active(s)
-            ? trailer?.Type
-            : string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
+        var dock = FacilityLearning.For(s, DockTrailerType(s, load, trailer));
 
         // Every load off a facility's own board is LIVE LOADED, whatever is on the back.
         //
@@ -2035,7 +2071,7 @@ public static class DispatchEngine
 
         detail.Add(dock.Learned
             ? $"Dock time assumed {Hhmm.Of(dock.Loading)} to load and {Hhmm.Of(dock.Unloading)} to unload, " +
-              $"measured off your last {dock.Samples} {FacilityLearning.Normalise(load.TrailerType).ToLowerInvariant()} load(s)."
+              $"measured off your last {dock.Samples} {FacilityLearning.Normalise(DockTrailerType(s, load, trailer)).ToLowerInvariant()} load(s)."
             : $"Dock time assumed {Hhmm.Of(dock.Loading)} to load and {Hhmm.Of(dock.Unloading)} to unload — a starting " +
               "estimate until we have run a few of these.");
 
@@ -2712,7 +2748,9 @@ public static class DispatchEngine
             // button that errored and no way forward, and a driver with it had two buttons on the same
             // load, one broken and one labelled as though they were overruling a decision the app had
             // already made for them.
-            var dispatchOwnsIt = HomeTime.OverdueAndHeadsHome(s, load) || HomeTime.TightAndHeadsHome(s, load);
+            var dispatchOwnsIt = HomeTime.OverdueAndHeadsHome(s, load) || HomeTime.TightAndHeadsHome(s, load)
+                || DispatchTakes(s, Ranked(s.Board.Select(l => l.Id == loadId ? eval : Evaluate(s, l, truck, trailer))), out _)
+                       .Any(e => e.Load.Id == loadId);
 
             if (!overrideTight && !dispatchOwnsIt)
                 throw new InvalidOperationException(
@@ -2733,9 +2771,7 @@ public static class DispatchEngine
         // Read exactly the way Evaluate reads it, so the trip carries the same dock time the plan was
         // built on. On drop and hook that is the hook time and nothing else; everywhere else it is the
         // learned figure for whatever is actually hooked.
-        var dockAtDispatch = FacilityLearning.For(s, DropHook.Active(s)
-            ? trailer?.Type
-            : string.IsNullOrWhiteSpace(load.TrailerType) ? trailer?.Type : load.TrailerType);
+        var dockAtDispatch = FacilityLearning.For(s, DockTrailerType(s, load, trailer));
 
         var trip = new Trip
         {
