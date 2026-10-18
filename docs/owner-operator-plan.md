@@ -1,6 +1,6 @@
 # Owner/operator app: plan
 
-Status: **proposed**, written 2026-10-16 against v0.87 (`80649f9`), revised the same day around the GDC Companion App (v1.61.1), and on 2026-10-17 for the clearing account, broker personalities, specialist brokers, the Long Distance skill, the broker directory and reputation tiers. Nothing here is built. Files and symbols named below are as they stood at that commit; check them before relying on this, because the code will have moved on.
+Status: **proposed**, written 2026-10-16 against v0.87 (`80649f9`), revised the same day around the GDC Companion App (v1.61.1), and on 2026-10-17 for the clearing account, broker personalities, specialist brokers, the Long Distance skill, the broker directory, reputation tiers, the first screen, home life, and skill and endorsement requirements; and on 2026-10-18 the leased-on start was dropped. Nothing here is built. Files and symbols named below are as they stood at that commit; check them before relying on this, because the code will have moved on.
 
 ## The idea
 
@@ -81,25 +81,20 @@ There are no interfaces in the codebase: every service is a static class reading
 
 Each app maps its own state onto that seam. The work is mechanical but wide, and the existing test suite (about 4,900 checks) is what makes it safe: extract a service, run the suite, repeat.
 
-## Two ways to run the business
+## Your own authority
 
-Picked at onboarding, and changeable later as the career grows.
+The career runs on **your own operating authority** from the first load, because the interactive brokers are the point of this app.
 
-**Leased on to a carrier.**
-- You keep a percentage of linehaul (typically 65–75%) plus the fuel surcharge.
-- The carrier provides operating authority and its own load board, and settles weekly. The game's pay goes to Freight clearing as for a broker load, and the settlement moves your share on to the business account (see [Two banks](#two-banks)).
-- No brokers, no invoices to chase.
-- The easier start.
-
-**Own authority.**
 - Full revenue, but you find your own freight.
-- Freight comes through **brokers** (see below) and, later, direct shippers.
+- Freight comes through **brokers** (see below) and, later, the shippers themselves.
 - You invoice, wait to be paid, and decide whether to factor.
 - The authority, permits and insurance it needs are set up in the Companion App; this app only knows whether you have them.
 
+**Leased on to a carrier is left out.** Running under a carrier's authority with its loads and weekly settlement is close to what the company-driver app already offers, and few players would choose it here. It can be added later.
+
 ## Starting out
 
-A new owner/operator starts with **an older truck, no trailer, and a nest egg**. The truck, the loan and the money all live in the game and the Companion App; this app recommends the starting position and checks it before the first load.
+A new owner/operator starts with **an older truck, no trailer, and a nest egg**. The truck, the loan and the money all live in the game and the Companion App; this app recommends the starting position and checks it before the first load. The lean start is the [starter tier](#paying-your-dues) of brokers: low rates and poor loads until there is a record to show.
 
 - **An older truck.** Cheap to buy, a small loan payment, and dear to run. The Companion App's maintenance and insurance make that bite, and the first real business decision is when to trade up.
 - **No trailer.** The game lets a truck without a trailer take freight-market jobs on the shipper's trailer, which is how real power-only owner/operators work; the company-driver app already models it as its drop-and-hook arrangement (`DropHook`). Buying a trailer is a growth step: it opens the cargo market and its better pay.
@@ -109,19 +104,39 @@ A new owner/operator starts with **an older truck, no trailer, and a nest egg**.
   - **one major repair.**
 - **ETS2's legal floor.** To operate a truck in the EU a carrier has to show financial standing of **€9,000 for the first vehicle and €5,000 for each after it**. That is a natural minimum starting balance for a European career, and the figure the hard preset starts at.
 
-### Start leased on
-
-The first chapter is **leased on**: the carrier pays weekly and supplies the loads, and the player learns the cost-per-km game without brokers or invoices. **Going independent** is a milestone: enough cash in the Companion App's bank for the authority, the insurance down payment and permits, and then brokers, invoices and factoring open up.
-
 ### Presets
 
-| Preset | Truck | Trailer | Business | Recommended starting cash |
-|---|---|---|---|---|
-| Easy | Mid-age | None | Leased on | Generous |
-| Normal | Older | None | Leased on | The calculated nest egg |
-| Hard | Older | None | Own authority | The legal minimum |
+| Preset | Truck | Trailer | Recommended starting cash |
+|---|---|---|---|
+| Easy | Mid-age | None | Generous |
+| Normal | Older | None | The calculated nest egg |
+| Hard | Older | None | The legal minimum |
 
 A new career starts on a **fresh game profile** with a Companion App driver tied to it, so the game, the Companion App's books and this app begin from the same position.
+
+### The first screen
+
+Kept short. Only what is needed to plan the first load:
+
+- **Which game**, ATS or ETS2.
+- **Home**: the city where the driver lives, which is the truck's home garage and where it starts. On a fresh profile that is the garage the game started you in, and the only city discovered.
+- **The game clock** as the game shows it now.
+- **Level and skills**: the driver's level, and the points in Long Distance, ADR (by class), High Value, Fragile and Just-In-Time. Level 0 with no skills is fine, and is what a fresh profile has.
+- **The truck's odometer**, so every mile is measured from the first load.
+- **The preset** (above), defaulting to Normal.
+
+Everything else comes later, or from the Companion App: the bank balance, the truck's costs, a trailer when one is bought, endorsements as they are earned.
+
+### The first load
+
+Walked through on screen the first time, step by step:
+
+1. **In the game**, at the home garage, open the **Freight Market** and screenshot the home city's board. With no trailer it is the Freight Market, not the Cargo Market, which needs a trailer of your own.
+2. **Give the screenshot to the app.** It reads the jobs as it does now.
+3. **Call a starter broker** from the directory who works your home city. The board's jobs come up as spot loads, and the call books one.
+4. **Take that job in the game.** The app plans it like any other.
+
+From the second load on, the phone rings before delivery with the next one, and the home-city board is only needed again when you are home.
 
 ## Choosing loads
 
@@ -131,7 +146,34 @@ Loads come two ways: **lanes booked through brokers** ahead of time (see [Broker
 - **Profit, not rate.** Each load shows what it nets after your all-in cost per km, worked out from the Companion App's records: fuel, tolls, the truck note, insurance, maintenance and the cost of living on the road.
 - **Profit per day, as well as per km.** A short well-paid load into a dead market that leaves you sitting empty for two days loses money. Core knows market tiers (`Markets`) and can estimate the empty run out of the destination.
 - **The truck's condition.** A truck the Companion App has in the shop, or with a service due before the run would end, is said on every load.
-- **Home time is yours to set.** You choose how often you want to be home; the app plans backhauls toward it. The EU rules stay enforced, because they are law, not company policy, and that includes the Mobility Package obligations on an operator.
+- **Home time is yours to promise**, and the app plans backhauls toward it (see [Home time](#home-time)). The EU rules stay enforced, because they are law, not company policy, and that includes the Mobility Package obligations on an operator.
+
+## Home time
+
+In the EU the law sends a driver home. In the US nothing does, and an owner/operator who never goes home loses nothing by it. **This app does not support the driver who lives in the truck**: every driver has a home with a garage and has to go back to it. So the US needs reasons the game can feel, and they have to work through freight and time, because the money is the Companion App's.
+
+### Home life
+
+Agreed as the design on 2026-10-18; the numbers are still to be tuned (open question 10).
+
+**Home life** is a standing between the driver and home, kept the same way as a broker's:
+
+- **The promise.** At the start the player says how often they will be home and for how long ("every two weeks, three days"), like the company-driver app's home-time preference. It can be changed, but not every week for free.
+- **It drops** a little each day out, and faster once the promise is broken.
+- **It recovers** with days at home. A 34-hour restart at home counts; a full home time counts more.
+
+### What it does
+
+1. **Dates at home.** The calendar fills with events, known days or weeks ahead: a birthday, a child's game, an anniversary, a doctor's appointment. The app plans backhauls to land the truck home for them. Making one raises home life; missing one costs a lot of it.
+2. **The call from home.** Below a threshold, the phone rings from home instead of from a broker: something has come up, be home within so many days. The lower home life is, the more often it rings and the less notice it gives. It comes mid-run, so the load in hand is either delivered on the way or handed back, which is a cancellation on your record with that broker. That is the bite: booked work and reputation, not points.
+3. **Hitting bottom.** At the very bottom the driver goes home for a week whatever is booked. Nothing earns, and the truck's costs keep coming due in the Companion App. This is where it hurts in money, without this app posting any.
+4. **The holidays.** Around Thanksgiving, Christmas and New Year brokers go quiet and rates sag, as real freight does. Home is cheap then, and it is the natural time for a long home time.
+5. **Being around pays.** A broker based in the home city calls on the last day of every home time with a load out, and shippers near home offer short regional loads to a carrier who is often there.
+6. **The restart at home.** A 34 taken at home is home time as well, so lining the two up is efficient, the way the company-driver app does it now (`Restart.Where`).
+
+**Home life applies in both games.** In ETS2 the law sends the driver home as well, and where the two disagree the law wins.
+
+Paperwork that has to be done at home (plates, the medical card, an inspection at your own shop) would be another reason, but only where the Companion App does not already own it.
 
 ## Brokers
 
@@ -174,6 +216,24 @@ The game only offers jobs as long as the driver's **Long Distance** skill allows
 - **What it limits:** lane offers, the distance band on a rate confirmation, and the jobs marked as fitting at the pickup. The top of a lane's band never passes the limit.
 - **On the phone:** a broker will not book past it ("I can't put you on a 1,200 km run yet"). A level gained is a reason to call round: longer lanes are better paid, and the game pays a long-distance bonus on them too.
 
+### Other skills and endorsements
+
+Long Distance is not the only gate. The game hides jobs from a driver without:
+
+- **ADR** in the right class: explosives, gases, flammable liquids, flammable solids, toxic, corrosive.
+- **High Value**, **Fragile** or **Just-In-Time**, for those kinds of job.
+
+Some freight also wants a licence **endorsement**, kept by the app the way the company-driver app keeps them (`Endorsements`): tanker, hazmat, doubles and triples in ATS, and port access for container work (a TWIC card in the US).
+
+Brokers set their requirements from both:
+
+- **A fuel broker** wants the tanker and hazmat endorsements and the ADR class for fuel.
+- **An electronics or pharmaceutical broker** wants High Value; glass and furniture, Fragile; an auto-parts broker feeding plants to schedule, Just-In-Time.
+- **A container broker** wants port access.
+- **General brokers** book around whatever you have.
+
+The rules are the same as for Long Distance: no lane is offered that you cannot pick up, the directory shows each broker's requirement against yours, and a broker you do not qualify for says so on the phone. A skill point or an endorsement opens brokers, which puts the game's skill tree into the business plan. Earning an endorsement is a milestone, paid for through the Companion App.
+
 ### How you get offers
 
 - **Inbound:** the phone rings while you are on a load, usually within a day of delivery — when a real owner/operator books the next one. A broker who knows you rings earlier, with better lanes.
@@ -207,7 +267,7 @@ The current flow stays as the base: the dock you are standing at, then the city 
 
 ### Generalists, specialists and the shippers themselves
 
-There are three kinds of freight source once you have your own authority.
+There are three kinds of freight source.
 
 **General brokers.** Any freight on any trailer, the most lanes, middling rates. Where a new owner/operator starts.
 
@@ -274,7 +334,7 @@ A new authority cannot ring a big shipper and ask for freight. Nobody books an u
 
 **Your record as a carrier** is what every broker looks at before taking you on:
 
-- **Time with your own authority**, in game time. Loads run while leased on count toward your experience, but the authority's age starts when you go independent.
+- **Time with your own authority**, in game time, from the start of the career.
 - **Loads delivered**, **on-time percentage**, and **claims**: damage and cancellations on you.
 
 **Three tiers of freight source**, each with its requirement written down:
@@ -300,7 +360,7 @@ Each broker's entry shows:
 
 - **Specialty** and the **trailers** they book.
 - **Where they work:** the regions their lanes start in, so "a reload out of Groningen on a tanker" finds the right names.
-- **Their requirement**, against your record: "Takes new authorities", or "Wants 3 months, 25 loads, 95% on time: you are at 1 month, 9 loads, 100%." This is the path from starter to premium, laid out.
+- **Their requirement**, against your record, skills and endorsements: "Takes new authorities", or "Wants 3 months, 25 loads, 95% on time: you are at 1 month, 9 loads, 100%." This is the path from starter to premium, laid out.
 - **Payment terms and credit rating**, as a real credit check would show them.
 - **Your history with them:** loads, disputes, how they pay you, your standing.
 - **What you know of them:** the personality is not printed; it fills in from your own calls ("drives a hard bargain", "pays slowly, argues detention"), the way a real driver's notes do.
@@ -434,11 +494,11 @@ At some point the owner/operator hires a driver. The Companion App already handl
 | Phase | What | Notes |
 |---|---|---|
 | 0 | **Core extraction** | Planning, routing, game data and the board into a class library; the company-driver app on top of it; the full test suite green at every step |
-| 1 | **Owner/operator skeleton** | Onboarding with the presets and the recommended nest egg, leased on only; board import, profit ranking on a typed-in cost per km, the trip lifecycle from Core |
-| 2 | **Own authority and brokers** | Going independent as a milestone; the broker directory; the carrier record and the starter tier; the Long Distance limit as a setting that every lane respects; a roster of general and specialist brokers, with their personalities as negotiation rules; lane offers from discovered cities, rate confirmations, matching the pickup board to the booking, spot loads, the counter-offer box, invoices and payment terms |
+| 1 | **Owner/operator skeleton** | The first screen and the first-load walkthrough; the presets and the recommended nest egg; the home-time promise and home life, with backhauls planned toward home; board import, spot loads booked through a starter broker on the counter-offer box, profit ranking on a typed-in cost per km, the trip lifecycle from Core |
+| 2 | **Brokers** | The broker directory; skill and endorsement requirements; the carrier record and the starter tier; the Long Distance limit as a setting that every lane respects; a roster of general and specialist brokers, with their personalities as negotiation rules; lane offers from discovered cities, rate confirmations, matching the pickup board to the booking, invoices and payment terms |
 | 3 | **Getting paid** | Freight clearing; pending transfers that wait for the game to close and are marked done by the player; receivables, factoring, collections, the cash forecast |
 | 4 | **Companion App link** | The adapter: costs, balance, truck status and clocks read; money written. Depends on open question 2 |
-| 5 | **Relationships and calls** | Broker scores, the established and premium tiers, inbound calls, regular lanes; the shippers themselves, on the dedicated-account pattern (which companies: ask first); the AI phone calls in each broker's personality over the phase 2 negotiation rules, then optional voice |
+| 5 | **Relationships and calls** | Dates at home and the call from home; broker scores, the established and premium tiers, inbound calls, regular lanes; the shippers themselves, on the dedicated-account pattern (which companies: ask first); the AI phone calls in each broker's personality over the phase 2 negotiation rules, then optional voice |
 | 6 | **Growth** | A second truck and driver, the freight side from the company-driver app's fleet code |
 
 Phase 1 runs on a typed-in cost per km and typed-in clocks, so the link does not block the game being playable.
@@ -450,8 +510,9 @@ Phase 1 runs on a typed-in cost per km and typed-in clocks, so the link does not
 3. **How long is "net 30" in game time?** Thirty game days is a long time at the game's pace. Payment terms may need scaling so cash flow matters without being tedious.
 4. **How tight should a lane fit be?** A ±20% distance band and a named region are a guess. Too tight and nothing fits at the pickup; too loose and booking means nothing.
 5. **One career type per app, or can a company driver "go independent"?** Carrying a career across from the company-driver app into the owner/operator one would be a good story, and needs a shared export format.
-6. **Leased-on carriers:** real names, like the company-driver app's carrier roster, or fictional like the brokers?
-7. **How quickly do game boards refresh?** "Wait, it is still being loaded" only works if a board changes within a rest or so. Worth measuring in both games before settling the rules for a lane that finds no fit.
-8. **Does the starting truck fit the loans?** The game caps loans by level, and the Companion App has loans of its own. The presets may need to fit those limits rather than the other way round.
-9. **Which game companies hire the owner/operator directly?** The project owner decides when that part is designed (see [Generalists, specialists and the shippers themselves](#generalists-specialists-and-the-shippers-themselves)).
-10. **Can every Companion App account transfer while the game runs?** Step 4 of a broker load assumes so, because it does not touch the game bank. Worth confirming.
+6. **How quickly do game boards refresh?** "Wait, it is still being loaded" only works if a board changes within a rest or so. Worth measuring in both games before settling the rules for a lane that finds no fit.
+7. **Does the starting truck fit the loans?** The game caps loans by level, and the Companion App has loans of its own. The presets may need to fit those limits rather than the other way round.
+8. **Which game companies hire the owner/operator directly?** The project owner decides when that part is designed (see [Generalists, specialists and the shippers themselves](#generalists-specialists-and-the-shippers-themselves)).
+9. **Can every Companion App account transfer while the game runs?** Step 4 of a broker load assumes so, because it does not touch the game bank. Worth confirming.
+10. **How harsh is home life?** How fast it drops, how often the call from home comes, and how long hitting bottom lasts decide whether it is a nudge or a second job. Tune by playing.
+11. **Where do the dates at home come from?** Generated, or partly the player's own (a real birthday as an in-game one)?
