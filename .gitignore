@@ -3,6 +3,7 @@ bin/
 obj/
 publish/
 publish-ship/
+publish-oo/
 
 # Career files are runtime state, not source — and they hold your API key if you set one.
 # Back them up with Settings -> Data instead.
@@ -27,6 +28,9 @@ docs/manual/pages/
 docs/manual/pages-operations/
 docs/manual/shots/
 docs/manual/*.pdf
+docs/owner-operator/*.pdf
+docs/owner-operator/pages/
+docs/owner-operator/printprof/
 docs/manual/chromeprof/
 docs/manual/printprof/
 docs/manual/demodata*/

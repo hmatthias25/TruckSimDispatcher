@@ -29,7 +29,7 @@ public static class Templates
         ("", $"I've got {Lane(l)} at {M(offer)}."));
 
     public static string LaneOffer(Broker b, Personality p, Lane l, decimal offer) =>
-        $"Hey, it's {b.Rep} at {b.Name}. Saw you're heading into {l.PickupCity}. I've got freight out of there from " +
+        $"Hey, it's {b.Rep} at {b.Name.TrimEnd('.')}. Saw you're heading into {l.PickupCity}. I've got freight out of there from " +
         $"{GameClock.Pretty(l.PickupFromGameTime)}, going into the {l.DestRegion}, about {Units.Distance(l.MidMiles)}. " +
         Pick(p,
             ("Grinder", $"{M(offer)}. That's the rate."),

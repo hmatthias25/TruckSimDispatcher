@@ -253,17 +253,13 @@ public static class Lanes
         return lane;
     }
 
-    /// <summary>The destination where it is discovered; otherwise the nearest discovered city in reach of it.</summary>
-    private static (string City, string State)? PickupNear(OoCareer c, string city, string state)
-    {
-        if (DiscoveryService.IsDiscovered(c.Game, city, state)) return (city, state);
-        return c.Game.Discovered
-            .Select(d => (d.City, d.State, Miles: Geo.MilesBetween(city, state, d.City, d.State)))
-            .Where(x => x.Miles is <= 150)
-            .OrderBy(x => x.Miles)
-            .Select(x => ((string City, string State)?)(x.City, x.State))
-            .FirstOrDefault();
-    }
+    /// <summary>
+    /// The run's destination. It need not be discovered yet: delivering there discovers it, so by the time the lane
+    /// picks up the game offers jobs out of it. Requiring it already discovered left a new career's first runs into new
+    /// cities, which is most of them, with no call at all.
+    /// </summary>
+    private static (string City, string State)? PickupNear(OoCareer c, string city, string state) =>
+        string.IsNullOrWhiteSpace(city) ? null : (city, state);
 
     /// <summary>Where the lane delivers into: home's region when home is due soon, otherwise wherever the broker's freight goes.</summary>
     private static string TargetRegion(OoCareer c, string fromRegion, Broker b)

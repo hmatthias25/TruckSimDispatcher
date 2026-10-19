@@ -1,14 +1,20 @@
 <#
-    Builds the portable, single-file TruckSim Dispatcher executable.
+    Builds the portable, single-file TruckSim Dispatcher executable, or with -App OwnerOperator the
+    separate TruckSim Owner-Operator one.
 
-    Output:  publish\TruckSimDispatcher.exe
+    Output:  publish\TruckSimDispatcher.exe        (publish-oo\TruckSimOwnerOperator.exe)
     Copy that one file to the machine running American Truck Simulator and run it.
     No .NET install, no dependencies, no internet connection required.
 #>
 [CmdletBinding()]
 param(
+    # Which app. The two share Core but ship apart: their own exe, zip, version and manual.
+    [ValidateSet('Dispatcher', 'OwnerOperator')]
+    [string]$App = 'Dispatcher',
+
     [string]$Runtime = 'win-x64',
-    [string]$OutDir  = 'publish',
+    # Owner-Operator publishes to its own folder, so the company app's publish\data is never touched.
+    [string]$OutDir  = '',
 
     # Stage the shipped documents beside the exe and zip the lot. Without this the release is the exe
     # on its own, which is how v0.44 went out missing both manuals and the README — assembling the zip
@@ -22,14 +28,20 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
+$oo = $App -eq 'OwnerOperator'
+if (-not $OutDir) { $OutDir = if ($oo) { 'publish-oo' } else { 'publish' } }
+$project = if ($oo) { 'OwnerOperator\TruckSimOwnerOperator.csproj' } else { 'TruckSimDispatcher.csproj' }
+$exeName = if ($oo) { 'TruckSimOwnerOperator.exe' } else { 'TruckSimDispatcher.exe' }
+$title   = if ($oo) { 'TruckSim Owner-Operator' } else { 'TruckSim Dispatcher' }
+
 Write-Host ''
-Write-Host '  Building TruckSim Dispatcher (portable single file)' -ForegroundColor Yellow
+Write-Host "  Building $title (portable single file)" -ForegroundColor Yellow
 Write-Host "  runtime: $Runtime" -ForegroundColor DarkGray
 Write-Host ''
 
 if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 
-dotnet publish TruckSimDispatcher.csproj `
+dotnet publish $project `
     -c Release `
     -r $Runtime `
     --self-contained true `
@@ -44,25 +56,27 @@ if ($LASTEXITCODE -ne 0) { throw "publish failed with exit code $LASTEXITCODE" }
 # A single-file publish still drops a .pdb next to the exe; the exe alone is what ships.
 Get-ChildItem $OutDir -Filter *.pdb -ErrorAction SilentlyContinue | Remove-Item -Force
 
-$exe = Join-Path $OutDir 'TruckSimDispatcher.exe'
+$exe = Join-Path $OutDir $exeName
 $size = [math]::Round((Get-Item $exe).Length / 1MB, 1)
 
 Write-Host ''
 Write-Host "  Done: $exe  ($size MB)" -ForegroundColor Green
 Write-Host ''
 Write-Host '  Copy that single file anywhere and double-click it.' -ForegroundColor Gray
-Write-Host '  It creates a "data" folder beside itself for the career file.' -ForegroundColor Gray
+Write-Host "  It creates a folder called `"$(if ($oo) { 'oo-data' } else { 'data' })`" beside itself for the career file." -ForegroundColor Gray
 Write-Host ''
 
 if ($Package) {
     # Everything that ships. Named rather than globbed so a missing manual is an error you see here,
     # not a thin zip somebody notices after downloading it.
-    $shipped = @(
+    $shipped = if ($oo) { @(
+        'docs\owner-operator\TruckSim-Owner-Operator-Manual.pdf'
+    ) } else { @(
         'docs\manual\TruckSim-Dispatcher-FAQ.pdf',
         'docs\manual\TruckSim-Dispatcher-User-Manual.pdf',
         'docs\manual\TruckSim-Dispatcher-Operations-Manual.pdf',
         'README.md'
-    )
+    ) }
 
     foreach ($f in $shipped) {
         if (-not (Test-Path $f)) {
@@ -73,9 +87,14 @@ if ($Package) {
         Copy-Item $f -Destination $OutDir -Force
     }
 
-    $version = (Select-String -Path 'Services\Build.cs' -Pattern 'Version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-    $stage   = (Select-String -Path 'Services\Build.cs' -Pattern 'Stage\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-    $name    = "TruckSimDispatcher-v$version-$stage.zip"
+    $stage   = (Select-String -Path 'Core\Services\Build.cs' -Pattern 'Stage\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+    if ($oo) {
+        $version = (Select-String -Path 'OwnerOperator\OoModels.cs' -Pattern 'Version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+        $name    = "TruckSimOwnerOperator-v$version-$stage.zip"
+    } else {
+        $version = (Select-String -Path 'Core\Services\Build.cs' -Pattern 'Version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+        $name    = "TruckSimDispatcher-v$version-$stage.zip"
+    }
 
     # Built in TEMP and moved, so a half-written zip never sits in the download folder looking finished.
     $staged = Join-Path $env:TEMP $name
@@ -92,7 +111,7 @@ if ($Package) {
     $names = $zip.Entries | ForEach-Object { $_.FullName }
     $zip.Dispose()
 
-    $expected = @('TruckSimDispatcher.exe') + ($shipped | ForEach-Object { Split-Path $_ -Leaf })
+    $expected = @($exeName) + ($shipped | ForEach-Object { Split-Path $_ -Leaf })
     $absent = $expected | Where-Object { $names -notcontains $_ }
     if ($absent) { throw "Zip is missing: $($absent -join ', ')" }
 

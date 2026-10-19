@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TruckSim Owner-Operator Manual</title>
+<style>
+  /* Flowing pages, not fixed ones: a page that grows breaks onto the next instead of clipping its last lines. */
+  @page { size: letter; margin: 0.7in 0.78in 0.65in; }
+  @page :first { margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    color: #1a2129; font-size: 10.5pt; line-height: 1.5;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  section { break-before: page; }
+  h1 { font-size: 20pt; margin: 0 0 6pt; letter-spacing: -0.4pt; color: #14324e; }
+  h2 {
+    font-size: 15pt; margin: 0 0 8pt; color: #14324e;
+    border-bottom: 1.5pt solid #d99412; padding-bottom: 4pt; letter-spacing: -0.2pt;
+  }
+  h2 .num { font: 700 11pt Consolas, monospace; color: #d99412; margin-right: 8pt; }
+  h3 { font-size: 11.5pt; margin: 13pt 0 3pt; color: #1f4a70; break-after: avoid; }
+  h4 { font-size: 9.5pt; margin: 9pt 0 3pt; color: #3b4a57; text-transform: uppercase; letter-spacing: 0.6pt; break-after: avoid; }
+  p { margin: 0 0 6pt; }
+  ul, ol { margin: 0 0 7pt; padding-left: 16pt; }
+  li { margin: 0 0 2.5pt; }
+  b, strong { color: #10293d; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background: #eef2f5; padding: 0 3pt; border-radius: 2pt; }
+  .lede { font-size: 11.5pt; color: #3b4a57; margin-bottom: 10pt; }
+  .btn { font: 700 8pt Consolas, monospace; letter-spacing: 0.8pt; text-transform: uppercase; background: #fdf3e0;
+         border: 0.75pt solid #d99412; border-radius: 2pt; padding: 0 3pt; color: #5a3a05; white-space: nowrap; }
+
+  figure { margin: 8pt 0 10pt; break-inside: avoid; }
+  figure img { width: 100%; display: block; border: 0.75pt solid #b9c4cf; border-radius: 3pt; }
+  figure.md img { width: 82%; margin: 0 auto; }
+  figure.sm img { width: 60%; margin: 0 auto; }
+  figcaption { font-size: 8pt; color: #6b7885; margin-top: 4pt; font-style: italic; }
+
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0 9pt; font-size: 8.9pt; break-inside: avoid; }
+  th { background: #14324e; color: #fff; text-align: left; padding: 4pt 6pt; font-size: 8.3pt; letter-spacing: 0.3pt; }
+  td { border: 0.5pt solid #ccd5dd; padding: 3pt 6pt; vertical-align: top; line-height: 1.35; }
+  tr:nth-child(even) td { background: #f5f8fa; }
+
+  .note, .warn, .rule {
+    border-left: 3pt solid #2b6cb0; background: #f2f7fc; padding: 6pt 9pt; margin: 8pt 0;
+    font-size: 9.4pt; border-radius: 0 3pt 3pt 0; line-height: 1.42; break-inside: avoid;
+  }
+  .warn { border-left-color: #b3392f; background: #fdf4f3; }
+  .rule { border-left-color: #2f9c48; background: #f3faf5; }
+  .note p:last-child, .warn p:last-child, .rule p:last-child { margin-bottom: 0; }
+  .note h4, .warn h4, .rule h4 { margin-top: 0; color: #14324e; }
+
+  .flow { display: flex; gap: 6pt; margin: 8pt 0 10pt; break-inside: avoid; }
+  .flow div { flex: 1; border: 0.75pt solid #8fa1b0; background: #f4f7f9; border-radius: 3pt; padding: 5pt 6pt; font-size: 8.6pt; line-height: 1.35; }
+  .flow div b { display: block; font-size: 9pt; color: #14324e; margin-bottom: 2pt; }
+  .flow div.a { border-color: #d99412; background: #fdf3e0; }
+  .flow div.g { border-color: #2f9c48; background: #eff9f2; }
+
+  /* cover */
+  .cover { background: #10222f; color: #e8eef4; height: 11in; padding: 1.1in 0.9in; position: relative; }
+  .cover .kicker { font: 700 9pt/1.3 Consolas, monospace; letter-spacing: 2.4pt; text-transform: uppercase; color: #d99412; margin-bottom: 8pt; }
+  .cover h1 { color: #fff; font-size: 40pt; line-height: 1.02; letter-spacing: -1.2pt; margin: 0 0 10pt; }
+  .cover .sub { font-size: 15pt; color: #a8bccd; margin-bottom: 26pt; }
+  .cover .rulebar { height: 4pt; width: 2.1in; background: #d99412; margin: 0 0 26pt; }
+  .cover .facts { margin-top: 22pt; font-size: 10pt; color: #c3d2de; }
+  .cover .facts div { padding: 3pt 0; border-bottom: 0.5pt solid #22384a; }
+  .cover .facts span { display: inline-block; width: 1.6in; color: #7f97ab; font: 700 8pt Consolas, monospace; letter-spacing: 1pt; text-transform: uppercase; }
+  .alphabox {
+    margin-top: 30pt; background: #3a2410; border: 1.5pt solid #d99412; border-radius: 4pt;
+    padding: 12pt 14pt; display: flex; gap: 12pt; align-items: flex-start; color: #f0dcc0; font-size: 9.5pt; line-height: 1.45;
+  }
+  .alphabox b { color: #ffcf7a; }
+  .cover b { color: #fff; }
+  .cover .alphabox b { color: #ffcf7a; }
+  .ab-tag { flex: none; background: #d99412; color: #241703; font: 700 9pt Consolas, monospace; letter-spacing: 1.4pt;
+            text-transform: uppercase; padding: 3pt 9pt; border-radius: 3pt; }
+  .cover .credit { position: absolute; left: 0.9in; right: 0.9in; bottom: 1.0in; border-top: 1pt solid #2c4356;
+                   padding-top: 12pt; font-size: 10pt; color: #a8bccd; }
+
+  .toc { column-count: 2; column-gap: 22pt; font-size: 10pt; }
+  .toc div { display: flex; gap: 8pt; padding: 2.5pt 0; border-bottom: 0.5pt dotted #cdd6de; break-inside: avoid; }
+  .toc .n { font: 700 9.5pt Consolas, monospace; color: #d99412; width: 18pt; flex: none; }
+  .toc .t b { display: block; }
+  .toc .t span { font-size: 8.5pt; color: #5c6b78; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ COVER -->
+<div class="cover">
+  <div class="kicker">TruckSim Owner-Operator</div>
+  <h1>Owner-Operator<br>Manual</h1>
+  <div class="sub">Your truck, your authority, your brokers.</div>
+  <div class="rulebar"></div>
+  <p style="font-size:11.5pt;color:#c3d2de;max-width:5.6in">Running American Truck Simulator as an owner/operator: finding freight
+    through brokers, negotiating the rate on the phone, planning whether a load can legally be made, and getting paid
+    &mdash; with the money kept honest between the game and the GDC Companion App.</p>
+  <div class="facts">
+    <div><span>Version</span>0.9 alpha</div>
+    <div><span>Game</span>American Truck Simulator (Euro Truck Simulator 2 to follow)</div>
+    <div><span>Runs beside</span>The GDC Companion App, and TruckSim Dispatcher if you play both</div>
+    <div><span>Program</span>TruckSimOwnerOperator.exe &middot; opens in your browser</div>
+  </div>
+  <div class="alphabox"><div class="ab-tag">Alpha</div>
+    <div>This is the first release of a new app. Everything in this book works and is tested, but the numbers &mdash;
+      broker margins, how fast home life drops, how long brokers take to pay &mdash; are <b>first guesses, to be tuned by
+      playing</b>. If something feels too harsh or too soft, that is worth reporting.</div></div>
+  <div class="credit">A separate app from <b>TruckSim Dispatcher</b>, the company-driver app. It has its own career file,
+    its own window and this, its own manual.</div>
+</div>
+
+<!-- ============================================================ CONTENTS -->
+<section>
+  <h2>Contents</h2>
+  <div class="toc">
+    <div><span class="n">1</span><span class="t"><b>What this app is</b><span>Freight only; the Companion App owns the money</span></span></div>
+    <div><span class="n">2</span><span class="t"><b>Installing and starting</b><span>One exe, a browser tab, the career file</span></span></div>
+    <div><span class="n">3</span><span class="t"><b>The first screen</b><span>Home, the clock, skills, the preset</span></span></div>
+    <div><span class="n">4</span><span class="t"><b>The screen at a glance</b><span>The top bar and the tabs</span></span></div>
+    <div><span class="n">5</span><span class="t"><b>Your first load</b><span>Paste the board, call a broker</span></span></div>
+    <div><span class="n">6</span><span class="t"><b>Reading the board</b><span>Cost, what it leaves, per day, slack</span></span></div>
+    <div><span class="n">7</span><span class="t"><b>Brokers</b><span>The directory, tiers, specialists, the shippers</span></span></div>
+    <div><span class="n">8</span><span class="t"><b>On the phone</b><span>Offers, counters, arguments, terms</span></span></div>
+    <div><span class="n">9</span><span class="t"><b>Booked: the run</b><span>Logging it, re-planning from where you are</span></span></div>
+    <div><span class="n">10</span><span class="t"><b>Lanes: the next load</b><span>Inbound calls, ringing round, at the pickup</span></span></div>
+    <div><span class="n">11</span><span class="t"><b>Money</b><span>Two banks, Broker holding, transfers</span></span></div>
+    <div><span class="n">12</span><span class="t"><b>Getting paid</b><span>Invoices, factoring, chasing, detention</span></span></div>
+    <div><span class="n">13</span><span class="t"><b>Home life</b><span>The promise, dates, the call from home</span></span></div>
+    <div><span class="n">14</span><span class="t"><b>Truck, trailer and clocks</b><span>Power-only, owning a trailer</span></span></div>
+    <div><span class="n">15</span><span class="t"><b>Settings</b><span>Cost per mile, skills, Long Distance, the AI key</span></span></div>
+    <div><span class="n">16</span><span class="t"><b>Your record and standing</b><span>What builds it and what costs it</span></span></div>
+    <div><span class="n">17</span><span class="t"><b>Quick reference</b><span>Every number in one place</span></span></div>
+    <div><span class="n">18</span><span class="t"><b>Questions</b><span>When something is not what you expected</span></span></div>
+  </div>
+</section>
+
+<!-- ============================================================ 1 -->
+<section>
+  <h2><span class="num">1</span>What this app is</h2>
+  <p class="lede">In the game a job shows a figure and pays it the moment you deliver. An owner/operator's life is not like
+    that: you find the freight through brokers, the broker keeps a cut, you wait weeks to be paid, and some never pay
+    at all. This app plays that part of the career on top of the game.</p>
+
+  <p>It is <b>the freight side of the career and nothing else</b>. The GDC Companion App already runs the business around
+    the truck &mdash; the bank, the books, loans, taxes, insurance, maintenance, living costs and live hours of service
+    &mdash; and this app does not repeat any of it.</p>
+
+  <table>
+    <tr><th style="width:50%">The GDC Companion App</th><th>TruckSim Owner-Operator</th></tr>
+    <tr><td>Bank accounts and moving money</td><td>Says what money should move, which way and when; never moves it</td></tr>
+    <tr><td>Fuel, repairs, insurance, the truck note, living costs</td><td>One typed-in all-in <b>cost per mile</b>, to judge loads by</td></tr>
+    <tr><td>Live hours of service and logs</td><td>Planning ahead: can this load be made legally, and when do the rests fall</td></tr>
+    <tr><td>Owning trucks and trailers</td><td>Knows whether you pull your own trailer or the shipper's</td></tr>
+    <tr><td>&mdash;</td><td>Brokers, phone calls, rates, lanes, invoices, what you are owed, home life</td></tr>
+  </table>
+
+  <div class="rule"><h4>The one rule</h4>
+    <p><b>The Companion App owns the money and the truck; this app owns the freight.</b> If both apps posted fuel or
+      repairs, every one of them would be counted twice. So this app never posts a cost, and never touches a bank.</p></div>
+
+  <h3>An advisor, not a dispatcher</h3>
+  <p>TruckSim Dispatcher, the company-driver app, assigns your freight and polices you. This one does neither. It tells you
+    what each load really leaves after your costs, whether it can be made, and what a broker is really offering &mdash;
+    and then you decide. It still says plainly when a load cannot be made legally or will miss its window.</p>
+
+  <h3>What makes it work: the game's pay is the ceiling</h3>
+  <p>A broker's rate is always <b>less than or equal to what the game pays for the job</b>. The game's figure is the
+    shipper's money; the broker keeps a margin out of it and pays you the rest. Negotiating wins back some of the
+    broker's margin and nothing more. That is why every dollar in this app can be squared with the game bank: nothing
+    is ever paid from outside the game.</p>
+
+  <h3>What it does not do yet</h3>
+  <ul>
+    <li><b>No live link to the Companion App.</b> Its data is not open to other programs yet, so your cost per mile, your
+      clocks and the game bank balance are typed in (or read off a screenshot), and transfers are made by you.</li>
+    <li><b>ATS only.</b> Euro Truck Simulator 2 follows.</li>
+    <li><b>One truck.</b> Hiring drivers comes later.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 2 -->
+<section>
+  <h2><span class="num">2</span>Installing and starting</h2>
+  <ol>
+    <li>Unzip <code>TruckSimOwnerOperator-v0.9-alpha.zip</code> into a folder of its own, for example
+      <code>Documents\TruckSim Owner-Operator</code>.</li>
+    <li>Double-click <b>TruckSimOwnerOperator.exe</b>. A small console window opens and your browser opens the app at
+      <code>http://127.0.0.1:5273</code>. Nothing needs installing: no .NET, no internet connection.</li>
+    <li><b>Closing the console window stops the app.</b> Your career is saved after every change, so there is nothing
+      to save first.</li>
+  </ol>
+  <p>If Windows SmartScreen warns about an unrecognised app, choose <b>More info &rarr; Run anyway</b>. The program is
+    not signed.</p>
+
+  <h3>Where your career lives</h3>
+  <p>Beside the exe, in a folder called <code>oo-data</code>: <code>career.json</code> is the career, with dated backups
+    next to it. Back that folder up and you have backed up the career. To move to another PC, copy the exe and the
+    <code>oo-data</code> folder together.</p>
+  <div class="warn"><h4>Do not share the career file</h4>
+    <p>If you set an Anthropic API key in Settings, it is stored in <code>career.json</code>. Anyone with the file has
+      your key.</p></div>
+
+  <h3>Alongside TruckSim Dispatcher</h3>
+  <p>The two apps are separate programs with separate careers. They do not read each other's files and can run at the
+    same time: Dispatcher on port 5173, Owner-Operator on 5273. If the port is taken, the app picks the next free one
+    and the console says which.</p>
+
+  <h3>The AI key: optional</h3>
+  <p>Everything in the app works without one. With an Anthropic API key in <b>Settings</b> you also get:</p>
+  <ul>
+    <li><b>Screenshot reading.</b> Paste a Freight Market screenshot and the jobs are read off it, instead of typing them
+      in.</li>
+    <li><b>Clocks off a screenshot.</b> Paste a GDC recap and your hours are read off it.</li>
+    <li><b>A voice on the phone.</b> Type to the broker in your own words, and the broker answers in character. Without
+      a key the same negotiation runs on buttons and a counter box.</li>
+  </ul>
+  <p>Each read or phone turn costs a fraction of a cent on your own Anthropic account.</p>
+</section>
+
+<!-- ============================================================ 3 -->
+<section>
+  <h2><span class="num">3</span>The first screen</h2>
+  <p class="lede">Start ATS on a fresh profile with a Companion App driver tied to it, so the game, the Companion App and
+    this app all begin from the same day. Then fill this in from the game.</p>
+  <figure class="md"><img src="img/start.png"><figcaption>The first screen. Only what is needed to plan the first load.</figcaption></figure>
+  <table>
+    <tr><th style="width:24%">Field</th><th>What to put</th></tr>
+    <tr><td>Your name</td><td>Your driver's name.</td></tr>
+    <tr><td>Home</td><td>The city you live in: the truck's home garage, and where it starts. On a fresh profile, the garage the
+      game started you in. Pick it from the list as you type.</td></tr>
+    <tr><td>Game day, time</td><td>Off the game's clock. A new profile is Day 1.</td></tr>
+    <tr><td>Odometer</td><td>The truck's odometer in the game, so every mile is measured from the first load.</td></tr>
+    <tr><td>Driver level</td><td>0 on a fresh profile.</td></tr>
+    <tr><td>Skills</td><td>The points you have in Long Distance, High Value, Fragile and Just-In-Time (0&ndash;6), and the ADR
+      classes you have. None is fine. The game hides jobs you have not unlocked, and brokers will not book them.</td></tr>
+    <tr><td>How hard</td><td>The preset: see below. Normal is the intended game.</td></tr>
+  </table>
+
+  <h3>The presets</h3>
+  <p>Every career starts with <b>your own authority, a truck, no trailer, and a nest egg</b>. The truck and the money are
+    the game's and the Companion App's: set them up there to match. The preset sets the truck the app plans with and the
+    starting cost per mile.</p>
+  <table>
+    <tr><th>Preset</th><th>Truck</th><th>Cost per mile</th><th>Money to start with</th></tr>
+    <tr><td>Easy</td><td>2019 Freightliner Cascadia, 6.8 mpg</td><td>$1.55</td><td>Generous. Room to learn.</td></tr>
+    <tr><td>Normal</td><td>2013 Peterbilt 579, 6.0 mpg</td><td>$1.70</td><td>About two months of fixed costs, plus fuel across the first
+      net-30 before any broker pays, plus one major repair.</td></tr>
+    <tr><td>Hard</td><td>2013 Peterbilt 579, 6.0 mpg</td><td>$1.85</td><td>The legal minimum. Every load counts.</td></tr>
+  </table>
+  <p>The cost per mile is a starting figure. Set your own in <b>Settings</b> from what the Companion App says you spend
+    (see Section 15).</p>
+
+  <h3>No trailer: power-only</h3>
+  <p>You start without a trailer, so you pull the shipper's: the game's <b>Freight Market</b>, not the Cargo Market, which
+    needs a trailer of your own. Buying a trailer later is a growth step (Section 14).</p>
+
+  <h3>Starting over</h3>
+  <p>There is no button for it on purpose. Delete or rename the <code>oo-data</code> folder with the app closed, and the
+    next start shows the first screen again.</p>
+</section>
+
+<!-- ============================================================ 4 -->
+<section>
+  <h2><span class="num">4</span>The screen at a glance</h2>
+  <figure><img src="img/topbar.png"><figcaption>The top bar is always there.</figcaption></figure>
+  <table>
+    <tr><th style="width:18%">Tile</th><th>What it says</th></tr>
+    <tr><td>Where, Clock</td><td>Where the app thinks the truck is, and the game time. Kept current by what you log.</td></tr>
+    <tr><td>Drive, Shift, Cycle</td><td>Your hours left. Amber when under an hour (or under 11 on the cycle).</td></tr>
+    <tr><td>Cost</td><td>Your all-in cost per mile.</td></tr>
+    <tr><td>Can spend</td><td>What you may spend in the game bank: its balance less shipper money still waiting to move
+      (Section 11). <b>--</b> until you tell the app the balance.</td></tr>
+    <tr><td>Home life</td><td>0 to 100 (Section 13). Green from 70, amber from 40, red below.</td></tr>
+  </table>
+  <h3>The tabs</h3>
+  <table>
+    <tr><th style="width:18%">Tab</th><th>For</th></tr>
+    <tr><td>Board</td><td>The jobs where you are, ranked; the booked load and the run; the booked lane.</td></tr>
+    <tr><td>Brokers</td><td>The phone, and the broker directory.</td></tr>
+    <tr><td>Money</td><td>The game bank, transfers to make, Broker holding, and invoices. A number on the tab is transfers waiting.</td></tr>
+    <tr><td>Home</td><td>Home life, the dates on the calendar, your promise.</td></tr>
+    <tr><td>Truck &amp; clocks</td><td>Where and when, your hours, the truck and the trailer.</td></tr>
+    <tr><td>Settings</td><td>Cost per mile, skills, Long Distance limits, the AI key.</td></tr>
+    <tr><td>Log</td><td>Everything that has happened, newest first.</td></tr>
+  </table>
+  <h3>Banners</h3>
+  <p>Above every tab, the app shows what needs you now: <b>a phone ringing</b> (amber), <b>home calling</b> or home life at
+    the bottom (red), or a holiday. Answer or deal with it from the banner, or carry on and come back to it.</p>
+</section>
+
+<!-- ============================================================ 5 -->
+<section>
+  <h2><span class="num">5</span>Your first load</h2>
+  <p class="lede">The first time, the Board tab walks you through it. Each step ticks off as you do it.</p>
+  <figure><img src="img/walkthrough.png"></figure>
+
+  <div class="flow">
+    <div><b>1. Screenshot</b>In the game, at your home garage, open the Freight Market and take a screenshot.</div>
+    <div><b>2. Paste</b>Ctrl+V on the Board tab. Check what was read and add it.</div>
+    <div class="a"><b>3. Call</b>Call a starter broker on the Brokers tab. <i>They</i> read the board and make the offer.</div>
+    <div class="a"><b>4. Deal</b>Negotiate, take it, or try another broker.</div>
+    <div class="g"><b>5. Take it</b>Take that job in the game.</div>
+  </div>
+
+  <h3>Getting the board in</h3>
+  <ul>
+    <li><b>With an AI key:</b> paste the screenshot (Ctrl+V) or drop the image file on the Board tab. The rows read off it
+      appear for checking: untick anything misread, then <span class="btn">Add ticked rows</span>. Several screenshots
+      at once is fine for a long board.</li>
+    <li><b>Without one:</b> use <b>Add by hand</b>: cargo, destination as <code>City, ST</code>, loaded miles, pay and the
+      delivery window as the game lists it.</li>
+  </ul>
+  <p>A job you cannot run is refused with the reason: past your Long Distance limit, or needing a skill you lack.</p>
+
+  <h3>The broker chooses the job, not you</h3>
+  <p>This is the heart of the early game. When you call a broker with a board pasted, the broker reads it and offers
+    <b>one</b> of its jobs at their rate. Which one depends on who you are to them:</p>
+  <ul>
+    <li><b>Starter brokers offer the leftovers</b>: the weaker-paying jobs, tight windows, thin markets. You can see the
+      best job on the board; a new authority does not get it.</li>
+    <li><b>Established brokers</b> offer from the middle of the board, <b>premium</b> ones from the top.</li>
+    <li><b>Only what you can run.</b> Never past your Long Distance limit, never a job needing a skill or trailer you lack,
+      never one the planner says cannot make its window.</li>
+  </ul>
+  <p>The ranked board stays on screen as your own view, so an offer can be judged against everything else that was
+    there. That gap is what a better record closes.</p>
+
+  <h3>After the first load</h3>
+  <p>From the second load on, the phone usually rings during the run with the next one (Section 10). The board where you
+    are is needed again when a lane picks up, or when you are home.</p>
+</section>
+
+<!-- ============================================================ 6 -->
+<section>
+  <h2><span class="num">6</span>Reading the board</h2>
+  <p>Every job is planned the same way TruckSim Dispatcher plans a load: hours of service, rests, the drive from where you
+    are, the dock. What changes is the verdict: the app ranks; you choose.</p>
+  <figure><img src="img/loadcard.png"><figcaption>One job on the ranked board.</figcaption></figure>
+  <table>
+    <tr><th style="width:16%">Figure</th><th>Meaning</th></tr>
+    <tr><td>Game pay</td><td>What the game pays for the job. <b>The ceiling</b>: no broker pays you more than this.</td></tr>
+    <tr><td>Cost</td><td>Your cost per mile across every mile of it: the run to the shipper and the loaded miles.</td></tr>
+    <tr><td>Leaves</td><td>Game pay less cost: the most this job could leave you, if a broker paid the game's full figure.</td></tr>
+    <tr><td>Per day</td><td>What it leaves per day of your time, empty run out of the destination included, so a well-paid
+      job into a dead market shows its real price. Short jobs count as at least half a day.</td></tr>
+    <tr><td>Distance, Days</td><td>Planned miles, and the days the job takes you.</td></tr>
+    <tr><td>Slack</td><td>How much spare time the plan leaves before the window shuts.</td></tr>
+  </table>
+  <h4>Verdicts</h4>
+  <p><b>Feasible</b>: makes it with room. <b>Tight</b>: makes it, but a delay would sink it. <b>Infeasible</b>: cannot
+    be made legally on your clocks. The notes under a job say why, and anything else worth knowing: a skill it needs,
+    which trade it belongs to, which way home is.</p>
+  <div class="note"><p>The <b>Leaves</b> figure is the best case. The broker's offer is what you really get; the phone shows
+    what that leaves you (Section 8).</p></div>
+</section>
+
+<!-- ============================================================ 7 -->
+<section>
+  <h2><span class="num">7</span>Brokers</h2>
+  <p class="lede">The game has no brokers. They are a layer the app runs on top of the game's jobs. They are fictional
+    companies, apart from the game's own shippers who hire you directly once you have the record for it.</p>
+  <figure><img src="img/directory.png"><figcaption>The broker directory, filtered to the brokers who work your state's region.</figcaption></figure>
+
+  <h3>The directory</h3>
+  <p>Your contact book. Each entry shows the broker's tier, where they are based, which regions they work, how they pay
+    (net days, and the quick-pay fee), their credit rating, their requirement against your record, and your own notes on
+    them, which fill in from your calls (&ldquo;drives a hard bargain&rdquo;, &ldquo;did not pay&rdquo;). The filter
+    shows brokers who work where you are, brokers who will take your call, or everyone you know.</p>
+  <p><b>A broker joins the directory</b> when you reach a city in a region they work. A new career knows the brokers of the
+    home region; drive further and the list grows.</p>
+
+  <h3>Paying your dues: the three tiers</h3>
+  <table>
+    <tr><th>Tier</th><th>Takes you on with</th><th>What you get</th></tr>
+    <tr><td>Starter</td><td>Any authority</td><td>The leftover jobs, the widest margins (they keep about a quarter), net 30 or
+      45, and the shaky payers: credit B, C or even D.</td></tr>
+    <tr><td>Established</td><td>60 days with your authority, 25 loads, 90% on time</td><td>Jobs from the middle of the board,
+      fairer margins, net 30, credit A or B.</td></tr>
+    <tr><td>Premium</td><td>180 days, 80 loads, 96% on time</td><td>The best jobs, the thinnest margins, net 15 or 30, credit A.</td></tr>
+  </table>
+  <p>Calling above your tier is allowed and costs nothing: a short call, &ldquo;call me when you've got some
+    history&rdquo;. The starter tier is where the record is built, and it is always there to fall back on.</p>
+
+  <h3>Specialists</h3>
+  <p>Every region has one specialist broker per trade. They book only their freight, need the trailer for it (and the ADR
+    class for fuel), pay better than a general broker, and want a short record first: 20 days, 10 loads, 90% on time.</p>
+  <table>
+    <tr><th>Trade</th><th>Freight</th><th>Trailer</th></tr>
+    <tr><td>Agriculture</td><td>Grain, feed, fertilizer, produce</td><td>Hopper, dry van, reefer or livestock</td></tr>
+    <tr><td>Fuel and petroleum</td><td>Fuel, oil, chemicals</td><td>Tanker, and ADR for flammable liquids</td></tr>
+    <tr><td>Lumber and forest products</td><td>Logs, sawn lumber, pulp</td><td>Log trailer or flatbed</td></tr>
+    <tr><td>Construction and steel</td><td>Steel, machinery, building supplies</td><td>Flatbed, step deck or lowboy</td></tr>
+  </table>
+  <p>This is how a trailer pays for itself: buying a tanker opens the fuel brokers.</p>
+
+  <h3>The shippers themselves</h3>
+  <p>Eight of the game's own companies hire owner/operators directly to pull their freight: <b>Wallbert</b> and
+    <b>Shop Town</b> (general merchandise), <b>Plaster &amp; Sons</b> and <b>Taylor Construction Group</b> (building),
+    <b>Sunshine Crops</b> and <b>Farmer's Barn</b> (agriculture), and <b>Vortex</b> and <b>Gallon Oil</b> (fuel).</p>
+  <ul>
+    <li>Only their own freight, from their own depots: they offer only that company's jobs off the board.</li>
+    <li>Almost no margin, net 15, credit A, a 1% quick-pay fee.</li>
+    <li>Only for a long, clean record: 120 days, 60 loads, 97% on time, plus the trailer and endorsements their freight needs.</li>
+  </ul>
+
+  <h3>Credit ratings</h3>
+  <table>
+    <tr><th style="width:12%">Credit</th><th>How they really pay</th></tr>
+    <tr><td>A</td><td>On the day.</td></tr>
+    <tr><td>B</td><td>A day or two late.</td></tr>
+    <tr><td>C</td><td>About a week late, sometimes more.</td></tr>
+    <tr><td>D</td><td>Two to three weeks late at best, and four times in ten not at all. Only starter brokers are D.</td></tr>
+  </table>
+
+  <h3>Personalities</h3>
+  <p>Every broker has a fixed personality. It is not printed in the directory: you learn it from the calls.</p>
+  <table>
+    <tr><th>Personality</th><th>On the phone</th></tr>
+    <tr><td>The grinder</td><td>Opens low, moves in small steps, patient. &ldquo;That's the rate.&rdquo;</td></tr>
+    <tr><td>The friend</td><td>Chatty; moves fast for people they trust, slowly for strangers. Will look for something better.</td></tr>
+    <tr><td>The corporate desk</td><td>Will not move on rate; trades terms instead (quick pay, detention). &ldquo;Per our policy.&rdquo;</td></tr>
+    <tr><td>The hustler</td><td>Opens generous to hook you, then disputes detention.</td></tr>
+    <tr><td>The old hand</td><td>Fair from the first offer, little room either way; gives way to a true argument.</td></tr>
+    <tr><td>The rookie</td><td>Over-generous by mistake; nervous; checks with the boss.</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ 8 -->
+<section>
+  <h2><span class="num">8</span>On the phone</h2>
+  <p class="lede">Every booking is a call. <b>The app negotiates; the AI only talks.</b> Every number &mdash; the offer, the
+    most the broker will ever pay, when they hang up &mdash; is worked out by rules. You cannot talk anyone into paying
+    more than the economics allow, and nobody can invent a rate.</p>
+  <p>Press <span class="btn">Call</span> on a directory entry. The call opens at the top of the Brokers tab.</p>
+  <figure><img src="img/phone-counter.png"><figcaption>A starter broker's offer, a counter that leaned on a record not yet earned, and detention agreed instead.</figcaption></figure>
+
+  <h3>What the call shows</h3>
+  <p>The broker's offer, the job, <b>your cost</b> for it, what the offer <b>leaves you</b>, and the verdict. The badge
+    beside the broker's name is their mood: relaxed, then getting short, then about to hang up. Each move you make uses
+    some of their patience.</p>
+
+  <h3>Your moves</h3>
+  <table>
+    <tr><th style="width:22%">Move</th><th>What happens</th></tr>
+    <tr><td><span class="btn">Take it</span></td><td>Booked at the offer. Take the job in the game.</td></tr>
+    <tr><td><span class="btn">Counter</span></td><td>Ask for a figure, with arguments ticked. A broker moves towards it as far as
+      their personality and margin allow; the true arguments buy more.</td></tr>
+    <tr><td><span class="btn">Anything better?</span></td><td>Asks for a different job. Once per call. A friendly broker, or
+      one you have standing with, may find one; a starter usually says take it or leave it.</td></tr>
+    <tr><td><span class="btn">Quick pay?</span></td><td>Paid in days rather than weeks, for the broker's quick-pay fee.</td></tr>
+    <tr><td><span class="btn">Detention?</span></td><td>$40 an hour after 2 hours waiting at either dock, billed from your log (Section 12).</td></tr>
+    <tr><td><span class="btn">Pass</span></td><td>Ends the call. Nothing booked, no harm done.</td></tr>
+  </table>
+  <p>Push past their patience and the broker hangs up: &ldquo;I'll find another truck.&rdquo; Call again later, or call
+    someone else.</p>
+
+  <h3>Arguments, and bluffs</h3>
+  <p>The app knows the truth, and checks every argument against it.</p>
+  <table>
+    <tr><th style="width:18%">Argument</th><th>True when</th></tr>
+    <tr><td>Dead market</td><td>The destination is a thin freight market.</td></tr>
+    <tr><td>Deadhead</td><td>There is a real empty run to the shipper, or out of a dead market.</td></tr>
+    <tr><td>Tight window</td><td>The plan is Tight, or has under three hours of slack.</td></tr>
+    <tr><td>My record</td><td>You have at least 5 loads at 95% or better on time.</td></tr>
+    <tr><td>Or I walk</td><td>Always allowed. On a broker's last nerve it gets their best figure, once.</td></tr>
+  </table>
+  <p><b>A false argument is caught</b>: it costs a point of patience and some standing with that broker, and the call goes
+    on. On a lane (Section 10), deadhead means the pickup is somewhere other than your drop, and a tight window means the
+    pickup is within a day of the offer.</p>
+
+  <h3>Talking, with an AI key</h3>
+  <p>Type in the box and press <span class="btn">Say</span>, in your own words: &ldquo;2,150 and you pay detention, Topeka is
+    dead this week&rdquo;. The app reads what you mean (an amount, an acceptance, arguments, a term) and the broker
+    answers in their own voice with the figure the app chose. The buttons still work alongside it. Without a key, the box
+    takes a plain figure.</p>
+
+  <h3>Brokers remember</h3>
+  <p>Each broker keeps a <b>standing</b> with you, from &minus;100 to 100 (Section 16). It buys a little of their margin,
+    more patience, an easier &ldquo;anything better?&rdquo;, and earlier calls with lanes. Let them down and they cool off;
+    far enough, and they stop taking your calls.</p>
+</section>
+
+<!-- ============================================================ 9 -->
+<section>
+  <h2><span class="num">9</span>Booked: the run</h2>
+  <figure><img src="img/booked.png"><figcaption>Booked. The banner names the job to take in the game; the run panel follows it.</figcaption></figure>
+  <p><b>Take that exact job in the game.</b> The banner says what the broker pays you and what the game will pay at
+    delivery. The game's figure is the shipper's money passing through, not yours (Section 11).</p>
+
+  <h3>Logging the run</h3>
+  <p>The run panel moves through the stages with you. Put the game day and time (and the odometer, where asked) in the
+    boxes, then press the button for what just happened:</p>
+  <table>
+    <tr><th style="width:26%">Button</th><th>When</th></tr>
+    <tr><td><span class="btn">At the shipper</span></td><td>You have arrived at the pickup. The app may say you wait for a door, like the docks in TruckSim Dispatcher.</td></tr>
+    <tr><td><span class="btn">Begin load</span> <span class="btn">End load</span></td><td>Optional; logs the dock time exactly. <b>Log them if you agreed detention</b>: that is what it is billed from.</td></tr>
+    <tr><td><span class="btn">Loaded, pulling out</span></td><td>Hooked and leaving. Put the odometer and, if you like, the weight. This is when the phone may ring.</td></tr>
+    <tr><td><span class="btn">At the receiver</span></td><td>Arrived at the drop.</td></tr>
+    <tr><td><span class="btn">Begin unload</span> <span class="btn">End unload</span></td><td>As at the shipper.</td></tr>
+    <tr><td><span class="btn">Delivered</span></td><td>Done, with the odometer. Raises the invoice and the money moves (Section 11).</td></tr>
+  </table>
+  <p>Every run you log teaches the planner your real speed, your roads and each dock's times, as in TruckSim Dispatcher.</p>
+  <figure><img src="img/run.png"><figcaption>The run panel with both drawers open: report your clocks and position, or log a break, rest or fuel stop.</figcaption></figure>
+
+  <h3>From here</h3>
+  <p>Open <b>Report your clocks and where you are</b>, type your hours left and the city you are in (or paste a GDC recap
+    screenshot, with an AI key), and press <span class="btn">Save, and re-plan from here</span>. The green, amber or red box
+    then says whether you still make it: when you reach the gate, when the window shuts, how much to spare, and the rests
+    still to take.</p>
+
+  <h3>Breaks, rests and fuel</h3>
+  <p>Log them under <b>A break, a rest, or fuel</b>. A break or a rest is also when you may <b>ring a broker</b> to line up
+    the next load (Section 10).</p>
+
+  <h3>Handing a load back</h3>
+  <p><span class="btn">Hand it back</span> on the booked banner cancels the booking. It goes on your record as a
+    cancellation and costs standing with that broker. Cancel the job in the game too.</p>
+</section>
+
+<!-- ============================================================ 10 -->
+<section>
+  <h2><span class="num">10</span>Lanes: the next load</h2>
+  <p class="lede">The game offers jobs only in cities you have discovered, and nobody wants to screenshot a dozen boards to
+    shop for work. So a broker does not book you a game job ahead of time. They book a <b>lane</b>, and the game
+    supplies the job when you get there.</p>
+
+  <h3>A lane</h3>
+  <p>A pickup city, a pickup window, a region to deliver into, a distance band, and a <b>rate per mile</b>. For example:
+    pick up in Salina, KS from Day 3 14:01, into the Plains &amp; Southwest, 190&ndash;320 mi, at $3.84/mi.</p>
+  <ul>
+    <li>The pickup is where your current run ends.</li>
+    <li>The band never goes past your Long Distance limit.</li>
+    <li>If your cycle will be under 11 hours when you are empty, the pickup is after a 34-hour restart.</li>
+    <li>When home is due within five days, the lane heads home.</li>
+  </ul>
+
+  <h3>Inbound: the phone rings</h3>
+  <p>Once you are loaded and within about a day and a half of empty, a broker who works your destination's region may
+    ring. <b>Not every run gets a call.</b> The chance starts around even, and is higher the better your standing with
+    that broker.</p>
+  <figure><img src="img/ringing.png"></figure>
+  <p><span class="btn">Answer</span> opens the call on the Brokers tab. <span class="btn">Let it ring</span> lets the lane go.</p>
+  <figure><img src="img/phone-lane.png"><figcaption>A lane call: the offer is for the middle of the band, booked as a rate per mile.</figcaption></figure>
+  <p>Negotiate it like any call. &ldquo;At your cost&rdquo; is what the middle of the band leaves you at your cost per mile.</p>
+
+  <h3>Outbound: ringing round</h3>
+  <p>On a run, you can call a broker yourself, but <b>only from a break or a rest</b>: not from behind the wheel. Log the
+    break first, then press <span class="btn">Call</span>. The broker offers a lane out of where this run ends. It is
+    based on the lane, not on any board.</p>
+
+  <h3>At the pickup</h3>
+  <figure><img src="img/lane.png"><figcaption>The booked lane, waiting for its pickup.</figcaption></figure>
+  <ol>
+    <li>Deliver the load you are on.</li>
+    <li>At the pickup city, paste that city's Freight Market board.</li>
+    <li>The app marks the jobs that <b>fit the lane</b>: delivering into the right region, inside the distance band, able to
+      make their window. Press <span class="btn">Take for the lane</span> on one.</li>
+    <li>It is booked at the lane's rate on the job's miles, <b>never above the game's pay</b>, and the run opens.</li>
+  </ol>
+
+  <h3>When nothing fits</h3>
+  <ul>
+    <li><b>Wait.</b> Game boards refresh. Take a break or a rest and paste the board again.</li>
+    <li><span class="btn">Nothing fits</span> tells the broker. They cancel the lane, and a broker with A or B credit pays a
+      <b>TONU</b> (truck ordered, not used) of $150. A poorer one pays nothing.</li>
+    <li><span class="btn">Call it off</span> is you cancelling. The broker remembers.</li>
+  </ul>
+
+  <h3>Home time</h3>
+  <p>On the last day of a full home time, a broker who works your home region rings with a load out of home.</p>
+</section>
+
+<!-- ============================================================ 11 -->
+<section>
+  <h2><span class="num">11</span>Money</h2>
+  <p class="lede">At delivery the game pays its full figure into the game bank. None of it is yours until the broker pays,
+    and then only the rate you booked. This app keeps that honest, using the Companion App's accounts.</p>
+
+  <h3>Three accounts</h3>
+  <table>
+    <tr><th style="width:22%">Account</th><th>Where</th><th>Holds</th></tr>
+    <tr><td>Game bank</td><td>ATS</td><td><b>Only money you are allowed to spend.</b></td></tr>
+    <tr><td>Broker holding</td><td>Companion App</td><td>The game's pay for every delivery, waiting for the broker to pay.
+      Create this account in the Companion App.</td></tr>
+    <tr><td>Your account</td><td>Companion App</td><td>Your own money.</td></tr>
+  </table>
+  <p><b>This app never moves money.</b> It lists what should move, which way and when. You move it with the Companion
+    App's transfer screen, then press <span class="btn">I've moved it</span>.</p>
+
+  <h3>A load through the accounts</h3>
+  <div class="flow">
+    <div><b>1. Delivered</b>The game pays, say, $1,010 into the game bank.</div>
+    <div class="a"><b>2. Game closed</b>Move all $1,010 to Broker holding. Mark it moved.</div>
+    <div><b>3. Net 30</b>The invoice waits in Owed to you.</div>
+    <div class="g"><b>4. Paid</b>Move your $735 rate from Broker holding to your account.</div>
+    <div><b>5. The rest</b>$275 is the broker's share. It stays in Broker holding.</div>
+  </div>
+  <div class="warn"><h4>Moves out of the game bank need the game closed</h4>
+    <p>The Companion App can only move money in or out of the game while ATS is closed. The app sees when ATS is running,
+      and the <span class="btn">I've moved it</span> button for those moves waits until it is closed. Moves between the
+      Companion App's own accounts do not need the game closed.</p></div>
+  <figure><img src="img/money.png"><figcaption>The Money tab after the first delivery: the game's pay waiting to move to Broker holding, and the rate the broker owes.</figcaption></figure>
+
+  <h3>Game bank: allowed to spend</h3>
+  <p>Type the balance the game shows and press <span class="btn">Update</span>. From then on the app keeps it current: up by
+    each delivery's pay, down by each move you mark done. <b>Allowed to spend</b> is that balance less shipper money still
+    waiting to move. That is the figure in the top bar.</p>
+  <p>The app cannot see you spend in the game, on fuel or a repair. Read the balance again after spending.</p>
+
+  <h3>Broker holding</h3>
+  <table>
+    <tr><th style="width:24%">Figure</th><th>Meaning</th></tr>
+    <tr><td>Should hold</td><td>What the account should have in it, from the moves you have marked.</td></tr>
+    <tr><td>Waiting on brokers</td><td>Game pay for loads whose invoices are not yet paid.</td></tr>
+    <tr><td>Brokers' share</td><td>What is left of paid loads after your rate: the brokers' money. It stays.</td></tr>
+    <tr><td>Yours to move out</td><td>Rates paid and not yet moved to your account.</td></tr>
+  </table>
+  <p>Detention and TONUs are paid <b>out of the brokers' share</b> already in Broker holding, as far as it covers them. No
+    money ever comes from outside the game.</p>
+</section>
+
+<!-- ============================================================ 12 -->
+<section>
+  <h2><span class="num">12</span>Getting paid</h2>
+  <p>Every delivered load becomes an <b>invoice</b> in <b>Owed to you</b> on the Money tab: the rate, any detention, the
+    game's pay, the due date, and its status.</p>
+  <table>
+    <tr><th style="width:16%">Status</th><th>Meaning</th><th style="width:28%">You can</th></tr>
+    <tr><td>Open</td><td>Not yet due.</td><td><span class="btn">Factor</span></td></tr>
+    <tr><td>Overdue</td><td>More than a day past due.</td><td><span class="btn">Factor</span> <span class="btn">Chase</span> <span class="btn">Write off</span></td></tr>
+    <tr><td>Paid</td><td>The broker paid. Move the rate to your account.</td><td>&mdash;</td></tr>
+    <tr><td>Factored</td><td>Sold to a factor; the money came early.</td><td>&mdash;</td></tr>
+    <tr><td>Collections</td><td>Handed to a collector. Expect half, in about two weeks.</td><td><span class="btn">Write off</span></td></tr>
+    <tr><td>WrittenOff</td><td>Given up on.</td><td>&mdash;</td></tr>
+  </table>
+
+  <h3>Factoring</h3>
+  <p>Sell an invoice for cash now, less a fee by the broker's credit: <b>2.5% at A, 3.5% at B, 6% at C</b>. Nobody buys a D.
+    You move the rate less the fee out of Broker holding straight away; the fee stays in Broker holding. When the broker
+    pays later, it is the factor's.</p>
+
+  <h3>Chasing a broker</h3>
+  <p>An overdue invoice can be chased. A broker who means to pay pays sooner. One who does not says they will look into it;
+    chase again and it goes to <b>collections</b>, which recovers half the rate in about two weeks. Or <b>write it off</b>:
+    the money is gone, the game's pay for it stays in Broker holding (none of it was ever yours), and the directory notes
+    that the broker did not pay.</p>
+
+  <h3>Detention</h3>
+  <p>Agreed on the call, at $40 an hour after 2 hours. It is billed from the dock times you logged (Section 9): arrival and
+    begin/end load at the shipper, arrival and begin/end unload at the receiver. Nothing logged, nothing billed.</p>
+  <p>Some brokers, the hustlers especially, <b>dispute</b> it. Press <span class="btn">Argue detention</span>: the times
+    in your log win it. It is paid with the invoice, out of the brokers' share in Broker holding.</p>
+
+  <h3>How long is net 30?</h3>
+  <p>Thirty game days. At the game's pace that is a long time, which is the point: owner/operators fail on cash flow, not
+    profit. Quick pay and factoring are the ways round it, at a price.</p>
+</section>
+
+<!-- ============================================================ 13 -->
+<section>
+  <h2><span class="num">13</span>Home life</h2>
+  <p class="lede">In the US nothing sends a driver home, and an owner/operator who never goes home loses nothing by it.
+    This app does not support the driver who lives in the truck: every driver has a home, and has to go back to it.</p>
+  <figure><img src="img/home.png"><figcaption>The Home tab.</figcaption></figure>
+
+  <h3>The promise</h3>
+  <p>How often you will be home, and for how long. It starts at <b>every 14 days, for 3</b>. Change it on the Home tab, but
+    not every week: each change costs a little.</p>
+
+  <h3>The score</h3>
+  <table>
+    <tr><th style="width:44%">What</th><th>Effect</th></tr>
+    <tr><td>A new career</td><td>Starts at 80, at home</td></tr>
+    <tr><td>Each day out, inside your promise</td><td>&minus;2</td></tr>
+    <tr><td>Each day out, past your promise</td><td>&minus;5</td></tr>
+    <tr><td>Each day at home</td><td>+10 (+20 over the holidays)</td></tr>
+    <tr><td>A full home time, as promised</td><td>+10 more</td></tr>
+    <tr><td>A date at home, made</td><td>+15</td></tr>
+    <tr><td>A date at home, missed</td><td>&minus;25</td></tr>
+  </table>
+
+  <h3>Dates at home</h3>
+  <p>Two things are always on the calendar, each known at least a week ahead: a birthday, a ballgame, an anniversary.
+    Be home on the day to make it. A missed one is replaced by a new one.</p>
+
+  <h3>Home calls</h3>
+  <p>Below 40, the phone rings from home: something has come up, be home by a set time. It comes mid-run, so the load on
+    the truck is either delivered on the way or <b>handed back</b>, a cancellation on your record. Getting home in time
+    gives back 10; missing it costs 20.</p>
+
+  <h3>Hitting bottom</h3>
+  <p>At 0, the driver goes home <b>for a week</b> whatever is booked. No broker will book you until then. Nothing earns,
+    and the truck's costs keep coming due in the Companion App.</p>
+
+  <h3>The holidays</h3>
+  <p>Thanksgiving week, Christmas and New Year fall where they really do. Freight goes quiet and brokers keep about 5% more
+    of it, and days at home count double: the natural time for a long home time.</p>
+</section>
+
+<!-- ============================================================ 14 -->
+<section>
+  <h2><span class="num">14</span>Truck, trailer and clocks</h2>
+  <figure><img src="img/truck.png"><figcaption>The Truck &amp; clocks tab.</figcaption></figure>
+  <h3>Where and when, and the clocks</h3>
+  <p>Correct the app here whenever it is out of step with the game: the city, the game day and time, the odometer, the fuel,
+    and your hours left on the drive, shift, break and cycle clocks. The planner works from these.</p>
+  <h3>Owning a trailer</h3>
+  <p>Bought a trailer in the game? Choose its kind, put its plate or ID and year, and press
+    <span class="btn">I own this trailer</span>. It goes behind the truck:</p>
+  <ul>
+    <li>the walkthrough and the board talk about the <b>Cargo Market</b>;</li>
+    <li>dock times follow the trailer type;</li>
+    <li>specialist brokers for its trade will talk to you (Section 7).</li>
+  </ul>
+  <p><span class="btn">Run power-only</span> drops it and goes back to the shipper's trailers off the Freight Market;
+    <span class="btn">Hook my trailer</span> takes it again.</p>
+</section>
+
+<!-- ============================================================ 15 -->
+<section>
+  <h2><span class="num">15</span>Settings</h2>
+  <figure class="md"><img src="img/settings.png"></figure>
+  <h3>All-in cost per mile</h3>
+  <p>Everything it costs to run a mile: fuel, tolls, the truck note, insurance, maintenance and living on the road. Take it
+    from the Companion App's records: what you spent over a month, divided by the miles you ran. Every load and every offer
+    is judged on this one figure.</p>
+  <h3>Skills</h3>
+  <p>Update them when you put a point into a skill or earn an ADR class. Brokers and the board follow at once: a new Long
+    Distance level is a reason to ring round, because longer lanes pay better.</p>
+  <h3>Long Distance limits</h3>
+  <p>The game only offers jobs as long as your Long Distance skill allows, so no broker books past it. The defaults are the
+    vanilla game's:</p>
+  <table>
+    <tr><th>Level</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th></tr>
+    <tr><td>Longest job</td><td>250 mi</td><td>400 mi</td><td>650 mi</td><td>1,000 mi</td><td>1,600 mi</td><td>2,500 mi</td><td>Anywhere</td></tr>
+  </table>
+  <p><b>Economy mods change these</b>, GDC's among them. Set each level to match yours; a blank means anywhere.
+    <span class="btn">Back to the game's defaults</span> restores the table.</p>
+  <h3>AI</h3>
+  <p>Your Anthropic API key (Section 2). Stored in your career file on this PC only. Paste a new one to replace it.</p>
+</section>
+
+<!-- ============================================================ 16 -->
+<section>
+  <h2><span class="num">16</span>Your record and standing</h2>
+  <h3>Your record as a carrier</h3>
+  <p>What every broker looks at before taking you on, shown at the top of the directory: <b>loads delivered</b>,
+    <b>percentage on time</b>, and <b>days with your own authority</b>. Cancellations count against you. The tier
+    requirements in Section 7 are measured against it.</p>
+  <h3>Standing with each broker</h3>
+  <table>
+    <tr><th style="width:50%">What</th><th>Standing</th></tr>
+    <tr><td>Delivered on time</td><td>+5</td></tr>
+    <tr><td>Delivered late</td><td>&minus;10</td></tr>
+    <tr><td>Booking a load with them</td><td>+2</td></tr>
+    <tr><td>Caught in a false argument</td><td>&minus;5</td></tr>
+    <tr><td>Pushing until they hang up</td><td>&minus;3</td></tr>
+    <tr><td>Calling off a booked lane</td><td>&minus;10</td></tr>
+    <tr><td>Handing a booked load back</td><td>&minus;15</td></tr>
+  </table>
+  <h4>What standing buys</h4>
+  <ul>
+    <li>Up to two points of the broker's margin, either way.</li>
+    <li>Above 30, an extra point of patience on every call. From 20, &ldquo;anything better?&rdquo; works even with a starter.</li>
+    <li>A better chance of the phone ringing with a lane, and the first look when several brokers work the region.</li>
+    <li>Below &minus;30 they stop ringing you; at &minus;50 they will not take your calls.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 17 -->
+<section>
+  <h2><span class="num">17</span>Quick reference</h2>
+  <table>
+    <tr><th style="width:44%">Rule</th><th>Number</th></tr>
+    <tr><td>A broker's rate</td><td>Never above the game's pay for the job</td></tr>
+    <tr><td>Starter / established / premium requirement</td><td>None / 60 days, 25 loads, 90% / 180 days, 80 loads, 96%</td></tr>
+    <tr><td>Specialists</td><td>20 days, 10 loads, 90%, and the trailer for the trade</td></tr>
+    <tr><td>Shippers hiring directly</td><td>120 days, 60 loads, 97%, and the trailer for their freight</td></tr>
+    <tr><td>Quick pay fee</td><td>2&ndash;5% at a broker, 1% at a shipper</td></tr>
+    <tr><td>Detention</td><td>$40/h after 2 h, billed from the dock times logged</td></tr>
+    <tr><td>TONU when nothing fits a lane</td><td>$150 from an A or B broker; nothing from C or D</td></tr>
+    <tr><td>Factoring fee</td><td>A 2.5%, B 3.5%, C 6%, D not bought</td></tr>
+    <tr><td>Overdue</td><td>More than a day past due</td></tr>
+    <tr><td>Collections</td><td>Half the rate, about two weeks later</td></tr>
+    <tr><td>Inbound lane call</td><td>Once loaded, within about 36 h of empty; not every run</td></tr>
+    <tr><td>Ringing round</td><td>From a break or a rest only</td></tr>
+    <tr><td>Restart before a lane</td><td>When the cycle will be under 11 h at empty: 34 h first</td></tr>
+    <tr><td>Home life</td><td>Starts 80; &minus;2/day out, &minus;5 past the promise, +10/day home</td></tr>
+    <tr><td>Home calls</td><td>Below 40</td></tr>
+    <tr><td>Hitting bottom</td><td>At 0: home for 7 days, no bookings</td></tr>
+    <tr><td>The holidays</td><td>Brokers keep 5% more; home counts double</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ 18 -->
+<section>
+  <h2><span class="num">18</span>Questions</h2>
+  <h4>A broker offered me a worse job than the best one on the board.</h4>
+  <p>That is the starter tier working as meant. Ask &ldquo;anything better?&rdquo;, try another broker, or build the record
+    that gets you to established brokers.</p>
+  <h4>The phone never rang on my last run.</h4>
+  <p>Not every run gets a call. The broker who rings has to work the region you are delivering into, and has to know you:
+    on your first runs into a new region you may not know anyone there yet. Ring round yourself from your next break.</p>
+  <h4>A broker will not take my call.</h4>
+  <p>The directory says why: a record you do not have yet, a trailer or skill missing, standing too low, or home life at the
+    bottom.</p>
+  <h4>&ldquo;Pull over&rdquo; when I call.</h4>
+  <p>You are on a run. Log a break or a rest, then call.</p>
+  <h4>The <span class="btn">I've moved it</span> button is greyed out.</h4>
+  <p>That move is out of the game bank and ATS is running. Close the game, make the move in the Companion App, and mark it.</p>
+  <h4>The game bank figure is wrong.</h4>
+  <p>The app cannot see you spend in the game. Type the balance in again on the Money tab.</p>
+  <h4>Nothing on the board fits my lane.</h4>
+  <p>Take a break or a rest and paste the board again; boards refresh. If still nothing, press <b>Nothing fits</b>.</p>
+  <h4>The planner thinks I am somewhere else.</h4>
+  <p>Correct the city, time and clocks on the Truck &amp; clocks tab, or in the run panel's drawer.</p>
+  <h4>Can I bring my TruckSim Dispatcher career across?</h4>
+  <p>Not yet. The two apps keep separate careers.</p>
+</section>
+
+</body>
+</html>

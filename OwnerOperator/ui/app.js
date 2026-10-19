@@ -4,6 +4,13 @@
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// A game time as the game shows it: "Day 3 17:00", not the 2000-01-03 the career file counts from.
+const gt = (v) => {
+  const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d:\d\d)/.exec(v || '');
+  if (!m) return v || '';
+  const day = Math.round((Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(2000, 0, 1)) / 86400000) + 1;
+  return `Day ${day} ${m[4]}`;
+};
 const hhmm = (h) => { if (h == null) return '--'; const m = Math.round(h * 60); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
 
 async function api(path, method = 'GET', body) {
@@ -133,7 +140,7 @@ function firstLoadWalkthrough() {
         : `<b>In the game</b>, at your home garage in ${esc(S.profile.homeCity)}, open the <b>Freight Market</b> and
         take a screenshot of the board. With no trailer of your own it is the Freight Market, not the Cargo Market.`)}
       ${li(2, '<b>Paste the screenshot below</b> (Ctrl+V), check what was read, and add it.')}
-      ${li(3, `<b>Call a starter broker</b> on the <a href="#" data-goto="brokers">Brokers</a> tab. The broker reads the board
+      ${li(3, `<b>Call a starter broker</b> on the <a href="#" class="lnk" data-goto="brokers">Brokers</a> tab. The broker reads the board
         and makes the offer: which job, and at what rate. New authorities get the leftovers.`)}
       ${li(4, '<b>Negotiate, take it, or try another broker.</b> The ranked board below is your own view of what is really on offer.')}
       ${li(5, '<b>Take that job in the game</b>, at the rate you booked.')}
@@ -150,7 +157,7 @@ function runPanel() {
     <label>Time<input id="rn-time" placeholder="HH:MM" value="${esc(time)}"></label>`;
   const note = (txt) => txt ? `<p class="hint">${esc(txt)}</p>` : '';
   return `<div class="panel"><div class="panel-head"><h2>The run: ${esc(t.number)}</h2>
-      <span class="sub">Due ${esc((t.dueGameTime || '').replace('T', ' '))}. Log it as you drive, and the planner learns your roads.</span></div>
+      <span class="sub">Due ${esc(gt(t.dueGameTime || ''))}. Log it as you drive, and the planner learns your roads.</span></div>
     <div class="grid4">${when}
       <label>Odometer<input id="rn-odo" type="number" value="${S.status.odometer}"></label>
       <label>Weight (lb)<input id="rn-wt" type="number" placeholder="when loaded"></label></div>
@@ -164,7 +171,7 @@ function runPanel() {
     </div>
     ${stage === 'loading' ? note(t.shipperCallNote) : ''}${stage === 'receiver' ? note(t.receiverCallNote) : ''}
     ${t.fromHere ? fromHereView(t.fromHere) : ''}
-    ${!S.lane && t.loadedReported ? `<p class="hint">On a break or a rest? Ring a broker on the <a href="#" data-goto="brokers">Brokers</a> tab to line up the next load:
+    ${!S.lane && t.loadedReported ? `<p class="hint">On a break or a rest? Ring a broker on the <a href="#" class="lnk" data-goto="brokers">Brokers</a> tab to line up the next load:
       they offer a lane out of where this one ends.</p>` : ''}
     <details ${t.fromHere && t.fromHere.verdict !== 'Feasible' ? 'open' : ''}><summary>Report your clocks and where you are</summary>
       <div class="grid4">
@@ -188,7 +195,7 @@ function runPanel() {
       </div>
       <div class="row-actions"><button class="btn" id="rn-log">Log it</button></div>
     </details>
-    ${ev.length ? `<div class="log">${ev.map((e) => `<div><span class="badge mute">${esc(e.kind)}</span> ${esc(e.gameTime.replace('T', ' '))}${e.endGameTime ? ` to ${esc(e.endGameTime.replace('T', ' '))}` : ''} ${e.city ? esc(e.city) + ', ' + esc(e.state) : ''} ${e.gallons ? e.gallons + ' gal' : ''}</div>`).join('')}</div>` : ''}
+    ${ev.length ? `<div class="log">${ev.map((e) => `<div><span class="badge mute">${esc(e.kind)}</span> ${esc(gt(e.gameTime))}${e.endGameTime ? ` to ${esc(gt(e.endGameTime))}` : ''} ${e.city ? esc(e.city) + ', ' + esc(e.state) : ''} ${e.gallons ? e.gallons + ' gal' : ''}</div>`).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -196,11 +203,11 @@ function fromHereView(f) {
   const cls = f.verdict === 'Feasible' ? 'ok' : f.verdict === 'Tight' ? 'warn' : 'bad';
   const msgs = [...(f.blockers || []), ...(f.warnings || [])];
   return `<div class="callout ${cls}"><h4>From here: ${esc(f.verdict)}</h4>
-    <p>At the gate ${esc((f.projectedDockStartGameTime || f.projectedArrivalGameTime || '').replace('T', ' '))}, window shuts
-      ${esc((f.dueGameTime || '').replace('T', ' '))}: ${f.slackHours >= 0 ? hhmm(f.slackHours) + ' to spare' : '<b>' + hhmm(-f.slackHours) + ' late</b>'}.
+    <p>At the gate ${esc(gt(f.projectedDockStartGameTime || f.projectedArrivalGameTime || ''))}, window shuts
+      ${esc(gt(f.dueGameTime || ''))}: ${f.slackHours >= 0 ? hhmm(f.slackHours) + ' to spare' : '<b>' + hhmm(-f.slackHours) + ' late</b>'}.
       ${f.restsRequired ? `${f.restsRequired} rest(s) still to take.` : ''}</p>
     ${msgs.length ? `<ul class="reasons">${msgs.slice(0, 4).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
-    <details><summary>The plan</summary>${(f.timeline || []).map((x) => `<div class="hint">${esc(x.startGameTime.replace('T', ' '))} ${esc(x.label)} (${hhmm(x.hours)})</div>`).join('')}</details>
+    <details><summary>The plan</summary>${(f.timeline || []).map((x) => `<div class="hint">${esc(gt(x.startGameTime))} ${esc(x.label)} (${hhmm(x.hours)})</div>`).join('')}</details>
   </div>`;
 }
 
@@ -267,8 +274,8 @@ function laneBanner() {
   if (!l) return '';
   const fits = (S.laneFits || []).length;
   return `<div class="callout info"><h4>Lane ${esc(l.number)} with ${esc(l.brokerName)}</h4>
-    <p>Pick up in <b>${esc(l.pickupCity)}, ${esc(l.pickupState)}</b> from ${esc(l.pickupFromGameTime.replace('T', ' '))} to
-      ${esc(l.pickupToGameTime.replace('T', ' '))}, delivering into the <b>${esc(l.destRegion)}</b>, ${l.minMiles}-${l.maxMiles} mi,
+    <p>Pick up in <b>${esc(l.pickupCity)}, ${esc(l.pickupState)}</b> from ${esc(gt(l.pickupFromGameTime))} to
+      ${esc(gt(l.pickupToGameTime))}, delivering into the <b>${esc(l.destRegion)}</b>, ${l.minMiles}-${l.maxMiles} mi,
       at <b>${money(l.ratePerMile)}/mi</b> (never above the game's pay).</p>
     <p>${S.booking ? 'Deliver the load you are on first.' : fits ? `${fits} job(s) on the board fit it: take one below.`
       : `At ${esc(l.pickupCity)}, paste that city's Freight Market board and the app marks the jobs that fit.`}</p>
@@ -281,8 +288,8 @@ function bookingBanner() {
   if (!k) return '';
   const l = k.load;
   return `<div class="callout ok"><h4>Booked: ${esc(k.number)} with ${esc(k.brokerName)}</h4>
-    <p><b>Take this job in the game:</b> ${esc(l.cargo)} from ${esc(l.shipper || l.originCity)} in ${esc(l.originCity)}
-      to ${esc(l.receiver || l.destCity)} in ${esc(l.destCity)}, ${esc(l.destState)}.</p>
+    <p><b>Take this job in the game:</b> ${esc(l.cargo)} from ${l.shipper ? esc(l.shipper) + ' in ' : ''}${esc(l.originCity)}
+      to ${l.receiver ? esc(l.receiver) + ' in ' : ''}${esc(l.destCity)}, ${esc(l.destState)}.</p>
     <p>The broker pays <b>${money(k.rate)}</b>${k.quickPay ? ' on quick pay' : `, net ${k.daysToPay}`}. The game will pay
       ${money(k.gamePay)} at delivery: that is the shipper's money passing through, not yours.
       ${k.detentionPerHour ? `Detention ${money(k.detentionPerHour)}/h after ${k.detentionAfterHours} h.` : ''}</p>
@@ -506,7 +513,7 @@ function phoneView() {
     ${c.lane && open ? `<div class="figs">
       <div><div class="k">Offer</div><div class="money">${money(c.offer)}</div></div>
       <div><div class="k">Pick up</div><div class="money">${esc(c.lane.pickupCity)}, ${esc(c.lane.pickupState)}</div></div>
-      <div><div class="k">From</div><div class="money">${esc(c.lane.pickupFromGameTime.replace('T', ' '))}</div></div>
+      <div><div class="k">From</div><div class="money">${esc(gt(c.lane.pickupFromGameTime))}</div></div>
       <div><div class="k">Into</div><div class="money">${esc(c.lane.destRegion)}</div></div>
       <div><div class="k">Distance</div><div class="money">${c.lane.minMiles}-${c.lane.maxMiles} mi</div></div>
       <div><div class="k">At your cost</div><div class="money">${money(c.offer - S.settings.costPerMile * (c.lane.minMiles + c.lane.maxMiles) / 2)}</div></div>
@@ -591,7 +598,7 @@ function moneyView() {
       <div><div class="k">Not yours: to move</div><div class="money ${g.notYours > 0 ? 'neg' : ''}">${money(g.notYours)}</div></div>
     </div>
     <p class="hint">${g.reported == null ? 'Tell the app what the game bank shows, and it keeps track from there.'
-      : `Read ${esc(g.reportedGameTime.replace('T', ' '))} at ${money(g.reported)}, kept current since by deliveries and the moves you mark done. Spending in the game is not seen: read it again after you spend.`}</p>
+      : `Read ${esc(gt(g.reportedGameTime))} at ${money(g.reported)}, kept current since by deliveries and the moves you mark done. Spending in the game is not seen: read it again after you spend.`}</p>
     <div class="sayrow"><input id="gb-bal" type="number" step="0.01" placeholder="Game bank balance, as the game shows it">
       <button class="btn" id="gb-save">Update</button></div>
   </div>
@@ -619,7 +626,7 @@ function moneyView() {
       <tbody>${inv.map((i) => `<tr><td>${esc(i.number)}</td><td>${esc(i.bookingNumber)}</td><td>${esc(i.brokerName)} <span class="hint">${esc(i.credit)}</span></td>
         <td>${money(i.amount)}</td>
         <td>${i.detentionAmount ? `${money(i.detentionAmount)} <span class="hint">${esc(i.detentionStatus)}</span>` : ''}</td>
-        <td>${money(i.gamePay)}</td><td>${esc(i.dueGameTime.replace('T', ' '))}</td>
+        <td>${money(i.gamePay)}</td><td>${esc(gt(i.dueGameTime))}</td>
         <td><span class="badge ${i.status === 'Paid' ? 'ok' : i.status === 'WrittenOff' ? 'bad' : 'warn'}">${esc(i.status)}</span></td>
         <td>${['Open', 'Overdue'].includes(i.status) ? `<button class="btn tiny" data-inv="factor" data-id="${esc(i.id)}">Factor</button>` : ''}
           ${i.status === 'Overdue' ? `<button class="btn tiny" data-inv="chase" data-id="${esc(i.id)}">Chase</button>` : ''}
@@ -663,9 +670,9 @@ function homeBanner() {
   const ring = ringBanner();
   if (ring) return ring;
   if (h.bottomUntil) return `<div class="callout bad"><h4>Home life has hit bottom</h4>
-    <p>Go home. No broker will book you until ${esc(h.bottomUntil.replace('T', ' '))}, and the truck's costs keep running.</p></div>`;
+    <p>Go home. No broker will book you until ${esc(gt(h.bottomUntil))}, and the truck's costs keep running.</p></div>`;
   if (h.call) return `<div class="callout bad"><h4>Home called</h4><p>${esc(h.call.reason)} Be home by
-    ${esc(h.call.beHomeByGameTime.replace('T', ' '))}.</p>
+    ${esc(gt(h.call.beHomeByGameTime))}.</p>
     ${S.booking ? `<p>You are booked on ${esc(S.booking.number)}. Deliver it on the way if you can, or hand it back: that is a
       cancellation on your record with ${esc(S.booking.brokerName)}.</p>
       <div class="row-actions"><button class="btn danger" id="hb-go">Hand ${esc(S.booking.number)} back</button></div>` : ''}</div>`;
@@ -692,7 +699,7 @@ function wireHomeBanner() {
 function homeView() {
   const h = S.home;
   return `<div class="panel"><div class="panel-head"><h2>Home life</h2><span class="sub">${h.score} of 100: ${esc(h.band)}</span></div>
-      <div class="meter"><div class="bar" style="width:${h.score}%"></div></div>
+      <div class="lifebar"><div class="fill" style="width:${h.score}%"></div></div>
       <p>${h.atHome ? `You are home in ${esc(S.profile.homeCity)}.` : `Out ${h.daysOut} day(s). ${h.dueHomeInDays >= 0
         ? `Due home in ${h.dueHomeInDays} day(s).` : `<b>${-h.dueHomeInDays} day(s) past your promise.</b>`}`}</p>
       <p class="hint">It drops a little each day out, faster past your promise, and recovers at home. A full home time as promised
