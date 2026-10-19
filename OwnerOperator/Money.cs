@@ -87,8 +87,17 @@ public static class Ledger
         var wasTime = s.Status.GameTime;
         var wasHome = HomeLife.AtHome(c);
 
-        // The window is the time to be there by, the same way the company-driver app grades it.
-        k.Late = GameClock.TryParse(k.BookedGameTime) is { } from && at > from.AddHours(k.Load.DeadlineHours);
+        // The window is the time to be there by, the same way the company-driver app grades it. With a trip on the
+        // log, Core closes it and judges it on the arrival it logged; without one, on the time given here.
+        var findings = new List<string>();
+        if (Run.Trip(c, k) is { } trip)
+        {
+            var (said, lateByClock) = Run.Close(c, trip, at, r.Odometer);
+            findings = said;
+            k.Late = lateByClock ?? (GameClock.TryParse(k.BookedGameTime) is { } f0 && at > f0.AddHours(k.Load.DeadlineHours));
+        }
+        else
+            k.Late = GameClock.TryParse(k.BookedGameTime) is { } from && at > from.AddHours(k.Load.DeadlineHours);
         k.Status = BookingStatus.Delivered;
 
         // The truck is where the load went.
@@ -130,6 +139,7 @@ public static class Ledger
               $"The game paid {Units.Money(k.GamePay)} for {k.Number}. Move all of it to Broker holding in the Companion App: " +
               $"it is the shipper's money, not yours until {k.BrokerName} pays. Close the game first.", k.Number, needsGameClosed: true);
 
+        foreach (var f in findings) OoStore.Log(c, "run", f, k.Number);
         OoStore.Log(c, "money", $"{k.Number} delivered{(k.Late ? " late" : " on time")} at {k.Load.DestCity}, {k.Load.DestState}. " +
                                 $"{invoice.Number} to {k.BrokerName} for {Units.Money(invoice.Amount)}, due {GameClock.Pretty(invoice.DueGameTime)}.", k.Number);
         Advance(c);
@@ -175,6 +185,12 @@ public static class Ledger
         var k = Calls.ActiveBooking(c) ?? throw new InvalidOperationException("Nothing is booked to hand back.");
         k.Status = BookingStatus.Cancelled;
         k.OnCarrier = true;
+        if (Run.Trip(c, k) is { } trip)
+        {
+            trip.Status = "Cancelled";
+            trip.CancelReason = why;
+            c.Game.Status.ActiveTripId = "";
+        }
         if (c.Brokers.FirstOrDefault(b => b.Id == k.BrokerId) is { } broker)
             broker.Standing = Math.Max(-100, broker.Standing - 15);
         OoStore.Log(c, "broker", $"{k.Number} handed back to {k.BrokerName}{(string.IsNullOrWhiteSpace(why) ? "" : $": {why}")}. " +

@@ -28,6 +28,8 @@ public class Booking
     public double DetentionAfterHours { get; set; }
     public int DaysToPay { get; set; }
     public string BookedGameTime { get; set; } = "";
+    /// <summary>The run on Core's trip log. See <see cref="Run"/>.</summary>
+    public string TripId { get; set; } = "";
     public string Status { get; set; } = BookingStatus.Booked;
     public bool Late { get; set; }
     /// <summary>Cancelled, and the carrier's fault.</summary>
@@ -366,6 +368,7 @@ public static class Calls
             BookedGameTime = c.Game.Status.GameTime,
         };
         c.Bookings.Add(booking);
+        Run.Open(c, booking);
         call.Status = "Booked";
         call.BookingId = booking.Id;
         call.Offer = rate;

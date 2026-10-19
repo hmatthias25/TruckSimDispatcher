@@ -83,6 +83,8 @@ public static class Onboarding
         s.Trucks = new() { truck };
 
         s.Driver.Name = name;
+        // Core's shipper and receiver rolls are seeded off the driver's id.
+        s.Driver.EmployeeId = $"OO-{BrokerBook.Stable($"{name}|{city}|{state}|{s.Status.GameTime}") % 100000:00000}";
         s.Driver.HomeTerminalId = home.Id;
         s.Driver.AssignedTruckUnit = truck.Unit;
         s.Driver.Skills = new DriverSkills

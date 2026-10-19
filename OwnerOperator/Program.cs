@@ -257,6 +257,36 @@ app.MapPost("/api/deliver", (DeliverRequest r) => Results.Ok(store.Mutate(c =>
     return new { invoice, snapshot = Snapshot(c) };
 })));
 
+// ---------------------------------------------------------------- the run
+
+app.MapPost("/api/run/at-shipper", (RunStageRequest r) => Results.Ok(store.Mutate(c =>
+{
+    var said = Run.AtShipper(c, r.Day, r.Time);
+    return new { said, snapshot = Snapshot(c) };
+})));
+
+app.MapPost("/api/run/loaded", (RunStageRequest r) => Results.Ok(store.Mutate(c =>
+{
+    var notes = Run.Loaded(c, r.WeightLbs, r.Odometer, r.Day, r.Time);
+    return new { said = string.Join(" ", notes), snapshot = Snapshot(c) };
+})));
+
+app.MapPost("/api/run/event", (RunEventRequest r) => Results.Ok(store.Mutate(c =>
+{
+    var wasTime = c.Game.Status.GameTime;
+    var wasHome = HomeLife.AtHome(c);
+    Run.Event(c, r);
+    Ledger.Advance(c);
+    HomeLife.Advance(c, wasTime, wasHome);
+    return Snapshot(c);
+})));
+
+app.MapPost("/api/run/arrived", (RunStageRequest r) => Results.Ok(store.Mutate(c =>
+{
+    var said = Run.Arrived(c, r.Day, r.Time);
+    return new { said, snapshot = Snapshot(c) };
+})));
+
 app.MapPost("/api/booking/handback", (HandBackRequest r) => Results.Ok(store.Mutate(c =>
 {
     Ledger.HandBack(c, r.Why ?? "");
@@ -392,6 +422,13 @@ static object Snapshot(OoCareer c)
         call = Calls.Open(c) is { } open ? Calls.View(c, open) : null,
         lastCall = c.Calls.LastOrDefault() is { } last ? Calls.View(c, last) : null,
         booking = Calls.ActiveBooking(c),
+        trip = Run.Trip(c, Calls.ActiveBooking(c)) is { } t ? new
+        {
+            t.Id, t.Number, t.Status, t.ShipperArrivedGameTime, t.ShipperCallNote, t.LoadStartsGameTime, t.LoadedReported,
+            t.PulledOutGameTime, t.ArrivedGameTime, t.ReceiverCallNote, t.WorkStartsGameTime, t.DueGameTime,
+            plan = t.FeasibilityAtDispatch,
+            events = t.Events.OrderBy(e => e.GameTime).Select(e => new { e.Id, e.Kind, e.GameTime, e.EndGameTime, e.Detail, e.City, e.State, e.Gallons }),
+        } : null,
         bookings = c.Bookings.AsEnumerable().Reverse().Take(20),
         aiPhone = PhoneAi.Available(c),
         invoices = c.Invoices.AsEnumerable().Reverse().Take(30),

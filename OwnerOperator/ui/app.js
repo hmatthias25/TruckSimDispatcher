@@ -138,6 +138,68 @@ function firstLoadWalkthrough() {
     </ol></div>`;
 }
 
+function runPanel() {
+  const t = S.trip;
+  if (!t) return '';
+  const time = (S.status.gameTime || 'T').split('T')[1] || '';
+  const ev = (t.events || []);
+  const stage = !t.shipperArrivedGameTime ? 'shipper' : !t.loadedReported ? 'loading' : !t.arrivedGameTime ? 'road' : 'receiver';
+  const when = `<label>Game day<input id="rn-day" type="number" min="1" value="${S.status.day ?? 1}"></label>
+    <label>Time<input id="rn-time" placeholder="HH:MM" value="${esc(time)}"></label>`;
+  const note = (txt) => txt ? `<p class="hint">${esc(txt)}</p>` : '';
+  return `<div class="panel"><div class="panel-head"><h2>The run: ${esc(t.number)}</h2>
+      <span class="sub">Due ${esc((t.dueGameTime || '').replace('T', ' '))}. Log it as you drive, and the planner learns your roads.</span></div>
+    <div class="grid4">${when}
+      <label>Odometer<input id="rn-odo" type="number" value="${S.status.odometer}"></label>
+      <label>Weight (lb)<input id="rn-wt" type="number" placeholder="when loaded"></label></div>
+    <div class="row-actions">
+      ${stage === 'shipper' ? '<button class="btn primary" data-run="at-shipper">At the shipper</button>' : ''}
+      ${stage === 'loading' ? `<button class="btn" data-ev="BeginLoad">Begin load</button><button class="btn" data-ev="EndLoad">End load</button>
+         <button class="btn primary" data-run="loaded">Loaded, pulling out</button>` : ''}
+      ${stage === 'road' ? '<button class="btn primary" data-run="arrived">At the receiver</button>' : ''}
+      ${stage === 'receiver' ? '<button class="btn" data-ev="BeginUnload">Begin unload</button><button class="btn" data-ev="EndUnload">End unload</button>' : ''}
+      ${stage !== 'shipper' ? '<button class="btn go" id="dl-go">Delivered</button>' : ''}
+    </div>
+    ${stage === 'loading' ? note(t.shipperCallNote) : ''}${stage === 'receiver' ? note(t.receiverCallNote) : ''}
+    <details><summary>A break, a rest, or fuel</summary>
+      <div class="grid4">
+        <label>Kind<select id="rn-kind"><option>Break</option><option>Rest</option><option>Fuel</option><option>Note</option></select></label>
+        <label>Hours (break or rest)<input id="rn-hours" type="number" step="0.25" placeholder="e.g. 0.5 or 10"></label>
+        <label>Gallons (fuel)<input id="rn-gal" type="number"></label>
+        <label>$/gal (fuel)<input id="rn-ppg" type="number" step="0.01"></label>
+        <label>City<input id="rn-city"></label><label>State<input id="rn-state" class="up"></label>
+      </div>
+      <div class="row-actions"><button class="btn" id="rn-log">Log it</button></div>
+    </details>
+    ${ev.length ? `<div class="log">${ev.map((e) => `<div><span class="badge mute">${esc(e.kind)}</span> ${esc(e.gameTime.replace('T', ' '))}${e.endGameTime ? ` to ${esc(e.endGameTime.replace('T', ' '))}` : ''} ${e.city ? esc(e.city) + ', ' + esc(e.state) : ''} ${e.gallons ? e.gallons + ' gal' : ''}</div>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function wireRun() {
+  const when = () => ({ day: Number($('rn-day').value), time: $('rn-time').value });
+  document.querySelectorAll('[data-run]').forEach((b) => b.onclick = async () => {
+    try {
+      const body = { ...when(), odometer: Number($('rn-odo').value) || null, weightLbs: Number($('rn-wt').value) || null };
+      const r = await api(`/run/${b.dataset.run}`, 'POST', body);
+      S = r.snapshot;
+      if (r.said) toast(r.said);
+      render();
+    } catch (e) { toast(e.message, 'bad'); }
+  });
+  document.querySelectorAll('[data-ev]').forEach((b) => b.onclick = async () => {
+    try { S = await api('/run/event', 'POST', { kind: b.dataset.ev, ...when() }); render(); } catch (e) { toast(e.message, 'bad'); }
+  });
+  const log = $('rn-log');
+  if (log) log.onclick = async () => {
+    try {
+      S = await api('/run/event', 'POST', { kind: $('rn-kind').value, ...when(), hours: Number($('rn-hours').value) || null,
+        gallons: Number($('rn-gal').value) || null, pricePerGal: Number($('rn-ppg').value) || null,
+        city: $('rn-city').value, state: $('rn-state').value });
+      render();
+    } catch (e) { toast(e.message, 'bad'); }
+  };
+}
+
 function bookingBanner() {
   const k = S.booking;
   if (!k) return '';
@@ -148,12 +210,7 @@ function bookingBanner() {
     <p>The broker pays <b>${money(k.rate)}</b>${k.quickPay ? ' on quick pay' : `, net ${k.daysToPay}`}. The game will pay
       ${money(k.gamePay)} at delivery: that is the shipper's money passing through, not yours.
       ${k.detentionPerHour ? `Detention ${money(k.detentionPerHour)}/h after ${k.detentionAfterHours} h.` : ''}</p>
-    <div class="grid4">
-      <label>Delivered, game day<input id="dl-day" type="number" min="1" value="${S.status.day ?? 1}"></label>
-      <label>Time<input id="dl-time" placeholder="HH:MM"></label>
-      <label>Odometer<input id="dl-odo" type="number" value="${S.status.odometer}"></label>
-      <div class="row-actions"><button class="btn go" id="dl-go">Delivered</button></div>
-    </div></div>`;
+    </div>${runPanel()}`;
 }
 
 function boardView() {
@@ -258,9 +315,10 @@ async function readImages(files) {
 
 function wireBoard() {
   const dl = $('dl-go');
+  wireRun();
   if (dl) dl.onclick = async () => {
     try {
-      const r = await api('/deliver', 'POST', { day: Number($('dl-day').value), time: $('dl-time').value, odometer: Number($('dl-odo').value) });
+      const r = await api('/deliver', 'POST', { day: Number($('rn-day').value), time: $('rn-time').value, odometer: Number($('rn-odo').value) });
       S = r.snapshot;
       toast(`${r.invoice.number} raised: ${money(r.invoice.amount)} due from ${r.invoice.brokerName}.`);
       tab = 'money'; render();
