@@ -77,7 +77,7 @@ public static class LoadDesk
             NetAtGamePay = net,
             Days = Math.Round(days, 2),
             NetPerDay = Math.Round(net / (decimal)days, 2),
-            Trade = Specialties.Of(load),
+            Trade = Specialties.Of(c, load),
         };
         v.SkillNotes.AddRange(SkillNotes(c, load));
         v.Notes.AddRange(e.Cons);
@@ -99,6 +99,11 @@ public static class LoadDesk
         var dest = Markets.Find(s, load.DestCity, load.DestState);
         if (dest is { Tier: 3 })
             v.Notes.Add($"{load.DestCity}, {load.DestState} is a thin market. Expect to run empty to get the next load.");
+        if (Seasons.Says(Seasons.KindOf(c, load), Carriers.AtsRegionOf(string.IsNullOrWhiteSpace(load.OriginState) ? s.Status.LocationState : load.OriginState),
+                         Seasons.Of(c, load)) is { } season)
+            v.Notes.Add(season);
+        if (c.CantMakeLoadIds.Contains(load.Id))
+            v.Notes.Add("You told a broker you could not get there in time, so no broker offers this one now.");
         return v;
     }
 

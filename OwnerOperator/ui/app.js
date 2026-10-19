@@ -24,6 +24,9 @@ const timeOf = (iso) => {
   return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
 };
 const dowForDay = (day) => { const n = Number(day); return Number.isFinite(n) && n >= 1 ? DOW[((Math.floor(n) % 7) + 7) % 7] : '—'; };
+/** The app's calendar month and day for a day number: Day 1 is 1 January. ATS shows no month, so this is the app's. */
+const monthDayOf = (day) => new Date(EPOCH + (Math.max(1, day) - 1 + (S?.status?.calendarOffset || 0)) * DAY_MS)
+  .toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const gapHours = (a, b) => { const x = Date.parse(isoUtc(a)), y = Date.parse(isoUtc(b)); return Number.isFinite(x) && Number.isFinite(y) ? (y - x) / 3600000 : null; };
 
 /* Times of day as typed. ATS shows AM and PM, so that is how they are shown; "18:30", "6:30 pm", "1830" and "6pm" are
@@ -187,6 +190,50 @@ const PRESETS = {
   Hard: 'An older truck and the legal minimum. Every load counts.',
 };
 
+// ---------------------------------------------------------------- family: the first screen and the Home tab
+
+/** The promise to suggest for a family, as the server works it out: 21 days single, 14 with a partner, 10 with kids. */
+const suggestedDays = (f) => (f.kids.length > 0 ? 10 : f.partner ? 14 : 21);
+
+function kidRows(p, kids) {
+  return kids.map((k, i) => `<div class="grid2">
+    <label>Kid ${i + 1}'s name<input id="${p}-kn-${i}" value="${esc(k.name || '')}" placeholder="optional, e.g. Emma"></label>
+    <label>Daughter or son<select id="${p}-kk-${i}"><option ${k.kind !== 'Son' ? 'selected' : ''}>Daughter</option>
+      <option ${k.kind === 'Son' ? 'selected' : ''}>Son</option></select></label></div>`).join('');
+}
+
+function familyEditor(p, f) {
+  return `<div class="chkrow">
+      <label><input type="radio" name="${p}-rel" value="single" ${!f.partner ? 'checked' : ''}> Single</label>
+      <label><input type="radio" name="${p}-rel" value="partner" ${f.partner ? 'checked' : ''}> Married, or a partner</label></div>
+    <div class="grid2">
+      <label>Partner's name<input id="${p}-pname" value="${esc(f.partnerName || '')}" placeholder="optional" ${f.partner ? '' : 'disabled'}></label>
+      <label>Kids<input id="${p}-kids" type="number" min="0" max="8" value="${f.kids.length}"></label></div>
+    <div id="${p}-kidrows">${kidRows(p, f.kids)}</div>
+    <p class="hint">Names are optional: with them, the dates say "Emma's birthday"; without, "your daughter's birthday".</p>`;
+}
+
+function readFamily(p) {
+  const partner = document.querySelector(`input[name=${p}-rel]:checked`)?.value === 'partner';
+  const n = Math.max(0, Math.min(8, Number($(`${p}-kids`).value) || 0));
+  const kids = [];
+  for (let i = 0; i < n; i++) kids.push({ name: $(`${p}-kn-${i}`)?.value || '', kind: $(`${p}-kk-${i}`)?.value || 'Daughter' });
+  return { partner, partnerName: partner ? $(`${p}-pname`).value : '', kids };
+}
+
+function wireFamilyEditor(p, changed) {
+  document.querySelectorAll(`input[name=${p}-rel]`).forEach((r) => r.onchange = () => {
+    $(`${p}-pname`).disabled = !readFamily(p).partner;
+    if (changed) changed(readFamily(p));
+  });
+  $(`${p}-kids`).oninput = () => {
+    const f = readFamily(p);   // keeps the names typed so far
+    $(`${p}-kidrows`).innerHTML = kidRows(p, f.kids);
+    if (changed) changed(f);
+  };
+  if (changed) changed(readFamily(p));
+}
+
 // ---------------------------------------------------------------- first screen
 
 async function showStart() {
@@ -199,6 +246,10 @@ async function showStart() {
   const hint = () => { $('st-preset-hint').textContent = PRESETS[document.querySelector('input[name=preset]:checked').value]; };
   document.querySelectorAll('input[name=preset]').forEach((r) => r.addEventListener('change', hint));
   hint();
+  $('st-family').innerHTML = familyEditor('stf', { partner: false, partnerName: '', kids: [] });
+  wireFamilyEditor('stf', (f) => {
+    $('st-family-hint').textContent = `Suggested promise: home every ${suggestedDays(f)} days, for 3. You can change it on the Home tab.`;
+  });
   try {
     const cities = await api('/cities');
     $('st-cities').innerHTML = cities.map((c) => `<option value="${esc(c.city)}, ${esc(c.state)}">`).join('');
@@ -223,6 +274,8 @@ async function startCareer() {
     adr: [...document.querySelectorAll('#st-adr input:checked')].map((i) => i.value),
     odometer: Number($('st-odo').value),
     preset: document.querySelector('input[name=preset]:checked').value,
+    family: readFamily('stf'),
+    startMonth: Number($('st-month').value),
   };
   if (!body.time) { $('st-error').textContent = 'The time of day as the game shows it: 8:00 AM, or 08:00.'; $('st-error').classList.remove('hidden'); return; }
   try {
@@ -237,7 +290,7 @@ async function startCareer() {
 
 // ---------------------------------------------------------------- app shell
 
-const TABS = [['board', 'Board'], ['active', 'Active Load'], ['brokers', 'Brokers'], ['money', 'Money'], ['home', 'Home'], ['truck', 'Truck & clocks'], ['settings', 'Settings'], ['log', 'Log']];
+const TABS = [['board', 'Board'], ['active', 'Active Load'], ['brokers', 'Brokers'], ['money', 'Money'], ['home', 'Home'], ['settings', 'Settings'], ['log', 'Log']];
 
 function showApp() {
   $('boot').classList.add('hidden');
@@ -253,7 +306,7 @@ function render() {
   const stat = (k, v, cls = '') => `<div class="stat ${cls}"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`;
   $('stats').innerHTML = phoneStat() +
     stat('Where', `${S.status.city}, ${S.status.state}`) +
-    stat('Clock', S.status.pretty) +
+    stat(`Clock · Day ${dayOf(S.status.gameTime)}`, `${dowForDay(dayOf(S.status.gameTime))}, ${S.status.monthDay} · ${fmtTod(timeOf(S.status.gameTime))}`) +
     stat('Drive', hhmm(h.drive), h.drive < 1 ? 'warn' : 'ok') +
     stat('Shift', hhmm(h.shift), h.shift < 1 ? 'warn' : 'ok') +
     stat('Cycle', hhmm(h.cycle), h.cycle < 11 ? 'warn' : 'ok') +
@@ -263,9 +316,9 @@ function render() {
   phoneAlert();
   $('tabs').innerHTML = TABS.map(([id, name]) => `<button class="${id === tab ? 'on' : ''}" data-tab="${id}">${name}</button>`).join('');
   $('tabs').querySelectorAll('button').forEach((b) => b.onclick = () => { tab = b.dataset.tab; render(); });
-  const views = { board: boardView, active: activeView, brokers: brokersView, money: moneyView, home: homeView, truck: truckView, settings: settingsView, log: logView };
+  const views = { board: boardView, active: activeView, brokers: brokersView, money: moneyView, home: homeView, settings: settingsView, log: logView };
   $('view').innerHTML = homeBanner() + views[tab]();
-  ({ board: wireBoard, active: wireActive, brokers: wireBrokers, money: wireMoney, home: wireHome, truck: wireTruck, settings: wireSettings, log: () => {} })[tab]();
+  ({ board: wireBoard, active: wireActive, brokers: wireBrokers, money: wireMoney, home: wireHome, settings: wireSettings, log: () => {} })[tab]();
   wireHomeBanner();
   document.querySelectorAll('[data-goto]').forEach((a) => a.onclick = (e) => { e.preventDefault(); tab = a.dataset.goto; render(); });
   const at = $('tabs').querySelector('[data-tab=active]');
@@ -336,7 +389,8 @@ function laneBanner() {
   const fits = (S.laneFits || []).length;
   return `<div class="callout info"><h4>Lane ${esc(l.number)} with ${esc(l.brokerName)}</h4>
     <p>Pick up in <b>${esc(l.pickupCity)}, ${esc(l.pickupState)}</b> from ${esc(gt(l.pickupFromGameTime))} to
-      ${esc(gt(l.pickupToGameTime))}, delivering into the <b>${esc(l.destRegion)}</b>, ${l.minMiles}-${l.maxMiles} mi,
+      ${esc(gt(l.pickupToGameTime))}, ${l.homeFor ? `delivering <b>home to ${esc(l.homeCity)}</b> (any job ending near it)`
+        : `delivering into the <b>${esc(l.destRegion)}</b>, ${l.minMiles}-${l.maxMiles} mi${l.leanedFor ? ` (busy for ${esc(l.leanedFor)} this month)` : ''}`},
       at <b>${money(l.ratePerMile)}/mi</b> (never above the game's pay).</p>
     <p>${S.booking ? 'Deliver the load you are on first.' : fits ? `${fits} job(s) on the board fit it: take one below.`
       : `At ${esc(l.pickupCity)}, paste that city's Freight Market board and the app marks the jobs that fit.`}</p>
@@ -353,10 +407,60 @@ function bookingBanner() {
       are on <a href="#" class="lnk" data-goto="active">Active Load</a>.</p></div>`;
 }
 
+/** This month's busy and slow seasons, in a line: the region where you are first. */
+function seasonLine() {
+  const all = S.seasons || [];
+  if (!all.length) return '';
+  const here = all.filter((x) => (S.status.region || '') === x.region);
+  const show = [...here, ...all.filter((x) => !here.includes(x))].slice(0, 5);
+  const month = new Date(Date.UTC(2000, (S.status.month || 1) - 1, 1)).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
+  return `<p class="hint" style="margin:0 0 10px"><b>${month}:</b> ${show.map((x) =>
+    `${badge(x.busy ? 'ok' : 'mute', `${x.busy ? 'busy' : 'slow'}: ${x.kind.toLowerCase()}, ${x.region}`)}`).join(' ')}
+    <span title="${esc(show.map((x) => x.says).join(' '))}">Brokers keep less of busy freight and more of slow.</span></p>`;
+}
+
+const monthName = (m) => new Date(Date.UTC(2000, m - 1, 1)).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
+const kindWords = { Retail: 'Dry van (stores)', Produce: 'Produce (reefer)', Grain: 'Grain and farm', Building: 'Flatbed and building', Fuel: 'Fuel (tanker)' };
+
+/**
+ * Where the freight is, this month and the next two: every region against every kind of freight, busy or slow, with what
+ * turns next. So a player can see where to be and when: produce out of the South in spring, harvest in the Midwest in the
+ * fall, the stores before Christmas. Asked for from play.
+ */
+function seasonTableHtml() {
+  const t = S.seasonTable;
+  if (!t) return '';
+  const cell = (i, next) => {
+    const cls = i >= 1.15 ? 'ok' : i <= 0.85 ? 'bad' : i < 1 ? 'mute' : 'info';
+    const word = i >= 1.25 ? 'peak' : i >= 1.15 ? 'busy' : i <= 0.85 ? 'slow' : i < 1 ? 'soft' : 'normal';
+    const arrow = next - i >= 0.1 ? ' ↑' : i - next >= 0.1 ? ' ↓' : '';
+    return `<td>${badge(cls, word + arrow)}</td>`;
+  };
+  // What turns busy or slow over the next two months, said in words.
+  const turns = [];
+  [1, 2].forEach((n) => t.regions.forEach((r, ri) => t.kinds.forEach((k, ki) => {
+    const was = t.index[n - 1][ri][ki], now = t.index[n][ri][ki];
+    if (now >= 1.15 && was < 1.15) turns.push(`<li><b>${monthName(t.months[n])}:</b> ${kindWords[k]} out of the ${r} gets busy.</li>`);
+    if (now <= 0.85 && was > 0.85) turns.push(`<li><b>${monthName(t.months[n])}:</b> ${kindWords[k]} in the ${r} goes slow.</li>`);
+  })));
+  return `<div class="panel" id="seasontable"><div class="panel-head"><h2>Freight this month: ${monthName(t.months[0])}</h2>
+      <span class="sub">Where it is busy and slow, region by region, and what is coming</span></div>
+    ${seasonLine()}
+    <div class="tablewrap"><table><thead><tr><th>Region</th>${t.kinds.map((k) =>
+      `<th${k === t.yourKind ? ' style="color:var(--amber2)"' : ''}>${kindWords[k]}${k === t.yourKind ? ' (yours)' : ''}</th>`).join('')}</tr></thead>
+      <tbody>${t.regions.map((r, ri) => `<tr${r === S.status.region ? ' style="outline:1px solid var(--amber)"' : ''}><td>${esc(r)}${
+        r === S.status.region ? ' <span class="hint">(you)</span>' : ''}</td>${t.kinds.map((k, ki) => cell(t.index[0][ri][ki], t.index[1][ri][ki])).join('')}</tr>`).join('')}</tbody>
+    </table></div>
+    <p class="hint">Busy: brokers keep less of it and ring more from there. Slow: they keep more and ring less. An arrow says next month moves it.
+      The game's own pay does not change with the season; the brokers' cut does.</p>
+    ${turns.length ? `<h3 class="sect">Coming up</h3><ul class="reasons">${turns.join('')}</ul>` : ''}
+  </div>`;
+}
+
 function boardView() {
   const loads = S.board || [];
   const intro = (S.bookings || []).length === 0 ? firstLoadWalkthrough() : '';
-  return bookingBanner() + laneBanner() + intro + `
+  return whereHtml() + bookingBanner() + laneBanner() + intro + seasonTableHtml() + `
     <div class="panel">
       <div class="panel-head"><h2>Add from screenshots</h2><span class="sub">The ${esc(S.trailer?.market || 'Freight Market')} board</span></div>
       <div id="shotzone"></div>
@@ -388,6 +492,7 @@ function loadCard(v) {
       <span class="badge mute">#${v.rank}</span>
       <b>${esc(l.cargo)}</b> to <b>${esc(l.destCity)}, ${esc(l.destState)}</b>
       <span class="badge ${verdict}">${esc(f.verdict)}</span>
+      ${(S.cantMake || []).includes(l.id) ? '<span class="badge mute">you couldn\'t make it</span>' : ''}
       ${v.trade && v.trade !== 'General' ? `<span class="badge info">${esc(v.trade)}</span>` : ''}
       <span class="spacer"></span>
       ${(S.laneFits || []).includes(l.id) && !S.booking ? `<span class="badge info">Fits ${esc(S.lane.number)}</span>
@@ -545,6 +650,7 @@ document.addEventListener('paste', (e) => {
 });
 
 function wireBoard() {
+  wireWhere();
   document.querySelectorAll('[data-take]').forEach((b) => b.onclick = async () => {
     try { const r = await api('/lane/take', 'POST', { loadId: b.dataset.take }); S = r.snapshot; toast(`${r.booking.number} booked off the lane.`); render(); }
     catch (e) { toast(e.message, 'bad'); }
@@ -785,7 +891,8 @@ function activeView() {
   const t = S.trip, k = S.booking, v = S.tripViews || {};
   if (!t || !k) return `<div class="panel"><div class="empty">No load booked. Call a broker on the Brokers tab, or take a job for
       your lane on the Board.</div>
-    <div class="row-actions" style="justify-content:center"><button class="btn" data-goto="board">Go to the Board</button></div></div>
+    <div class="row-actions" style="justify-content:center"><button class="btn" data-goto="board">Go to the Board</button>
+      ${S.homeRoute ? '<button class="btn ghost" data-goto="home">Head home</button>' : ''}</div></div>
     ${LAST_AUDIT ? auditHtml(LAST_AUDIT) : ''}`;
   const f = t.feasibilityAtDispatch, pk = v.receiverParking, sh = v.receiverSiteHours, isSite = v.receiverIsSite, l = k.load;
   const fh = v.fromHere;
@@ -1242,7 +1349,7 @@ function phoneView() {
       <div><div class="k">Offer</div><div class="money">${money(c.offer)}</div></div>
       <div><div class="k">Pick up</div><div class="money">${esc(c.lane.pickupCity)}, ${esc(c.lane.pickupState)}</div></div>
       <div><div class="k">From</div><div class="money">${esc(gt(c.lane.pickupFromGameTime))}</div></div>
-      <div><div class="k">Into</div><div class="money">${esc(c.lane.destRegion)}</div></div>
+      <div><div class="k">Into</div><div class="money">${esc(c.lane.homeFor ? 'Home: ' + c.lane.homeCity : c.lane.destRegion)}</div></div>
       <div><div class="k">Distance</div><div class="money">${c.lane.minMiles}-${c.lane.maxMiles} mi</div></div>
       <div><div class="k">At your cost</div><div class="money">${money(c.offer - S.settings.costPerMile * (c.lane.minMiles + c.lane.maxMiles) / 2)}</div></div>
     </div><p class="hint">A lane: the offer is for the middle of the band, booked as a rate per mile. The game supplies the job at the pickup.</p>` : ''}
@@ -1254,6 +1361,9 @@ function phoneView() {
       <div><div class="k">Verdict</div><div class="money">${esc(view.feasibility.verdict)}</div></div>` : ''}
     </div>` : ''}
     <div class="transcript">${turns}</div>
+    ${c.checkPosition ? `<div class="callout warn"><p style="margin:0">The plan had you making that one, from <b>${esc(S.status.city)}, ${esc(S.status.state)}</b>
+      at ${esc(gt(S.status.gameTime))}. If that is not where you are, correct it on
+      <a href="#" class="lnk" data-goto="board">Where you are</a> on the Board, and the next offer is planned from the right place.</p></div>` : ''}
     ${open ? `<div class="sayrow">
         <input id="ph-text" placeholder="${S.aiPhone ? 'Say something, e.g. 2,150 and you pay detention, Lyon is dead this week' : 'Type a figure, or use the buttons'}">
         <button class="btn primary" id="ph-say">Say</button></div>
@@ -1268,7 +1378,9 @@ function phoneView() {
           <label><input type="checkbox" value="walk"> Or I walk</label>
         </span>
         <button class="btn" data-move="counter">Counter</button>
-        ${c.listingLeftHours != null ? `<button class="btn warn" data-move="toolate" title="No penalty: the listing running out is nobody's fault">Can't make it in time (${hhmm(c.listingLeftHours)} left)</button>` : ''}
+        ${c.load && !c.lane ? `<button class="btn ${c.listingLeftHours != null ? 'warn' : 'ghost'}" data-move="toolate"
+          title="No penalty: they drop it and offer the next. Only you know where you really are.">Can't make it in time${
+          c.listingLeftHours != null ? ` (${hhmm(c.listingLeftHours)} left)` : ''}</button>` : ''}
         <button class="btn ghost" data-move="better">Anything better?</button>
         <button class="btn ghost" data-move="quickpay">Quick pay?</button>
         <button class="btn ghost" data-move="detention">Detention?</button>
@@ -1412,6 +1524,9 @@ function homeBanner() {
     ${S.booking ? `<p>You are booked on ${esc(S.booking.number)}. Deliver it on the way if you can, or hand it back: that is a
       cancellation on your record with ${esc(S.booking.brokerName)}.</p>
       <div class="row-actions"><button class="btn danger" id="hb-go">Hand ${esc(S.booking.number)} back</button></div>` : ''}</div>`;
+  if (h.holidayComing) return `<div class="callout warn"><h4>${esc(h.holidayComing.title)} is Day ${h.holidayComing.day} (${dowForDay(h.holidayComing.day)},
+      ${monthDayOf(h.holidayComing.day)})</h4><p>Your family expects you home for it: missing it costs ${h.holidayComing.missCost} home life.
+      Brokers are looking for a load that gets you there, or see <a href="#" class="lnk" data-goto="home">Getting home</a>.</p></div>`;
   if (h.holiday) return `<div class="callout"><p><b>${esc(h.holiday)}.</b> Freight is quiet and brokers keep more of it. A good time to be home: days at home count double.</p></div>`;
   return '';
 }
@@ -1443,20 +1558,64 @@ function homeView() {
       <p>${h.atHome ? `You are home in ${esc(S.profile.homeCity)}.` : `Out ${h.daysOut} day(s). ${h.dueHomeInDays >= 0
         ? `Due home in ${h.dueHomeInDays} day(s).` : `<b>${-h.dueHomeInDays} day(s) past your promise.</b>`}`}</p>
       <p class="hint">It drops a little each day out, faster past your promise, and recovers at home. A full home time as promised
-        counts for more. Below 40, home starts to call; at 0 you go home for a week whatever is booked.</p></div>
+        counts for more. Below ${h.callBelow}, home starts to call; at 0 you go home for a week whatever is booked.</p></div>
+    ${headHomeHtml()}
+    <div class="panel"><div class="panel-head"><h2>Family</h2></div>
+      <p>${esc(h.familySays)}</p>
+      ${familyEditor('hf', h.family)}
+      <p class="hint">Life changes: say so here. The dates still to come are replaced with ones for the family as it is now.</p>
+      <div class="row-actions"><button class="btn primary" id="hf-save">Save family</button></div></div>
     <div class="panel"><div class="panel-head"><h2>Dates at home</h2></div>
-      ${h.dates.length ? h.dates.map((d) => `<div><b>Day ${d.day}</b>: ${esc(d.title)}</div>`).join('') : '<div class="empty">Nothing on the calendar.</div>'}
+      ${h.dates.length ? h.dates.map((d) => `<div><b>Day ${d.day}</b> (${dowForDay(d.day)}, ${monthDayOf(d.day)}): ${esc(d.title)}${
+        d.holiday ? ` ${badge('warn', `holiday: missing it costs ${d.missCost}`)}` : ''}</div>`).join('') : '<div class="empty">Nothing on the calendar.</div>'}
+      <p class="hint">Be home at any time on that game day and you make it: +15. Miss it and it costs 25. Within five days of one,
+        brokers look for a load that gets you home for it.</p>
       ${h.recent.length ? `<p class="hint">${h.recent.map((d) => `Day ${d.day}, ${esc(d.title)}: ${d.status === 'Made' ? 'made it' : 'missed'}`).join(' · ')}</p>` : ''}</div>
     <div class="panel"><div class="panel-head"><h2>Your promise</h2></div>
       <div class="grid2">
         <label>Home every (days)<input id="hp-every" type="number" min="5" max="42" value="${h.everyDays}"></label>
         <label>For (days)<input id="hp-for" type="number" min="1" max="10" value="${h.homeDays}"></label>
       </div>
-      <p class="hint">Change it if you need to, but not every week: each change costs a little.</p>
+      <p class="hint">Change it if you need to, but not every week: each change costs a little.
+        ${h.everyDays !== h.suggestedEveryDays ? `For your family, home every <b>${h.suggestedEveryDays}</b> days is suggested.` : ''}</p>
       <div class="row-actions"><button class="btn primary" id="hp-save">Save</button></div></div>`;
 }
 
+/** Getting home: why home is pulling, what brokers do about it, and the run home empty. */
+function headHomeHtml() {
+  const h = S.home, pull = S.homePull, r = S.homeRoute;
+  if (h.atHome) return '';
+  return `<div class="panel"><div class="panel-head"><h2>Getting home</h2>
+      ${pull ? badge('warn', pull.why) : ''}<div class="spacer"></div><span class="sub">to ${esc(S.profile.homeCity)}, ${esc(S.profile.homeState)}</span></div>
+    ${pull ? `<p><b>Brokers know.</b> Ring one from a break (or answer when one rings) and they look for a load that ends near home:
+      a lane home, or the job on the board that gets you there.</p>` : `<p class="hint">Home is not pulling yet. Within five days of
+      your promise or a date at home, or below ${h.callBelow}, brokers start looking for loads that get you home.</p>`}
+    ${S.booking ? `<p class="hint">Deliver ${esc(S.booking.number)} first, or hand it back from Active Load.</p>`
+      : r ? `<h3 class="sect">Or run home empty</h3>
+      <p>About <b>${num(r.miles)} mi</b>: home <b>${esc(gt(r.arrival))}</b>${r.restsRequired ? `, with ${r.restsRequired} rest(s) on the way` : ''},
+        on your clocks as they stand. No pay, and the miles are yours.</p>
+      <p class="hint">Drive it in the game, then say you are home: the days at home count from then.</p>
+      <div class="grid3">${dayTimeInput('hh-time', S.status.gameTime, 'Got home at')}
+        <label>Odometer<input id="hh-odo" type="number" placeholder="last: ${S.status.odometer}"></label>
+        <div class="row-actions" style="align-self:end"><button class="btn go" id="hh-go">I'm home</button></div></div>` : ''}
+  </div>`;
+}
+
 function wireHome() {
+  wireFamilyEditor('hf');
+  $('hf-save').onclick = async () => {
+    try { S = await api('/home/family', 'POST', readFamily('hf')); toast('Family saved.'); render(); }
+    catch (e) { toast(e.message, 'bad'); }
+  };
+  const hh = $('hh-go');
+  if (hh) hh.onclick = async () => {
+    try {
+      const at = readWhen('hh-time', 'Got home');
+      S = await api('/status', 'POST', { locationCity: S.profile.homeCity, locationState: S.profile.homeState, day: at.day, time: at.time,
+        odometer: Number($('hh-odo').value) || null });
+      toast(`Home in ${S.profile.homeCity}.`); render();
+    } catch (e) { toast(e.message, 'bad'); }
+  };
   $('hp-save').onclick = async () => {
     try {
       S = await api('/home/promise', 'POST', { everyDays: Number($('hp-every').value), homeDays: Number($('hp-for').value) });
@@ -1467,9 +1626,27 @@ function wireHome() {
 
 // ---------------------------------------------------------------- truck & clocks
 
-function truckView() {
+let WHERE_OPEN = false;   // the Board's "Where you are" form, open or shut
+
+/**
+ * Where the truck is and what the clocks say, at the top of the Board: the board is ranked off them. Kept current by the
+ * run itself (arrivals, the close-out), by calls, by "Running late?" and "I'm home"; this is the place to correct them with
+ * nothing booked. It was the Truck & clocks tab, retired once all of that took its readings. Asked for from play.
+ */
+function whereHtml() {
   const st = S.status, h = S.hos;
-  return `<div class="panel"><div class="panel-head"><h2>Where and when</h2></div>
+  const fresh = h.carriedForwardFrom && h.confirmed !== false ? `Clocks off your close-out of ${esc(h.carriedForwardFrom)}, ${esc(gt(h.asOf))}.`
+    : h.projected ? `<b>Clocks worked out, not read</b>: carried across an unload at ${esc(gt(h.asOf))}. Check them against your display.`
+    : h.confirmed === false ? `<b>Clocks from before your last load</b> (${esc(gt(h.asOf))}). Re-read them before a broker plans anything off them.`
+    : h.asOf ? `Clocks read ${esc(gt(h.asOf))}${h.source ? ` (${esc(h.source.toLowerCase())})` : ''}.` : '';
+  return `<div class="panel" id="where"><div class="panel-head"><h2>Where you are</h2>
+      ${h.confirmed === false ? badge('warn', 'clocks need a re-read') : ''}<div class="spacer"></div>
+      <button class="btn tiny ${h.confirmed === false ? 'primary' : ''}" id="wh-toggle">${WHERE_OPEN ? 'Close' : 'Update'}</button></div>
+    <p style="margin:0"><b>${esc(st.city)}, ${esc(st.state)}</b> · ${dowForDay(dayOf(st.gameTime))}, ${esc(st.monthDay)} · ${fmtTod(timeOf(st.gameTime))}
+      &nbsp;·&nbsp; drive ${hhmm(h.drive)} · shift ${hhmm(h.shift)} · break ${hhmm(h.brk)} · cycle ${hhmm(h.cycle)}
+      &nbsp;·&nbsp; odometer ${num(st.odometer)} · fuel ${num(st.fuelPct)}%</p>
+    ${fresh ? `<p class="hint" style="margin:4px 0 0">${fresh}</p>` : ''}
+    <div id="wh-form" class="${WHERE_OPEN ? '' : 'hidden'}" style="margin-top:10px">
       <div class="grid3">
         <label>City<input id="tr-city" value="${esc(st.city)}"></label>
         <label>State<input id="tr-state" class="up" maxlength="2" value="${esc(st.state)}"></label>
@@ -1477,30 +1654,43 @@ function truckView() {
         <label>Odometer<input id="tr-odo" type="number" value="${st.odometer}"></label>
         <label>Fuel %<input id="tr-fuel" type="number" min="0" max="100" value="${st.fuelPct}"></label>
       </div>
-      <div class="row-actions"><button class="btn primary" id="tr-save">Save</button></div></div>
-    <div class="panel"><div class="panel-head"><h2>Hours of service</h2>
-        ${h.confirmed === false ? badge('warn', 'not confirmed') : ''}<div class="spacer"></div>
-        <span class="sub">Your HOS display is authoritative. Type what it says.</span></div>
-      ${h.carriedForwardFrom && h.confirmed !== false ? `<div class="callout go"><p style="margin:0">Clocks came off your HOS display when you
-          closed <b>${esc(h.carriedForwardFrom)}</b> out at ${esc(gt(h.asOf))}. Still good if you have not driven since.</p></div>`
-        : h.projected ? `<div class="callout warn"><p style="margin:0"><b>These clocks were worked out, not read.</b> They were carried across
-          the unload at ${esc(gt(h.asOf))}: on-duty time off your shift and cycle, the drive clock untouched. Check them against your
-          display; anything you type replaces them.</p></div>`
-        : h.confirmed === false ? `<div class="callout warn"><p style="margin:0">These clocks were last read at ${esc(gt(h.asOf))} and a load
-          has run since. Re-read your HOS display before a broker plans anything off them.</p></div>`
-        : h.asOf ? `<p class="hint">Read ${esc(gt(h.asOf))}${h.source ? ` (${esc(h.source.toLowerCase())})` : ''}.</p>` : ''}
+      <h3 class="sect">Hours of service</h3>
+      <p class="hint">Your HOS display is authoritative: type what it says. The break clock is hours of <em>driving</em> left before the
+        ${hhmm(S.rules.breakLength)} break, not driving time.</p>
       ${clockFields('hs', h)}
-      <p class="hint">Break clock = hours of <em>driving</em> left before the ${hhmm(S.rules.breakLength)} break is required. It is not
-        available driving time.</p>
       <label>Hours coming back (recap)
         <input id="hs-recap" placeholder="8:00 in 1, 10:30 in 2"
           value="${esc((h.recap || []).map((r) => `${hhmm(r.hours)} in ${r.inDays}`).join(', '))}"></label>
       <div class="dropzone" id="hs-drop" tabindex="0">Or paste or drop a GDC recap screenshot here${S.settings.hasApiKey ? '' : ' (needs an API key in Settings)'}</div>
-      <div class="row-actions"><button class="btn primary" id="hs-save">Report clocks</button></div></div>
-    <div class="panel"><div class="panel-head"><h2>Truck</h2></div>
-      ${S.truck ? `<p>${esc(S.truck.year)} ${esc(S.truck.make)} ${esc(S.truck.model)}, ${S.truck.avgMpg} mpg.</p>` : ''}</div>
-    <div class="panel"><div class="panel-head"><h2>Trailer</h2>
+      <div class="row-actions"><button class="btn primary" id="wh-save">Save where I am and my clocks</button></div>
+    </div></div>`;
+}
+
+function wireWhere() {
+  $('wh-toggle').onclick = () => { WHERE_OPEN = !WHERE_OPEN; render(); };
+  const save = $('wh-save');
+  if (!save) return;
+  save.onclick = async () => {
+    try {
+      const at = readWhen('tr-time');
+      const clocks = readClockFields('hs', true);
+      await api('/status', 'POST', {
+        locationCity: $('tr-city').value, locationState: $('tr-state').value, day: at.day, time: at.time,
+        odometer: Number($('tr-odo').value), fuelPct: Number($('tr-fuel').value),
+      });
+      S = await api('/hos', 'POST', { ...clocks, recap: parseRecap($('hs-recap').value) });
+      WHERE_OPEN = false;
+      toast('Where you are and your clocks saved.'); render();
+    } catch (e) { toast(e.message, 'bad'); }
+  };
+  wireRecapDrop($('hs-drop'));
+}
+
+/** The truck, and owning a trailer: in Settings now the Truck & clocks tab is gone. */
+function trailerHtml() {
+  return `<div class="panel"><div class="panel-head"><h2>Your truck and trailer</h2>
       <span class="sub">${S.trailer?.powerOnly ? 'Power-only: the shipper\'s trailer, off the Freight Market' : `Your own ${esc(S.trailer?.type || '')}: the Cargo Market`}</span></div>
+      ${S.truck ? `<p>${esc(S.truck.year)} ${esc(S.truck.make)} ${esc(S.truck.model)}, ${S.truck.avgMpg} mpg.</p>` : ''}
       <p class="hint">Bought a trailer in the game? Put it here. It goes behind the truck: the Cargo Market opens, dock times follow it,
         and specialist brokers for its trade will talk to you.</p>
       <div class="grid4">
@@ -1511,6 +1701,17 @@ function truckView() {
       <div class="row-actions"><button class="btn primary" id="tl-save">I own this trailer</button>
         ${S.trailer && !S.trailer.powerOnly ? '<button class="btn ghost" id="tl-po">Run power-only</button>' : ''}
         ${S.trailer?.powerOnly && S.ownedTrailer ? '<button class="btn ghost" id="tl-hook">Hook my trailer</button>' : ''}</div></div>`;
+}
+
+function wireTrailer() {
+  $('tl-save').onclick = async () => {
+    try { S = await api('/trailer', 'POST', { type: $('tl-type').value, gameId: $('tl-id').value, year: Number($('tl-year').value) || null }); toast('Trailer saved.'); render(); }
+    catch (e) { toast(e.message, 'bad'); }
+  };
+  const po = $('tl-po');
+  if (po) po.onclick = async () => { try { S = await api('/trailer/power-only', 'POST'); render(); } catch (e) { toast(e.message, 'bad'); } };
+  const hk = $('tl-hook');
+  if (hk) hk.onclick = async () => { try { S = await api('/trailer', 'POST', { type: S.ownedTrailer.type, gameId: S.ownedTrailer.ref, year: S.ownedTrailer.year }); render(); } catch (e) { toast(e.message, 'bad'); } };
 }
 
 /** Clocks off a GDC Companion recap screenshot, pasted or dropped on the zone. */
@@ -1536,32 +1737,50 @@ function wireRecapDrop(zone) {
   zone.onpaste = (e) => { e.stopPropagation(); const f = [...(e.clipboardData?.files || [])]; if (f.length) readRecapShot(f, zone); };
 }
 
-function wireTruck() {
-  $('tl-save').onclick = async () => {
-    try { S = await api('/trailer', 'POST', { type: $('tl-type').value, gameId: $('tl-id').value, year: Number($('tl-year').value) || null }); toast('Trailer saved.'); render(); }
-    catch (e) { toast(e.message, 'bad'); }
+// ---------------------------------------------------------------- company names (renaming mods)
+
+/** For Real Companies and other renaming mods: what the player's game calls the companies that hire directly. */
+function companyNamesHtml() {
+  const rows = S.companies || [];
+  return `<div class="panel"><div class="panel-head"><h2>Company names</h2><span class="sub">For Real Companies and other renaming mods</span></div>
+    <p class="hint">A mod that renames the game's companies to real brands makes your boards say "Walmart" where the game says "Wallbert".
+      Give the app the names, so the companies that hire you directly find their own freight, and a job's trade is read right.
+      Read them out of your mod, or type them: several names for one company are fine, separated by commas.</p>
+    <div class="row-actions"><button class="btn" id="co-scan">Find my mod</button>
+      ${S.companyModPath ? `<span class="hint">Names read from ${esc(S.companyModPath)}</span>` : ''}</div>
+    <div id="co-mods"></div>
+    <div class="tablewrap"><table><thead><tr><th>In the base game</th><th>What your game calls it</th><th>From your mod</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr><td>${esc(r.name)}</td>
+        <td><input id="co-n-${i}" data-firm="${esc(r.name)}" data-listed="${esc(r.listed)}" value="${esc(r.typed)}"
+          placeholder="${esc(r.mod || r.listed || r.name)}" style="margin:0"></td>
+        <td class="hint">${esc(r.mod || '—')}</td></tr>`).join('')}</tbody></table></div>
+    <div class="row-actions"><button class="btn primary" id="co-save">Save names</button>
+      <button class="btn ghost" id="co-fill">Fill from my Real Companies list</button></div></div>`;
+}
+
+function wireCompanyNames() {
+  $('co-fill').onclick = () => document.querySelectorAll('[data-firm]').forEach((i) => { if (i.dataset.listed && !i.value) i.value = i.dataset.listed; });
+  $('co-save').onclick = async () => {
+    const names = {};
+    document.querySelectorAll('[data-firm]').forEach((i) => { names[i.dataset.firm] = i.value; });
+    try { S = await api('/companies', 'POST', { names }); toast('Company names saved.'); render(); } catch (e) { toast(e.message, 'bad'); }
   };
-  const po = $('tl-po');
-  if (po) po.onclick = async () => { try { S = await api('/trailer/power-only', 'POST'); render(); } catch (e) { toast(e.message, 'bad'); } };
-  const hk = $('tl-hook');
-  if (hk) hk.onclick = async () => { try { S = await api('/trailer', 'POST', { type: S.ownedTrailer.type, gameId: S.ownedTrailer.ref, year: S.ownedTrailer.year }); render(); } catch (e) { toast(e.message, 'bad'); } };
-  $('tr-save').onclick = async () => {
+  $('co-scan').onclick = async () => {
     try {
-      const at = readWhen('tr-time');
-      S = await api('/status', 'POST', {
-        locationCity: $('tr-city').value, locationState: $('tr-state').value, day: at.day, time: at.time,
-        odometer: Number($('tr-odo').value), fuelPct: Number($('tr-fuel').value),
+      const r = await api('/mod/scan');
+      const mb = (b) => `${Math.round(b / 1048576)} MB`;
+      $('co-mods').innerHTML = (r.candidates || []).length
+        ? `<p class="hint">Mods found on this PC, biggest first: a renaming mod is usually one of the larger ones.</p>${r.candidates.map((m) =>
+          `<div class="loadcard"><div class="loadcard-head"><b>${esc(m.name)}</b>&nbsp;<span class="hint">${mb(m.bytes)}</span><span class="spacer"></span>
+            ${m.format === 'zip' ? `<button class="btn tiny primary" data-modread="${esc(m.path)}">Read this one</button>`
+              : '<span class="hint">packed in SCS\'s own format, which cannot be read: type the names below instead</span>'}</div></div>`).join('')}`
+        : '<p class="hint">No mods found. Type the names below instead.</p>';
+      document.querySelectorAll('[data-modread]').forEach((b) => b.onclick = async () => {
+        try { const x = await api('/mod/read', 'POST', { path: b.dataset.modread }); S = x.snapshot; toast(x.message, x.ok ? 'ok' : 'bad'); render(); }
+        catch (e) { toast(e.message, 'bad'); }
       });
-      toast('Saved.'); render();
     } catch (e) { toast(e.message, 'bad'); }
   };
-  $('hs-save').onclick = async () => {
-    try {
-      S = await api('/hos', 'POST', { ...readClockFields('hs', true), recap: parseRecap($('hs-recap').value) });
-      toast('Clocks recorded.'); render();
-    } catch (e) { toast(e.message, 'bad'); }
-  };
-  wireRecapDrop($('hs-drop'));
 }
 
 // ---------------------------------------------------------------- settings
@@ -1587,6 +1806,8 @@ function settingsView() {
       <div class="skillgrid">${lim.map((v, i) => `<label>Level ${i}<input data-ld="${i}" type="number" min="1" value="${v ?? ''}"></label>`).join('')}</div>
       <div class="row-actions"><button class="btn primary" id="ld-save">Save limits</button>
         <button class="btn ghost" id="ld-reset">Back to the game's defaults</button></div></div>
+    ${trailerHtml()}
+    ${companyNamesHtml()}
     <div class="panel"><div class="panel-head"><h2>Phone alerts</h2></div>
       <p class="hint">A call waits until you answer it or let it ring, so none is ever missed. It shows in the top bar on every tab
         and in the browser tab's title. Turn on desktop alerts to see it with the app on another screen.</p>
@@ -1612,6 +1833,8 @@ function wireSettings() {
     .map((i) => (i.value === '' ? null : Number(i.value))) }, 'Limits saved.');
   $('ld-reset').onclick = () => save({ resetLongDistance: true }, 'Back to the game defaults.');
   $('se-key-save').onclick = () => save({ anthropicApiKey: $('se-key').value }, 'Key saved.');
+  wireTrailer();
+  wireCompanyNames();
   $('se-notify').onclick = async () => {
     if (!('Notification' in window)) return toast('This browser cannot show desktop alerts.', 'bad');
     const p = await Notification.requestPermission();

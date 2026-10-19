@@ -37,6 +37,21 @@ public class OoCareer
     public HomeLifeState HomeLife { get; set; } = new();
     public GameBankState GameBank { get; set; } = new();
     public List<Lane> Lanes { get; set; } = new();
+    /// <summary>
+    /// The calendar month Day 1 falls in: chosen on the first screen, 1 (January) on a career from before it, which is what
+    /// those careers have always had. The game counts days and shows no month; the app's calendar is laid over the days from
+    /// here, and the holidays and the month shown run on it. See HomeLife.Calendar.
+    /// </summary>
+    public int StartMonth { get; set; } = 1;
+    /// <summary>
+    /// What the player's game calls the companies, typed in, by base-game name: "Walmart, Target, Aldi" for Wallbert. Beside
+    /// the names read out of a renaming mod (the game state's ModCompanyNames). See Companies.
+    /// </summary>
+    public Dictionary<string, string> CompanyNames { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Who is at home. Null on a career from before families, which is made single on loading (see HomeLife.MigrateFamily).</summary>
+    public Family? Family { get; set; }
+    /// <summary>Jobs on the board the driver told a broker they could not reach in time: no broker offers them again.</summary>
+    public List<string> CantMakeLoadIds { get; set; } = new();
     public PaySeen PaySeen { get; set; } = new();
 }
 

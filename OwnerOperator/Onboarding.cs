@@ -18,7 +18,13 @@ public record StartRequest(
     int JustInTime,
     List<string>? Adr,
     double Odometer,
-    string? Preset);
+    string? Preset,
+    FamilyRequest? Family = null,
+    int? EveryDays = null,
+    int? StartMonth = null);
+
+public record FamilyRequest(bool Partner, string? PartnerName, List<KidRequest>? Kids);
+public record KidRequest(string? Name, string? Kind);
 
 /// <summary>
 /// The first screen: home, the clock, level and skills, the odometer and the preset. Everything Core needs to plan
@@ -157,7 +163,17 @@ public static class Onboarding
         // The broker roster, fixed for the career, and the directory: the brokers who work home.
         c.Brokers = BrokerBook.Generate(c);
         BrokerBook.Refresh(c);
+        // The month Day 1 falls in, before anything is scheduled off the calendar.
+        c.StartMonth = r.StartMonth is >= 1 and <= 12 ? r.StartMonth.Value : 1;
         HomeLife.Begin(c);
+        var family = new Family
+        {
+            Partner = r.Family?.Partner == true,
+            PartnerName = r.Family?.PartnerName ?? "",
+            Kids = (r.Family?.Kids ?? new()).Select(k => new Kid { Name = k.Name ?? "", Kind = k.Kind ?? "Daughter" }).ToList(),
+        };
+        HomeLife.SetFamily(c, family);
+        c.HomeLife.EveryDays = r.EveryDays is >= 5 and <= 42 ? r.EveryDays.Value : HomeLife.SuggestedEveryDays(family);
 
         OoStore.Log(c, "career", $"{name} starts out of {city}, {state}: {preset} preset, power-only, Long Distance {c.Profile.Skills.LongDistance}.");
     }

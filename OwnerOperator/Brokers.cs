@@ -11,6 +11,8 @@ public class Broker
 {
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
+    /// <summary>A company's base-game name, which its freight is matched on; Name is what the player's game calls it. See Companies.</summary>
+    public string BaseName { get; set; } = "";
     /// <summary>The person who answers the phone.</summary>
     public string Rep { get; set; } = "";
 
@@ -212,6 +214,7 @@ public static class BrokerBook
             {
                 Id = $"B{list.Count + 1:00}",
                 Name = firm.Name,
+                BaseName = firm.Name,
                 Rep = reps[list.Count % reps.Count],
                 Tier = BrokerTiers.Premium,
                 Kind = "Shipper",

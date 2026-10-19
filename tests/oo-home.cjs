@@ -1,6 +1,6 @@
 /* Owner-Operator 0.9: home life, the US reason to go home.
  *
- *   - a career starts at home, with two dates on the calendar a week or more ahead
+ *   - a career starts at home, with a partner and two kids: four dates on the calendar a week or more ahead
  *   - days out cost a little, days past the promise cost more, days home give it back
  *   - a missed date costs a lot; below 40 home calls, with a deadline
  *   - at the bottom, no broker will book you
@@ -22,13 +22,14 @@ const at = (city, state, day, time = '08:00') => api('/status', 'POST', { locati
 
 (async () => {
   let S = await api('/start', 'POST', { game: 'ATS', driverName: 'H. Ome', homeCity: 'Kansas City', homeState: 'KS', day: 10, time: '08:00',
-    level: 0, longDistance: 2, highValue: 0, fragile: 0, justInTime: 0, adr: [], odometer: 0, preset: 'Normal' });
+    level: 0, longDistance: 2, highValue: 0, fragile: 0, justInTime: 0, adr: [], odometer: 0, preset: 'Normal',
+    family: { partner: true, kids: [{ kind: 'Daughter' }, { kind: 'Son' }] } });
 
   head('1. Starting at home');
   let h = S.home;
   ok('at home, 80 of 100', h.atHome && h.score === 80, `${h.atHome} ${h.score}`);
-  ok('two dates on the calendar, a week or more ahead', h.dates.length === 2 && h.dates.every((d) => d.day >= 17), h.dates.map((d) => `${d.day} ${d.title}`).join('; '));
-  ok('promise defaults to every 14 days, for 3', h.everyDays === 14 && h.homeDays === 3);
+  ok('four dates on the calendar, a week or more ahead', h.dates.length === 4 && h.dates.every((d) => d.day >= 17), h.dates.map((d) => `${d.day} ${d.title}`).join('; '));
+  ok('promise defaults to every 10 days for a family, for 3', h.everyDays === 10 && h.homeDays === 3);
 
   head('2. Out on the road');
   S = await at('Wichita', 'KS', 11);
@@ -43,13 +44,13 @@ const at = (city, state, day, time = '08:00') => api('/status', 'POST', { locati
   S = await at('Wichita', 'KS', first.day + 1);
   h = S.home;
   ok('costs a lot', h.recent.some((d) => d.id === first.id && d.status === 'Missed') && before - h.score > 20, `${before} -> ${h.score}`);
-  ok('and a new date is put on the calendar', h.dates.length === 2);
+  ok('and a new date is put on the calendar', h.dates.length === 4);
 
   head('4. Home calls');
   let day = first.day + 1;
   while (!S.home.call && S.home.score > 0 && day < first.day + 40) { day += 2; S = await at('Wichita', 'KS', day); }
   h = S.home;
-  ok('below 40, home calls with a deadline', h.call && h.score < 40 && h.call.beHomeByGameTime > S.status.gameTime, `${h.score} ${JSON.stringify(h.call)}`);
+  ok('below 45 with kids, home calls with a deadline', h.call && h.score < 45 && h.callBelow === 45 && h.call.beHomeByGameTime > S.status.gameTime, `${h.score} ${JSON.stringify(h.call)}`);
   const callScore = h.score;
   S = await at('Kansas City', 'KS', day + 1);
   h = S.home;

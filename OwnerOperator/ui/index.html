@@ -34,6 +34,14 @@
         <label>Game day<input id="st-day" type="number" min="1" value="1">
           <span class="hint">Off the game's clock. A new profile is Day 1.</span></label>
         <label>Time of day<input id="st-time" placeholder="8:00 AM" value="8:00 AM"></label>
+        <label class="span2">The month it is
+          <select id="st-month">
+            <option value="1">January</option><option value="2">February</option><option value="3" selected>March</option>
+            <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+            <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+          </select>
+          <span class="hint">ATS shows no month, so pick one: the holidays fall from it. Day 1 is the 1st of this month.</span></label>
 
         <label>Odometer<input id="st-odo" type="number" min="0" step="1" value="0">
           <span class="hint">The truck's odometer in the game, so every mile is measured from the first load.</span></label>
@@ -52,6 +60,12 @@
       </div>
       <label>ADR classes</label>
       <div class="chkrow" id="st-adr"></div>
+
+      <h3 class="subhead">At home</h3>
+      <p class="hint">Who is waiting at home decides how much home asks of you: how many dates there are, how fast home life drops
+        when you are away, and how soon home calls. Single is the easiest; a partner and kids, the most.</p>
+      <div id="st-family"></div>
+      <p class="hint" id="st-family-hint"></p>
 
       <h3 class="subhead">How hard</h3>
       <div class="chkrow" id="st-preset"></div>

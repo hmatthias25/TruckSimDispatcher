@@ -38,9 +38,12 @@ public static class Specialties
     /// Which trade a listing belongs to: the shipping company's industry where the game knows it, otherwise the
     /// trailer the listing names. General where neither says.
     /// </summary>
-    public static string Of(BoardLoad l)
+    public static string Of(BoardLoad l) => Of(null, l);
+
+    /// <summary>The same, knowing the career's company names: a renaming mod's "Exxon" is Gallon Oil, and fuel.</summary>
+    public static string Of(OoCareer? c, BoardLoad l)
     {
-        var firm = AtsCompanies.Find(l.Shipper);
+        var firm = c != null ? Companies.FirmOf(c, l.Shipper) : AtsCompanies.Find(l.Shipper);
         if (firm != null)
         {
             var ind = firm.Industry.ToLowerInvariant();
@@ -82,5 +85,5 @@ public static class Specialties
     };
 
     /// <summary>A listing that is this company's own freight, the way a dedicated account reads one.</summary>
-    public static bool IsShippersOwn(Broker shipper, BoardLoad l) => Dedicated.Mentions(l.Shipper, shipper.Name);
+    public static bool IsShippersOwn(OoCareer c, Broker shipper, BoardLoad l) => Companies.Is(c, Companies.Base(shipper), l.Shipper);
 }

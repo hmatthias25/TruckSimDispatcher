@@ -2,7 +2,8 @@
  *
  *   - a broker offering a listing with under 45 minutes left says so
  *   - "can't make it in time" costs nothing: no patience, no standing; the broker offers another job, or says there is none
- *   - asked about a listing with time on it, the broker just says so
+ *   - "can't make it" on any job: no penalty, the job is off the table for every broker, and where the plan had the
+ *     driver making it easily, the broker says to check where the app has them
  *   - a broker knows where you are: at the receiver you just delivered to, that company's job is offered first
  */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5999}/api`;
@@ -45,13 +46,20 @@ const job = (cargo, dest, st, miles, pay, extra = {}) => ({ cargo, destCity: des
   ok('the last of them: the broker says so', r.call.status === 'Nothing' && /last I had/.test(said(r)), said(r));
   ok('and holds nothing against you', (await standing()) === before, `${before} -> ${await standing()}`);
 
-  head('2. A listing with time on it');
+  head('2. A window you cannot make, on a listing with time on it');
   await api('/board/clear', 'POST');
   await api('/board/add-many', 'POST', [job('Paper', 'Topeka', 'KS', 70, 380)]);
   r = await api('/calls', 'POST', { brokerId: starter.id });
   ok('no warning', !/comes off the board/.test(said(r)) && r.call.listingLeftHours == null, said(r));
+  const standing2 = await standing();
   r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'toolate' });
-  ok('"can\'t make it" on that: plenty of time', /plenty of time/.test(said(r)) && r.call.status === 'Open', said(r));
+  ok('"can\'t make it" works on any job: dropped, nothing else here', r.call.status === 'Nothing' && /last I had/.test(said(r)), said(r));
+  ok('and where the plan had you making it easily, check where the app has you', r.call.checkPosition && /check where/.test(said(r)));
+  ok('no penalty', (await standing()) === standing2);
+  const other = (await api('/bootstrap')).directory.find((b) => b.tier === 'Starter' && b.worksHere && b.takesYou && b.id !== starter.id);
+  r = await api('/calls', 'POST', { brokerId: other.id });
+  ok('off the table for every broker', r.call.status === 'Nothing', said(r));
+  ok('and marked on the board', r.snapshot.board[0].notes.some((n) => /could not get there in time/.test(n)));
 
   head('3. The dock you are at');
   await api('/board/clear', 'POST');

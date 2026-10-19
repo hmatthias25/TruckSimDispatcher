@@ -388,6 +388,47 @@ app.MapPost("/api/booking/handback", (HandBackRequest r) => Results.Ok(store.Mut
     return Snapshot(c);
 })));
 
+/// Company names, for a renaming mod (Real Companies and the like): found and read out of the mod file, as the
+/// company-driver app does for dedicated accounts, or typed. See Companies.
+app.MapGet("/api/mod/scan", () => Results.Ok(new
+{
+    candidates = ModCompanyNames.Scan(),
+    current = store.Career.Game.Settings.CompanyNameModPath,
+    known = store.Career.Game.Settings.ModCompanyNames.Count,
+}));
+
+app.MapPost("/api/mod/read", (ModReadRequest r) => Results.Ok(store.Mutate<object>(c =>
+{
+    var reading = ModCompanyNames.Read(r.Path ?? "");
+    if (!reading.Ok) return new { reading.Ok, message = reading.Error, snapshot = Snapshot(c) };
+    c.Game.Settings.ModCompanyNames = reading.Names;
+    c.Game.Settings.CompanyNameModPath = r.Path ?? "";
+    c.Game.Settings.RenamesCompanies = "yes";
+    Companies.Apply(c);
+    var said = $"Read {reading.Names.Count} company name(s) out of your mod. The companies go by what your game calls them now.";
+    OoStore.Log(c, "broker", said);
+    return new { reading.Ok, message = said, snapshot = Snapshot(c) };
+})));
+
+app.MapPost("/api/companies", (CompanyNamesRequest r) => Results.Ok(store.Mutate(c =>
+{
+    RequireStarted(c);
+    Companies.SetTyped(c, r.Names);
+    return Snapshot(c);
+})));
+
+app.MapPost("/api/home/family", (FamilyRequest r) => Results.Ok(store.Mutate(c =>
+{
+    RequireStarted(c);
+    HomeLife.SetFamily(c, new Family
+    {
+        Partner = r.Partner,
+        PartnerName = r.PartnerName ?? "",
+        Kids = (r.Kids ?? new()).Select(k => new Kid { Name = k.Name ?? "", Kind = k.Kind ?? "Daughter" }).ToList(),
+    });
+    return Snapshot(c);
+})));
+
 app.MapPost("/api/home/promise", (PromiseRequest r) => Results.Ok(store.Mutate(c =>
 {
     RequireStarted(c);
@@ -442,6 +483,9 @@ if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
         c.HomeLife.Call = null;
         return Snapshot(c);
     })));
+// What the boards have taught, for a test to read. Only that: the career file also holds the API key.
+if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
+    app.MapGet("/api/test/career", () => Results.Ok(new { paySeen = store.Career.PaySeen }));
 
 // ---------------------------------------------------------------- run
 
@@ -535,6 +579,13 @@ static object Snapshot(OoCareer c)
             gameTime = s.Status.GameTime,
             day = GameClock.DayOf(s.Status.GameTime),
             pretty = GameClock.Pretty(s.Status.GameTime),
+            // The month: ATS shows none, but the app's calendar has one (Day 1 is 1 January), and the holidays and the
+            // seasons run on it.
+            monthDay = GameClock.TryParse(s.Status.GameTime) is { } md
+                ? HomeLife.Calendar(c, md).ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture) : "",
+            calendarOffset = HomeLife.CalendarOffset(c),
+            month = c.Started ? Seasons.Month(c) : 1,
+            region = Carriers.AtsRegionOf(s.Status.LocationState),
             odometer = s.Status.AtsOdometer,
             fuelPct = s.Status.FuelPct,
         },
@@ -577,6 +628,16 @@ static object Snapshot(OoCareer c)
         lastCall = c.Calls.LastOrDefault() is { } last ? Calls.View(c, last) : null,
         booking = Calls.ActiveBooking(c),
         lane = Lanes.Booked(c) is { } bl ? Lanes.View(c, bl) : null,
+        cantMake = c.CantMakeLoadIds,
+        companies = c.Started ? Companies.View(c) : null,
+        companyModPath = s.Settings.CompanyNameModPath,
+        seasons = c.Started ? Seasons.Notable(c) : new List<object>(),
+        seasonTable = c.Started ? Seasons.Table(c) : null,
+        homePull = c.Started ? HomeLife.Pull(c) : null,
+        homeRoute = c.Started && HomeLife.Route(c) is { } hr ? new
+        {
+            miles = hr.TotalMiles, arrival = hr.ProjectedArrivalGameTime, hr.RestsRequired, hr.BreaksRequired, hr.Timeline,
+        } : null,
         laneFits = Lanes.Booked(c) is { } fl && c.Started ? Lanes.Fits(c, fl, LoadDesk.Evaluate(c)).Select(v => v.Load.Id) : Enumerable.Empty<string>(),
         payPerMile = Lanes.PayPerMile(c),
         // The run as Core keeps it, whole: the Active Load tab reads it the way the company-driver app's does.
@@ -687,6 +748,8 @@ record SettingsRequest(decimal? CostPerMile, List<double?>? LongDistanceLimits, 
                        string? AnthropicApiKey, string? AnthropicModel, SkillsRequest? Skills, string? PhoneModel = null);
 record SkillsRequest(int LongDistance, int HighValue, int Fragile, int JustInTime, List<string>? Adr);
 record ExtractRequest(List<ScreenshotImage>? Images);
+record ModReadRequest(string? Path);
+record CompanyNamesRequest(Dictionary<string, string>? Names);
 record CallRequest(string? BrokerId, HosRequest? Clocks = null);
 record HandBackRequest(string? Why, bool? GameLost = null);
 record TrailerRequest(string? Type, string? GameId, int? Year);

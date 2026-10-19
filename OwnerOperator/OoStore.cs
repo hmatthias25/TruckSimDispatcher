@@ -30,6 +30,8 @@ public class OoStore
         _file = Path.Combine(_dir, "career.json");
         _career = Load();
         Activate(_career);
+        if (HomeLife.MigrateFamily(_career)) Save();
+        Companies.Apply(_career);
     }
 
     public string DataDirectory => _dir;

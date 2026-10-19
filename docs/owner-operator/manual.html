@@ -128,7 +128,7 @@
     <div><span class="n">11</span><span class="t"><b>Money</b><span>Two banks, Broker holding, transfers</span></span></div>
     <div><span class="n">12</span><span class="t"><b>Getting paid</b><span>Invoices, factoring, chasing, detention</span></span></div>
     <div><span class="n">13</span><span class="t"><b>Home life</b><span>The promise, dates, the call from home</span></span></div>
-    <div><span class="n">14</span><span class="t"><b>Truck, trailer and clocks</b><span>Power-only, owning a trailer</span></span></div>
+    <div><span class="n">14</span><span class="t"><b>Where you are, and your trailer</b><span>Position, clocks, owning a trailer</span></span></div>
     <div><span class="n">15</span><span class="t"><b>Settings</b><span>Cost per mile, skills, Long Distance, the AI key</span></span></div>
     <div><span class="n">16</span><span class="t"><b>Your record and standing</b><span>What builds it and what costs it</span></span></div>
     <div><span class="n">17</span><span class="t"><b>Quick reference</b><span>Every number in one place</span></span></div>
@@ -231,10 +231,13 @@
     <tr><td>Home</td><td>The city you live in: the truck's home garage, and where it starts. On a fresh profile, the garage the
       game started you in. Pick it from the list as you type.</td></tr>
     <tr><td>Game day, time</td><td>Off the game's clock. A new profile is Day 1.</td></tr>
+    <tr><td>The month it is</td><td>ATS shows none, so pick one: Day 1 is the 1st of it, and the holidays fall from there.</td></tr>
     <tr><td>Odometer</td><td>The truck's odometer in the game, so every mile is measured from the first load.</td></tr>
     <tr><td>Driver level</td><td>0 on a fresh profile.</td></tr>
     <tr><td>Skills</td><td>The points you have in Long Distance, High Value, Fragile and Just-In-Time (0&ndash;6), and the ADR
       classes you have. None is fine. The game hides jobs you have not unlocked, and brokers will not book them.</td></tr>
+    <tr><td>At home</td><td>Single, or married or with a partner, and how many kids, each optionally named. It decides how much home
+      asks of you (Section 13), and the promise suggested.</td></tr>
     <tr><td>How hard</td><td>The preset: see below. Normal is the intended game.</td></tr>
   </table>
 
@@ -267,7 +270,7 @@
   <figure><img src="img/topbar.png"><figcaption>The top bar is always there.</figcaption></figure>
   <table>
     <tr><th style="width:18%">Tile</th><th>What it says</th></tr>
-    <tr><td>Where, Clock</td><td>Where the app thinks the truck is, and the game time. Kept current by what you log.</td></tr>
+    <tr><td>Where, Clock</td><td>Where the app thinks the truck is, and the game time, with the month on the app's calendar beside it. Kept current by what you log.</td></tr>
     <tr><td>Drive, Shift, Cycle</td><td>Your hours left. Amber when under an hour (or under 11 on the cycle).</td></tr>
     <tr><td>Cost</td><td>Your all-in cost per mile.</td></tr>
     <tr><td>Can spend</td><td>What you may spend in the game bank: its balance less shipper money still waiting to move
@@ -278,12 +281,11 @@
   <h3>The tabs</h3>
   <table>
     <tr><th style="width:18%">Tab</th><th>For</th></tr>
-    <tr><td>Board</td><td>The jobs where you are, ranked; a line for the booked load; the booked lane.</td></tr>
+    <tr><td>Board</td><td>Where you are and your clocks; this month's freight; the jobs where you are, ranked; a line for the booked load; the booked lane.</td></tr>
     <tr><td>Active Load</td><td>The booked run: its appointment, the plans, the trip log, the arrivals and the close-out. A pip on the tab while a load is booked.</td></tr>
     <tr><td>Brokers</td><td>The phone, and the broker directory.</td></tr>
     <tr><td>Money</td><td>The game bank, transfers to make, Broker holding, and invoices. A number on the tab is transfers waiting.</td></tr>
     <tr><td>Home</td><td>Home life, the dates on the calendar, your promise.</td></tr>
-    <tr><td>Truck &amp; clocks</td><td>Where and when, your hours of service, the truck and the trailer.</td></tr>
     <tr><td>Settings</td><td>Cost per mile, skills, Long Distance limits, the AI key.</td></tr>
     <tr><td>Log</td><td>Everything that has happened, newest first.</td></tr>
   </table>
@@ -363,6 +365,21 @@
   <p><b>Feasible</b>: makes it with room. <b>Tight</b>: makes it, but a delay would sink it. <b>Infeasible</b>: cannot
     be made legally on your clocks. The notes under a job say why, and anything else worth knowing: a skill it needs,
     which trade it belongs to, which way home is.</p>
+
+  <h3>The season</h3>
+  <p>Freight runs by the season, region by region, as it does in real trucking: soft in January and February; produce on reefers
+    out of the South and Texas in late winter and spring, California in late spring, the north in late summer; flatbed and
+    building work most of the year in the South and March to October in the north; grain in the Midwest and Plains from late
+    August to November; dry van for the stores building from August to Christmas; fuel in the northern winter. It runs on the
+    app's calendar (the month beside the clock).</p>
+  <p><b>The game pays what it pays whatever the month</b>, so the season works through the brokers. In a busy month they keep
+    less of the game's pay (up to about four points of margin back to you) and ring more often from there; in a slow one they
+    keep more and ring less. A job says so on the board (&ldquo;Busy season for produce on reefers out of the Plains &amp;
+    Southwest&rdquo;), and the broker says so on the phone.</p>
+  <p><b>Freight this month</b>, near the top of the Board, shows every region against every kind of freight this month, busy or
+    slow, with an arrow where next month moves it, and a <b>Coming up</b> list of what turns over the next two months. Your
+    own trailer's freight is marked. It is the place to plan where to be, and when.</p>
+  <figure><img src="img/seasons.png"><figcaption>Freight this month: region by region, and what is coming.</figcaption></figure>
   <div class="note"><p>The <b>Leaves</b> figure is the best case. The broker's offer is what you really get; the phone shows
     what that leaves you (Section 8).</p></div>
 </section>
@@ -414,6 +431,8 @@
     <li>Only their own freight, from their own depots: they offer only that company's jobs off the board.</li>
     <li>Almost no margin, net 15, credit A, a 1% quick-pay fee.</li>
     <li>Only for a long, clean record: 120 days, 60 loads, 97% on time, plus the trailer and endorsements their freight needs.</li>
+    <li>Running <b>Real Companies</b> or another mod that renames them? Tell the app the names in Settings (Section 15), and
+      they go by what your game calls them and find their own freight on your boards.</li>
   </ul>
 
   <h3>Credit ratings</h3>
@@ -463,15 +482,22 @@
     <tr><td><span class="btn">Quick pay?</span></td><td>Paid in days rather than weeks, for the broker's quick-pay fee.</td></tr>
     <tr><td><span class="btn">Detention?</span></td><td>$40 an hour after 2 hours waiting at either dock, billed from your log (Section 12).</td></tr>
     <tr><td><span class="btn">Pass</span></td><td>Ends the call. Nothing booked, no harm done.</td></tr>
-    <tr><td><span class="btn">Can't make it in time</span></td><td>Only shown when the broker warned the listing is about to come off
-      the board. <b>No penalty</b>: no patience, no standing. The broker drops that job and offers another, or says there is nothing else.</td></tr>
+    <tr><td><span class="btn">Can't make it in time</span></td><td>On any job a broker offers. <b>No penalty</b>: no patience, no standing.
+      The broker drops that job and offers another, or says there is nothing else, and no broker offers you that job again.</td></tr>
   </table>
   <h3>A listing about to come off the board</h3>
   <p>The game's jobs only stay on the market for so long. When the job a broker offers has <b>under 45 minutes</b> left on
     its listing, the broker warns you (&ldquo;that one comes off the board in 0:36, can you get there in time?&rdquo;).
-    Only you know where you are on the road, so it is your call. If you cannot get there in time, say so: it is nobody's
-    fault. A job at the dock you are standing at cannot run out from under you, so it gets no warning. The countdown
-    comes from the screenshot reader, which reads it off the board.</p>
+    A job at the dock you are standing at cannot run out from under you, so it gets no warning. The countdown comes from
+    the screenshot reader, which reads it off the board.</p>
+  <h3>Can't make it in time</h3>
+  <p>A listing about to go, a delivery window you are two hours from: whatever the reason, only you know where you really are,
+    so it is your call. Press <span class="btn">Can't make it in time</span> (or say so, with an AI key). It costs nothing, the
+    broker offers the next job, and that job is off the table with every broker, marked on your board as one you could not
+    make. Saying no does not get you better jobs: a starter still offers from the leftovers.</p>
+  <p>The planner only lets brokers offer jobs it thinks you can make. If it had you making that one comfortably, the broker
+    says so (&ldquo;my sheet had you making that with 4:47 to spare&rdquo;), and the call shows where the app has you, with a
+    link to correct it. Usually that is the reason.</p>
   <p>Push past their patience and the broker hangs up: &ldquo;I'll find another truck.&rdquo; Call again later, or call
     someone else.</p>
 
@@ -479,7 +505,7 @@
   <p>The app knows the truth, and checks every argument against it.</p>
   <table>
     <tr><th style="width:18%">Argument</th><th>True when</th></tr>
-    <tr><td>Dead market</td><td>The destination is a thin freight market.</td></tr>
+    <tr><td>Dead market</td><td>The destination is a thin freight market (unless that freight is in season there), or in its slow season.</td></tr>
     <tr><td>Deadhead</td><td>There is a real empty run to the shipper, or out of a dead market.</td></tr>
     <tr><td>Tight window</td><td>The plan is Tight, or has under three hours of slack.</td></tr>
     <tr><td>My record</td><td>You have at least 5 loads at 95% or better on time.</td></tr>
@@ -622,7 +648,13 @@
     <li>If your cycle will be under 11 hours when you are empty, the pickup is after a 34-hour restart.</li>
     <li>If the run leaves you with under 2 hours of driving or 3 of shift when you are empty, too little to start another load,
       the pickup is after a 10-hour reset.</li>
-    <li>When home is due within five days, the lane heads home.</li>
+    <li><b>It leans toward where the freight is.</b> Where your run's region is ordinary or slow this month for the freight
+      the broker deals in (your trailer's, or theirs), and another region the lane can reach is busy, the lane goes there, so
+      you land where the next load is easy. The broker says so (&ldquo;produce on reefers is running out of there right
+      now&rdquo;). It only leans where the busy region has several cities in reach of the lane's distance, judged in the game's
+      miles, which the app learns from your boards (the game's roads run shorter than the real map).</li>
+    <li>When home is pulling (Section 13), the lane goes home: it fits any job that ends near your home city, or, where home is
+      more than one load away, it heads into your home region.</li>
   </ul>
 
   <h3>Inbound: the phone rings</h3>
@@ -766,16 +798,30 @@
     This app does not support the driver who lives in the truck: every driver has a home, and has to go back to it.</p>
   <figure><img src="img/home.png"><figcaption>The Home tab.</figcaption></figure>
 
+  <h3>Family</h3>
+  <p>Who is waiting at home decides how much home asks of you. Set it on the first screen, and change it on the Home tab when
+    life changes: the dates still to come are replaced with ones for the family as it is.</p>
+  <table>
+    <tr><th></th><th>Single</th><th>A partner</th><th>A partner and kids</th></tr>
+    <tr><td>Dates on the calendar</td><td>1 at a time: a friend's wedding, your mother's birthday</td><td>2: their birthday, your
+      anniversary</td><td>2, plus 1 for each kid up to 4: birthdays, ballgames, recitals, school plays</td></tr>
+    <tr><td>Home life drops</td><td>slowly (0.6&times;)</td><td>at the usual rate</td><td>faster: 0.2&times; more for each kid</td></tr>
+    <tr><td>Home calls below</td><td>30, with 4 days' notice</td><td>40, with 2&ndash;3 days</td><td>45, with 1&ndash;2 days</td></tr>
+    <tr><td>Suggested promise</td><td>home every 21 days</td><td>every 14</td><td>every 10</td></tr>
+  </table>
+  <p>Names are optional. With them, the dates and the calls from home use them (&ldquo;Emma's recital&rdquo;, &ldquo;Sam needs you
+    home&rdquo;); without, &ldquo;your daughter&rdquo;. A career from before families starts as single.</p>
+
   <h3>The promise</h3>
-  <p>How often you will be home, and for how long. It starts at <b>every 14 days, for 3</b>. Change it on the Home tab, but
+  <p>How often you will be home, and for how long. It starts at what your family suggests (every 21, 14 or 10 days), for 3. Change it on the Home tab, but
     not every week: each change costs a little.</p>
 
   <h3>The score</h3>
   <table>
     <tr><th style="width:44%">What</th><th>Effect</th></tr>
     <tr><td>A new career</td><td>Starts at 80, at home</td></tr>
-    <tr><td>Each day out, inside your promise</td><td>&minus;2</td></tr>
-    <tr><td>Each day out, past your promise</td><td>&minus;5</td></tr>
+    <tr><td>Each day out, inside your promise</td><td>&minus;2, times your family's rate</td></tr>
+    <tr><td>Each day out, past your promise</td><td>&minus;5, times your family's rate</td></tr>
     <tr><td>Each day at home</td><td>+10 (+20 over the holidays)</td></tr>
     <tr><td>A full home time, as promised</td><td>+10 more</td></tr>
     <tr><td>A date at home, made</td><td>+15</td></tr>
@@ -783,11 +829,26 @@
   </table>
 
   <h3>Dates at home</h3>
-  <p>Two things are always on the calendar, each known at least a week ahead: a birthday, a ballgame, an anniversary.
-    Be home on the day to make it. A missed one is replaced by a new one.</p>
+  <p>Two things are always on the calendar, each known at least a week ahead: a birthday, a ballgame, an anniversary. They are
+    the US reason to go home, which the law does not give you in ATS. <b>Be home at any time on that game day</b> to make it
+    (+15); it counts if you were home across the day, whether or not you told the app anything on it. A missed one costs 25
+    and is replaced by a new one.</p>
+
+  <h3>Getting home</h3>
+  <p>Home is <b>pulling</b> when home has called, a date at home is within five days, home life is under 40, or your promise is
+    due within five days. The Home tab says which. While it pulls:</p>
+  <ul>
+    <li><b>Brokers look for a load that gets you home.</b> Ring one from a break, or answer when one rings, and a lane goes to your
+      home city: it fits any job ending near home. A broker offering off a board picks the job that ends near home first, and
+      says so (&ldquo;And it gets you home: I hear you've got your son's ballgame on Day 15&rdquo;). A starter still offers only
+      from the leftovers.</li>
+    <li><b>Or run home empty.</b> When nothing is booked, <b>Getting home</b> on the Home tab gives the miles and when you would get
+      there on your clocks, with the rests. Drive it in the game, then press <span class="btn">I'm home</span>: the days at home
+      count from then. No pay, and the miles are yours.</li>
+  </ul>
 
   <h3>Home calls</h3>
-  <p>Below 40, the phone rings from home: something has come up, be home by a set time. It comes mid-run, so the load on
+  <p>Below your family's line (30, 40 or 45), the phone rings from home: something has come up, be home by a set time. It comes mid-run, so the load on
     the truck is either delivered on the way or <b>handed back</b>, a cancellation on your record. Getting home in time
     gives back 10; missing it costs 20.</p>
 
@@ -796,27 +857,40 @@
     and the truck's costs keep coming due in the Companion App.</p>
 
   <h3>The holidays</h3>
-  <p>Thanksgiving week, Christmas and New Year fall where they really do. Freight goes quiet and brokers keep about 5% more
-    of it, and days at home count double: the natural time for a long home time.</p>
+  <p>ATS shows no month, so the app keeps its own calendar: Day 1 is the 1st of the month you chose when the career started
+    (careers from before that choice start in January). The month shows beside the clock in the top bar. Thanksgiving week,
+    Christmas (22&ndash;29 December) and New Year (30 December &ndash; 2 January) fall on it every year. While one is on,
+    freight is quiet and brokers keep about 5% more of it, and days at home count double: the natural time for a long home
+    time.</p>
+  <h4>With a family, the holidays are dates</h4>
+  <p>Thanksgiving, Christmas and New Year's Day go on the calendar about six weeks ahead, marked as holidays. Within a week of
+    one, while you are away, a warning sits above every tab, and from five days out home pulls (brokers look for a load that
+    gets you there). Be home at any time on the day: +20. Miss it and it costs <b>30 with a partner, 40 with kids</b>. A single
+    driver has no holiday dates.</p>
 </section>
 
 <!-- ============================================================ 14 -->
 <section>
-  <h2><span class="num">14</span>Truck, trailer and clocks</h2>
-  <figure><img src="img/truck.png"><figcaption>The Truck &amp; clocks tab.</figcaption></figure>
-  <h3>Where and when</h3>
-  <p>Correct the app here whenever it is out of step with the game: the city, the game day and time, the odometer and the fuel.</p>
+  <h2><span class="num">14</span>Where you are, and your trailer</h2>
+  <p class="lede">Where the truck is and what your clocks say are kept current as you play: by the run (arrivals, the
+    close-out), by your calls to brokers, by <b>Running late? Check it from here</b> and by <b>I'm home</b>. You only need to
+    correct them yourself with nothing booked.</p>
+  <h3>Where you are, on the Board</h3>
+  <p>At the top of the Board, one line: the city, the day and time, your clocks, the odometer and fuel, with where the clocks
+    came from. The board is ranked off them. <span class="btn">Update</span> opens them to correct: the city, the game day
+    and time, the odometer and the fuel, and the hours of service.</p>
+  <figure><img src="img/where.png"><figcaption>Where you are, opened to update.</figcaption></figure>
   <h3>Hours of service</h3>
   <p>Laid out as in TruckSim Dispatcher: your HOS display is the authority, so type what it says, as h:mm. Drive, shift, the
     break clock (driving left before the 30-minute break, not driving time) and cycle, plus <b>hours coming back</b> on your
-    recap, as <code>8:00 in 1, 10:30 in 2</code>. Or paste a GDC recap screenshot, with an AI key. The panel says how fresh they are:</p>
+    recap, as <code>8:00 in 1, 10:30 in 2</code>. Or paste a GDC recap screenshot, with an AI key. The line says how fresh they are:</p>
   <ul>
     <li><b>Read at a close-out</b>: still good if you have not driven since.</li>
     <li><b>Worked out, not read</b>: carried across an unload with no reading. Check them against your display.</li>
     <li><b>Not confirmed</b>: a load has run since they were read. Re-read them before a broker plans anything off them.</li>
   </ul>
   <h3>Owning a trailer</h3>
-  <p>Bought a trailer in the game? Choose its kind, put its plate or ID and year, and press
+  <p>In <b>Settings</b>, under <b>Your truck and trailer</b>. Bought a trailer in the game? Choose its kind, put its plate or ID and year, and press
     <span class="btn">I own this trailer</span>. It goes behind the truck:</p>
   <ul>
     <li>the walkthrough and the board talk about the <b>Cargo Market</b>;</li>
@@ -847,6 +921,17 @@
   </table>
   <p><b>Economy mods change these</b>, GDC's among them. Set each level to match yours; a blank means anywhere.
     <span class="btn">Back to the game's defaults</span> restores the table.</p>
+  <h3>Company names</h3>
+  <p>For Real Companies and other mods that rename the game's companies to real brands. Your boards then say
+    &ldquo;Walmart&rdquo; where the base game says &ldquo;Wallbert&rdquo;, so the companies that hire you directly could not
+    find their own freight, and a job's trade could not be read off its shipper. Give the app the names:</p>
+  <ul>
+    <li><span class="btn">Find my mod</span> looks for mod files on this PC (Steam's workshop folders, on any drive) and
+      <span class="btn">Read this one</span> reads the names straight out of it, as TruckSim Dispatcher does for dedicated
+      accounts. A mod packed in SCS's own format cannot be read; type the names instead.</li>
+    <li>Or type them, against each company: several names for one are fine, separated by commas (&ldquo;Walmart, Target,
+      Aldi&rdquo; for Wallbert). <span class="btn">Fill from my Real Companies list</span> fills the ones the app knows.</li>
+  </ul>
   <h3>Phone alerts</h3>
   <p><span class="btn">Turn on desktop alerts</span> asks the browser to let the app show Windows notifications, so a call
     shows even when the app is on another screen (Section 10).</p>
@@ -904,9 +989,10 @@
     <tr><td>Appointment grace</td><td>2 hours past a booked slot before it counts as late</td></tr>
     <tr><td>Restart before a lane</td><td>When the cycle will be under 11 h at empty: 34 h first</td></tr>
     <tr><td>Reset before a lane</td><td>When drive will be under 2 h or shift under 3 h at empty: 10 h first</td></tr>
-    <tr><td>Home life</td><td>Starts 80; &minus;2/day out, &minus;5 past the promise, +10/day home</td></tr>
-    <tr><td>Home calls</td><td>Below 40</td></tr>
+    <tr><td>Home life</td><td>Starts 80; &minus;2/day out, &minus;5 past the promise (0.6&times; single, more with kids), +10/day home</td></tr>
+    <tr><td>Home calls</td><td>Below 30 single, 40 with a partner, 45 with kids</td></tr>
     <tr><td>Hitting bottom</td><td>At 0: home for 7 days, no bookings</td></tr>
+    <tr><td>The season</td><td>Busy: brokers keep up to ~4 points less and ring more; slow: they keep ~2 more and ring less</td></tr>
     <tr><td>The holidays</td><td>Brokers keep 5% more; home counts double</td></tr>
   </table>
 </section>
@@ -935,7 +1021,7 @@
   <h4>Nothing on the board fits my lane.</h4>
   <p>Take a break or a rest and paste the board again; boards refresh. If still nothing, press <b>Nothing fits</b>.</p>
   <h4>The planner thinks I am somewhere else.</h4>
-  <p>Correct the city, time and clocks on the Truck &amp; clocks tab, or under <b>From here</b> on the Active Load tab.</p>
+  <p>Correct the city, time and clocks under <b>Where you are</b> on the Board, or under <b>From here</b> on the Active Load tab.</p>
   <h4>Can I bring my TruckSim Dispatcher career across?</h4>
   <p>Not yet. The two apps keep separate careers.</p>
 </section>

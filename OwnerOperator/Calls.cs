@@ -72,6 +72,8 @@ public class Call
     public List<string> OfferedLoadIds { get; set; } = new();
     /// <summary>Hours left on the offered listing when it is under <see cref="Calls.ExpiryWarnHours"/>; null otherwise.</summary>
     public double? ListingLeftHours { get; set; }
+    /// <summary>The driver said they could not make a job the plan had them making: the page offers to correct where the app has them.</summary>
+    public bool CheckPosition { get; set; }
     public bool QuickPay { get; set; }
     public decimal DetentionPerHour { get; set; }
     public string BookingId { get; set; } = "";
@@ -115,8 +117,11 @@ public static class Calls
         var p = Personalities.For(b.Personality);
         call.GamePay = Math.Round(lane.GamePayPerMile * (decimal)lane.MidMiles, 2);
         var quiet = HomeLife.HolidayNow(c) != null ? 0.05m : 0m;
-        var target = call.GamePay * (1 - b.TargetMargin - quiet);
-        var ceiling = call.GamePay * (1 - b.MinMargin - quiet + b.Standing / 100m * 0.02m);
+        // The season where the lane picks up, for the freight this broker deals in: busy gives some margin back.
+        var season = Seasons.MarginBack(Seasons.Now(c, Seasons.KindOf(DispatchEngine.AssignedTrailer(c.Game)?.Type, b.Specialty),
+                                                   Carriers.AtsRegionOf(lane.PickupState)));
+        var target = call.GamePay * (1 - b.TargetMargin - quiet + season);
+        var ceiling = call.GamePay * (1 - b.MinMargin - quiet + season + b.Standing / 100m * 0.02m);
         call.Ceiling = Math.Min(Math.Floor(call.GamePay / 5m) * 5m, Round5(Math.Max(target, ceiling)));
         call.Offer = Round5(Math.Min(call.Ceiling, target + (decimal)p.Opening * (call.Ceiling - target)));
         call.Patience = p.Patience + (b.Standing > 30 ? 1 : 0);
@@ -208,7 +213,9 @@ public static class Calls
         call.ListingLeftHours = left is { } h && h < ExpiryWarnHours ? h : null;
         var said = "";
         if (AtTheDock(c, load) && load.Shipper.Length > 0) said += " " + Templates.AtTheDock(load);
+        if (HomeLife.Pull(c) is { } pull && HomeLife.NearHome(c, load.DestCity, load.DestState)) said += " " + Templates.GetsYouHome(pull.Said);
         if (call.ListingLeftHours is { } l) said += " " + Templates.ExpiryWarning(l);
+        if (Seasons.BrokerSays(Seasons.Of(c, load)) is { } season) said += " " + season;
         return said;
     }
 
@@ -224,7 +231,7 @@ public static class Calls
 
         var runnable = LoadDesk.Evaluate(c)
             .Where(v => v.Feasibility.Verdict != "Infeasible" && v.SkillNotes.Count == 0)
-            .Where(v => Offers(b, v.Load))
+            .Where(v => Offers(c, b, v.Load))
             .OrderBy(v => v.NetPerDay)
             .ToList();
         if (runnable.Count == 0) return null;
@@ -232,7 +239,7 @@ public static class Calls
         // A company offers its own freight, whichever of it it has; no pool by tier.
         if (b.Kind == "Shipper" && !better)
         {
-            var own = runnable.Where(v => !call.OfferedLoadIds.Contains(v.Load.Id)).ToList();
+            var own = runnable.Where(v => !Passed(c, call, v.Load.Id)).ToList();
             return own.Count == 0 ? null : own[BrokerBook.Stable(call.Id) % own.Count];
         }
 
@@ -243,32 +250,54 @@ public static class Calls
             BrokerTiers.Established => (n / 4, Math.Max(n / 4 + 1, (3 * n + 3) / 4)),
             _ => (Math.Max(0, n - Math.Max(1, n / 4)), n),
         };
-        var pool = runnable.Skip(from).Take(to - from).Where(v => !call.OfferedLoadIds.Contains(v.Load.Id)).ToList();
+        var pool = runnable.Skip(from).Take(to - from).Where(v => !Passed(c, call, v.Load.Id)).ToList();
 
         if (better)
         {
             // Asked for something better: the next one up from what is on offer, even out of the tier's pool.
             var current = runnable.FirstOrDefault(v => v.Load.Id == call.LoadId);
             return runnable.FirstOrDefault(v => current != null && v.NetPerDay > current.NetPerDay
-                                                && !call.OfferedLoadIds.Contains(v.Load.Id));
+                                                && !Passed(c, call, v.Load.Id));
         }
-        if (pool.Count == 0 && !runnable.Any(v => AtTheDock(c, v.Load) && !call.OfferedLoadIds.Contains(v.Load.Id))) return null;
+        if (pool.Count == 0 && !runnable.Any(v => AtTheDock(c, v.Load) && !Passed(c, call, v.Load.Id))) return null;
+
+        // Home pulling (a call from home, a date, home life low, the promise due): a job that ends near home comes first.
+        // A starter still offers only from the leftovers; anyone else will reach past their pool for it.
+        if (HomeLife.Pull(c) != null)
+        {
+            var homeward = pool.Where(v => HomeLife.NearHome(c, v.Load.DestCity, v.Load.DestState)).ToList();
+            if (homeward.Count == 0 && b.Tier != BrokerTiers.Starter)
+                homeward = runnable.Where(v => HomeLife.NearHome(c, v.Load.DestCity, v.Load.DestState) && !Passed(c, call, v.Load.Id)).ToList();
+            if (homeward.Count > 0)
+            {
+                var atDock = homeward.Where(v => AtTheDock(c, v.Load)).ToList();
+                var choose = atDock.Count > 0 ? atDock : homeward;
+                return choose[BrokerBook.Stable(call.Id) % choose.Count];
+            }
+        }
 
         // The dock the truck is at or heading for comes first: no empty miles to it, and the broker knows where you are.
         // A starter still offers only from the leftovers; anyone else will reach past their pool for it.
         var docked = pool.Where(v => AtTheDock(c, v.Load)).ToList();
         if (docked.Count == 0 && b.Tier != BrokerTiers.Starter)
-            docked = runnable.Where(v => AtTheDock(c, v.Load) && !call.OfferedLoadIds.Contains(v.Load.Id)).ToList();
+            docked = runnable.Where(v => AtTheDock(c, v.Load) && !Passed(c, call, v.Load.Id)).ToList();
         if (docked.Count > 0) return docked[BrokerBook.Stable(call.Id) % docked.Count];
         if (pool.Count == 0) return null;
         // Seeded per call, so asking the same question twice gets the same answer.
         return pool[BrokerBook.Stable(call.Id) % pool.Count];
     }
 
+    /// <summary>
+    /// A job not to offer again: already offered on this call, or one the driver said they could not reach in time. Applied
+    /// after a broker's tier has drawn its pool, never before, so saying no to a job cannot walk a starter up the board.
+    /// </summary>
+    private static bool Passed(OoCareer c, Call call, string loadId) =>
+        call.OfferedLoadIds.Contains(loadId) || c.CantMakeLoadIds.Contains(loadId);
+
     /// <summary>Whether this broker deals in this listing: a company, only its own freight; a specialist, only its trade.</summary>
-    public static bool Offers(Broker b, BoardLoad l) =>
-        b.Kind == "Shipper" ? Specialties.IsShippersOwn(b, l)
-        : b.Specialty == Specialties.General || Specialties.Of(l) == b.Specialty;
+    public static bool Offers(OoCareer c, Broker b, BoardLoad l) =>
+        b.Kind == "Shipper" ? Specialties.IsShippersOwn(c, b, l)
+        : b.Specialty == Specialties.General || Specialties.Of(c, l) == b.Specialty;
 
     private static void SetOffer(OoCareer c, Broker b, Personality p, Call call, LoadView pick)
     {
@@ -278,9 +307,11 @@ public static class Calls
         call.GamePay = pick.GamePay;
         // The holidays: freight goes quiet and brokers keep more of it.
         var quiet = HomeLife.HolidayNow(c) != null ? 0.05m : 0m;
-        var target = pick.GamePay * (1 - b.TargetMargin - quiet);
+        // The season, for this freight where it loads: a busy month gives some of their margin back, a slow one keeps more.
+        var season = Seasons.MarginBack(Seasons.Of(c, pick.Load));
+        var target = pick.GamePay * (1 - b.TargetMargin - quiet + season);
         // Standing buys a little of their margin: up to two points either way.
-        var ceiling = pick.GamePay * (1 - b.MinMargin - quiet + b.Standing / 100m * 0.02m);
+        var ceiling = pick.GamePay * (1 - b.MinMargin - quiet + season + b.Standing / 100m * 0.02m);
         // Never above what the game pays: a rate over it would be money that was never in the game bank. Agreed with
         // the project owner on 2026-10-18; negotiating claws back the broker's margin and nothing more.
         call.Ceiling = Math.Min(Math.Floor(pick.GamePay / 5m) * 5m, Round5(Math.Max(target, ceiling)));
@@ -389,21 +420,27 @@ public static class Calls
     }
 
     /// <summary>
-    /// "I can't get there before it comes off the board." Only after the broker warned it was close, and it costs nothing:
-    /// no patience, no standing. The listing running out is nobody's fault. The broker drops it and finds another, or not.
+    /// "I can't get there in time." On any job a broker offers off the board, and it costs nothing: no patience, no standing.
+    /// Honour system, because only the driver knows where they really are. The job comes off the table for every broker, and
+    /// this one offers the next, or says there is none. Where the plan had the driver making it comfortably, the app has them
+    /// somewhere they are not, and the broker says so. Asked for from play: a 1:30 window, two hours away.
     /// </summary>
     private static (Call, BrokerReply) TooLate(OoCareer c, Broker b, Personality p, Call call)
     {
-        if (call.ListingLeftHours is null || call.LaneId.Length > 0)
-            return Say(c, call, b, new BrokerReply("unclear", Templates.PlentyOfTime(call.Offer)));
+        if (call.LaneId.Length > 0)
+            return Say(c, call, b, new BrokerReply("unclear", Templates.LaneNotTooLate(call.Offer)));
+        var slack = LoadDesk.Evaluate(c).FirstOrDefault(v => v.Load.Id == call.LoadId)?.Feasibility.SlackHours;
+        if (!c.CantMakeLoadIds.Contains(call.LoadId)) c.CantMakeLoadIds.Add(call.LoadId);
+        call.CheckPosition = call.ListingLeftHours == null && slack is >= 2;
+        var aside = call.CheckPosition ? " " + Templates.CheckPosition(c.Game.Status.LocationCity, slack!.Value) : "";
         var next = Pick(c, b, call);
         if (next == null)
         {
             call.Status = "Nothing";
-            return Say(c, call, b, new BrokerReply("nothing", Templates.TooLateNothing()));
+            return Say(c, call, b, new BrokerReply("nothing", Templates.TooLateNothing() + aside));
         }
         SetOffer(c, b, p, call, next);
-        return Say(c, call, b, new BrokerReply("offer", Templates.TooLateNext(next.Load, call.Offer) + Asides(c, call, next.Load)));
+        return Say(c, call, b, new BrokerReply("offer", Templates.TooLateDrop() + aside + " " + Templates.TooLateNext(next.Load, call.Offer) + Asides(c, call, next.Load)));
     }
 
     private static (Call, BrokerReply) AskBetter(OoCareer c, Broker b, Personality p, Call call)
@@ -452,7 +489,9 @@ public static class Calls
         {
             var truth = a switch
             {
-                "deadmarket" => Markets.Find(c.Game, load.DestCity, load.DestState) is { Tier: 3 },
+                // A thin market, unless this freight is in season there; or any market in its slow season.
+                "deadmarket" => Seasons.Now(c, Seasons.KindOf(c, load), Carriers.AtsRegionOf(load.DestState)) is var dest
+                                && ((Markets.Find(c.Game, load.DestCity, load.DestState) is { Tier: 3 } && dest < Seasons.Busy) || dest <= Seasons.Slow),
                 "tight" => view.Feasibility.Verdict == "Tight" || view.Feasibility.SlackHours < 3,
                 "deadhead" => view.Feasibility.TotalMiles - load.LoadedMiles > 30 || Markets.Find(c.Game, load.DestCity, load.DestState) is { Tier: 3 },
                 "record" => record.Loads >= 5 && record.OnTimePct >= 95,
@@ -584,7 +623,7 @@ public static class Calls
             lane = c.Lanes.FirstOrDefault(l => l.Id == call.LaneId) is { } ln ? Lanes.View(c, ln) : null,
             // How the broker sounds, not how many rounds are left: the count is the app's to know.
             mood = call.Patience >= 3 ? "relaxed" : call.Patience == 2 ? "getting short" : "losing patience",
-            call.QuickPay, call.DetentionPerHour, call.AskedForBetter, call.FinalOffer, call.ListingLeftHours,
+            call.QuickPay, call.DetentionPerHour, call.AskedForBetter, call.FinalOffer, call.ListingLeftHours, call.CheckPosition,
             call.Turns, call.BookingId,
         };
     }

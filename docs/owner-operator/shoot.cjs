@@ -80,7 +80,8 @@ async function shot(name, sel) {
 
     // 2. A career, a pasted board, and the walkthrough.
     let S = await api('/start', 'POST', { game: 'ATS', driverName: 'Lincoln Hawk', homeCity: 'Kansas City', homeState: 'KS', day: 3, time: '08:00',
-      level: 0, longDistance: 1, highValue: 0, fragile: 0, justInTime: 0, adr: [], odometer: 1250, preset: 'Normal' });
+      level: 0, longDistance: 1, highValue: 0, fragile: 0, justInTime: 0, adr: [], odometer: 1250, preset: 'Normal',
+      family: { partner: true, partnerName: 'Sam', kids: [{ name: 'Emma', kind: 'Daughter' }, { name: 'Jake', kind: 'Son' }] } });
     await api('/home/promise', 'POST', { everyDays: 14, homeDays: 3 });
     await api('/board/add-many', 'POST', [
       { cargo: 'Paper', destCity: 'Topeka', destState: 'KS', loadedMiles: 70, gameRevenue: 410, deadlineHours: 20 },
@@ -93,6 +94,7 @@ async function shot(name, sel) {
     await shot('board', 'nav.tabs, #view');
     await shot('walkthrough', '#view .panel:first-child');
     await shot('loadcard', '#view .loadcard');
+    await shot('seasons', '#seasontable');
     await shot('topbar', 'header.topbar');
 
     // Screenshots staged, then a read waiting to be checked. The read itself needs an API key, so its result is put in
@@ -199,8 +201,10 @@ async function shot(name, sel) {
     // 7. The rest of the tabs.
     await tab('home');
     await shot('home', '#view');
-    await tab('truck');
-    await shot('truck', '#view');
+    await tab('board');
+    await ev(`WHERE_OPEN = true; render()`);
+    await shot('where', '#where');
+    await ev(`WHERE_OPEN = false; render()`);
     await tab('settings');
     await shot('settings', '#view');
     await tab('log');

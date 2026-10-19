@@ -28,6 +28,11 @@ public class Lane
     /// <summary>The broker's trade, or the company, the job at the pickup has to belong to.</summary>
     public string Specialty { get; set; } = "General";
     public string ShipperName { get; set; } = "";
+    /// <summary>Set where the lane takes the driver home: why (home has called, a date at home), and home, as "City, ST".</summary>
+    public string HomeFor { get; set; } = "";
+    public string HomeCity { get; set; } = "";
+    /// <summary>Set where the lane leans into a busy region: the freight that is busy there, in words.</summary>
+    public string LeanedFor { get; set; } = "";
     /// <summary>Offered, Booked, Matched, Cancelled or Expired.</summary>
     public string Status { get; set; } = "Offered";
     public string BookingId { get; set; } = "";
@@ -58,7 +63,58 @@ public static class Lanes
         {
             c.PaySeen.Miles += l.LoadedMiles;
             c.PaySeen.Pay += l.GameRevenue;
+            // The game's roads against the map: every listing is a measured pair, and the ratio is what turns a map
+            // distance into the miles a job would list. Implausible ratios are a misread, not a road.
+            var origin = (City: string.IsNullOrWhiteSpace(l.OriginCity) ? c.Game.Status.LocationCity : l.OriginCity,
+                          State: string.IsNullOrWhiteSpace(l.OriginState) ? c.Game.Status.LocationState : l.OriginState);
+            if (Geo.EstimatedMiles(origin.City, origin.State, l.DestCity, l.DestState) is { } est && est > 20
+                && l.LoadedMiles / est is var ratio && ratio is > 0.4 and < 1.6)
+            {
+                c.PaySeen.MapRatioSum += ratio;
+                c.PaySeen.MapRatioCount++;
+            }
         }
+    }
+
+    /// <summary>
+    /// What a job lists against the map's estimate for the same two cities: learned from the boards put in, 0.85 until there
+    /// are five. The game's roads run shorter than the real-world map (Austin to Beaumont lists under 200 mi).
+    /// </summary>
+    public static double MapFactor(OoCareer c) =>
+        c.PaySeen.MapRatioCount >= 5 ? Math.Clamp(c.PaySeen.MapRatioSum / c.PaySeen.MapRatioCount, 0.6, 1.2) : 0.85;
+
+    /// <summary>The ATS cities in a region a job out of the pickup could reach inside the lane's band, in the game's miles.</summary>
+    public static int CitiesInReach(OoCareer c, string pickupCity, string pickupState, string region, double minMiles, double maxMiles)
+    {
+        var factor = MapFactor(c);
+        return Markets.BuiltIn.Count(m => Carriers.AtsRegionOf(m.State) == region
+            && Geo.EstimatedMiles(pickupCity, pickupState, m.City, m.State) is { } est
+            && est * factor >= minMiles && est * factor <= maxMiles);
+    }
+
+    /// <summary>A region needs at least this many cities in reach before a lane leans into it: fewer, and nothing may fit at the pickup.</summary>
+    public const int LeanMinCities = 3;
+
+    /// <summary>
+    /// Leaning a lane toward where the freight is: where the run's own region is ordinary or slow this month for the freight
+    /// this broker deals in, and another region in reach of the band is busy (see Seasons), the lane goes there, so the
+    /// driver lands where the next load is easy. Asked for from play. A shipper's own lanes, and a lane home, do not lean.
+    /// </summary>
+    private static void LeanToSeason(OoCareer c, Lane lane, Broker broker)
+    {
+        if (broker.Kind == "Shipper") return;
+        var kind = Seasons.KindOf(DispatchEngine.AssignedTrailer(c.Game)?.Type, broker.Specialty);
+        if (Seasons.Now(c, kind, lane.DestRegion) > 1.0) return;
+        var best = Seasons.Regions
+            .Where(r => r != lane.DestRegion)
+            .Select(r => (Region: r, Index: Seasons.Now(c, kind, r)))
+            .Where(x => x.Index >= Seasons.Busy)
+            .Where(x => CitiesInReach(c, lane.PickupCity, lane.PickupState, x.Region, lane.MinMiles, lane.MaxMiles) >= LeanMinCities)
+            .OrderByDescending(x => x.Index)
+            .FirstOrDefault();
+        if (best.Region is null) return;
+        lane.DestRegion = best.Region;
+        lane.LeanedFor = Seasons.Words(kind);
     }
 
     /// <summary>
@@ -84,7 +140,10 @@ public static class Lanes
         if (broker == null) return null;
 
         // Not every run gets a call. Decided once per run, so asking again changes nothing.
-        if (BrokerBook.Stable("ring|" + k.Id) % 100 >= RingChance(broker))
+        // The season where the run ends, for the freight the broker deals in: busy rings more, slow less.
+        var season = Seasons.Now(c, Seasons.KindOf(DispatchEngine.AssignedTrailer(c.Game)?.Type, broker.Specialty), region);
+        var chance = Environment.GetEnvironmentVariable("TSO_RING_CHANCE") is { Length: > 0 } ? RingChance(broker) : Seasons.RingChance(RingChance(broker), season);
+        if (BrokerBook.Stable("ring|" + k.Id) % 100 >= chance)
         {
             c.Lanes.Add(new Lane { Status = "NoCall", ForBookingId = k.Id, OfferedGameTime = c.Game.Status.GameTime });
             return null;
@@ -287,17 +346,36 @@ public static class Lanes
             PickupState = reach.Pickup.State,
             PickupFromGameTime = GameClock.Format(opens),
             PickupToGameTime = GameClock.Format(closes),
-            DestRegion = TargetRegion(c, Carriers.AtsRegionOf(trip.DestState), broker),
+            DestRegion = Carriers.AtsRegionOf(trip.DestState),
             MinMiles = min,
             MaxMiles = max,
             GamePayPerMile = PayPerMile(c),
             OfferedGameTime = s.Status.GameTime,
             Specialty = broker.Specialty,
-            ShipperName = broker.Kind == "Shipper" ? broker.Name : "",
+            ShipperName = broker.Kind == "Shipper" ? Companies.Base(broker) : "",
             ForBookingId = k.Id,
         };
+        LeanToSeason(c, lane, broker);
+        AimHome(c, lane, limit);
+        if (lane.HomeFor.Length > 0) lane.LeanedFor = "";
         c.Lanes.Add(lane);
         return lane;
+    }
+
+    /// <summary>
+    /// Where home is pulling (see HomeLife.Pull), the lane goes home: to a job ending near the home city when one load
+    /// reaches it inside the Long Distance limit, or otherwise into the home region, the way there.
+    /// </summary>
+    private static void AimHome(OoCareer c, Lane lane, double limit)
+    {
+        if (HomeLife.Pull(c) is not { } pull) return;
+        lane.DestRegion = Carriers.AtsRegionOf(c.Profile.HomeState);
+        if (Geo.MilesBetween(lane.PickupCity, lane.PickupState, c.Profile.HomeCity, c.Profile.HomeState) is not { } home || home > limit) return;
+        lane.HomeFor = pull.Said;
+        lane.HomeCity = $"{c.Profile.HomeCity}, {c.Profile.HomeState}";
+        // The map's miles run long against the game's roads, so the band takes in well under the estimate.
+        lane.MinMiles = Math.Max(20, Math.Round(home * 0.5 / 10) * 10);
+        lane.MaxMiles = Math.Max(lane.MinMiles + 50, Math.Min(limit, Math.Round(home * 1.2 / 10) * 10));
     }
 
     /// <summary>
@@ -309,24 +387,19 @@ public static class Lanes
         string.IsNullOrWhiteSpace(city) ? null : (city, state);
 
     /// <summary>Where the lane delivers into: home's region when home is due soon, otherwise wherever the broker's freight goes.</summary>
-    private static string TargetRegion(OoCareer c, string fromRegion, Broker b)
-    {
-        var homeRegion = Carriers.AtsRegionOf(c.Profile.HomeState);
-        var dueSoon = c.HomeLife.LeftHomeGameTime.Length > 0
-                      && GameClock.HoursBetween(c.HomeLife.LeftHomeGameTime, c.Game.Status.GameTime) is { } h
-                      && c.HomeLife.EveryDays - h / 24 <= 5;
-        return dueSoon ? homeRegion : fromRegion;
-    }
 
     /// <summary>Which jobs on the board fit the booked lane: the pickup city, the region, the band, runnable.</summary>
     public static List<LoadView> Fits(OoCareer c, Lane lane, List<LoadView> board) =>
         board.Where(v => v.Load.OriginCity.Equals(lane.PickupCity, StringComparison.OrdinalIgnoreCase)
                          && v.Load.OriginState.Equals(lane.PickupState, StringComparison.OrdinalIgnoreCase)
-                         && Carriers.AtsRegionOf(v.Load.DestState) == lane.DestRegion
-                         && v.Load.LoadedMiles >= lane.MinMiles && v.Load.LoadedMiles <= lane.MaxMiles
+                         // A lane home fits any job that ends near home; any other, the region and the band.
+                         && (lane.HomeFor.Length > 0
+                             ? HomeLife.NearHome(c, v.Load.DestCity, v.Load.DestState)
+                             : Carriers.AtsRegionOf(v.Load.DestState) == lane.DestRegion
+                               && v.Load.LoadedMiles >= lane.MinMiles && v.Load.LoadedMiles <= lane.MaxMiles)
                          && v.Feasibility.Verdict != "Infeasible" && v.SkillNotes.Count == 0
-                         && (lane.ShipperName.Length > 0 ? Dedicated.Mentions(v.Load.Shipper, lane.ShipperName)
-                             : lane.Specialty == Specialties.General || Specialties.Of(v.Load) == lane.Specialty))
+                         && (lane.ShipperName.Length > 0 ? Companies.Is(c, lane.ShipperName, v.Load.Shipper)
+                             : lane.Specialty == Specialties.General || Specialties.Of(c, v.Load) == lane.Specialty))
              // The dock the truck is at first: no empty miles to it. Then the nearest the booked distance.
              .OrderByDescending(v => Calls.AtTheDock(c, v.Load))
              .ThenBy(v => Math.Abs(v.Load.LoadedMiles - lane.MidMiles))
@@ -414,7 +487,7 @@ public static class Lanes
     public static object View(OoCareer c, Lane l) => new
     {
         l.Id, l.Number, l.BrokerName, l.PickupCity, l.PickupState, l.PickupFromGameTime, l.PickupToGameTime,
-        l.DestRegion, l.MinMiles, l.MaxMiles, l.RatePerMile, l.Status,
+        l.DestRegion, l.MinMiles, l.MaxMiles, l.RatePerMile, l.Status, l.HomeFor, l.HomeCity, l.LeanedFor,
     };
 }
 
@@ -423,4 +496,7 @@ public class PaySeen
 {
     public double Miles { get; set; }
     public decimal Pay { get; set; }
+    /// <summary>Listed miles over the map's estimate, summed over every board job where both are known: see Lanes.MapFactor.</summary>
+    public double MapRatioSum { get; set; }
+    public int MapRatioCount { get; set; }
 }
