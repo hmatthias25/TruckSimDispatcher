@@ -23,6 +23,8 @@ public class LoadView
     public List<string> SkillNotes { get; set; } = new();
     public List<string> Notes { get; set; } = new();
     public int Rank { get; set; }
+    /// <summary>The trade the listing belongs to, which decides which specialists will book it.</summary>
+    public string Trade { get; set; } = "General";
 }
 
 /// <summary>
@@ -75,6 +77,7 @@ public static class LoadDesk
             NetAtGamePay = net,
             Days = Math.Round(days, 2),
             NetPerDay = Math.Round(net / (decimal)days, 2),
+            Trade = Specialties.Of(load),
         };
         v.SkillNotes.AddRange(SkillNotes(c, load));
         v.Notes.AddRange(e.Cons);

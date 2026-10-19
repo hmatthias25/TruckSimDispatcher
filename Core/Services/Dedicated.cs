@@ -164,7 +164,7 @@ public static class Dedicated
     /// every other load. The driver was pushed onto freight that was not theirs and refused the freight
     /// they could legitimately have run. ATS is full of short names that trip it: Art, Cal, Sun, Tex.
     /// </summary>
-    private static bool Mentions(string? field, string account)
+    internal static bool Mentions(string? field, string account)
     {
         var f = (field ?? "").Trim();
         if (f.Length == 0 || account.Length == 0) return false;

@@ -22,6 +22,8 @@ const refused = async (fn) => { try { await fn(); return ''; } catch (e) { retur
 // home long before the broker paid.
 async function bookOne(S) {
   const starter = S.directory.find((b) => b.tier === 'Starter' && b.worksHere && b.takesYou);
+  // A broker who pays on time and grants quick pay: this suite is about the money moving, not about slow payers.
+  await api('/test/broker', 'POST', { id: starter.id, credit: 'A', personality: 'Friend' });
   const r = await api('/calls', 'POST', { brokerId: starter.id });
   if (r.call.status !== 'Open') throw new Error(`no offer: ${r.call.turns.at(-1).text}`);
   await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'terms', term: 'quickpay' });

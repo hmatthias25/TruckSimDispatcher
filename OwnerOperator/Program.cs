@@ -122,6 +122,7 @@ app.MapPost("/api/status", (StatusRequest u) => Results.Ok(store.Mutate(c =>
     }
     HomeLife.Advance(c, wasTime, wasHome);
     Lanes.MaybeRing(c);
+    Lanes.RingAtHome(c);
     return Snapshot(c);
 })));
 
@@ -335,10 +336,30 @@ app.MapPost("/api/lane/take", (TakeLaneRequest r) => Results.Ok(store.Mutate(c =
     return new { booking, snapshot = Snapshot(c) };
 })));
 
+app.MapPost("/api/lane/cancel", (HandBackRequest r) => Results.Ok(store.Mutate(c =>
+{
+    var said = Lanes.Cancel(c, r.Why ?? "");
+    return new { said, snapshot = Snapshot(c) };
+})));
+
 app.MapPost("/api/lane/nothing-fits", () => Results.Ok(store.Mutate(c =>
 {
     var said = Lanes.NothingFits(c);
     return new { said, snapshot = Snapshot(c) };
+})));
+
+app.MapPost("/api/trailer", (TrailerRequest r) => Results.Ok(store.Mutate(c =>
+{
+    RequireStarted(c);
+    Onboarding.OwnTrailer(c, r.Type, r.GameId, r.Year ?? 0);
+    return Snapshot(c);
+})));
+
+app.MapPost("/api/trailer/power-only", () => Results.Ok(store.Mutate(c =>
+{
+    RequireStarted(c);
+    Onboarding.PowerOnly(c);
+    return Snapshot(c);
 })));
 
 app.MapPost("/api/booking/handback", (HandBackRequest r) => Results.Ok(store.Mutate(c =>
@@ -361,11 +382,46 @@ app.MapPost("/api/bank", (BankRequest r) => Results.Ok(store.Mutate(c =>
     return Snapshot(c);
 })));
 
+app.MapPost("/api/invoices/{id}/{action}", (string id, string action) => Results.Ok(store.Mutate(c =>
+{
+    var said = action switch
+    {
+        "factor" => Receivables.Factor(c, id),
+        "chase" => Receivables.Chase(c, id),
+        "writeoff" => Receivables.WriteOff(c, id),
+        "argue" => Receivables.Argue(c, id),
+        _ => throw new InvalidOperationException("Factor, chase, write off or argue."),
+    };
+    return new { said, snapshot = Snapshot(c) };
+})));
+
 app.MapPost("/api/transfers/{id}/done", (string id) => Results.Ok(store.Mutate(c =>
 {
     Ledger.MarkDone(c, id);
     return Snapshot(c);
 })));
+
+// ---------------------------------------------------------------- tests only
+
+/// Shaping a broker for a test: credit and personality are rolled per career, and a test of slow payers needs a slow
+/// payer. Only there when the test runner sets TSO_TEST=1.
+if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
+    app.MapPost("/api/test/broker", (TestBrokerRequest r) => Results.Ok(store.Mutate(c =>
+    {
+        var b = c.Brokers.First(x => x.Id == r.Id);
+        if (!string.IsNullOrWhiteSpace(r.Credit)) b.Credit = r.Credit;
+        if (!string.IsNullOrWhiteSpace(r.Personality)) b.Personality = r.Personality;
+        if (r.DaysToPay is > 0) b.DaysToPay = r.DaysToPay.Value;
+        return Snapshot(c);
+    })));
+if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
+    app.MapPost("/api/test/home", (TestHomeRequest r) => Results.Ok(store.Mutate(c =>
+    {
+        c.HomeLife.Score = r.Score;
+        c.HomeLife.BottomUntilGameTime = "";
+        c.HomeLife.Call = null;
+        return Snapshot(c);
+    })));
 
 // ---------------------------------------------------------------- run
 
@@ -470,6 +526,14 @@ static object Snapshot(OoCareer c)
             cycle = s.Hos.CycleRemaining,
         },
         truck = truck == null ? null : new { truck.Unit, truck.Year, truck.Make, truck.Model, truck.AvgMpg },
+        trailer = DispatchEngine.AssignedTrailer(s) is { } tr ? new
+        {
+            tr.Unit, tr.Type, tr.Ref, tr.Year,
+            powerOnly = DropHook.Is(tr.Type),
+            market = DropHook.Is(tr.Type) ? "Freight Market" : "Cargo Market",
+        } : null,
+        ownedTrailer = s.Trailers.FirstOrDefault(x => x.Unit == "T1") is { } own ? new { own.Type, own.Ref, own.Year } : null,
+        ownableTrailers = Specialties.OwnableTrailers,
         board = c.Started ? LoadDesk.Evaluate(c) : new List<LoadView>(),
         directory = c.Brokers.Where(b => b.Known).Select(b => BrokerBook.View(c, b)).ToList(),
         record = c.Started ? BrokerBook.Record(c) : null,
@@ -499,7 +563,7 @@ static object Snapshot(OoCareer c)
         notYoursInGameBank = Ledger.NotYoursInGameBank(c),
         gameBank = Ledger.GameBankView(c),
         holding = Ledger.HoldingView(c),
-        owedToYou = c.Invoices.Where(i => i.Status == "Open").Sum(i => i.Amount),
+        owedToYou = c.Invoices.Where(i => i.Status is "Open" or "Overdue" or "Collections").Sum(i => i.Amount),
         gameRunning = Ledger.GameRunning(),
         home = c.Started ? HomeLife.View(c) : null,
         phoneModel = c.Settings.PhoneModel,
@@ -572,7 +636,10 @@ record SkillsRequest(int LongDistance, int HighValue, int Fragile, int JustInTim
 record ExtractRequest(List<ScreenshotImage>? Images);
 record CallRequest(string? BrokerId);
 record HandBackRequest(string? Why);
+record TrailerRequest(string? Type, string? GameId, int? Year);
 record TakeLaneRequest(string? LoadId);
+record TestHomeRequest(double Score);
+record TestBrokerRequest(string Id, string? Credit, string? Personality, int? DaysToPay = null);
 record BankRequest(decimal Balance);
 record PromiseRequest(int EveryDays, int HomeDays);
 record SayRequest(string? Text, string? Kind, decimal? Amount, List<string>? Arguments, string? Term);

@@ -103,6 +103,28 @@ async function bookAndLoad(S, day) {
   r = await api(`/calls/${S.call.id}/say`, 'POST', { kind: 'decline' });
   ok('let it ring: the lane goes', r.call.status === 'Declined' && !r.snapshot.lane);
 
+  head('7. Ringing for the next load yourself');
+  S = r.snapshot;
+  const destBroker = S.directory.find((b) => b.tier === 'Starter' && b.worksHere && b.takesYou);
+  let why = '';
+  try { await api('/calls', 'POST', { brokerId: destBroker.id }); } catch (e) { why = e.message; }
+  ok('not from the wheel', /Pull over/.test(why), why);
+  S = await api('/run/event', 'POST', { kind: 'Break', day: 8, time: '08:30', hours: 0.5 });
+  r = await api('/calls', 'POST', { brokerId: destBroker.id });
+  ok('from a break: a lane out of where the run ends', r.call.status === 'Open' && r.call.lane && r.call.lane.pickupCity,
+    JSON.stringify({ s: r.call.status, lane: r.call.lane && r.call.lane.pickupCity, said: r.call.turns.at(-1)?.text }));
+  ok('not tied to any board', r.call.lane && r.call.lane.minMiles > 0 && !r.call.load?.destCity);
+  r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
+  ok('booked as the next lane', r.snapshot.lane && r.snapshot.lane.status === 'Booked' && r.snapshot.booking);
+
+  head('8. Calling it off');
+  const before = r.snapshot.directory.find((b) => b.id === destBroker.id).standing;
+  r = await api('/lane/cancel', 'POST', { why: 'changed plans' });
+  ok('the lane is off, and the broker remembers', !r.snapshot.lane && r.snapshot.directory.find((b) => b.id === destBroker.id).standing === before - 10,
+    `${before} -> ${r.snapshot.directory.find((b) => b.id === destBroker.id).standing}`);
+  S = await api('/booking/handback', 'POST', { why: 'truck trouble' });
+  ok('a booked load handed back for any reason is a cancellation on the record', S.bookings[0].status === 'Cancelled' && S.bookings[0].onCarrier && !S.booking);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

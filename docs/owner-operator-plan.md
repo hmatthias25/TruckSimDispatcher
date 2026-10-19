@@ -289,8 +289,9 @@ There are three kinds of freight source.
 | Agriculture | Grain, feed, fertilizer, produce | Hopper, dry van, livestock, reefer |
 | Fuel and petroleum | Fuel, oil, chemicals | Tanker; hazmat for most of it |
 | Lumber and forest products | Logs, sawn lumber, pulp | Log trailer, flatbed |
+| Construction and steel | Steel, machinery, building supplies | Flatbed, step deck, lowboy |
 
-And others in the same vein: refrigerated food, heavy haul, containers off the ports, cars. A specialist:
+0.9 has these four (decided 2026-10-18); refrigerated food, containers off the ports and cars could follow. A specialist:
 
 - offers lanes only out of cities where that industry has depots, read from the game's data on which companies are where and what they ship;
 - needs the right trailer, and endorsements where the freight calls for them;
@@ -305,7 +306,7 @@ This is how a tanker or a log trailer pays for itself: buying one opens a specia
 - at the pickup, the job that fits is the one from that company, picked the way a dedicated load is picked now, not by region and distance band;
 - regular runs once the arrangement is established.
 
-**Which companies do this is decided with the project owner when this part is designed. Ask before building it; do not pick them.**
+**Which companies, decided with the project owner on 2026-10-18 (ATS):** Wallbert and Shop Town (general merchandise), Plaster & Sons and Taylor Construction Group (building construction), Sunshine Crops and Farmer's Barn (agriculture), and Vortex and Gallon Oil (fuel). The biggest in the game by depots, so there is always somewhere for the next load to come from.
 
 ### What makes each broker different
 
@@ -472,6 +473,7 @@ The Companion App can only move money into or out of the game bank while ATS or 
 3. **The broker's terms run.** The invoice sits in this app's receivables until it is due (net 30, or sooner with quick pay or factoring).
 4. **Paid.** The app says how much the player can move out of Broker holding into their account: "Hegel Logistics paid invoice 0041: move $2,150 out of Broker holding into your account. The other $350 of the load's pay is the broker's share: leave it in Broker holding." This does not involve the game bank, so it should not need the game closed.
 5. **Never above the game's pay.** A broker's rate is capped at what the game pays for the job, so the load's pay always covers it. Negotiating claws back the broker's margin and nothing more.
+6. **Detention and TONUs come out of the brokers' share** already sitting in Broker holding, as far as it covers them, so no money ever comes from outside the game (decided 2026-10-18).
 
 ### The other way
 
@@ -525,7 +527,7 @@ Phase 1 runs on a typed-in cost per km and typed-in clocks, so the link does not
 5. **One career type per app, or can a company driver "go independent"?** Carrying a career across from the company-driver app into the owner/operator one would be a good story, and needs a shared export format.
 6. **How quickly do game boards refresh?** "Wait, it is still being loaded" only works if a board changes within a rest or so. Worth measuring in both games before settling the rules for a lane that finds no fit.
 7. **Does the starting truck fit the loans?** The game caps loans by level, and the Companion App has loans of its own. The presets may need to fit those limits rather than the other way round.
-8. **Which game companies hire the owner/operator directly?** The project owner decides when that part is designed (see [Generalists, specialists and the shippers themselves](#generalists-specialists-and-the-shippers-themselves)).
+8. ~~**Which game companies hire the owner/operator directly?**~~ Decided 2026-10-18: see [Generalists, specialists and the shippers themselves](#generalists-specialists-and-the-shippers-themselves).
 9. **Can every Companion App account transfer while the game runs?** Step 4 of a broker load assumes so, because it does not touch the game bank. Worth confirming.
 10. **How harsh is home life?** How fast it drops, how often the call from home comes, and how long hitting bottom lasts decide whether it is a nudge or a second job. Tune by playing.
 11. **Where do the dates at home come from?** Generated, or partly the player's own (a real birthday as an in-game one)?

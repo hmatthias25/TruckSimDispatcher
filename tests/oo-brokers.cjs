@@ -106,7 +106,8 @@ const BOARD = [
   ok('the broker has learned something and so have you', S.directory.find((b) => b.id === starters[1].id).loadsBooked === 1
     && S.directory.find((b) => b.id === starters[1].id).notes.length > 0);
   ok('never above what the game pays', S.bookings.every((b) => b.rate <= b.gamePay), S.bookings.map((b) => `${b.rate}/${b.gamePay}`).join(' '));
-  ok('one load at a time', /booked on OO-001/.test(await refused(() => api('/calls', 'POST', { brokerId: starters[2].id }))));
+  ok('one load at a time: mid-run, a call is about the next lane, and only from a stop',
+    /Pull over/.test(await refused(() => api('/calls', 'POST', { brokerId: starters[2].id }))));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

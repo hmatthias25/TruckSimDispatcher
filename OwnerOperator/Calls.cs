@@ -139,8 +139,8 @@ public static class Calls
         var b = c.Brokers.FirstOrDefault(x => x.Id == brokerId && x.Known)
                 ?? throw new InvalidOperationException("That broker is not in your directory.");
         if (Open(c) is { } open) open.Status = "Declined";
-        if (ActiveBooking(c) is { } booked)
-            throw new InvalidOperationException($"You are booked on {booked.Number} already. Deliver it before you book another.");
+        // Mid-run, a call is about the next load: a lane out of where the run ends, not this board.
+        if (ActiveBooking(c) != null) return Lanes.Ask(c, b);
 
         if (HomeLife.AtBottom(c))
             throw new InvalidOperationException($"You are needed at home. No freight until {GameClock.Pretty(c.HomeLife.BottomUntilGameTime)}.");
@@ -185,9 +185,17 @@ public static class Calls
 
         var runnable = LoadDesk.Evaluate(c)
             .Where(v => v.Feasibility.Verdict != "Infeasible" && v.SkillNotes.Count == 0)
+            .Where(v => Offers(b, v.Load))
             .OrderBy(v => v.NetPerDay)
             .ToList();
         if (runnable.Count == 0) return null;
+
+        // A company offers its own freight, whichever of it it has; no pool by tier.
+        if (b.Kind == "Shipper" && !better)
+        {
+            var own = runnable.Where(v => !call.OfferedLoadIds.Contains(v.Load.Id)).ToList();
+            return own.Count == 0 ? null : own[BrokerBook.Stable(call.Id) % own.Count];
+        }
 
         var n = runnable.Count;
         var (from, to) = b.Tier switch
@@ -209,6 +217,11 @@ public static class Calls
         // Seeded per call, so asking the same question twice gets the same answer.
         return pool[BrokerBook.Stable(call.Id) % pool.Count];
     }
+
+    /// <summary>Whether this broker deals in this listing: a company, only its own freight; a specialist, only its trade.</summary>
+    public static bool Offers(Broker b, BoardLoad l) =>
+        b.Kind == "Shipper" ? Specialties.IsShippersOwn(b, l)
+        : b.Specialty == Specialties.General || Specialties.Of(l) == b.Specialty;
 
     private static void SetOffer(OoCareer c, Broker b, Personality p, Call call, LoadView pick)
     {

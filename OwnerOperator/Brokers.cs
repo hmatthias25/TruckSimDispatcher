@@ -16,8 +16,10 @@ public class Broker
 
     /// <summary>Starter, Established or Premium. See the plan, "Paying your dues".</summary>
     public string Tier { get; set; } = BrokerTiers.Starter;
-    /// <summary>General, or one kind of freight. 0.9 builds general brokers; specialists come with trailers.</summary>
+    /// <summary>General, or one trade (<see cref="Specialties"/>). A specialist needs the trailer for it.</summary>
     public string Specialty { get; set; } = "General";
+    /// <summary>Broker, or Shipper: one of the game's companies hiring directly, with its own freight and no margin.</summary>
+    public string Kind { get; set; } = "Broker";
     /// <summary>One of <see cref="Personalities"/>. Fixed for life.</summary>
     public string Personality { get; set; } = "";
 
@@ -117,7 +119,8 @@ public static class BrokerBook
     {
         "Marco", "Dana", "Luis", "Kim", "Pete", "Rosa", "Hank", "Tamara", "Glen", "Priya", "Walt", "Jess",
         "Omar", "Beth", "Duane", "Nina", "Carl", "Ivy", "Russ", "Mei", "Gus", "Lena", "Abe", "Tess", "Ray",
-        "Juana", "Bo", "Cheryl", "Dev", "Maggie",
+        "Juana", "Bo", "Cheryl", "Dev", "Maggie", "Arlo", "Bea", "Cole", "Dina", "Eli", "Faye", "Gil", "Hope",
+        "Ike", "June", "Kurt", "Lou", "Moe", "Nell", "Otis", "Pam", "Quinn", "Rita", "Sal", "Tina", "Vic", "Wren",
     };
 
     /// <summary>
@@ -147,7 +150,8 @@ public static class BrokerBook
             var personality = Personalities.All[rng.Next(Personalities.All.Length)];
             var (target, min, days, credit, loads, age, onTime) = tier switch
             {
-                BrokerTiers.Starter => (0.28m, 0.18m, rng.Next(2) == 0 ? 30 : 45, rng.Next(4) == 0 ? "C" : "B", 0, 0, 0.0),
+                // Starter brokers are where the bad payers are: one in six may not pay at all.
+                BrokerTiers.Starter => (0.28m, 0.18m, rng.Next(2) == 0 ? 30 : 45, rng.Next(6) == 0 ? "D" : rng.Next(3) == 0 ? "C" : "B", 0, 0, 0.0),
                 BrokerTiers.Established => (0.18m, 0.11m, 30, rng.Next(5) == 0 ? "B" : "A", 25, 60, 90.0),
                 _ => (0.11m, 0.06m, rng.Next(2) == 0 ? 15 : 30, "A", 80, 180, 96.0),
             };
@@ -181,6 +185,50 @@ public static class BrokerBook
             for (var i = 0; i < starters; i++) Make(region, BrokerTiers.Starter);
             for (var i = 0; i < 2; i++) Make(region, BrokerTiers.Established);
             Make(region, BrokerTiers.Premium);
+
+            // One specialist per trade in every region. Better money than a general broker, fewer trucks after the
+            // freight, and nothing for a carrier without the trailer for it.
+            foreach (var trade in Specialties.All)
+            {
+                var sp = Make(region, BrokerTiers.Established);
+                sp.Specialty = trade;
+                sp.TargetMargin -= 0.04m;
+                sp.MinMargin -= 0.03m;
+                sp.RequiresLoads = 10;
+                sp.RequiresDays = 20;
+                sp.RequiresOnTimePct = 90;
+            }
+        }
+
+        // The game's own companies, hiring directly: their own freight, no broker margin, and only for a long, clean
+        // record. They work wherever they have depots.
+        foreach (var (firmName, trade) in Specialties.Shippers)
+        {
+            var firm = AtsCompanies.Find(firmName);
+            if (firm == null) continue;
+            var firmRegions = firm.States.Select(Carriers.AtsRegionOf).Where(r => r.Length > 0 && r != "Other").Distinct().ToList();
+            var hq = cities.FirstOrDefault(m => firm.States.Contains(m.State)) ?? cities[0];
+            list.Add(new Broker
+            {
+                Id = $"B{list.Count + 1:00}",
+                Name = firm.Name,
+                Rep = reps[list.Count % reps.Count],
+                Tier = BrokerTiers.Premium,
+                Kind = "Shipper",
+                Specialty = trade,
+                Personality = "Corporate",
+                City = hq.City,
+                State = hq.State,
+                Regions = firmRegions,
+                TargetMargin = 0.04m,
+                MinMargin = 0m,
+                DaysToPay = 15,
+                QuickPayFeePct = 1,
+                Credit = "A",
+                RequiresLoads = 60,
+                RequiresDays = 120,
+                RequiresOnTimePct = 97,
+            });
         }
         return list;
     }
@@ -220,13 +268,16 @@ public static class BrokerBook
         if (r.Loads < b.RequiresLoads) missing.Add($"{b.RequiresLoads} loads (you have {r.Loads})");
         if (r.Loads > 0 && r.OnTimePct < b.RequiresOnTimePct) missing.Add($"{b.RequiresOnTimePct:0}% on time (you are at {r.OnTimePct:0}%)");
         if (b.Standing <= -50) missing.Add("a better standing with them");
+        if (Specialties.Missing(c, b.Specialty) is { } kit) missing.Add(kit);
         return missing.Count == 0 ? null : string.Join(", ", missing);
     }
 
     public static string Requirement(Broker b) =>
-        b.RequiresLoads == 0 && b.RequiresDays == 0
+        (b.RequiresLoads == 0 && b.RequiresDays == 0
             ? "Takes new authorities"
-            : $"Wants {b.RequiresDays} days, {b.RequiresLoads} loads, {b.RequiresOnTimePct:0}% on time";
+            : $"Wants {b.RequiresDays} days, {b.RequiresLoads} loads, {b.RequiresOnTimePct:0}% on time")
+        + (b.Specialty == Specialties.General ? "" : $"; a {string.Join(" or ", Specialties.Trailers(b.Specialty)).ToLowerInvariant()}" +
+           (Specialties.Adr(b.Specialty) is { } adr ? $" and ADR for {adr.ToLowerInvariant()}" : ""));
 
     /// <summary>The directory as the player sees it. Margins, ceilings and the personality stay private.</summary>
     public static object View(OoCareer c, Broker b)
@@ -235,7 +286,7 @@ public static class BrokerBook
         var here = Carriers.AtsRegionOf(c.Game.Status.LocationState);
         return new
         {
-            b.Id, b.Name, b.Rep, b.Tier, b.Specialty, b.City, b.State, b.Regions,
+            b.Id, b.Name, b.Rep, b.Tier, b.Specialty, b.Kind, b.City, b.State, b.Regions,
             b.DaysToPay, b.QuickPayFeePct, b.Credit, b.Standing, b.LoadsBooked, b.Notes,
             requirement = Requirement(b),
             takesYou = notYet == null,

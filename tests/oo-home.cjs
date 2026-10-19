@@ -56,6 +56,9 @@ const at = (city, state, day, time = '08:00') => api('/status', 'POST', { locati
   ok('getting home answers it', !h.call && h.atHome && h.score > callScore, `${callScore} -> ${h.score}`);
   S = await at('Kansas City', 'KS', day + 5);
   ok('days home give it back, and a full home time counts more', S.home.score >= callScore + 40, `${S.home.score}`);
+  ok('and on the last day of it, a broker who works home rings with a load out',
+    S.call && S.call.status === 'Ringing' && S.call.lane && S.call.lane.pickupCity === 'Kansas City',
+    JSON.stringify(S.call && { s: S.call.status, p: S.call.lane?.pickupCity, b: S.call.broker }));
 
   head('5. Hitting bottom');
   day += 6;

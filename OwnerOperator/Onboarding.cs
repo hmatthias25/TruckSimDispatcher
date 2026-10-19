@@ -163,6 +163,45 @@ public static class Onboarding
     }
 
     /// <summary>
+    /// A trailer the player bought in the game. It goes behind the truck: the Cargo Market opens, dock times follow it,
+    /// and specialists for its trade will talk. Replaces any trailer owned before; power-only stays on the books.
+    /// </summary>
+    public static Trailer OwnTrailer(OoCareer c, string? type, string? gameId, int year)
+    {
+        if (Calls.ActiveBooking(c) is { } k) throw new InvalidOperationException($"Not while {k.Number} is on the truck. Deliver it first.");
+        var t = Specialties.OwnableTrailers.FirstOrDefault(x => x.Equals((type ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException($"Which kind of trailer: {string.Join(", ", Specialties.OwnableTrailers)}.");
+        var s = c.Game;
+        s.Trailers.RemoveAll(x => x.Unit == "T1");
+        var trailer = new Trailer
+        {
+            Unit = "T1",
+            GameId = (gameId ?? "").Trim(),
+            Type = t,
+            Division = t,
+            Year = year > 1900 ? year : 0,
+            Status = "InService",
+            HomeTerminalId = s.Driver.HomeTerminalId,
+            InGameGarage = true,
+            IsCompanyOwned = true,
+            AcquiredGameTime = s.Status.GameTime,
+            Notes = "Your own trailer.",
+        };
+        s.Trailers.Add(trailer);
+        s.Driver.AssignedTrailerUnit = trailer.Unit;
+        OoStore.Log(c, "career", $"Bought a {t.ToLowerInvariant()} trailer. The Cargo Market is open, and specialists for its trade will talk.");
+        return trailer;
+    }
+
+    /// <summary>Back to power-only: the shipper's trailer, off the Freight Market. An owned trailer stays on the books.</summary>
+    public static void PowerOnly(OoCareer c)
+    {
+        if (Calls.ActiveBooking(c) is { } k) throw new InvalidOperationException($"Not while {k.Number} is on the truck. Deliver it first.");
+        c.Game.Driver.AssignedTrailerUnit = DropHook.Ensure(c.Game).Unit;
+        OoStore.Log(c, "career", "Running power-only: the shipper's trailer, off the Freight Market.");
+    }
+
+    /// <summary>
     /// The truck a preset starts with. A placeholder until the Companion App supplies the real one; the player can
     /// edit it. Older is cheaper to buy and dearer to run, which the Companion App's costs will make bite.
     /// </summary>

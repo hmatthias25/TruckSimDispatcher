@@ -18,9 +18,21 @@ public class Invoice
     public decimal GamePay { get; set; }
     public string IssuedGameTime { get; set; } = "";
     public string DueGameTime { get; set; } = "";
-    /// <summary>Open or Paid.</summary>
+    /// <summary>Open, Overdue, Paid, Factored, Collections or WrittenOff.</summary>
     public string Status { get; set; } = "Open";
     public string PaidGameTime { get; set; } = "";
+
+    /// <summary>The broker's credit when invoiced, and when they will really pay: see <see cref="Receivables.SetTerms"/>.</summary>
+    public string Credit { get; set; } = "B";
+    public bool WillPay { get; set; } = true;
+    public string PaysGameTime { get; set; } = "";
+    public int Chases { get; set; }
+    public decimal FactorFee { get; set; }
+
+    /// <summary>Detention agreed on the call, billed from the dock times logged. Billed, Disputed, Granted, Denied or Factored.</summary>
+    public double DetentionHours { get; set; }
+    public decimal DetentionAmount { get; set; }
+    public string DetentionStatus { get; set; } = "";
 }
 
 /// <summary>
@@ -52,8 +64,6 @@ public static class Accounts
     public const string Holding = "Broker holding";
     /// <summary>The player's own account in the Companion App.</summary>
     public const string Yours = "Your account";
-    /// <summary>Money from outside the game: only a TONU, which a broker pays for a lane that came to nothing.</summary>
-    public const string Outside = "Paid by the broker";
 }
 
 /// <summary>
@@ -133,6 +143,11 @@ public static class Ledger
             DueGameTime = GameClock.Format(at.AddDays(Math.Max(1, k.DaysToPay))),
         };
         c.Invoices.Add(invoice);
+        if (broker != null)
+        {
+            Receivables.SetTerms(c, invoice, broker);
+            Receivables.BillDetention(c, invoice, k, Run.Trip(c, k), broker);
+        }
 
         // The game has just paid its figure into the game bank. All of it goes to Broker holding, so the game bank
         // only ever holds money the player can spend.
@@ -153,39 +168,7 @@ public static class Ledger
     /// Brokers pay what has come due by the game clock. Called whenever the clock moves. A paid invoice is what the
     /// player may move out of Broker holding into their own account.
     /// </summary>
-    public static List<Invoice> Advance(OoCareer c)
-    {
-        var now = GameClock.TryParse(c.Game.Status.GameTime);
-        var paid = new List<Invoice>();
-        if (now == null) return paid;
-        foreach (var inv in c.Invoices.Where(i => i.Status == "Open"))
-        {
-            if (GameClock.TryParse(inv.DueGameTime) is not { } due || now < due) continue;
-            inv.Status = "Paid";
-            inv.PaidGameTime = c.Game.Status.GameTime;
-            paid.Add(inv);
-
-            // What is yours to move: the rate. Rates never go above the game's pay, so the load's pay always covers it;
-            // the rest is the broker's share and stays in Broker holding (agreed 2026-10-18).
-            if (inv.GamePay <= 0)
-            {
-                // A TONU: the broker's own money, never in the game bank or Broker holding.
-                Raise(c, "TopUp", Accounts.Outside, Accounts.Yours, inv.Amount,
-                      $"{inv.BrokerName} paid the {Units.Money(inv.Amount)} TONU on {inv.BookingNumber}. Add it to your account as income.",
-                      inv.Number, false);
-                OoStore.Log(c, "money", $"{inv.BrokerName} paid {inv.Number}: {Units.Money(inv.Amount)}.", inv.Number);
-                continue;
-            }
-            var fromHolding = Math.Min(inv.Amount, inv.GamePay);
-            Raise(c, "ToYou", Accounts.Holding, Accounts.Yours, fromHolding,
-                  $"{inv.BrokerName} paid {inv.Number}. Move {Units.Money(fromHolding)} out of Broker holding into your account." +
-                  (inv.GamePay > inv.Amount ? $" The other {Units.Money(inv.GamePay - inv.Amount)} of {inv.BookingNumber}'s pay is the broker's share: leave it in Broker holding." : ""),
-                  inv.Number, false);
-
-            OoStore.Log(c, "money", $"{inv.BrokerName} paid {inv.Number}: {Units.Money(inv.Amount)}.", inv.Number);
-        }
-        return paid;
-    }
+    public static void Advance(OoCareer c) => Receivables.Advance(c);
 
     /// <summary>
     /// The booked load handed back to the broker: a cancellation on the carrier's record. What the call from home
@@ -243,9 +226,9 @@ public static class Ledger
     {
         var movedIn = c.Transfers.Where(t => t.To == Accounts.Holding && t.Status == "Done").Sum(t => t.Amount);
         var movedOut = c.Transfers.Where(t => t.From == Accounts.Holding && t.Status == "Done").Sum(t => t.Amount);
-        var waiting = c.Invoices.Where(i => i.Status == "Open").Sum(i => i.GamePay);
-        var brokers = c.Invoices.Where(i => i.Status == "Paid").Sum(i => Math.Max(0, i.GamePay - i.Amount));
-        var yoursToMove = c.Transfers.Where(t => t.Kind == "ToYou" && t.Status == "Pending").Sum(t => t.Amount);
+        var waiting = c.Invoices.Where(i => i.Status is "Open" or "Overdue" or "Collections").Sum(i => i.GamePay);
+        var brokers = Receivables.BrokersShareAvailable(c);
+        var yoursToMove = c.Transfers.Where(t => t.From == Accounts.Holding && t.Status == "Pending").Sum(t => t.Amount);
         return new { balance = movedIn - movedOut, waitingOnBrokers = waiting, brokersShare = brokers, yoursToMove };
     }
 
@@ -281,7 +264,7 @@ public static class Ledger
         }
     }
 
-    private static void Raise(OoCareer c, string kind, string from, string to, decimal amount, string reason, string reference, bool needsGameClosed)
+    internal static void Raise(OoCareer c, string kind, string from, string to, decimal amount, string reason, string reference, bool needsGameClosed)
     {
         if (amount <= 0) return;
         c.Transfers.Add(new Transfer

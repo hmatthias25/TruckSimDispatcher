@@ -128,7 +128,9 @@ function firstLoadWalkthrough() {
   const li = (n, html) => `<li class="${n < step ? 'done' : n === step ? 'now' : ''}">${html}</li>`;
   return `<div class="panel"><div class="panel-head"><h2>Your first load</h2></div>
     <ol class="walk">
-      ${li(1, `<b>In the game</b>, at your home garage in ${esc(S.profile.homeCity)}, open the <b>Freight Market</b> and
+      ${li(1, S.trailer && !S.trailer.powerOnly
+        ? `<b>In the game</b>, at your home garage in ${esc(S.profile.homeCity)}, open the <b>Cargo Market</b> (you have your own ${esc(S.trailer.type.toLowerCase())}) and take a screenshot of the board.`
+        : `<b>In the game</b>, at your home garage in ${esc(S.profile.homeCity)}, open the <b>Freight Market</b> and
         take a screenshot of the board. With no trailer of your own it is the Freight Market, not the Cargo Market.`)}
       ${li(2, '<b>Paste the screenshot below</b> (Ctrl+V), check what was read, and add it.')}
       ${li(3, `<b>Call a starter broker</b> on the <a href="#" data-goto="brokers">Brokers</a> tab. The broker reads the board
@@ -162,6 +164,8 @@ function runPanel() {
     </div>
     ${stage === 'loading' ? note(t.shipperCallNote) : ''}${stage === 'receiver' ? note(t.receiverCallNote) : ''}
     ${t.fromHere ? fromHereView(t.fromHere) : ''}
+    ${!S.lane && t.loadedReported ? `<p class="hint">On a break or a rest? Ring a broker on the <a href="#" data-goto="brokers">Brokers</a> tab to line up the next load:
+      they offer a lane out of where this one ends.</p>` : ''}
     <details ${t.fromHere && t.fromHere.verdict !== 'Feasible' ? 'open' : ''}><summary>Report your clocks and where you are</summary>
       <div class="grid4">
         <label>Drive<input id="ck-drive" type="number" step="0.01" value="${S.hos.drive}"></label>
@@ -268,7 +272,8 @@ function laneBanner() {
       at <b>${money(l.ratePerMile)}/mi</b> (never above the game's pay).</p>
     <p>${S.booking ? 'Deliver the load you are on first.' : fits ? `${fits} job(s) on the board fit it: take one below.`
       : `At ${esc(l.pickupCity)}, paste that city's Freight Market board and the app marks the jobs that fit.`}</p>
-    ${!S.booking ? '<div class="row-actions"><button class="btn danger" id="ln-none">Nothing fits</button></div>' : ''}</div>`;
+    <div class="row-actions">${!S.booking ? '<button class="btn danger" id="ln-none">Nothing fits</button>' : ''}
+      <button class="btn tiny ghost" id="ln-cancel">Call it off</button></div></div>`;
 }
 
 function bookingBanner() {
@@ -281,6 +286,8 @@ function bookingBanner() {
     <p>The broker pays <b>${money(k.rate)}</b>${k.quickPay ? ' on quick pay' : `, net ${k.daysToPay}`}. The game will pay
       ${money(k.gamePay)} at delivery: that is the shipper's money passing through, not yours.
       ${k.detentionPerHour ? `Detention ${money(k.detentionPerHour)}/h after ${k.detentionAfterHours} h.` : ''}</p>
+    <div class="row-actions"><button class="btn tiny danger" id="bk-cancel">Hand it back</button>
+      <span class="hint">A cancellation on your record with ${esc(k.brokerName)}. Cancel the job in the game too.</span></div>
     </div>${runPanel()}`;
 }
 
@@ -289,7 +296,7 @@ function boardView() {
   const intro = (S.bookings || []).length === 0 ? firstLoadWalkthrough() : '';
   return bookingBanner() + laneBanner() + intro + `
     <div class="panel">
-      <div class="panel-head"><h2>Add from screenshots</h2><span class="sub">Paste (Ctrl+V) or drop a Freight Market screenshot</span></div>
+      <div class="panel-head"><h2>Add from screenshots</h2><span class="sub">Paste (Ctrl+V) or drop a ${esc(S.trailer?.market || 'Freight Market')} screenshot</span></div>
       <div class="dropzone" id="drop">Paste or drop screenshots here${S.settings.hasApiKey ? '' : ' — needs an Anthropic API key in Settings'}</div>
       <div id="preview"></div>
     </div>
@@ -320,6 +327,7 @@ function loadCard(v) {
       <span class="badge mute">#${v.rank}</span>
       <b>${esc(l.cargo)}</b> to <b>${esc(l.destCity)}, ${esc(l.destState)}</b>
       <span class="badge ${verdict}">${esc(f.verdict)}</span>
+      ${v.trade && v.trade !== 'General' ? `<span class="badge info">${esc(v.trade)}</span>` : ''}
       <span class="spacer"></span>
       ${(S.laneFits || []).includes(l.id) && !S.booking ? `<span class="badge info">Fits ${esc(S.lane.number)}</span>
         <button class="btn tiny primary" data-take="${esc(l.id)}">Take for the lane</button>` : ''}
@@ -393,6 +401,18 @@ function wireBoard() {
     try { const r = await api('/lane/take', 'POST', { loadId: b.dataset.take }); S = r.snapshot; toast(`${r.booking.number} booked off the lane.`); render(); }
     catch (e) { toast(e.message, 'bad'); }
   });
+  const bk = $('bk-cancel');
+  if (bk) bk.onclick = async () => {
+    const why = prompt('Why are you handing it back? (it goes on your record)');
+    if (why === null) return;
+    try { S = await api('/booking/handback', 'POST', { why }); toast('Handed back.'); render(); } catch (e) { toast(e.message, 'bad'); }
+  };
+  const lc = $('ln-cancel');
+  if (lc) lc.onclick = async () => {
+    const why = prompt('Why are you calling off the lane? (the broker will remember)');
+    if (why === null) return;
+    try { const r = await api('/lane/cancel', 'POST', { why }); S = r.snapshot; toast(r.said); render(); } catch (e) { toast(e.message, 'bad'); }
+  };
   const none = $('ln-none');
   if (none) none.onclick = async () => {
     if (!confirm('Tell the broker nothing on the board fits? They cancel the lane.')) return;
@@ -459,7 +479,8 @@ function brokersView() {
     ${shown.length ? `<div class="tablewrap"><table class="grid"><thead><tr>
         <th>Broker</th><th>Tier</th><th>Based</th><th>Works</th><th>Pays</th><th>Credit</th><th>Requirement</th><th>Notes</th><th></th>
       </tr></thead><tbody>${shown.map((b) => `<tr>
-        <td><b>${esc(b.name)}</b><div class="hint">${esc(b.rep)}${b.loadsBooked ? ` · ${b.loadsBooked} load(s) with you` : ''}</div></td>
+        <td><b>${esc(b.name)}</b>${b.kind === 'Shipper' ? ' <span class="badge violet">Company</span>' : ''}
+          <div class="hint">${esc(b.rep)} · ${esc(b.specialty)}${b.loadsBooked ? ` · ${b.loadsBooked} load(s) with you` : ''}</div></td>
         <td>${tierBadge(b.tier)}</td>
         <td>${esc(b.city)}, ${esc(b.state)}</td>
         <td>${esc(b.regions.join(', '))}</td>
@@ -594,10 +615,16 @@ function moneyView() {
     <p class="hint">The game's pay for every load goes in. When a broker pays, your rate comes out to your account; the rest of
       that load's pay is the broker's share and stays.</p></div>
   <div class="panel"><div class="panel-head"><h2>Owed to you</h2><span class="sub">${money(S.owedToYou)} outstanding</span></div>
-    ${inv.length ? `<div class="tablewrap"><table class="grid"><thead><tr><th>Invoice</th><th>Load</th><th>Broker</th><th>Rate</th><th>Game paid</th><th>Due</th><th>Status</th></tr></thead>
-      <tbody>${inv.map((i) => `<tr><td>${esc(i.number)}</td><td>${esc(i.bookingNumber)}</td><td>${esc(i.brokerName)}</td>
-        <td>${money(i.amount)}</td><td>${money(i.gamePay)}</td><td>${esc(i.dueGameTime.replace('T', ' '))}</td>
-        <td><span class="badge ${i.status === 'Paid' ? 'ok' : 'warn'}">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table></div>`
+    ${inv.length ? `<div class="tablewrap"><table class="grid"><thead><tr><th>Invoice</th><th>Load</th><th>Broker</th><th>Rate</th><th>Detention</th><th>Game paid</th><th>Due</th><th>Status</th><th></th></tr></thead>
+      <tbody>${inv.map((i) => `<tr><td>${esc(i.number)}</td><td>${esc(i.bookingNumber)}</td><td>${esc(i.brokerName)} <span class="hint">${esc(i.credit)}</span></td>
+        <td>${money(i.amount)}</td>
+        <td>${i.detentionAmount ? `${money(i.detentionAmount)} <span class="hint">${esc(i.detentionStatus)}</span>` : ''}</td>
+        <td>${money(i.gamePay)}</td><td>${esc(i.dueGameTime.replace('T', ' '))}</td>
+        <td><span class="badge ${i.status === 'Paid' ? 'ok' : i.status === 'WrittenOff' ? 'bad' : 'warn'}">${esc(i.status)}</span></td>
+        <td>${['Open', 'Overdue'].includes(i.status) ? `<button class="btn tiny" data-inv="factor" data-id="${esc(i.id)}">Factor</button>` : ''}
+          ${i.status === 'Overdue' ? `<button class="btn tiny" data-inv="chase" data-id="${esc(i.id)}">Chase</button>` : ''}
+          ${['Overdue', 'Collections'].includes(i.status) ? `<button class="btn tiny danger" data-inv="writeoff" data-id="${esc(i.id)}">Write off</button>` : ''}
+          ${i.detentionStatus === 'Disputed' ? `<button class="btn tiny" data-inv="argue" data-id="${esc(i.id)}">Argue detention</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">No invoices yet. Deliver a booked load and the broker owes you.</div>'}
   </div>
   ${done.length ? `<div class="panel"><div class="panel-head"><h2>Moved</h2></div>
@@ -605,6 +632,11 @@ function moneyView() {
 }
 
 function wireMoney() {
+  document.querySelectorAll('[data-inv]').forEach((b) => b.onclick = async () => {
+    if (b.dataset.inv === 'writeoff' && !confirm('Write it off? The money is gone.')) return;
+    try { const r = await api(`/invoices/${b.dataset.id}/${b.dataset.inv}`, 'POST'); S = r.snapshot; toast(r.said); render(); }
+    catch (e) { toast(e.message, 'bad'); }
+  });
   $('gb-save').onclick = async () => {
     try { S = await api('/bank', 'POST', { balance: Number($('gb-bal').value) }); toast('Game bank updated.'); render(); }
     catch (e) { toast(e.message, 'bad'); }
@@ -710,10 +742,30 @@ function truckView() {
       </div>
       <div class="row-actions"><button class="btn primary" id="hs-save">Save clocks</button></div></div>
     <div class="panel"><div class="panel-head"><h2>Truck</h2></div>
-      ${S.truck ? `<p>${esc(S.truck.year)} ${esc(S.truck.make)} ${esc(S.truck.model)}, ${S.truck.avgMpg} mpg, power-only.</p>` : ''}</div>`;
+      ${S.truck ? `<p>${esc(S.truck.year)} ${esc(S.truck.make)} ${esc(S.truck.model)}, ${S.truck.avgMpg} mpg.</p>` : ''}</div>
+    <div class="panel"><div class="panel-head"><h2>Trailer</h2>
+      <span class="sub">${S.trailer?.powerOnly ? 'Power-only: the shipper\'s trailer, off the Freight Market' : `Your own ${esc(S.trailer?.type || '')}: the Cargo Market`}</span></div>
+      <p class="hint">Bought a trailer in the game? Put it here. It goes behind the truck: the Cargo Market opens, dock times follow it,
+        and specialist brokers for its trade will talk to you.</p>
+      <div class="grid4">
+        <label>Kind<select id="tl-type">${(S.ownableTrailers || []).map((t) => `<option ${S.ownedTrailer?.type === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+        <label>Plate / ID in the game<input id="tl-id" value="${esc(S.ownedTrailer?.ref || '')}"></label>
+        <label>Year<input id="tl-year" type="number" value="${S.ownedTrailer?.year || ''}"></label>
+      </div>
+      <div class="row-actions"><button class="btn primary" id="tl-save">I own this trailer</button>
+        ${S.trailer && !S.trailer.powerOnly ? '<button class="btn ghost" id="tl-po">Run power-only</button>' : ''}
+        ${S.trailer?.powerOnly && S.ownedTrailer ? '<button class="btn ghost" id="tl-hook">Hook my trailer</button>' : ''}</div></div>`;
 }
 
 function wireTruck() {
+  $('tl-save').onclick = async () => {
+    try { S = await api('/trailer', 'POST', { type: $('tl-type').value, gameId: $('tl-id').value, year: Number($('tl-year').value) || null }); toast('Trailer saved.'); render(); }
+    catch (e) { toast(e.message, 'bad'); }
+  };
+  const po = $('tl-po');
+  if (po) po.onclick = async () => { try { S = await api('/trailer/power-only', 'POST'); render(); } catch (e) { toast(e.message, 'bad'); } };
+  const hk = $('tl-hook');
+  if (hk) hk.onclick = async () => { try { S = await api('/trailer', 'POST', { type: S.ownedTrailer.type, gameId: S.ownedTrailer.ref, year: S.ownedTrailer.year }); render(); } catch (e) { toast(e.message, 'bad'); } };
   $('tr-save').onclick = async () => {
     try {
       S = await api('/status', 'POST', {
