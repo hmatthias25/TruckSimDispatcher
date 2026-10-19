@@ -28,6 +28,18 @@ public static class Templates
         ("Rookie", $"Um, let me see... I have {Lane(l)}? I can do {M(offer)}. I think."),
         ("", $"I've got {Lane(l)} at {M(offer)}."));
 
+    public static string LaneOffer(Broker b, Personality p, Lane l, decimal offer) =>
+        $"Hey, it's {b.Rep} at {b.Name}. Saw you're heading into {l.PickupCity}. I've got freight out of there from " +
+        $"{GameClock.Pretty(l.PickupFromGameTime)}, going into the {l.DestRegion}, about {Units.Distance(l.MidMiles)}. " +
+        Pick(p,
+            ("Grinder", $"{M(offer)}. That's the rate."),
+            ("Friend", $"I can do {M(offer)} for you. Want it?"),
+            ("Corporate", $"The rate is {M(offer)}."),
+            ("Hustler", $"{M(offer)}, and it'll go fast."),
+            ("OldHand", $"{M(offer)}. Fair money."),
+            ("Rookie", $"Um, {M(offer)}? If that works?"),
+            ("", $"{M(offer)}."));
+
     public static string Better(Broker b, Personality p, BoardLoad l, decimal offer) => Pick(p,
         ("Friend", $"For you? All right, there's {Lane(l)}. {M(offer)}."),
         ("Rookie", $"Oh, wait, there's {Lane(l)} too. {M(offer)}? Is that better?"),

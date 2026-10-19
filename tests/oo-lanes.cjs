@@ -1,0 +1,108 @@
+/* Owner-Operator 0.9: the phone rings near the end of a run, with a lane.
+ *
+ *   - once loaded and close to empty, a broker who works the destination rings with a lane out of a discovered city
+ *   - the lane reaches only as far as the driver can: the Long Distance limit, and a restart first on a low cycle
+ *   - answering and taking it books a rate per mile; letting it ring lets it go
+ *   - at the pickup, the jobs that fit are marked, and taking one books it at the lane rate, never above the game's pay
+ *   - nothing fits: the broker cancels, and a broker good for it pays a TONU
+ */
+const B = `http://127.0.0.1:${process.env.TSD_PORT || 5995}/api`;
+async function api(p, m = 'GET', b) {
+  const r = await fetch(B + p, { method: m, headers: b ? { 'content-type': 'application/json' } : undefined, body: b ? JSON.stringify(b) : undefined });
+  const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
+  if (!r.ok) { const e = new Error(j?.error || t.slice(0, 250)); e.status = r.status; throw e; }
+  return j;
+}
+let pass = 0, fail = 0;
+const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? ' -- ' + d : ''}`); } else { fail++; console.log(`  FAIL  ${l}${d ? ' -- ' + d : ''}`); } };
+const head = (t) => console.log(`\n=== ${t} ===`);
+const hrs = (a, b) => (Date.parse(b + ':00Z') - Date.parse(a + ':00Z')) / 3600000;
+
+async function bookAndLoad(S, day) {
+  await api('/board/add-many', 'POST', [
+    { cargo: 'Paper', destCity: 'Topeka', destState: 'KS', loadedMiles: 70, gameRevenue: 380, deadlineHours: 30 },
+    { cargo: 'Corn', destCity: 'Topeka', destState: 'KS', loadedMiles: 72, gameRevenue: 390, deadlineHours: 30 },
+  ]);
+  const starter = S.directory.find((b) => b.tier === 'Starter' && b.worksHere);
+  let r = await api('/calls', 'POST', { brokerId: starter.id });
+  r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
+  await api('/run/at-shipper', 'POST', { day, time: '07:00' });
+  r = await api('/run/loaded', 'POST', { day, time: '07:40', odometer: r.snapshot.status.odometer });
+  return r.snapshot;
+}
+
+(async () => {
+  let S = await api('/start', 'POST', { game: 'ATS', driverName: 'L. Ane', homeCity: 'Kansas City', homeState: 'KS', day: 3, time: '06:00',
+    level: 0, longDistance: 1, highValue: 0, fragile: 0, justInTime: 0, adr: [], odometer: 5000, preset: 'Normal' });
+
+  head('1. The phone rings');
+  S = await bookAndLoad(S, 3);
+  ok('a broker is calling', S.call && S.call.status === 'Ringing' && S.call.inbound, JSON.stringify(S.call && { s: S.call.status, b: S.call.broker }));
+  const lane = S.call.lane;
+  ok('about a lane out of a discovered city near the drop', lane && ['Topeka', 'Kansas City'].includes(lane.pickupCity), lane && lane.pickupCity);
+  ok('within Long Distance 1', lane.maxMiles <= 400 && lane.minMiles > 0, `${lane.minMiles}-${lane.maxMiles}`);
+  ok('picking up after the truck is empty', lane.pickupFromGameTime > S.status.gameTime);
+  ok('priced off what the game pays', S.call.offer > 0 && S.call.offer < S.payPerMile * (lane.minMiles + lane.maxMiles) / 2, `${S.call.offer} vs ${S.payPerMile}/mi`);
+
+  head('2. Answer, and take it');
+  let r = await api(`/calls/${S.call.id}/answer`, 'POST');
+  ok('answered', r.call.status === 'Open');
+  r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
+  S = r.snapshot;
+  ok('the lane is booked at a rate per mile', S.lane && S.lane.status === 'Booked' && S.lane.ratePerMile > 0, JSON.stringify(S.lane && { n: S.lane.number, r: S.lane.ratePerMile }));
+  ok('and the load on the truck is still the one to deliver', S.booking && S.booking.status === 'Booked');
+
+  head('3. At the pickup');
+  r = await api('/deliver', 'POST', { day: 3, time: '10:00', odometer: S.status.odometer + 70 });
+  S = await api('/status', 'POST', { locationCity: S.lane.pickupCity, locationState: S.lane.pickupState, day: 3, time: '18:00' });
+  const inBand = Math.round((S.lane.minMiles + S.lane.maxMiles) / 2);
+  r = await api('/board/add-many', 'POST', [
+    { cargo: 'Fits', destCity: 'Tulsa', destState: 'OK', loadedMiles: inBand, gameRevenue: 1100, deadlineHours: 40 },
+    { cargo: 'TooShort', destCity: 'Tulsa', destState: 'OK', loadedMiles: 40, gameRevenue: 300, deadlineHours: 40 },
+    { cargo: 'WrongWay', destCity: 'Des Moines', destState: 'IA', loadedMiles: inBand, gameRevenue: 1100, deadlineHours: 40 },
+  ]);
+  S = r.snapshot;
+  const fits = S.board.filter((v) => S.laneFits.includes(v.load.id)).map((v) => v.load.cargo);
+  ok('only the job in the region and the band fits', fits.length === 1 && fits[0] === 'Fits', fits.join(','));
+  const job = S.board.find((v) => v.load.cargo === 'Fits');
+  r = await api('/lane/take', 'POST', { loadId: job.load.id });
+  S = r.snapshot;
+  const expect = Math.min(job.gamePay, Math.round(S.bookings[0].rate * 100) / 100);
+  ok('booked at the lane rate on its miles', Math.abs(r.booking.rate - Math.min(job.gamePay, Math.round(r.booking.rate * 100) / 100)) < 0.01 && r.booking.rate <= job.gamePay, `${r.booking.rate} of ${job.gamePay}`);
+  ok('and the run opens', S.trip && S.trip.number === r.booking.number);
+  ok('the lane is matched', !S.lane);
+
+  head('4. A low cycle reaches no further than a restart');
+  r = await api('/deliver', 'POST', { day: 4, time: '06:00', odometer: S.status.odometer + inBand });
+  S = await api('/status', 'POST', { locationCity: 'Kansas City', locationState: 'KS', day: 5, time: '06:00' });
+  S = await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 6 });
+  S = await bookAndLoad(S, 5);
+  const low = S.call && S.call.lane;
+  ok('a call still comes', !!low, JSON.stringify(S.call && S.call.status));
+  if (low) ok('with the pickup after a 34-hour restart', hrs(S.status.gameTime, low.pickupFromGameTime) >= 34, `${S.status.gameTime} -> ${low.pickupFromGameTime}`);
+
+  head('5. Nothing fits');
+  r = await api(`/calls/${S.call.id}/answer`, 'POST');
+  r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
+  S = r.snapshot;
+  const broker = S.directory.find((x) => x.name === S.lane.brokerName);
+  r = await api('/deliver', 'POST', { day: 5, time: '12:00', odometer: S.status.odometer + 70 });
+  r = await api('/lane/nothing-fits', 'POST');
+  S = r.snapshot;
+  ok('the broker cancels the lane', !S.lane && /cancelled/.test(r.said), r.said);
+  if (broker.credit === 'A' || broker.credit === 'B')
+    ok('and, good for it, pays a TONU', S.invoices.some((i) => i.amount === 150 && i.gamePay === 0), r.said);
+  else
+    ok('and, not good for it, pays nothing', /not paying/.test(r.said), r.said);
+
+  head('6. Letting it ring');
+  S = await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 60 });
+  S = await api('/status', 'POST', { locationCity: 'Kansas City', locationState: 'KS', day: 8, time: '06:00' });
+  S = await bookAndLoad(S, 8);
+  ok('another call', S.call && S.call.status === 'Ringing', JSON.stringify(S.call && S.call.status));
+  r = await api(`/calls/${S.call.id}/say`, 'POST', { kind: 'decline' });
+  ok('let it ring: the lane goes', r.call.status === 'Declined' && !r.snapshot.lane);
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+})().catch((e) => { console.log('FATAL', e); process.exit(1); });

@@ -121,6 +121,7 @@ app.MapPost("/api/status", (StatusRequest u) => Results.Ok(store.Mutate(c =>
             OoStore.Log(c, "broker", $"{b.Name} ({b.Tier.ToLowerInvariant()}, {b.City}, {b.State}) is in your directory now.");
     }
     HomeLife.Advance(c, wasTime, wasHome);
+    Lanes.MaybeRing(c);
     return Snapshot(c);
 })));
 
@@ -136,8 +137,35 @@ app.MapPost("/api/hos", (HosRequest h) => Results.Ok(store.Mutate(c =>
     s.Hos.Source = "Reported";
     s.Hos.Confirmed = true;
     s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
+    Lanes.MaybeRing(c);
     return Snapshot(c);
 })));
+
+/// Clocks off a GDC Companion recap screenshot. Applied straight away, as in the company-driver app; what could not
+/// be read keeps its old value, and the clocks before come back so a misread is one step from undone.
+app.MapPost("/api/hos/extract", async (ExtractRequest req, CancellationToken ct) =>
+{
+    RequireStarted(store.Career);
+    var result = await AiService.ExtractHosAsync(store.Career.Game, req.Images ?? new(), ct);
+    if (!result.Ok) return Results.Ok(new { ok = false, error = result.Error, snapshot = Snapshot(store.Career) });
+    var said = store.Mutate(c =>
+    {
+        var h = c.Game.Hos;
+        var was = new { drive = h.DriveRemaining, shift = h.ShiftRemaining, brk = h.BreakRemaining, cycle = h.CycleRemaining };
+        if (result.DriveRemaining is { } d) h.DriveRemaining = d;
+        if (result.ShiftRemaining is { } sh) h.ShiftRemaining = sh;
+        if (result.BreakRemaining is { } b) h.BreakRemaining = b;
+        if (result.CycleRemaining is { } cy) h.CycleRemaining = cy;
+        h.Source = "GDC Companion";
+        h.AsOfGameTime = c.Game.Status.GameTime;
+        h.Confirmed = true;
+        h.UpdatedUtc = DateTime.UtcNow.ToString("o");
+        OoStore.Log(c, "run", $"Clocks read from a GDC recap: drive {Hhmm.Of(h.DriveRemaining)}, shift {Hhmm.Of(h.ShiftRemaining)}, " +
+                              $"break {Hhmm.Of(h.BreakRemaining)}, cycle {Hhmm.Of(h.CycleRemaining)}.");
+        return was;
+    });
+    return Results.Ok(new { ok = true, previous = said, snapshot = Snapshot(store.Career) });
+});
 
 app.MapPost("/api/settings", (SettingsRequest r) => Results.Ok(store.Mutate(c =>
 {
@@ -199,7 +227,7 @@ app.MapPost("/api/board/add-many", (List<BoardLoad> loads) => Results.Ok(store.M
     var added = 0;
     foreach (var l in loads ?? new())
     {
-        try { BoardIntake.Add(c.Game, l); added++; }
+        try { BoardIntake.Add(c.Game, l); Lanes.Learn(c, new[] { l }); added++; }
         catch (InvalidOperationException ex) { refused.Add(new { cargo = l.Cargo, destCity = l.DestCity, reason = ex.Message }); }
     }
     if (added > 0) OoStore.Log(c, "board", $"{added} load(s) onto the board at {c.Game.Status.LocationCity}, {c.Game.Status.LocationState}.");
@@ -268,6 +296,7 @@ app.MapPost("/api/run/at-shipper", (RunStageRequest r) => Results.Ok(store.Mutat
 app.MapPost("/api/run/loaded", (RunStageRequest r) => Results.Ok(store.Mutate(c =>
 {
     var notes = Run.Loaded(c, r.WeightLbs, r.Odometer, r.Day, r.Time);
+    Lanes.MaybeRing(c);
     return new { said = string.Join(" ", notes), snapshot = Snapshot(c) };
 })));
 
@@ -278,12 +307,37 @@ app.MapPost("/api/run/event", (RunEventRequest r) => Results.Ok(store.Mutate(c =
     Run.Event(c, r);
     Ledger.Advance(c);
     HomeLife.Advance(c, wasTime, wasHome);
+    Lanes.MaybeRing(c);
     return Snapshot(c);
 })));
 
 app.MapPost("/api/run/arrived", (RunStageRequest r) => Results.Ok(store.Mutate(c =>
 {
     var said = Run.Arrived(c, r.Day, r.Time);
+    Lanes.MaybeRing(c);
+    return new { said, snapshot = Snapshot(c) };
+})));
+
+app.MapPost("/api/calls/{id}/answer", async (string id, CancellationToken ct) =>
+{
+    var reply = store.Mutate(c =>
+    {
+        var call = Calls.Answer(c, id);
+        return new BrokerReply("offer", call.Turns.Last().Text);
+    });
+    await Voice(id, reply, ct);
+    return Results.Ok(new { call = Calls.View(store.Career, store.Career.Calls.First(x => x.Id == id)), snapshot = Snapshot(store.Career) });
+});
+
+app.MapPost("/api/lane/take", (TakeLaneRequest r) => Results.Ok(store.Mutate(c =>
+{
+    var booking = Lanes.Take(c, r.LoadId ?? "");
+    return new { booking, snapshot = Snapshot(c) };
+})));
+
+app.MapPost("/api/lane/nothing-fits", () => Results.Ok(store.Mutate(c =>
+{
+    var said = Lanes.NothingFits(c);
     return new { said, snapshot = Snapshot(c) };
 })));
 
@@ -422,11 +476,20 @@ static object Snapshot(OoCareer c)
         call = Calls.Open(c) is { } open ? Calls.View(c, open) : null,
         lastCall = c.Calls.LastOrDefault() is { } last ? Calls.View(c, last) : null,
         booking = Calls.ActiveBooking(c),
+        lane = Lanes.Booked(c) is { } bl ? Lanes.View(c, bl) : null,
+        laneFits = Lanes.Booked(c) is { } fl && c.Started ? Lanes.Fits(c, fl, LoadDesk.Evaluate(c)).Select(v => v.Load.Id) : Enumerable.Empty<string>(),
+        payPerMile = Lanes.PayPerMile(c),
         trip = Run.Trip(c, Calls.ActiveBooking(c)) is { } t ? new
         {
             t.Id, t.Number, t.Status, t.ShipperArrivedGameTime, t.ShipperCallNote, t.LoadStartsGameTime, t.LoadedReported,
             t.PulledOutGameTime, t.ArrivedGameTime, t.ReceiverCallNote, t.WorkStartsGameTime, t.DueGameTime,
             plan = t.FeasibilityAtDispatch,
+            fromHere = Run.FromHere(c) is { } fh ? new
+            {
+                fh.Verdict, fh.SlackHours, fh.ProjectedArrivalGameTime, fh.ProjectedDockStartGameTime, fh.DueGameTime,
+                fh.RestsRequired, fh.BreaksRequired, fh.Blockers, fh.Warnings, fh.Timeline,
+            } : null,
+            clocksAsOf = c.Game.Hos.AsOfGameTime,
             events = t.Events.OrderBy(e => e.GameTime).Select(e => new { e.Id, e.Kind, e.GameTime, e.EndGameTime, e.Detail, e.City, e.State, e.Gallons }),
         } : null,
         bookings = c.Bookings.AsEnumerable().Reverse().Take(20),
@@ -509,6 +572,7 @@ record SkillsRequest(int LongDistance, int HighValue, int Fragile, int JustInTim
 record ExtractRequest(List<ScreenshotImage>? Images);
 record CallRequest(string? BrokerId);
 record HandBackRequest(string? Why);
+record TakeLaneRequest(string? LoadId);
 record BankRequest(decimal Balance);
 record PromiseRequest(int EveryDays, int HomeDays);
 record SayRequest(string? Text, string? Kind, decimal? Amount, List<string>? Arguments, string? Term);

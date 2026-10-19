@@ -52,6 +52,8 @@ public static class Accounts
     public const string Holding = "Broker holding";
     /// <summary>The player's own account in the Companion App.</summary>
     public const string Yours = "Your account";
+    /// <summary>Money from outside the game: only a TONU, which a broker pays for a lane that came to nothing.</summary>
+    public const string Outside = "Paid by the broker";
 }
 
 /// <summary>
@@ -165,6 +167,15 @@ public static class Ledger
 
             // What is yours to move: the rate. Rates never go above the game's pay, so the load's pay always covers it;
             // the rest is the broker's share and stays in Broker holding (agreed 2026-10-18).
+            if (inv.GamePay <= 0)
+            {
+                // A TONU: the broker's own money, never in the game bank or Broker holding.
+                Raise(c, "TopUp", Accounts.Outside, Accounts.Yours, inv.Amount,
+                      $"{inv.BrokerName} paid the {Units.Money(inv.Amount)} TONU on {inv.BookingNumber}. Add it to your account as income.",
+                      inv.Number, false);
+                OoStore.Log(c, "money", $"{inv.BrokerName} paid {inv.Number}: {Units.Money(inv.Amount)}.", inv.Number);
+                continue;
+            }
             var fromHolding = Math.Min(inv.Amount, inv.GamePay);
             Raise(c, "ToYou", Accounts.Holding, Accounts.Yours, fromHolding,
                   $"{inv.BrokerName} paid {inv.Number}. Move {Units.Money(fromHolding)} out of Broker holding into your account." +

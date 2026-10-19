@@ -148,6 +148,53 @@ public static class Run
     }
 
     /// <summary>
+    /// The rest of the run, planned from where the truck is now on the clocks just reported: the miles left, the
+    /// dock work left, against the time left before the window shuts. Null where there is nothing left to plan (not
+    /// booked, or already at the receiver).
+    /// </summary>
+    public static FeasibilityResult? FromHere(OoCareer c)
+    {
+        var k = Calls.ActiveBooking(c);
+        var trip = Trip(c, k);
+        var s = c.Game;
+        if (k == null || trip == null || !string.IsNullOrWhiteSpace(trip.ArrivedGameTime)) return null;
+        if (GameClock.TryParse(s.Status.GameTime) is not { } now || GameClock.TryParse(k.BookedGameTime) is not { } booked) return null;
+
+        var loaded = trip.LoadedReported || trip.Events.Any(e => e.Kind == "EndLoad");
+        var started = loaded || !string.IsNullOrWhiteSpace(trip.ShipperArrivedGameTime);
+        var driven = loaded && trip.StartOdometer > 0 ? Math.Max(0, s.Status.AtsOdometer - trip.StartOdometer) : 0;
+        var leftLoaded = Math.Max(0, trip.DispatchedMiles - driven);
+        var toShipper = !started && Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, trip.OriginCity, trip.OriginState) is { } d
+                        && !s.Status.LocationCity.Equals(trip.OriginCity, StringComparison.OrdinalIgnoreCase) ? d : 0;
+        var opens = k.Load.AppointmentOpensHours > 0 ? Math.Max(0, (booked.AddHours(k.Load.AppointmentOpensHours) - now).TotalHours) : 0;
+
+        var req = new PlanRequest
+        {
+            OriginCity = loaded ? s.Status.LocationCity : trip.OriginCity,
+            OriginState = loaded ? s.Status.LocationState : trip.OriginState,
+            DestCity = trip.DestCity,
+            DestState = trip.DestState,
+            DeadheadMiles = toShipper,
+            DeadheadIsEstimate = toShipper > 0,
+            LoadedMiles = leftLoaded,
+            LoadingHours = loaded ? 0 : trip.LoadingHours,
+            UnloadingHours = trip.UnloadingHours,
+            TrailerType = trip.TrailerType,
+            ExtraStops = trip.ExtraStops,
+            DeadlineHours = Math.Max(0, (booked.AddHours(k.Load.DeadlineHours) - now).TotalHours),
+            AppointmentOpensHours = opens,
+            WaitUntilHours = opens,
+            ReceiverAllowsOvernight = Facilities.AllowsOvernightParking(s, trip.DestCity, trip.DestState, trip.Receiver),
+            // Already on duty once the run has started: the pre-trip is behind them.
+            IncludePreTrip = !started,
+            UsableFuelRangeMiles = HosEngine.UsableRange(s.Settings, DispatchEngine.AssignedTruck(s), s.Status.FuelPct),
+            StartGameTime = s.Status.GameTime,
+            Label = trip.Cargo,
+        };
+        return Crossings.PlanBest(s, req, DispatchEngine.AssignedTruck(s));
+    }
+
+    /// <summary>
     /// Closing the trip at delivery: the arrival from the log, the miles off the odometer, the dock times, and what
     /// the run teaches the planner. Returns the findings worth saying, and whether it was late by the clock.
     /// </summary>

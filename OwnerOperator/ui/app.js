@@ -161,6 +161,19 @@ function runPanel() {
       ${stage !== 'shipper' ? '<button class="btn go" id="dl-go">Delivered</button>' : ''}
     </div>
     ${stage === 'loading' ? note(t.shipperCallNote) : ''}${stage === 'receiver' ? note(t.receiverCallNote) : ''}
+    ${t.fromHere ? fromHereView(t.fromHere) : ''}
+    <details ${t.fromHere && t.fromHere.verdict !== 'Feasible' ? 'open' : ''}><summary>Report your clocks and where you are</summary>
+      <div class="grid4">
+        <label>Drive<input id="ck-drive" type="number" step="0.01" value="${S.hos.drive}"></label>
+        <label>Shift<input id="ck-shift" type="number" step="0.01" value="${S.hos.shift}"></label>
+        <label>Break<input id="ck-brk" type="number" step="0.01" value="${S.hos.brk}"></label>
+        <label>Cycle<input id="ck-cycle" type="number" step="0.01" value="${S.hos.cycle}"></label>
+        <label>City<input id="ck-city" value="${esc(S.status.city)}"></label>
+        <label>State<input id="ck-state" class="up" value="${esc(S.status.state)}"></label>
+      </div>
+      <div class="row-actions"><button class="btn primary" id="ck-save">Save, and re-plan from here</button></div>
+      <div class="dropzone" id="ck-drop">Or paste or drop a GDC recap screenshot here${S.settings.hasApiKey ? '' : ' (needs an API key in Settings)'}</div>
+    </details>
     <details><summary>A break, a rest, or fuel</summary>
       <div class="grid4">
         <label>Kind<select id="rn-kind"><option>Break</option><option>Rest</option><option>Fuel</option><option>Note</option></select></label>
@@ -175,7 +188,52 @@ function runPanel() {
   </div>`;
 }
 
+function fromHereView(f) {
+  const cls = f.verdict === 'Feasible' ? 'ok' : f.verdict === 'Tight' ? 'warn' : 'bad';
+  const msgs = [...(f.blockers || []), ...(f.warnings || [])];
+  return `<div class="callout ${cls}"><h4>From here: ${esc(f.verdict)}</h4>
+    <p>At the gate ${esc((f.projectedDockStartGameTime || f.projectedArrivalGameTime || '').replace('T', ' '))}, window shuts
+      ${esc((f.dueGameTime || '').replace('T', ' '))}: ${f.slackHours >= 0 ? hhmm(f.slackHours) + ' to spare' : '<b>' + hhmm(-f.slackHours) + ' late</b>'}.
+      ${f.restsRequired ? `${f.restsRequired} rest(s) still to take.` : ''}</p>
+    ${msgs.length ? `<ul class="reasons">${msgs.slice(0, 4).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
+    <details><summary>The plan</summary>${(f.timeline || []).map((x) => `<div class="hint">${esc(x.startGameTime.replace('T', ' '))} ${esc(x.label)} (${hhmm(x.hours)})</div>`).join('')}</details>
+  </div>`;
+}
+
+async function readClocks(files) {
+  const images = [];
+  for (const f of files) {
+    if (!f.type.startsWith('image/')) continue;
+    const b64 = await new Promise((res) => { const rd = new FileReader(); rd.onload = () => res(String(rd.result).split(',')[1]); rd.readAsDataURL(f); });
+    images.push({ mediaType: f.type, dataBase64: b64 });
+  }
+  if (!images.length) return;
+  $('ck-drop').textContent = 'Reading…';
+  try {
+    const r = await api('/hos/extract', 'POST', { images });
+    if (!r.ok) throw new Error(r.error);
+    S = r.snapshot; toast('Clocks read and saved.'); render();
+  } catch (e) { toast(e.message, 'bad'); $('ck-drop').textContent = 'Paste or drop a GDC recap screenshot here'; }
+}
+
 function wireRun() {
+  const ck = $('ck-save');
+  if (ck) ck.onclick = async () => {
+    try {
+      await api('/status', 'POST', { locationCity: $('ck-city').value, locationState: $('ck-state').value,
+        day: Number($('rn-day').value), time: $('rn-time').value, odometer: Number($('rn-odo').value) || null });
+      S = await api('/hos', 'POST', { driveRemaining: Number($('ck-drive').value), shiftRemaining: Number($('ck-shift').value),
+        breakRemaining: Number($('ck-brk').value), cycleRemaining: Number($('ck-cycle').value) });
+      render();
+    } catch (e) { toast(e.message, 'bad'); }
+  };
+  const ckd = $('ck-drop');
+  if (ckd) {
+    ckd.ondragover = (e) => e.preventDefault();
+    ckd.ondrop = (e) => { e.preventDefault(); readClocks([...e.dataTransfer.files]); };
+    ckd.tabIndex = 0;
+    ckd.onpaste = (e) => { e.stopPropagation(); const f = [...(e.clipboardData?.files || [])]; if (f.length) readClocks(f); };
+  }
   const when = () => ({ day: Number($('rn-day').value), time: $('rn-time').value });
   document.querySelectorAll('[data-run]').forEach((b) => b.onclick = async () => {
     try {
@@ -200,6 +258,19 @@ function wireRun() {
   };
 }
 
+function laneBanner() {
+  const l = S.lane;
+  if (!l) return '';
+  const fits = (S.laneFits || []).length;
+  return `<div class="callout info"><h4>Lane ${esc(l.number)} with ${esc(l.brokerName)}</h4>
+    <p>Pick up in <b>${esc(l.pickupCity)}, ${esc(l.pickupState)}</b> from ${esc(l.pickupFromGameTime.replace('T', ' '))} to
+      ${esc(l.pickupToGameTime.replace('T', ' '))}, delivering into the <b>${esc(l.destRegion)}</b>, ${l.minMiles}-${l.maxMiles} mi,
+      at <b>${money(l.ratePerMile)}/mi</b> (never above the game's pay).</p>
+    <p>${S.booking ? 'Deliver the load you are on first.' : fits ? `${fits} job(s) on the board fit it: take one below.`
+      : `At ${esc(l.pickupCity)}, paste that city's Freight Market board and the app marks the jobs that fit.`}</p>
+    ${!S.booking ? '<div class="row-actions"><button class="btn danger" id="ln-none">Nothing fits</button></div>' : ''}</div>`;
+}
+
 function bookingBanner() {
   const k = S.booking;
   if (!k) return '';
@@ -216,7 +287,7 @@ function bookingBanner() {
 function boardView() {
   const loads = S.board || [];
   const intro = (S.bookings || []).length === 0 ? firstLoadWalkthrough() : '';
-  return bookingBanner() + intro + `
+  return bookingBanner() + laneBanner() + intro + `
     <div class="panel">
       <div class="panel-head"><h2>Add from screenshots</h2><span class="sub">Paste (Ctrl+V) or drop a Freight Market screenshot</span></div>
       <div class="dropzone" id="drop">Paste or drop screenshots here${S.settings.hasApiKey ? '' : ' — needs an Anthropic API key in Settings'}</div>
@@ -250,6 +321,8 @@ function loadCard(v) {
       <b>${esc(l.cargo)}</b> to <b>${esc(l.destCity)}, ${esc(l.destState)}</b>
       <span class="badge ${verdict}">${esc(f.verdict)}</span>
       <span class="spacer"></span>
+      ${(S.laneFits || []).includes(l.id) && !S.booking ? `<span class="badge info">Fits ${esc(S.lane.number)}</span>
+        <button class="btn tiny primary" data-take="${esc(l.id)}">Take for the lane</button>` : ''}
       <button class="btn tiny ghost" data-del="${esc(l.id)}">Remove</button>
     </div>
     <div class="figs">
@@ -316,6 +389,15 @@ async function readImages(files) {
 function wireBoard() {
   const dl = $('dl-go');
   wireRun();
+  document.querySelectorAll('[data-take]').forEach((b) => b.onclick = async () => {
+    try { const r = await api('/lane/take', 'POST', { loadId: b.dataset.take }); S = r.snapshot; toast(`${r.booking.number} booked off the lane.`); render(); }
+    catch (e) { toast(e.message, 'bad'); }
+  });
+  const none = $('ln-none');
+  if (none) none.onclick = async () => {
+    if (!confirm('Tell the broker nothing on the board fits? They cancel the lane.')) return;
+    try { const r = await api('/lane/nothing-fits', 'POST'); S = r.snapshot; toast(r.said); render(); } catch (e) { toast(e.message, 'bad'); }
+  };
   if (dl) dl.onclick = async () => {
     try {
       const r = await api('/deliver', 'POST', { day: Number($('rn-day').value), time: $('rn-time').value, odometer: Number($('rn-odo').value) });
@@ -400,7 +482,15 @@ function phoneView() {
   return `<div class="panel phone">
     <div class="panel-head"><h2>On the phone: ${esc(c.rep)}, ${esc(c.broker)}</h2>
       <span class="badge ${open ? 'warn' : c.status === 'Booked' ? 'ok' : 'mute'}">${open ? esc(c.mood) : esc(c.status)}</span></div>
-    ${c.load && open ? `<div class="figs">
+    ${c.lane && open ? `<div class="figs">
+      <div><div class="k">Offer</div><div class="money">${money(c.offer)}</div></div>
+      <div><div class="k">Pick up</div><div class="money">${esc(c.lane.pickupCity)}, ${esc(c.lane.pickupState)}</div></div>
+      <div><div class="k">From</div><div class="money">${esc(c.lane.pickupFromGameTime.replace('T', ' '))}</div></div>
+      <div><div class="k">Into</div><div class="money">${esc(c.lane.destRegion)}</div></div>
+      <div><div class="k">Distance</div><div class="money">${c.lane.minMiles}-${c.lane.maxMiles} mi</div></div>
+      <div><div class="k">At your cost</div><div class="money">${money(c.offer - S.settings.costPerMile * (c.lane.minMiles + c.lane.maxMiles) / 2)}</div></div>
+    </div><p class="hint">A lane: the offer is for the middle of the band, booked as a rate per mile. The game supplies the job at the pickup.</p>` : ''}
+    ${c.load && !c.lane && open ? `<div class="figs">
       <div><div class="k">Offer</div><div class="money">${money(c.offer)}</div></div>
       <div><div class="k">The load</div><div class="money">${esc(c.load.cargo)} to ${esc(c.load.destCity)}, ${esc(c.load.destState)}</div></div>
       ${view ? `<div><div class="k">Your cost</div><div class="money">${money(view.cost)}</div></div>
@@ -526,9 +616,20 @@ function wireMoney() {
 
 // ---------------------------------------------------------------- home
 
+function ringBanner() {
+  const c = S.call;
+  if (!c || c.status !== 'Ringing') return '';
+  return `<div class="callout warn ring"><h4>Phone: ${esc(c.rep)} at ${esc(c.broker)} is calling</h4>
+    <p>About a load out of ${esc(c.lane?.pickupCity || '')}, ${esc(c.lane?.pickupState || '')}.</p>
+    <div class="row-actions"><button class="btn primary" id="ring-answer">Answer</button>
+      <button class="btn ghost" id="ring-ignore">Let it ring</button></div></div>`;
+}
+
 function homeBanner() {
   const h = S.home;
-  if (!h) return '';
+  if (!h) return ringBanner();
+  const ring = ringBanner();
+  if (ring) return ring;
   if (h.bottomUntil) return `<div class="callout bad"><h4>Home life has hit bottom</h4>
     <p>Go home. No broker will book you until ${esc(h.bottomUntil.replace('T', ' '))}, and the truck's costs keep running.</p></div>`;
   if (h.call) return `<div class="callout bad"><h4>Home called</h4><p>${esc(h.call.reason)} Be home by
@@ -541,6 +642,14 @@ function homeBanner() {
 }
 
 function wireHomeBanner() {
+  const ans = $('ring-answer');
+  if (ans) ans.onclick = async () => {
+    try { const r = await api(`/calls/${S.call.id}/answer`, 'POST'); S = r.snapshot; tab = 'brokers'; render(); } catch (e) { toast(e.message, 'bad'); }
+  };
+  const ign = $('ring-ignore');
+  if (ign) ign.onclick = async () => {
+    try { const r = await api(`/calls/${S.call.id}/say`, 'POST', { kind: 'decline' }); S = r.snapshot; render(); } catch (e) { toast(e.message, 'bad'); }
+  };
   const hb = $('hb-go');
   if (hb) hb.onclick = async () => {
     if (!confirm('Hand the load back? It goes on your record as a cancellation.')) return;

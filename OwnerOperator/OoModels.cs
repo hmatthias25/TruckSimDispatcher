@@ -36,6 +36,8 @@ public class OoCareer
     public List<Transfer> Transfers { get; set; } = new();
     public HomeLifeState HomeLife { get; set; } = new();
     public GameBankState GameBank { get; set; } = new();
+    public List<Lane> Lanes { get; set; } = new();
+    public PaySeen PaySeen { get; set; } = new();
 }
 
 /// <summary>What the first screen asks, and what follows from it.</summary>

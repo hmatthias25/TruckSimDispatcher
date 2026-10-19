@@ -496,3 +496,6 @@ label.inline input{width:110px;margin:0}
 .meter{height:10px;background:var(--bg);border:1px solid var(--line2);border-radius:5px;overflow:hidden;margin:6px 0 10px}
 .meter .bar{height:100%;background:linear-gradient(90deg,var(--red),var(--amber),var(--green))}
 .money.big{font-size:20px}
+.callout.info{border-left-color:var(--blue);background:var(--blue-dim)}
+.callout.ring{animation:ring 1.2s ease-in-out 3}
+@keyframes ring{50%{box-shadow:0 0 0 3px var(--amber)}}

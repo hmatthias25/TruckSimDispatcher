@@ -48,8 +48,19 @@ const refused = async (fn) => { try { await fn(); return ''; } catch (e) { retur
   S = await api('/run/event', 'POST', { kind: 'Fuel', day: 3, time: '10:00', gallons: 80, pricePerGal: 4.1, city: 'Emporia', state: 'KS' });
   ok('a break needs an end', /ended|how long/.test(await refused(() => api('/run/event', 'POST', { kind: 'Rest', day: 3, time: '11:00' }))));
   ok('events on the log in order', S.trip.events.map((e) => e.kind).join(',') === 'BeginLoad,EndLoad,Break,Fuel', S.trip.events.map((e) => e.kind).join(','));
+  head('3b. Clocks along the run, and the plan from here');
+  ok('a plan from here once loaded', S.trip.fromHere && S.trip.fromHere.verdict, JSON.stringify(S.trip.fromHere && { v: S.trip.fromHere.verdict, slack: S.trip.fromHere.slackHours }));
+  const fresh = S.trip.fromHere;
+  await api('/status', 'POST', { day: 3, time: '10:30', odometer: 10002 + Math.round(miles / 2) });
+  S = await api('/hos', 'POST', { driveRemaining: 0.2, shiftRemaining: 3, breakRemaining: 8, cycleRemaining: 60 });
+  const tired = S.trip.fromHere;
+  ok('half the miles driven: half left to plan', tired.timeline.some((x) => /segment|Line haul/i.test(x.label)), tired.timeline.map((x) => x.label).join(' / '));
+  ok('out of drive clock: the plan rests first', tired.restsRequired >= 1 && tired.timeline[0].kind === 'Rest', `${tired.restsRequired} ${tired.timeline[0]?.label}`);
+  ok('and is later than with fresh clocks', tired.slackHours < fresh.slackHours, `${fresh.slackHours} -> ${tired.slackHours}`);
+  S = await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 60 });
   r = await api('/run/arrived', 'POST', { day: 3, time: '11:20' });
   ok('at the receiver: told when they take it', /arrived/.test(r.said), r.said);
+  ok('nothing left to plan once there', r.snapshot.trip.fromHere === null);
   S = await api('/run/event', 'POST', { kind: 'BeginUnload', day: 3, time: '11:25' });
   S = await api('/run/event', 'POST', { kind: 'EndUnload', day: 3, time: '12:05' });
 
