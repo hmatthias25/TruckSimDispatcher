@@ -156,7 +156,7 @@ async function shot(name, sel) {
     await shot('topbar-ringing', 'header.topbar');
     console.log('  title while ringing:', await ev('document.title'));
     await ev(`document.querySelectorAll('#view details').forEach((d) => d.open = true)`);
-    await shot('active-run', '#view > .panel:nth-of-type(2)');
+    await shot('active-run', '#fromhere');
     await shot('triplog', '#view .cols');
 
     // 5. A lane: answering means telling the broker your clocks.

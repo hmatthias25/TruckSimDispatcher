@@ -125,18 +125,33 @@ document.addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
-/** Asking for the clocks before a call: a broker plans the next load off how much time you have. */
+/**
+ * Asking for the clocks before a call: a broker plans the next load off how much time you have. On the road, where and
+ * when you are as well, because the rest of this run is planned from there: how far is left, and what it costs your clocks.
+ */
 function clocksPrompt(title, sub, go) {
+  const onRun = !!S.booking;
   modal(`<div class="panel-head"><h2>${esc(title)}</h2><div class="spacer"></div>
       <button class="btn tiny ghost" data-close>Cancel</button></div>
-    <p>${esc(sub)}</p>
+    <p>${esc(sub)}${onRun ? ' On a run, where and when you are as well: the rest of this one is planned from there.' : ''}</p>
+    ${onRun ? `<div class="grid4">${dayTimeInput('pc-time', S.status.gameTime, 'Game day and time')}
+      <label>City<input id="pc-city" value="${esc(S.status.city)}"></label>
+      <label>State<input id="pc-state" class="up" maxlength="2" value="${esc(S.status.state)}"></label>
+      <label>Odometer now<input id="pc-odo" type="number" placeholder="optional, last: ${S.status.odometer}"></label></div>` : ''}
     ${clockFields('pc', S.hos, true)}
     <p class="hint">Off your HOS display, as it reads now. Telling a broker your hours is how they know how far they can plan you.</p>
     <div class="row-actions"><div class="spacer"></div><button class="btn primary" id="pc-go">Tell them</button></div>`);
-  $('pc-drive').focus();
+  ($('pc-city') || $('pc-drive')).focus();
   $('pc-go').onclick = async () => {
-    try { const clocks = readClockFields('pc', true); closeModal(); await go(clocks); }
-    catch (e) { toast(e.message, 'bad'); }
+    try {
+      const clocks = readClockFields('pc', true);
+      if (onRun) {
+        const at = readWhen('pc-time');
+        await api('/status', 'POST', { locationCity: $('pc-city').value, locationState: $('pc-state').value, day: at.day, time: at.time,
+          odometer: Number($('pc-odo').value) || null });
+      }
+      closeModal(); await go(clocks);
+    } catch (e) { toast(e.message, 'bad'); }
   };
 }
 
@@ -629,6 +644,15 @@ function callModal(call, fallback) {
       ${call.position ? `<span>place in line <b>#${call.position}</b></span>` : ''}</div>` : ''}`);
 }
 
+/** Where the clocks the plan runs on came from: a call, a close-out, a screenshot, or typed in. */
+function clocksFrom(h) {
+  const when = gt(h.asOf);
+  if (h.carriedForwardFrom) return `Updated ${when} from your close-out of ${h.carriedForwardFrom}`;
+  if ((h.source || '').startsWith('Told ')) return `Updated ${when} from your call: you told ${h.source.slice(5)} your clocks and where you were`;
+  if (h.source === 'GDC Companion') return `Updated ${when} from a GDC recap screenshot`;
+  return `Updated ${when} from the clocks you reported`;
+}
+
 function fromHereView(f) {
   const cls = f.verdict === 'Feasible' ? 'ok' : f.verdict === 'Tight' ? 'warn' : 'bad';
   const msgs = [...(f.blockers || []), ...(f.warnings || [])];
@@ -828,16 +852,20 @@ function activeView() {
       <span class="hint">The job vanished in the game (a reset, a crash, a reload) and you could not stop it. Cancelled, but not on your record.</span></div>
   </div>
 
-  <div class="panel">
-    <div class="panel-head"><h2>From here</h2>
-      <span class="sub">${S.hos.asOf ? `Off your clocks as of ${esc(gt(S.hos.asOf))}` : 'Off your clocks'} and where you are</span></div>
-    ${fh ? fromHereView(fh) : `<p class="hint">${t.arrivedGameTime ? 'At the receiver: nothing left to plan.' : 'Report your clocks and where you are to plan the rest of the run.'}</p>`}
-    ${!S.lane && t.loadedReported ? `<p class="hint">On a break or a rest? Ring a broker on the <a href="#" class="lnk" data-goto="brokers">Brokers</a> tab
-      to line up the next load: they offer a lane out of where this one ends.</p>` : ''}
-    <details ${fh && fh.verdict !== 'Feasible' ? 'open' : ''}><summary>Report your clocks and where you are</summary>
+  <div class="panel" id="fromhere">
+    <div class="panel-head"><h2>From here</h2><span class="sub">The rest of this run, off your latest clocks and position</span></div>
+    ${fh ? fromHereView(fh) : `<p class="hint">${t.arrivedGameTime ? 'At the receiver: nothing left to plan.' : 'Nothing to plan from yet: your clocks are needed.'}</p>`}
+    ${S.hos.asOf ? `<p class="hint">${esc(clocksFrom(S.hos))}. Calling a broker, or answering one, updates this too: nothing else to do.</p>` : ''}
+    ${!S.lane && t.loadedReported ? `<p class="hint">To line up the next load: log a break or a rest in the trip log below, then ring a broker on the
+      <a href="#" class="lnk" data-goto="brokers">Brokers</a> tab straight away. They offer a lane out of where this one ends.</p>` : ''}
+    <details ${fh && fh.verdict !== 'Feasible' ? 'open' : ''}><summary>Running late? Check it from here</summary>
+      <p class="hint">Lost time to a closure, a breakdown or a slow dock? Say where you are and what your clocks read, and the box above
+        says whether you still make the window, and what it costs.</p>
       <div class="grid3">${dayTimeInput('ck-time', S.status.gameTime, 'Game day and time')}
         <label>City<input id="ck-city" value="${esc(S.status.city)}"></label>
         <label>State<input id="ck-state" class="up" maxlength="2" value="${esc(S.status.state)}"></label></div>
+      <label style="max-width:20rem">Odometer now<input id="ck-odo" type="number" placeholder="last: ${S.status.odometer}">
+        <span class="hint">Optional. With it, the miles left come off the odometer; without it, from where you are on the map.</span></label>
       ${clockFields('ck', S.hos)}
       <div class="row-actions"><button class="btn primary" id="ck-save">Save, and re-plan from here</button></div>
       <div class="dropzone" id="ck-drop" tabindex="0">Or paste or drop a GDC recap screenshot here${S.settings.hasApiKey ? '' : ' (needs an API key in Settings)'}</div>
@@ -1100,7 +1128,8 @@ function wireActive() {
     try {
       const at = readWhen('ck-time');
       const clocks = readClockFields('ck', true);
-      await api('/status', 'POST', { locationCity: $('ck-city').value, locationState: $('ck-state').value, day: at.day, time: at.time });
+      await api('/status', 'POST', { locationCity: $('ck-city').value, locationState: $('ck-state').value, day: at.day, time: at.time,
+        odometer: Number($('ck-odo').value) || null });
       S = await api('/hos', 'POST', clocks);
       toast('Clocks and position saved.'); render();
     } catch (e) { toast(e.message, 'bad'); }

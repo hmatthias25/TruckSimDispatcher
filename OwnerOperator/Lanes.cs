@@ -224,10 +224,20 @@ public static class Lanes
         return $"With those clocks, call it from {GameClock.Pretty(lane.PickupFromGameTime)} at {lane.PickupCity}. Same rate.";
     }
 
-    /// <summary>When the lane's pickup window opens and shuts: after the run empties, a restart where the cycle will be low, and the deadhead.</summary>
+    /// <summary>Under these, the day is spent at empty: too little drive or shift left to load and run another, so a reset comes first.</summary>
+    public const double DriveToStartHours = 2, ShiftToStartHours = 3;
+
+    /// <summary>
+    /// When the lane's pickup window opens and shuts: after the run empties, then a 34 where the cycle will be low, or a
+    /// 10-hour reset where the day's drive or shift will be nearly spent, and the deadhead. Reported from play: a pickup
+    /// an hour after empty, offered to a driver who would arrive with half an hour of driving left.
+    /// </summary>
     private static (DateTime From, DateTime To) Window(OoCareer c, Trip trip, ReachInfo reach)
     {
-        var restart = reach.CycleAfter < 11 ? c.Game.Settings.Hos.CycleRestartHours : 0;
+        var hos = c.Game.Settings.Hos;
+        var restart = reach.CycleAfter < 11 ? hos.CycleRestartHours
+            : reach.DriveAfter < DriveToStartHours || reach.ShiftAfter < ShiftToStartHours ? hos.OffDutyReset
+            : 0;
         var deadhead = Geo.MilesBetween(trip.DestCity, trip.DestState, reach.Pickup.City, reach.Pickup.State) ?? 0;
         var opens = reach.Empty.AddHours(restart + deadhead / 45.0 + 1);
         return (opens, opens.AddHours(8));
@@ -239,7 +249,8 @@ public static class Lanes
     }
 
     /// <summary>Where the truck will be empty and when, and somewhere discovered to pick up near it.</summary>
-    public record ReachInfo(DateTime Empty, double Hours, double CycleAfter, (string City, string State) Pickup);
+    public record ReachInfo(DateTime Empty, double Hours, double CycleAfter, (string City, string State) Pickup,
+                            double? DriveAfter = null, double? ShiftAfter = null);
 
     public static ReachInfo? Reach(OoCareer c, Booking k, Trip trip)
     {
@@ -250,7 +261,10 @@ public static class Lanes
                     : string.IsNullOrWhiteSpace(trip.ArrivedGameTime) ? now.AddHours(Math.Max(1, trip.DispatchedMiles / 45.0)) : now.AddHours(trip.UnloadingHours);
         var pickup = PickupNear(c, trip.DestCity, trip.DestState);
         if (pickup == null) return null;
-        return new ReachInfo(empty, (empty - now).TotalHours, plan?.CycleRemainingAfter ?? s.Hos.CycleRemaining, pickup.Value);
+        // The day's clocks as the run leaves them, off the last step of the plan: what the next load starts on.
+        var last = plan?.Timeline.LastOrDefault();
+        return new ReachInfo(empty, (empty - now).TotalHours, plan?.CycleRemainingAfter ?? s.Hos.CycleRemaining, pickup.Value,
+                             last?.DriveRemainingAfter, last?.ShiftRemainingAfter);
     }
 
     /// <summary>

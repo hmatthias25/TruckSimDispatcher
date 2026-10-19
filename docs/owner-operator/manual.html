@@ -523,8 +523,14 @@
     <tr><td>Parking, their hours</td><td>Whether the receiver lets you sit on their property, and a site's working day.</td></tr>
   </table>
   <p>Under it: <b>the plan it was booked on</b>, with its full hours-of-service timeline, and <b>From here</b>, the same plan
-    worked again off your latest clocks and position. Open <b>Report your clocks and where you are</b>, type them (or paste a GDC
-    recap screenshot, with an AI key), and press <span class="btn">Save, and re-plan from here</span>.</p>
+    worked again off your latest clocks and position. It says where they came from: usually your last call to a broker, which
+    re-plans the run as it goes, so there is nothing else to do. Lost time to a closure, a breakdown or a slow dock and want to
+    know if you still make it? Open <b>Running late? Check it from here</b>, type where you are and your clocks (or paste a
+    GDC recap screenshot, with an AI key), and press <span class="btn">Save, and re-plan from here</span>.</p>
+  <p>How far is left comes off the <b>odometer</b> if you give it. If you do not, it comes from where you said you are: resting
+    in Tulsa on a run from Dallas to St. Louis, the plan runs from Tulsa, with the share of the run still ahead of you. From
+    there it works out when you reach the receiver, the rests on the way, and what your drive, shift and cycle will be when
+    you are empty. That is what a broker plans your next load on.</p>
   <figure><img src="img/active.png"><figcaption>The top of the Active Load tab for a fresh booking: the job to take in the game, the
     pay, the window and the plan it was booked on.</figcaption></figure>
 
@@ -614,6 +620,8 @@
     <li>The pickup is where your current run ends.</li>
     <li>The band never goes past your Long Distance limit.</li>
     <li>If your cycle will be under 11 hours when you are empty, the pickup is after a 34-hour restart.</li>
+    <li>If the run leaves you with under 2 hours of driving or 3 of shift when you are empty, too little to start another load,
+      the pickup is after a 10-hour reset.</li>
     <li>When home is due within five days, the lane heads home.</li>
   </ul>
 
@@ -623,9 +631,10 @@
     that broker.</p>
   <figure><img src="img/ringing.png"></figure>
   <p><span class="btn">Answer</span> asks for your clocks first: drive, shift, break and cycle left, as the HOS display shows
-    them. Telling a broker your hours is how they know how far they can plan you, and the lane's pickup is worked again off
-    them: answer with a full cycle on a lane planned around a restart, and the pickup comes forward. Then the call opens on the
-    Brokers tab. <span class="btn">Let it ring</span> lets the lane go.</p>
+    them. On a run it asks where and when you are too, and the odometer if you have it. Telling a broker your hours and your
+    position is how they know how far they can plan you: the rest of the run is planned from there, and the lane's pickup is
+    worked again off it. Answer with a full cycle on a lane planned around a restart, and the pickup comes forward. Then the
+    call opens on the Brokers tab. <span class="btn">Let it ring</span> lets the lane go.</p>
   <div class="rule"><h4>A call is never missed</h4>
     <p>The phone only rings when you report something to the app, such as pulling out loaded, and a ringing call
       <b>waits</b> until you answer it or let it ring. While it waits, the <b>Phone</b> tile in the top bar says
@@ -638,8 +647,9 @@
 
   <h3>Outbound: ringing round</h3>
   <p>On a run, you can call a broker yourself, but <b>only from a break or a rest</b>: not from behind the wheel. Log the
-    break first, then press <span class="btn">Call</span> and tell them your clocks. The broker offers a lane out of where
-    this run ends, planned off them. It is based on the lane, not on any board.</p>
+    break in the trip log first (your last entry has to be the break or the rest: log fuel or a note after it and you log the
+    break again), or call while you are at a dock: at the shipper before you pull out, or at the receiver. Then press <span class="btn">Call</span> and tell them your clocks and where you are. The broker offers a lane
+    out of where this run ends, planned off them. It is based on the lane, not on any board.</p>
 
   <h3>At the pickup</h3>
   <figure><img src="img/lane.png"><figcaption>The booked lane, waiting for its pickup.</figcaption></figure>
@@ -893,6 +903,7 @@
     <tr><td>Answering a broker</td><td>With your clocks; the lane is planned again off them</td></tr>
     <tr><td>Appointment grace</td><td>2 hours past a booked slot before it counts as late</td></tr>
     <tr><td>Restart before a lane</td><td>When the cycle will be under 11 h at empty: 34 h first</td></tr>
+    <tr><td>Reset before a lane</td><td>When drive will be under 2 h or shift under 3 h at empty: 10 h first</td></tr>
     <tr><td>Home life</td><td>Starts 80; &minus;2/day out, &minus;5 past the promise, +10/day home</td></tr>
     <tr><td>Home calls</td><td>Below 40</td></tr>
     <tr><td>Hitting bottom</td><td>At 0: home for 7 days, no bookings</td></tr>

@@ -253,7 +253,8 @@ app.MapPost("/api/calls", async (CallRequest r, CancellationToken ct) =>
         {
             if (Lanes.PullOver(c) is { } wheel) throw new InvalidOperationException(wheel);
             ApplyClocks(c, r.Clocks ?? throw new InvalidOperationException(
-                "Tell them your clocks: drive, shift, break and cycle left. That is how far they can plan you."), "Told the broker");
+                "Tell them your clocks: drive, shift, break and cycle left. That is how far they can plan you."),
+                $"Told {c.Brokers.FirstOrDefault(b => b.Id == r.BrokerId)?.Name ?? "a broker"}");
         }
         var (call, rep) = Calls.Start(c, r.BrokerId ?? "");
         return (call.Id, rep);
@@ -339,7 +340,8 @@ app.MapPost("/api/calls/{id}/answer", async (string id, AnswerRequest? r, Cancel
         // A broker ringing about the next load wants to know how much time you have: the lane is planned off it.
         if (ringing.Inbound)
             ApplyClocks(c, r?.Clocks ?? throw new InvalidOperationException(
-                "Tell them your clocks: drive, shift, break and cycle left. That is how far they can plan you."), "Told the broker");
+                "Tell them your clocks: drive, shift, break and cycle left. That is how far they can plan you."),
+                $"Told {c.Brokers.FirstOrDefault(b => b.Id == ringing.BrokerId)?.Name ?? "a broker"}");
         var call = Calls.Answer(c, id);
         if (Lanes.Refit(c, call) is { } moved) call.Turns.Add(new CallTurn { Who = "broker", Text = moved });
         return new BrokerReply("offer", call.Turns.Last().Text);

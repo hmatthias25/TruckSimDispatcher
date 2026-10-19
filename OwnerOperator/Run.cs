@@ -192,8 +192,7 @@ public static class Run
 
         var loaded = trip.LoadedReported || trip.Events.Any(e => e.Kind == "EndLoad");
         var started = loaded || !string.IsNullOrWhiteSpace(trip.ShipperArrivedGameTime);
-        var driven = loaded && trip.StartOdometer > 0 ? Math.Max(0, s.Status.AtsOdometer - trip.StartOdometer) : 0;
-        var leftLoaded = Math.Max(0, trip.DispatchedMiles - driven);
+        var leftLoaded = MilesLeft(c, trip, loaded);
         var toShipper = !started && Geo.MilesBetween(s.Status.LocationCity, s.Status.LocationState, trip.OriginCity, trip.OriginState) is { } d
                         && !s.Status.LocationCity.Equals(trip.OriginCity, StringComparison.OrdinalIgnoreCase) ? d : 0;
         var opens = k.Load.AppointmentOpensHours > 0 ? Math.Max(0, (booked.AddHours(k.Load.AppointmentOpensHours) - now).TotalHours) : 0;
@@ -222,6 +221,30 @@ public static class Run
             Label = trip.Cargo,
         };
         return Crossings.PlanBest(s, req, DispatchEngine.AssignedTruck(s));
+    }
+
+    /// <summary>
+    /// The loaded miles still to run. Off the odometer where one has been read since pulling out. Where not, and the truck
+    /// has been reported somewhere other than the shipper, the share of the run still ahead of it by the map: the miles from
+    /// here to the receiver over the miles from the shipper to it, applied to the listing. As a share rather than the map's
+    /// own figure, because the game's roads are shorter than the real-world map (Austin to Beaumont lists under 200 mi).
+    /// Reported from play: resting halfway with clocks and a position reported, and the whole run still planned ahead.
+    /// </summary>
+    public static double MilesLeft(OoCareer c, Trip trip, bool loaded)
+    {
+        var s = c.Game;
+        if (!loaded) return trip.DispatchedMiles;
+        if (trip.StartOdometer > 0 && s.Status.AtsOdometer > trip.StartOdometer)
+            return Math.Max(0, trip.DispatchedMiles - (s.Status.AtsOdometer - trip.StartOdometer));
+        var here = (City: s.Status.LocationCity, State: s.Status.LocationState);
+        if (here.City.Equals(trip.OriginCity, StringComparison.OrdinalIgnoreCase) && here.State.Equals(trip.OriginState, StringComparison.OrdinalIgnoreCase))
+            return trip.DispatchedMiles;
+        if (here.City.Equals(trip.DestCity, StringComparison.OrdinalIgnoreCase) && here.State.Equals(trip.DestState, StringComparison.OrdinalIgnoreCase))
+            return 0;
+        if (Geo.EstimatedMiles(here.City, here.State, trip.DestCity, trip.DestState) is not { } ahead
+            || Geo.EstimatedMiles(trip.OriginCity, trip.OriginState, trip.DestCity, trip.DestState) is not { } whole || whole <= 0)
+            return trip.DispatchedMiles;
+        return Math.Round(trip.DispatchedMiles * Math.Clamp(ahead / whole, 0, 1), 0);
     }
 
     /// <summary>
