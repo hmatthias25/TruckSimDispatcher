@@ -34,6 +34,11 @@ public class Booking
     public bool Late { get; set; }
     /// <summary>Cancelled, and the carrier's fault.</summary>
     public bool OnCarrier { get; set; }
+    /// <summary>Delivered late, but not the driver's fault: said, and not held against them.</summary>
+    public bool LateExcused { get; set; }
+    /// <summary>Whose fault a late was: None, Driver, Unavoidable, Mechanical or GameLimitation.</summary>
+    public string Fault { get; set; } = "";
+    public double CargoDamagePct { get; set; }
 }
 
 public class CallTurn
@@ -65,6 +70,8 @@ public class Call
     public bool AskedForBetter { get; set; }
     public bool FinalOffer { get; set; }
     public List<string> OfferedLoadIds { get; set; } = new();
+    /// <summary>Hours left on the offered listing when it is under <see cref="Calls.ExpiryWarnHours"/>; null otherwise.</summary>
+    public double? ListingLeftHours { get; set; }
     public bool QuickPay { get; set; }
     public decimal DetentionPerHour { get; set; }
     public string BookingId { get; set; } = "";
@@ -170,7 +177,39 @@ public static class Calls
 
         SetOffer(c, b, p, call, pick);
         call.Patience = p.Patience + (b.Standing > 30 ? 1 : 0);
-        return Say(c, call, b, new BrokerReply("offer", Templates.Offer(b, p, pick.Load, call.Offer)));
+        return Say(c, call, b, new BrokerReply("offer", Templates.Offer(b, p, pick.Load, call.Offer) + Asides(c, call, pick.Load)));
+    }
+
+    /// <summary>Under this, the broker warns that the listing is about to come off the board. 45 minutes, asked for from play.</summary>
+    public const double ExpiryWarnHours = 0.75;
+
+    /// <summary>
+    /// The company whose dock the truck is at or heading for: the receiver of the load on the truck, or of the one just
+    /// delivered in this city. A broker knows where you are going, and a job out of that dock has no empty miles to it.
+    /// </summary>
+    public static string CompanyHere(OoCareer c)
+    {
+        var s = c.Game.Status;
+        var k = ActiveBooking(c)
+                ?? c.Bookings.LastOrDefault(x => x.Status == BookingStatus.Delivered
+                                                 && x.Load.DestCity.Equals(s.LocationCity, StringComparison.OrdinalIgnoreCase)
+                                                 && x.Load.DestState.Equals(s.LocationState, StringComparison.OrdinalIgnoreCase));
+        return k?.Load.Receiver ?? "";
+    }
+
+    /// <summary>A job out of the dock the truck is at or heading for: off the "from this location" list, or that company's.</summary>
+    public static bool AtTheDock(OoCareer c, BoardLoad l) =>
+        l.AtLocation || (CompanyHere(c) is { Length: > 0 } co && l.Shipper.Length > 0 && Dedicated.Mentions(l.Shipper, co));
+
+    /// <summary>What the broker adds after the offer: the dock you are at, and a listing about to come off the board.</summary>
+    private static string Asides(OoCareer c, Call call, BoardLoad load)
+    {
+        var left = BoardExpiry.AtTheDoor(load) ? null : BoardExpiry.Remaining(c.Game, load);
+        call.ListingLeftHours = left is { } h && h < ExpiryWarnHours ? h : null;
+        var said = "";
+        if (AtTheDock(c, load) && load.Shipper.Length > 0) said += " " + Templates.AtTheDock(load);
+        if (call.ListingLeftHours is { } l) said += " " + Templates.ExpiryWarning(l);
+        return said;
     }
 
     /// <summary>
@@ -213,6 +252,14 @@ public static class Calls
             return runnable.FirstOrDefault(v => current != null && v.NetPerDay > current.NetPerDay
                                                 && !call.OfferedLoadIds.Contains(v.Load.Id));
         }
+        if (pool.Count == 0 && !runnable.Any(v => AtTheDock(c, v.Load) && !call.OfferedLoadIds.Contains(v.Load.Id))) return null;
+
+        // The dock the truck is at or heading for comes first: no empty miles to it, and the broker knows where you are.
+        // A starter still offers only from the leftovers; anyone else will reach past their pool for it.
+        var docked = pool.Where(v => AtTheDock(c, v.Load)).ToList();
+        if (docked.Count == 0 && b.Tier != BrokerTiers.Starter)
+            docked = runnable.Where(v => AtTheDock(c, v.Load) && !call.OfferedLoadIds.Contains(v.Load.Id)).ToList();
+        if (docked.Count > 0) return docked[BrokerBook.Stable(call.Id) % docked.Count];
         if (pool.Count == 0) return null;
         // Seeded per call, so asking the same question twice gets the same answer.
         return pool[BrokerBook.Stable(call.Id) % pool.Count];
@@ -270,6 +317,9 @@ public static class Calls
                 call.Status = "Declined";
                 if (c.Lanes.FirstOrDefault(l => l.Id == call.LaneId) is { } passed) passed.Status = "Expired";
                 return Say(c, call, b, new BrokerReply("declined", Templates.Declined(b, p)));
+
+            case "toolate":
+                return TooLate(c, b, p, call);
 
             case "better":
                 if (call.LaneId.Length > 0) { call.Patience--; return Say(c, call, b, new BrokerReply("nobetter", Templates.NoBetter(b, p, call.Offer))); }
@@ -338,6 +388,24 @@ public static class Calls
             : Templates.Moved(b, p, ask, call.Offer, trueArgs > 0)));
     }
 
+    /// <summary>
+    /// "I can't get there before it comes off the board." Only after the broker warned it was close, and it costs nothing:
+    /// no patience, no standing. The listing running out is nobody's fault. The broker drops it and finds another, or not.
+    /// </summary>
+    private static (Call, BrokerReply) TooLate(OoCareer c, Broker b, Personality p, Call call)
+    {
+        if (call.ListingLeftHours is null || call.LaneId.Length > 0)
+            return Say(c, call, b, new BrokerReply("unclear", Templates.PlentyOfTime(call.Offer)));
+        var next = Pick(c, b, call);
+        if (next == null)
+        {
+            call.Status = "Nothing";
+            return Say(c, call, b, new BrokerReply("nothing", Templates.TooLateNothing()));
+        }
+        SetOffer(c, b, p, call, next);
+        return Say(c, call, b, new BrokerReply("offer", Templates.TooLateNext(next.Load, call.Offer) + Asides(c, call, next.Load)));
+    }
+
     private static (Call, BrokerReply) AskBetter(OoCareer c, Broker b, Personality p, Call call)
     {
         call.Patience--;
@@ -352,7 +420,7 @@ public static class Calls
         var next = Pick(c, b, call, better: true);
         if (next == null) return Say(c, call, b, new BrokerReply("nobetter", Templates.NoBetter(b, p, call.Offer)));
         SetOffer(c, b, p, call, next);
-        return Say(c, call, b, new BrokerReply("offer", Templates.Better(b, p, next.Load, call.Offer)));
+        return Say(c, call, b, new BrokerReply("offer", Templates.Better(b, p, next.Load, call.Offer) + Asides(c, call, next.Load)));
     }
 
     private static (Call, BrokerReply) Terms(OoCareer c, Broker b, Personality p, Call call, string term)
@@ -516,7 +584,7 @@ public static class Calls
             lane = c.Lanes.FirstOrDefault(l => l.Id == call.LaneId) is { } ln ? Lanes.View(c, ln) : null,
             // How the broker sounds, not how many rounds are left: the count is the app's to know.
             mood = call.Patience >= 3 ? "relaxed" : call.Patience == 2 ? "getting short" : "losing patience",
-            call.QuickPay, call.DetentionPerHour, call.AskedForBetter, call.FinalOffer,
+            call.QuickPay, call.DetentionPerHour, call.AskedForBetter, call.FinalOffer, call.ListingLeftHours,
             call.Turns, call.BookingId,
         };
     }

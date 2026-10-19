@@ -120,10 +120,12 @@ public static class RoadLearning
     {
         if (string.IsNullOrWhiteSpace(cityA) || string.IsNullOrWhiteSpace(cityB) || miles < 1) return false;
         if (Place(cityA, ccA) == Place(cityB, ccB)) return false;
-        // Sanity against the map: no road is shorter than the straight line, and three times the estimate is a
-        // reading typed wrong rather than a road.
+        // Sanity against the map: well under the straight line, or three times the estimate, is a reading typed wrong
+        // rather than a road. "Well under", not "under": the game's map is compressed, and its roads can run shorter than
+        // the real-world straight line between the same two cities (Austin to Beaumont lists under 200 mi against 229 in
+        // a straight line). Refusing those threw away true readings, so only the inflated ones were ever learned.
         if (Geo.EstimatedMiles(cityA, ccA, cityB, ccB) is { } est && est > 0
-            && (miles < est / Geo.RoadFactorValue * 0.95 || miles > est * 3)) return false;
+            && (miles < est / Geo.RoadFactorValue * 0.6 || miles > est * 3)) return false;
         s.RoadLegs ??= new List<RoadLeg>();
         var key = Key(cityA, ccA, cityB, ccB);
         var leg = s.RoadLegs.FirstOrDefault(x => x.Key.Equals(key, StringComparison.OrdinalIgnoreCase));

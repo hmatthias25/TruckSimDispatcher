@@ -187,8 +187,6 @@ try {
 
             $env:TSD_DATA_DIR = $data
             $env:TSO_DATA_DIR = $data
-            # Whatever is running on this PC, the owner/operator app is told the game is closed.
-            $env:TSO_GAME_RUNNING = '0'
             # Every run gets its inbound call in the tests; the chance itself is the app's to decide in play.
             $env:TSO_RING_CHANCE = '100'
             # Lets a suite shape a broker (credit, personality) through /api/test/broker. Never set in play.
@@ -264,7 +262,7 @@ try {
         $results += $r
     }
 
-    Remove-Item Env:\TSD_DATA_DIR, Env:\TSO_DATA_DIR, Env:\TSO_GAME_RUNNING, Env:\TSO_RING_CHANCE, Env:\TSO_TEST, Env:\TSD_PORT -ErrorAction SilentlyContinue
+    Remove-Item Env:\TSD_DATA_DIR, Env:\TSO_DATA_DIR, Env:\TSO_RING_CHANCE, Env:\TSO_TEST, Env:\TSD_PORT -ErrorAction SilentlyContinue
 
     $totalPass = ($results | Measure-Object -Property Pass -Sum).Sum
     $totalFail = ($results | Measure-Object -Property Fail -Sum).Sum

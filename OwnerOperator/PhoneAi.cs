@@ -26,7 +26,7 @@ public static class PhoneAi
       "additionalProperties": false,
       "required": ["kind", "amount", "arguments", "term"],
       "properties": {
-        "kind": { "type": "string", "enum": ["accept", "counter", "better", "terms", "decline", "unclear"] },
+        "kind": { "type": "string", "enum": ["accept", "counter", "better", "terms", "toolate", "decline", "unclear"] },
         "amount": { "type": "string" },
         "arguments": { "type": "array", "items": { "type": "string", "enum": ["deadhead", "deadMarket", "tight", "record", "walk"] } },
         "term": { "type": "string", "enum": ["", "quickpay", "detention"] }
@@ -43,6 +43,7 @@ public static class PhoneAi
     - counter: they name a price they want. Put the figure in amount, digits only, no symbol ("2150"). A price given
       as "two and a half" or "2.5k" means 2500.
     - better: they ask for a different or better load.
+    - toolate: they say they cannot reach the pickup before the listing comes off the board.
     - terms: they ask for quick pay or detention pay, without naming a price. Set term.
     - decline: they turn it down or end the call.
     - unclear: anything else.

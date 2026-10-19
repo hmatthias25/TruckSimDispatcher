@@ -33,7 +33,7 @@
 
         <label>Game day<input id="st-day" type="number" min="1" value="1">
           <span class="hint">Off the game's clock. A new profile is Day 1.</span></label>
-        <label>Time of day<input id="st-time" placeholder="HH:MM" value="08:00"></label>
+        <label>Time of day<input id="st-time" placeholder="8:00 AM" value="8:00 AM"></label>
 
         <label>Odometer<input id="st-odo" type="number" min="0" step="1" value="0">
           <span class="hint">The truck's odometer in the game, so every mile is measured from the first load.</span></label>
@@ -81,5 +81,6 @@
   <main id="view" class="wrap"></main>
 </div>
 
+<div id="modal" class="modal hidden"><div class="modal-box"><div id="modal-body"></div></div></div>
 <div class="toasts" id="toasts"></div>
 <script src="/app.js"></script>

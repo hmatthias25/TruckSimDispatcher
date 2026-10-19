@@ -19,6 +19,18 @@ public static class Templates
 
     public static string Hello(Broker b) => $"{b.Name}, this is {b.Rep}.";
 
+    public static string AtTheDock(BoardLoad l) => $"It's out of {l.Shipper}, so you're right there: no empty miles.";
+
+    public static string ExpiryWarning(double hoursLeft) =>
+        $"Heads up: that one comes off the board in {Hhmm.Of(hoursLeft)}. Can you get there in time?";
+
+    public static string TooLateNext(BoardLoad l, decimal offer) =>
+        $"No problem, I'll give that one to somebody closer. How about {Lane(l)}? {M(offer)}.";
+
+    public static string TooLateNothing() => "No problem. That was the last I had for you on this board, though.";
+
+    public static string PlentyOfTime(decimal offer) => $"That one's got plenty of time on it. {M(offer)}.";
+
     public static string Offer(Broker b, Personality p, BoardLoad l, decimal offer) => Hello(b) + " " + Pick(p,
         ("Grinder", $"I've got {Lane(l)}. {M(offer)}. That's the rate."),
         ("Friend", $"Good to hear from you. I can do {Lane(l)}, {M(offer)} all in. Nice easy one to get you rolling."),
@@ -137,6 +149,7 @@ public static class Templates
         "accept" => "I'll take it.",
         "decline" => "I'll pass.",
         "better" => "Anything better?",
+        "toolate" => "I can't get there before it comes off the board.",
         "terms" => m.Term == "quickpay" ? "Can you do quick pay?" : "What about detention?",
         "counter" => $"I need {(m.Amount is { } a ? M(a) : "more")}." +
                      (m.Arguments.Contains("deadmarket") ? " That's a dead market, I'll leave empty." : "") +

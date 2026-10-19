@@ -174,11 +174,7 @@ public static class Lanes
         var k = Calls.ActiveBooking(c) ?? throw new InvalidOperationException("Nothing is booked.");
         var trip = Run.Trip(c, k) ?? throw new InvalidOperationException("Nothing is booked.");
         if (Booked(c) is { } has) throw new InvalidOperationException($"{has.Number} is booked next already.");
-        var last = trip.Events.OrderBy(e => e.GameTime).LastOrDefault();
-        var stopped = last is { Kind: "Break" or "Rest" }
-                      || !string.IsNullOrWhiteSpace(trip.ArrivedGameTime)
-                      || (!string.IsNullOrWhiteSpace(trip.ShipperArrivedGameTime) && !trip.LoadedReported);
-        if (!stopped) throw new InvalidOperationException("Pull over first: make the call from a break or a rest, not at the wheel. Log the break, then ring.");
+        if (PullOver(c) is { } wheel) throw new InvalidOperationException(wheel);
 
         var p = Personalities.For(b.Personality);
         var call = new Call { BrokerId = b.Id, StartedGameTime = c.Game.Status.GameTime, LaneId = "", BookingContext = k.Id };
@@ -196,6 +192,45 @@ public static class Lanes
         call.LaneId = lane.Id;
         Calls.OfferLane(c, b, call, lane);
         return (call, new BrokerReply("offer", call.Turns.Last().Text));
+    }
+
+    /// <summary>Why a mid-run call cannot be made yet, or null: only from a break or a rest, or at a dock, never at the wheel.</summary>
+    public static string? PullOver(OoCareer c)
+    {
+        var trip = Run.Trip(c, Calls.ActiveBooking(c));
+        if (trip == null) return null;
+        var last = trip.Events.OrderBy(e => e.GameTime).LastOrDefault();
+        var stopped = last is { Kind: "Break" or "Rest" }
+                      || !string.IsNullOrWhiteSpace(trip.ArrivedGameTime)
+                      || (!string.IsNullOrWhiteSpace(trip.ShipperArrivedGameTime) && !trip.LoadedReported);
+        return stopped ? null : "Pull over first: make the call from a break or a rest, not at the wheel. Log the break, then ring.";
+    }
+
+    /// <summary>
+    /// A lane offered on an inbound call, planned again off the clocks the driver gave on answering: the restart, and
+    /// when the truck can be at the pickup. Returns what the broker says about it when it moved, or null.
+    /// </summary>
+    public static string? Refit(OoCareer c, Call call)
+    {
+        var lane = c.Lanes.FirstOrDefault(l => l.Id == call.LaneId);
+        var k = c.Bookings.FirstOrDefault(b => lane != null && b.Id == lane.ForBookingId);
+        var trip = Run.Trip(c, k);
+        if (lane == null || k == null || trip == null || Reach(c, k, trip) is not { } reach) return null;
+        var (from, to) = Window(c, trip, reach);
+        var was = lane.PickupFromGameTime;
+        if (GameClock.TryParse(was) is { } before && Math.Abs((from - before).TotalHours) < 1) return null;
+        lane.PickupFromGameTime = GameClock.Format(from);
+        lane.PickupToGameTime = GameClock.Format(to);
+        return $"With those clocks, call it from {GameClock.Pretty(lane.PickupFromGameTime)} at {lane.PickupCity}. Same rate.";
+    }
+
+    /// <summary>When the lane's pickup window opens and shuts: after the run empties, a restart where the cycle will be low, and the deadhead.</summary>
+    private static (DateTime From, DateTime To) Window(OoCareer c, Trip trip, ReachInfo reach)
+    {
+        var restart = reach.CycleAfter < 11 ? c.Game.Settings.Hos.CycleRestartHours : 0;
+        var deadhead = Geo.MilesBetween(trip.DestCity, trip.DestState, reach.Pickup.City, reach.Pickup.State) ?? 0;
+        var opens = reach.Empty.AddHours(restart + deadhead / 45.0 + 1);
+        return (opens, opens.AddHours(8));
     }
 
     private record Reply(Call Call, BrokerReply Answer)
@@ -225,9 +260,7 @@ public static class Lanes
     private static Lane Build(OoCareer c, Broker broker, Booking k, Trip trip, ReachInfo reach)
     {
         var s = c.Game;
-        var restart = reach.CycleAfter < 11 ? s.Settings.Hos.CycleRestartHours : 0;
-        var deadhead = Geo.MilesBetween(trip.DestCity, trip.DestState, reach.Pickup.City, reach.Pickup.State) ?? 0;
-        var opens = reach.Empty.AddHours(restart + deadhead / 45.0 + 1);
+        var (opens, closes) = Window(c, trip, reach);
         var limit = LoadDesk.LongDistanceLimit(c) ?? 3000;
         var max = Math.Round(Math.Min(limit, Math.Max(250, limit * 0.8)) / 10) * 10;
         var min = Math.Round(max * 0.6 / 10) * 10;
@@ -239,7 +272,7 @@ public static class Lanes
             PickupCity = reach.Pickup.City,
             PickupState = reach.Pickup.State,
             PickupFromGameTime = GameClock.Format(opens),
-            PickupToGameTime = GameClock.Format(opens.AddHours(8)),
+            PickupToGameTime = GameClock.Format(closes),
             DestRegion = TargetRegion(c, Carriers.AtsRegionOf(trip.DestState), broker),
             MinMiles = min,
             MaxMiles = max,
@@ -280,7 +313,9 @@ public static class Lanes
                          && v.Feasibility.Verdict != "Infeasible" && v.SkillNotes.Count == 0
                          && (lane.ShipperName.Length > 0 ? Dedicated.Mentions(v.Load.Shipper, lane.ShipperName)
                              : lane.Specialty == Specialties.General || Specialties.Of(v.Load) == lane.Specialty))
-             .OrderBy(v => Math.Abs(v.Load.LoadedMiles - lane.MidMiles))
+             // The dock the truck is at first: no empty miles to it. Then the nearest the booked distance.
+             .OrderByDescending(v => Calls.AtTheDock(c, v.Load))
+             .ThenBy(v => Math.Abs(v.Load.LoadedMiles - lane.MidMiles))
              .ToList();
 
     /// <summary>

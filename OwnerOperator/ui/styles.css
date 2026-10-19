@@ -503,3 +503,6 @@ label.inline input{width:110px;margin:0}
 
 /* In-text links to another tab: the accent, not the browser's blue. */
 a.lnk{color:var(--amber);text-decoration:underline}
+label.lnk{display:inline;font:inherit;text-transform:none;letter-spacing:0;color:var(--amber);text-decoration:underline;cursor:pointer}
+.stat.ringing{animation:ring 1.2s ease-in-out infinite;cursor:pointer}
+.btn.warn{border-color:var(--amber);color:var(--amber2);background:var(--amber-dim)}

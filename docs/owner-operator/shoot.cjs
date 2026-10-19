@@ -95,6 +95,35 @@ async function shot(name, sel) {
     await shot('loadcard', '#view .loadcard');
     await shot('topbar', 'header.topbar');
 
+    // Screenshots staged, then a read waiting to be checked. The read itself needs an API key, so its result is put in
+    // by hand: what is checked here is the page around it.
+    await ev(`(async () => {
+      const page = (label, n) => new Promise((res) => { const c = document.createElement('canvas'); c.width = 1600; c.height = 900;
+        const g = c.getContext('2d'); g.fillStyle = '#1d2733'; g.fillRect(0, 0, 1600, 900); g.fillStyle = '#e8eef4'; g.font = '48px sans-serif';
+        for (let i = 0; i < 9; i++) g.fillText(label + ' job ' + (n + i), 60, 90 + i * 90);
+        c.toBlob((b) => res(new File([b], '', { type: 'image/png' }))); });
+      stageImage(await page('Freight Market', 1)); stageImage(await page('Freight Market', 10));
+    })()`);
+    await sleep(800);
+    const staged = await ev(`[document.querySelectorAll('#shotzone .shot').length, document.getElementById('sh-read').textContent.trim()]`);
+    console.log('  staged', JSON.stringify(staged));
+    await shot('shots', '#shotzone');
+    await ev(`(() => { preview = { ok: true, notes: '', loads: [
+      { cargo: 'Paper', destCity: 'Topeka', destState: 'KS', loadedMiles: 70, gameRevenue: 410, windowText: 'Sat 5:48 am - Sat 12:28 pm CDT', deadlineHours: 20 },
+      { cargo: 'Cement', destCity: 'Emporia', destState: 'KS', loadedMiles: 110, gameRevenue: 560, windowText: 'Sat 9:00 am - Sat 6:00 pm CDT', deadlineHours: 24 },
+    ] }; renderShots(); })()`);
+    await sleep(400);
+    const rows = await ev(`[...document.querySelectorAll('#shotzone tbody tr')].map((r) => r.querySelector('input[type=checkbox]').checked + ':' + r.textContent.includes('on the board'))`);
+    console.log('  preview rows (ticked:on board)', JSON.stringify(rows));
+    await shot('shots-check', '#shotzone');
+    const before = (await api('/bootstrap')).board.length;
+    await ev(`document.getElementById('pv-add').click()`);
+    await sleep(1500);
+    const after = (await api('/bootstrap')).board.length;
+    console.log('  board', before, '->', after, '; strip left:', await ev(`document.querySelectorAll('#shotzone .shot').length`));
+    // The test job goes again: its window is two days out, and a broker who books it has nothing to ring about yet.
+    for (const v of (await api('/bootstrap')).board.filter((x) => x.load.cargo === 'Cement')) await api(`/board/${v.load.id}`, 'DELETE');
+
     // 3. The directory, and a call.
     await tab('brokers');
     await shot('directory', '#view .panel');
@@ -113,31 +142,54 @@ async function shot(name, sel) {
       r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
     }
 
-    // 4. Booked, and the run.
+    // 4. Booked: the short line on the Board, and the run on Active Load.
     await tab('board');
-    await shot('booked', '#view > .callout.ok, #view > .callout.ok + .panel');
+    await shot('booked', '#view > .callout.ok');
     S = r.snapshot;
+    await tab('active');
+    await shot('active', '#view > .panel:first-child');
+    // Power-only, so drop and hook: at the shipper, hooked and away. No dock pairs to log.
     await api('/run/at-shipper', 'POST', { day: 3, time: '08:40' });
-    await api('/run/event', 'POST', { kind: 'BeginLoad', day: 3, time: '08:45' });
-    await api('/run/event', 'POST', { kind: 'EndLoad', day: 3, time: '09:30' });
-    r = await api('/run/loaded', 'POST', { day: 3, time: '09:35', odometer: 1250 });
-    await tab('board');
+    r = await api('/run/loaded', 'POST', { day: 3, time: '09:05', odometer: 1250 });
+    await tab('active');
     await shot('ringing', '#view > .callout.ring');
+    await shot('topbar-ringing', 'header.topbar');
+    console.log('  title while ringing:', await ev('document.title'));
     await ev(`document.querySelectorAll('#view details').forEach((d) => d.open = true)`);
-    await shot('run', '#view > .panel');
+    await shot('active-run', '#view > .panel:nth-of-type(2)');
+    await shot('triplog', '#view .cols');
 
-    // 5. A lane, answered and booked.
+    // 5. A lane: answering means telling the broker your clocks.
     S = await api('/bootstrap');
     if (S.call && S.call.status === 'Ringing') {
-      r = await api(`/calls/${S.call.id}/answer`, 'POST');
+      await ev(`document.getElementById('ring-answer').click()`);
+      await sleep(400);
+      await shot('clocks-prompt', '#modal .modal-box');
+      await ev(`(() => { const v = { drive: '9:15', shift: '12:10', brk: '6:40', cycle: '58:30' };
+        for (const k in v) document.getElementById('pc-' + k).value = v[k]; document.getElementById('pc-go').click(); })()`);
+      await sleep(1200);
       await tab('brokers');
       await shot('phone-lane', '#view .phone');
-      r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
+      S = await api('/bootstrap');
+      r = await api(`/calls/${S.call.id}/say`, 'POST', { kind: 'accept' });
     }
 
-    // 6. Delivered: money.
+    // 6. At the receiver, and the close-out through the page: the read-back, then the summary.
+    await api('/run/event', 'POST', { kind: 'Break', day: 3, time: '11:00', hours: 0.5 });
     await api('/run/arrived', 'POST', { day: 3, time: '13:00' });
-    r = await api('/deliver', 'POST', { day: 3, time: '13:40', odometer: 1250 + (S.booking?.load?.loadedMiles || 200) });
+    await tab('active');
+    await shot('closeout', '#view .cols > div:last-child > .panel:last-child');
+    const miles = (S.booking?.load?.loadedMiles || 200);
+    await ev(`(() => { document.getElementById('c-odo').value = ${1250 + miles};
+      const v = { drive: '7:05', shift: '8:20', brk: '4:30', cycle: '55:10' };
+      for (const k in v) document.getElementById('c-' + k).value = v[k];
+      document.getElementById('c-go').click(); })()`);
+    await sleep(500);
+    await shot('closeout-confirm', '#modal .modal-box');
+    await ev(`document.getElementById('c-confirm').click()`);
+    await sleep(1500);
+    await shot('closeout-summary', '#modal .modal-box');
+    await ev(`closeModal()`);
     await api('/bank', 'POST', { balance: 30000 });
     await tab('board');
     await shot('lane', '#view > .callout.info');

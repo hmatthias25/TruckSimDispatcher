@@ -255,7 +255,7 @@ public static class BrokerBook
         var delivered = c.Bookings.Where(b => b.Status == BookingStatus.Delivered).ToList();
         var onTime = delivered.Count == 0 ? 100 : 100.0 * delivered.Count(b => !b.Late) / delivered.Count;
         var days = GameClock.HoursBetween(c.Profile.StartedGameTime, c.Game.Status.GameTime) is { } h ? (int)(h / 24) : 0;
-        var claims = c.Bookings.Count(b => b.Status == BookingStatus.Cancelled && b.OnCarrier);
+        var claims = c.Bookings.Count(b => (b.Status == BookingStatus.Cancelled && b.OnCarrier) || b.CargoDamagePct >= 1);
         return new CarrierRecord(delivered.Count, Math.Round(onTime, 1), Math.Max(0, days), claims);
     }
 

@@ -57,11 +57,14 @@ public static class Receivables
         if (inv.DetentionStatus != "Disputed") throw new InvalidOperationException("Nothing on that invoice is disputed.");
         var k = c.Bookings.FirstOrDefault(x => x.Id == inv.BookingId);
         var trip = Run.Trip(c, k);
-        var logged = trip != null && (Pair(trip, "BeginLoad", "EndLoad") || Pair(trip, "BeginUnload", "EndUnload"));
+        // The dock pairs where there was a dock; on drop and hook, the gate stamps, which are all there is to log.
+        var logged = trip != null && (Pair(trip, "BeginLoad", "EndLoad") || Pair(trip, "BeginUnload", "EndUnload")
+                                      || (DropHook.Is(trip.TrailerType) && (trip.ShipperArrivedGameTime.Length > 0 || trip.ArrivedGameTime.Length > 0)));
         inv.DetentionStatus = logged ? "Granted" : "Denied";
         var said = logged
             ? $"{inv.BrokerName} looked at your log: {Units.Money(inv.DetentionAmount)} detention, paid with the invoice."
-            : $"{inv.BrokerName}: no dock times on your log, no detention. Log Begin and End at the dock next time.";
+            : $"{inv.BrokerName}: no dock times on your log, no detention. " +
+              (trip != null && DropHook.Is(trip.TrailerType) ? "Report at the shipper and at the receiver next time." : "Log Begin and End at the dock next time.");
         OoStore.Log(c, "money", said, inv.Number);
         return said;
 

@@ -940,166 +940,7 @@ public static class TripService
         // ---- equipment
         UpdateEquipment(s, trip, audit, req);
 
-        // ---- location / clocks
-        var priorCity = s.Status.LocationCity;
-        if (!string.IsNullOrWhiteSpace(req.LocationCity)) s.Status.LocationCity = req.LocationCity;
-        else if (!string.IsNullOrWhiteSpace(trip.DestCity)) s.Status.LocationCity = trip.DestCity;
-        // The old "which dock / which yard" note belongs to the place we just left.
-        if (!string.Equals(priorCity, s.Status.LocationCity, StringComparison.OrdinalIgnoreCase))
-            s.Status.LocationDetail = string.IsNullOrWhiteSpace(trip.Receiver) ? "" : trip.Receiver;
-        if (!string.IsNullOrWhiteSpace(req.LocationState)) s.Status.LocationState = req.LocationState;
-        else if (!string.IsNullOrWhiteSpace(trip.DestState)) s.Status.LocationState = trip.DestState;
-        s.Status.LocationKind = string.IsNullOrWhiteSpace(req.LocationKind) ? "Receiver" : req.LocationKind;
-        if (req.FuelPct >= 0) s.Status.FuelPct = req.FuelPct;
-        if (!string.IsNullOrWhiteSpace(trip.DeliveredGameTime)) s.Status.GameTime = trip.DeliveredGameTime;
-
-        // The unload ran in game before the driver saw anything, so the game is already this far past the
-        // time they reported arriving. Everything downstream — the next load's window, its recap, whether
-        // it is even legal — is planned off this moment, so it has to be the right one.
-        var spentAtDock = trip.UnloadingHours + trip.DetentionHours;
-        var arrivedAt = GameClock.TryParse(trip.DeliveredGameTime);
-
-        // The hold the app itself issued. Where the receiver could not take the truck on arrival, the
-        // arrival call said so and told the driver which time to set their clock to — see ReceiverCall,
-        // and WorkStartsGameTime is that answer, stored at arrival.
-        //
-        // Those hours were spent. Reported from play: arrived 7:30, told they would not be taken until
-        // 10:20, advanced the clock and unloaded, and the close-out put the clock BACK to 7:30 — because
-        // the only things that moved it were a released-at reading or a stated dock time, and neither
-        // knows about a wait the app itself ordered. Everything downstream plans off that moment: the
-        // next load's window, its recap, whether it is even legal. Rewinding it three hours is not a
-        // display problem.
-        //
-        // DeliveredGameTime stays the ARRIVAL and is meant to — it is what the appointment is judged
-        // against, and charging the receiver's door to the driver's service record is the thing the
-        // comment above this exists to prevent. Where the truck was is not the same question as what
-        // time it is.
-        // Already corrected above, before the facility times were worked out. Read as stored.
-        var heldUntil = GameClock.TryParse(trip.WorkStartsGameTime);
-        var wasHeld = heldUntil != null && arrivedAt != null && heldUntil.Value > arrivedAt.Value;
-        var workableFrom = wasHeld ? heldUntil!.Value : arrivedAt;
-
-        // Three ways to know when the driver was released, best first. An EndUnload event is the same
-        // reading as the optional field below, logged at the dock instead of typed at close-out — so a
-        // driver who logs Begin/End needs no extra box and no extra tick.
-        var releasedAt = GameClock.TryParse(req.ReleasedGameTime)
-                         ?? trip.Events.Where(e => e.Kind == "EndUnload")
-                              .Select(e => GameClock.TryParse(e.GameTime))
-                              .Where(d => d != null).Max();
-
-        // A clock reading beats a duration. There is no end-of-unload event to measure in this flow, so if
-        // the driver noted what the clock said when the board came up, that gap IS the dock time.
-        if (releasedAt != null && arrivedAt != null && releasedAt.Value > arrivedAt.Value)
-        {
-            var measured = (releasedAt.Value - arrivedAt.Value).TotalHours;
-            if (spentAtDock > 0 && Math.Abs(measured - spentAtDock) > 0.25)
-                audit.ServiceFindings.Add(
-                    $"You reported {Hhmm.Of(spentAtDock)} at the dock but the clock moved {Hhmm.Of(measured)}. " +
-                    "Going with the clock \u2014 it is what the game actually charged.");
-            spentAtDock = measured;
-            s.Status.GameTime = GameClock.Format(releasedAt.Value);
-            audit.CarriedForward.Add(
-                $"Off the clock: arrived {GameClock.Pretty(trip.DeliveredGameTime)}, board came up " +
-                $"{GameClock.Pretty(s.Status.GameTime)} \u2014 {Hhmm.Of(spentAtDock)} at the dock.");
-        }
-        else if (req.UnloadAlreadyRan && spentAtDock > 0 && workableFrom != null)
-        {
-            // On top of when they could actually start, not when they rolled up. Those are the same
-            // moment unless the receiver held them, and where they are not, the wait is real time.
-            s.Status.GameTime = GameClock.Format(workableFrom.Value.AddHours(spentAtDock));
-            audit.CarriedForward.Add(wasHeld
-                ? $"Unload ran when you opened the board: they took you at " +
-                  $"{GameClock.Pretty(trip.WorkStartsGameTime)} and it was {Hhmm.Of(spentAtDock)} on the dock, " +
-                  $"so it is {GameClock.Pretty(s.Status.GameTime)} now."
-                : $"Unload ran when you opened the board: {Hhmm.Of(spentAtDock)} on top of {GameClock.Pretty(trip.DeliveredGameTime)}, " +
-                  $"so it is {GameClock.Pretty(s.Status.GameTime)} now.");
-        }
-        else if (wasHeld)
-        {
-            // Held, and nothing else said when they got away. The wait itself is still hours that passed,
-            // and the clock cannot go backwards over a delay this app told the driver to sit.
-            s.Status.GameTime = GameClock.Format(heldUntil!.Value);
-            audit.CarriedForward.Add(
-                $"You arrived {GameClock.Pretty(trip.DeliveredGameTime)} and they would not take you until " +
-                $"{GameClock.Pretty(trip.WorkStartsGameTime)}, so that is the clock now. The arrival is what " +
-                "your service record is judged on — waiting for their door is theirs, not yours.");
-        }
-        s.Status.ActiveTripId = "";
-        s.Status.DutyStatus = "OnDuty";
-        s.Status.UpdatedUtc = DateTime.UtcNow.ToString("o");
-
-        // Everything the close-out just told us IS the driver's current position. Hand it forward
-        // rather than asking for the same readings a second time on the dispatch screen.
-        s.Status.CarriedForwardFrom = trip.Number;
-        s.Status.CarriedForwardGameTime = trip.DeliveredGameTime;
-        s.Status.Confirmed = false;
-        audit.CarriedForward.Add($"Position: {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)}"
-                                 + (string.IsNullOrWhiteSpace(s.Status.LocationDetail) ? "" : $" ({s.Status.LocationDetail})"));
-        audit.CarriedForward.Add($"Game clock: {GameClock.Pretty(s.Status.GameTime)}");
-        if (req.FuelPct >= 0) audit.CarriedForward.Add($"Fuel: {s.Status.FuelPct:0}%");
-        audit.CarriedForward.Add($"Damage: tractor {s.Status.TruckDamagePct:0.#}%, trailer {s.Status.TrailerDamagePct:0.#}%");
-        if (s.Status.AtsOdometer > 0) audit.CarriedForward.Add($"Odometer: {s.Status.AtsOdometer:N0}");
-
-        // Whether the clocks on file were trustworthy BEFORE this close-out touched the flag. The block
-        // below clears Confirmed when nothing was reported, so asking afterwards always says "stale".
-        var baselineWasFresh = s.Hos.Confirmed;
-
-        // Clocks at delivery, if the driver read them off while they were closing the load out.
-        if (req.HosDriveRemaining.HasValue || req.HosShiftRemaining.HasValue
-            || req.HosBreakRemaining.HasValue || req.HosCycleRemaining.HasValue
-            || req.HosEuWeekLeft.HasValue || req.HosEuTwoWeeksLeft.HasValue)
-        {
-            var euWeekDrivenBefore = s.Hos.EuWeekDriven;
-            var euWeekBefore = s.Hos.EuDayWeek;
-            if (req.HosDriveRemaining.HasValue) s.Hos.DriveRemaining = Math.Max(0, req.HosDriveRemaining.Value);
-            if (req.HosShiftRemaining.HasValue) s.Hos.ShiftRemaining = Math.Max(0, req.HosShiftRemaining.Value);
-            if (req.HosBreakRemaining.HasValue) s.Hos.BreakRemaining = Math.Max(0, req.HosBreakRemaining.Value);
-            if (req.HosCycleRemaining.HasValue) s.Hos.CycleRemaining = Math.Max(0, req.HosCycleRemaining.Value);
-            s.Hos.AsOfGameTime = trip.DeliveredGameTime;
-            s.Hos.CarriedForwardFrom = trip.Number;
-            s.Hos.Confirmed = true;   // read off the game just now — this is a fresh reading, not a stale one
-            s.Hos.Projected = false;
-            ClockCheck.Rearm(s);      // clocks read at the dock come off the same capped display
-
-            s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
-            audit.ClocksReported = true;
-            if (HosEngine.Eu(s) && GameClock.TryParse(trip.DeliveredGameTime) is { } euArrivedAt)
-            {
-                // ETS2: the status line's W and 2W are the week's and the fortnight's driving, left. Worked back
-                // into what was driven, then everything else is derived exactly as a Dispatch-tab report is.
-                var euR = s.Settings.EuHos ?? new EuHosRules();
-                if (req.HosEuWeekLeft is { } w) s.Hos.EuWeekDriven = Math.Max(0, euR.WeeklyDriving - w);
-                if (req.HosEuTwoWeeksLeft is { } w2)
-                    s.Hos.EuLastWeekDriven = Math.Max(0, euR.FortnightDriving - w2 - (s.Hos.EuWeekDriven ?? 0));
-                if (req.HosEuWeekLeft is { } wl && req.HosEuTwoWeeksLeft is { } w2l)
-                    s.Hos.CycleRemaining = Math.Max(0, Math.Min(wl, w2l));
-                EuCounters.Derive(s, euArrivedAt, euWeekDrivenBefore, euWeekBefore);
-                var weekLeft = Math.Max(0, euR.WeeklyDriving - (s.Hos.EuWeekDriven ?? 0));
-                var twoLeft = Math.Max(0, euR.FortnightDriving - (s.Hos.EuWeekDriven ?? 0) - (s.Hos.EuLastWeekDriven ?? 0));
-                audit.CarriedForward.Add(
-                    $"Clocks as you arrived: B {Hhmm.Of(s.Hos.BreakRemaining)} · D {Hhmm.Of(s.Hos.DriveRemaining)} · " +
-                    $"W {Hhmm.Of(weekLeft)} · 2W {Hhmm.Of(twoLeft)}, with {Hhmm.Of(s.Hos.ShiftRemaining)} of spread left (estimated)" +
-                    (s.Hos.EuDriveCapped ? ". Both 10-hour days are used, so D is nine at most and was taken as that." : "."));
-            }
-            else
-                audit.CarriedForward.Add(
-                    $"Clocks: drive {s.Hos.DriveRemaining:0.##}, shift {s.Hos.ShiftRemaining:0.##}, cycle {s.Hos.CycleRemaining:0.##}");
-
-            // These are the clocks AS THE DRIVER ARRIVED — they stopped driving, backed in, and read
-            // the display. That is the natural moment to read them and the only one the app can anchor
-            // to, because it is the last point at which the driver and the game agree.
-            //
-            // So the dock time comes off them, exactly as it would off a figure we had carried ourselves.
-            // Not doing this was worse than a double count: with no reading at all the app was taking the
-            // dock time off clocks from BEFORE the drive, leaving a whole trip's driving unaccounted for.
-            CarryClocksAcrossTheDock(s, trip, req, audit, spentAtDock, baselineWasFresh);
-        }
-        else
-        {
-            // Clocks not reported at delivery, so whatever we hold is now stale by a whole trip.
-            s.Hos.Confirmed = false;
-            CarryClocksAcrossTheDock(s, trip, req, audit, spentAtDock, baselineWasFresh);
-        }
+        CarryForward(s, trip, req, audit);
 
         // ---- did this load put a new city on our map?
         audit.Discovery = DiscoveryService.Note(s, s.Status.LocationCity, s.Status.LocationState,
@@ -1378,6 +1219,175 @@ public static class TripService
     /// allowed to write clocks at all. It is still marked projected, because a worked-out figure is not a
     /// read one and the app says which it is holding.
     /// </summary>
+    /// <summary>
+    /// Where the truck and its clocks stand once a load is closed out: the position, the game clock moved across the
+    /// dock, and the clocks read at delivery (or carried across the unload when none were). Shared with the
+    /// owner/operator app's close-out, which has no pay, ledger or fleet to run but the same truck and the same clocks.
+    /// </summary>
+    internal static void CarryForward(AppState s, Trip trip, CompleteTripRequest req, TripAudit audit)
+    {
+        // ---- location / clocks
+        var priorCity = s.Status.LocationCity;
+        if (!string.IsNullOrWhiteSpace(req.LocationCity)) s.Status.LocationCity = req.LocationCity;
+        else if (!string.IsNullOrWhiteSpace(trip.DestCity)) s.Status.LocationCity = trip.DestCity;
+        // The old "which dock / which yard" note belongs to the place we just left.
+        if (!string.Equals(priorCity, s.Status.LocationCity, StringComparison.OrdinalIgnoreCase))
+            s.Status.LocationDetail = string.IsNullOrWhiteSpace(trip.Receiver) ? "" : trip.Receiver;
+        if (!string.IsNullOrWhiteSpace(req.LocationState)) s.Status.LocationState = req.LocationState;
+        else if (!string.IsNullOrWhiteSpace(trip.DestState)) s.Status.LocationState = trip.DestState;
+        s.Status.LocationKind = string.IsNullOrWhiteSpace(req.LocationKind) ? "Receiver" : req.LocationKind;
+        if (req.FuelPct >= 0) s.Status.FuelPct = req.FuelPct;
+        if (!string.IsNullOrWhiteSpace(trip.DeliveredGameTime)) s.Status.GameTime = trip.DeliveredGameTime;
+
+        // The unload ran in game before the driver saw anything, so the game is already this far past the
+        // time they reported arriving. Everything downstream — the next load's window, its recap, whether
+        // it is even legal — is planned off this moment, so it has to be the right one.
+        var spentAtDock = trip.UnloadingHours + trip.DetentionHours;
+        var arrivedAt = GameClock.TryParse(trip.DeliveredGameTime);
+
+        // The hold the app itself issued. Where the receiver could not take the truck on arrival, the
+        // arrival call said so and told the driver which time to set their clock to — see ReceiverCall,
+        // and WorkStartsGameTime is that answer, stored at arrival.
+        //
+        // Those hours were spent. Reported from play: arrived 7:30, told they would not be taken until
+        // 10:20, advanced the clock and unloaded, and the close-out put the clock BACK to 7:30 — because
+        // the only things that moved it were a released-at reading or a stated dock time, and neither
+        // knows about a wait the app itself ordered. Everything downstream plans off that moment: the
+        // next load's window, its recap, whether it is even legal. Rewinding it three hours is not a
+        // display problem.
+        //
+        // DeliveredGameTime stays the ARRIVAL and is meant to — it is what the appointment is judged
+        // against, and charging the receiver's door to the driver's service record is the thing the
+        // comment above this exists to prevent. Where the truck was is not the same question as what
+        // time it is.
+        // Already corrected above, before the facility times were worked out. Read as stored.
+        var heldUntil = GameClock.TryParse(trip.WorkStartsGameTime);
+        var wasHeld = heldUntil != null && arrivedAt != null && heldUntil.Value > arrivedAt.Value;
+        var workableFrom = wasHeld ? heldUntil!.Value : arrivedAt;
+
+        // Three ways to know when the driver was released, best first. An EndUnload event is the same
+        // reading as the optional field below, logged at the dock instead of typed at close-out — so a
+        // driver who logs Begin/End needs no extra box and no extra tick.
+        var releasedAt = GameClock.TryParse(req.ReleasedGameTime)
+                         ?? trip.Events.Where(e => e.Kind == "EndUnload")
+                              .Select(e => GameClock.TryParse(e.GameTime))
+                              .Where(d => d != null).Max();
+
+        // A clock reading beats a duration. There is no end-of-unload event to measure in this flow, so if
+        // the driver noted what the clock said when the board came up, that gap IS the dock time.
+        if (releasedAt != null && arrivedAt != null && releasedAt.Value > arrivedAt.Value)
+        {
+            var measured = (releasedAt.Value - arrivedAt.Value).TotalHours;
+            if (spentAtDock > 0 && Math.Abs(measured - spentAtDock) > 0.25)
+                audit.ServiceFindings.Add(
+                    $"You reported {Hhmm.Of(spentAtDock)} at the dock but the clock moved {Hhmm.Of(measured)}. " +
+                    "Going with the clock \u2014 it is what the game actually charged.");
+            spentAtDock = measured;
+            s.Status.GameTime = GameClock.Format(releasedAt.Value);
+            audit.CarriedForward.Add(
+                $"Off the clock: arrived {GameClock.Pretty(trip.DeliveredGameTime)}, board came up " +
+                $"{GameClock.Pretty(s.Status.GameTime)} \u2014 {Hhmm.Of(spentAtDock)} at the dock.");
+        }
+        else if (req.UnloadAlreadyRan && spentAtDock > 0 && workableFrom != null)
+        {
+            // On top of when they could actually start, not when they rolled up. Those are the same
+            // moment unless the receiver held them, and where they are not, the wait is real time.
+            s.Status.GameTime = GameClock.Format(workableFrom.Value.AddHours(spentAtDock));
+            audit.CarriedForward.Add(wasHeld
+                ? $"Unload ran when you opened the board: they took you at " +
+                  $"{GameClock.Pretty(trip.WorkStartsGameTime)} and it was {Hhmm.Of(spentAtDock)} on the dock, " +
+                  $"so it is {GameClock.Pretty(s.Status.GameTime)} now."
+                : $"Unload ran when you opened the board: {Hhmm.Of(spentAtDock)} on top of {GameClock.Pretty(trip.DeliveredGameTime)}, " +
+                  $"so it is {GameClock.Pretty(s.Status.GameTime)} now.");
+        }
+        else if (wasHeld)
+        {
+            // Held, and nothing else said when they got away. The wait itself is still hours that passed,
+            // and the clock cannot go backwards over a delay this app told the driver to sit.
+            s.Status.GameTime = GameClock.Format(heldUntil!.Value);
+            audit.CarriedForward.Add(
+                $"You arrived {GameClock.Pretty(trip.DeliveredGameTime)} and they would not take you until " +
+                $"{GameClock.Pretty(trip.WorkStartsGameTime)}, so that is the clock now. The arrival is what " +
+                "your service record is judged on — waiting for their door is theirs, not yours.");
+        }
+        s.Status.ActiveTripId = "";
+        s.Status.DutyStatus = "OnDuty";
+        s.Status.UpdatedUtc = DateTime.UtcNow.ToString("o");
+
+        // Everything the close-out just told us IS the driver's current position. Hand it forward
+        // rather than asking for the same readings a second time on the dispatch screen.
+        s.Status.CarriedForwardFrom = trip.Number;
+        s.Status.CarriedForwardGameTime = trip.DeliveredGameTime;
+        s.Status.Confirmed = false;
+        audit.CarriedForward.Add($"Position: {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)}"
+                                 + (string.IsNullOrWhiteSpace(s.Status.LocationDetail) ? "" : $" ({s.Status.LocationDetail})"));
+        audit.CarriedForward.Add($"Game clock: {GameClock.Pretty(s.Status.GameTime)}");
+        if (req.FuelPct >= 0) audit.CarriedForward.Add($"Fuel: {s.Status.FuelPct:0}%");
+        audit.CarriedForward.Add($"Damage: tractor {s.Status.TruckDamagePct:0.#}%, trailer {s.Status.TrailerDamagePct:0.#}%");
+        if (s.Status.AtsOdometer > 0) audit.CarriedForward.Add($"Odometer: {s.Status.AtsOdometer:N0}");
+
+        // Whether the clocks on file were trustworthy BEFORE this close-out touched the flag. The block
+        // below clears Confirmed when nothing was reported, so asking afterwards always says "stale".
+        var baselineWasFresh = s.Hos.Confirmed;
+
+        // Clocks at delivery, if the driver read them off while they were closing the load out.
+        if (req.HosDriveRemaining.HasValue || req.HosShiftRemaining.HasValue
+            || req.HosBreakRemaining.HasValue || req.HosCycleRemaining.HasValue
+            || req.HosEuWeekLeft.HasValue || req.HosEuTwoWeeksLeft.HasValue)
+        {
+            var euWeekDrivenBefore = s.Hos.EuWeekDriven;
+            var euWeekBefore = s.Hos.EuDayWeek;
+            if (req.HosDriveRemaining.HasValue) s.Hos.DriveRemaining = Math.Max(0, req.HosDriveRemaining.Value);
+            if (req.HosShiftRemaining.HasValue) s.Hos.ShiftRemaining = Math.Max(0, req.HosShiftRemaining.Value);
+            if (req.HosBreakRemaining.HasValue) s.Hos.BreakRemaining = Math.Max(0, req.HosBreakRemaining.Value);
+            if (req.HosCycleRemaining.HasValue) s.Hos.CycleRemaining = Math.Max(0, req.HosCycleRemaining.Value);
+            s.Hos.AsOfGameTime = trip.DeliveredGameTime;
+            s.Hos.CarriedForwardFrom = trip.Number;
+            s.Hos.Confirmed = true;   // read off the game just now — this is a fresh reading, not a stale one
+            s.Hos.Projected = false;
+            ClockCheck.Rearm(s);      // clocks read at the dock come off the same capped display
+
+            s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
+            audit.ClocksReported = true;
+            if (HosEngine.Eu(s) && GameClock.TryParse(trip.DeliveredGameTime) is { } euArrivedAt)
+            {
+                // ETS2: the status line's W and 2W are the week's and the fortnight's driving, left. Worked back
+                // into what was driven, then everything else is derived exactly as a Dispatch-tab report is.
+                var euR = s.Settings.EuHos ?? new EuHosRules();
+                if (req.HosEuWeekLeft is { } w) s.Hos.EuWeekDriven = Math.Max(0, euR.WeeklyDriving - w);
+                if (req.HosEuTwoWeeksLeft is { } w2)
+                    s.Hos.EuLastWeekDriven = Math.Max(0, euR.FortnightDriving - w2 - (s.Hos.EuWeekDriven ?? 0));
+                if (req.HosEuWeekLeft is { } wl && req.HosEuTwoWeeksLeft is { } w2l)
+                    s.Hos.CycleRemaining = Math.Max(0, Math.Min(wl, w2l));
+                EuCounters.Derive(s, euArrivedAt, euWeekDrivenBefore, euWeekBefore);
+                var weekLeft = Math.Max(0, euR.WeeklyDriving - (s.Hos.EuWeekDriven ?? 0));
+                var twoLeft = Math.Max(0, euR.FortnightDriving - (s.Hos.EuWeekDriven ?? 0) - (s.Hos.EuLastWeekDriven ?? 0));
+                audit.CarriedForward.Add(
+                    $"Clocks as you arrived: B {Hhmm.Of(s.Hos.BreakRemaining)} · D {Hhmm.Of(s.Hos.DriveRemaining)} · " +
+                    $"W {Hhmm.Of(weekLeft)} · 2W {Hhmm.Of(twoLeft)}, with {Hhmm.Of(s.Hos.ShiftRemaining)} of spread left (estimated)" +
+                    (s.Hos.EuDriveCapped ? ". Both 10-hour days are used, so D is nine at most and was taken as that." : "."));
+            }
+            else
+                audit.CarriedForward.Add(
+                    $"Clocks: drive {Hhmm.Of(s.Hos.DriveRemaining)}, shift {Hhmm.Of(s.Hos.ShiftRemaining)}, cycle {Hhmm.Of(s.Hos.CycleRemaining)}");
+
+            // These are the clocks AS THE DRIVER ARRIVED — they stopped driving, backed in, and read
+            // the display. That is the natural moment to read them and the only one the app can anchor
+            // to, because it is the last point at which the driver and the game agree.
+            //
+            // So the dock time comes off them, exactly as it would off a figure we had carried ourselves.
+            // Not doing this was worse than a double count: with no reading at all the app was taking the
+            // dock time off clocks from BEFORE the drive, leaving a whole trip's driving unaccounted for.
+            CarryClocksAcrossTheDock(s, trip, req, audit, spentAtDock, baselineWasFresh);
+        }
+        else
+        {
+            // Clocks not reported at delivery, so whatever we hold is now stale by a whole trip.
+            s.Hos.Confirmed = false;
+            CarryClocksAcrossTheDock(s, trip, req, audit, spentAtDock, baselineWasFresh);
+        }
+    }
+
     private static void CarryClocksAcrossTheDock(AppState s, Trip trip, CompleteTripRequest req,
                                                  TripAudit audit, double spentAtDock,
                                                  bool baselineWasFresh)
@@ -2065,7 +2075,7 @@ public static class TripService
         return margin < 0;
     }
 
-    private static bool DetermineLate(AppState s, Trip trip, CompleteTripRequest req, out string note)
+    internal static bool DetermineLate(AppState s, Trip trip, CompleteTripRequest req, out string note)
     {
         if (trip.Kind != "Freight") { note = "Non-revenue move — no service window."; return false; }
 
@@ -2083,7 +2093,7 @@ public static class TripService
         return false;
     }
 
-    private static (string fault, string rationale) AttributeFault(AppState s, Trip trip, CompleteTripRequest req, bool late)
+    internal static (string fault, string rationale) AttributeFault(AppState s, Trip trip, CompleteTripRequest req, bool late)
     {
         if (!late) return ("None", "");
 

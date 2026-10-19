@@ -123,7 +123,7 @@
     <div><span class="n">6</span><span class="t"><b>Reading the board</b><span>Cost, what it leaves, per day, slack</span></span></div>
     <div><span class="n">7</span><span class="t"><b>Brokers</b><span>The directory, tiers, specialists, the shippers</span></span></div>
     <div><span class="n">8</span><span class="t"><b>On the phone</b><span>Offers, counters, arguments, terms</span></span></div>
-    <div><span class="n">9</span><span class="t"><b>Booked: the run</b><span>Logging it, re-planning from where you are</span></span></div>
+    <div><span class="n">9</span><span class="t"><b>Active Load: the run</b><span>The appointment, the log, closing out</span></span></div>
     <div><span class="n">10</span><span class="t"><b>Lanes: the next load</b><span>Inbound calls, ringing round, at the pickup</span></span></div>
     <div><span class="n">11</span><span class="t"><b>Money</b><span>Two banks, Broker holding, transfers</span></span></div>
     <div><span class="n">12</span><span class="t"><b>Getting paid</b><span>Invoices, factoring, chasing, detention</span></span></div>
@@ -273,15 +273,17 @@
     <tr><td>Can spend</td><td>What you may spend in the game bank: its balance less shipper money still waiting to move
       (Section 11). <b>--</b> until you tell the app the balance.</td></tr>
     <tr><td>Home life</td><td>0 to 100 (Section 13). Green from 70, amber from 40, red below.</td></tr>
+    <tr><td>Phone</td><td>Quiet, or &#x260E; Ringing when a broker or home is calling. Click it to go to the call.</td></tr>
   </table>
   <h3>The tabs</h3>
   <table>
     <tr><th style="width:18%">Tab</th><th>For</th></tr>
-    <tr><td>Board</td><td>The jobs where you are, ranked; the booked load and the run; the booked lane.</td></tr>
+    <tr><td>Board</td><td>The jobs where you are, ranked; a line for the booked load; the booked lane.</td></tr>
+    <tr><td>Active Load</td><td>The booked run: its appointment, the plans, the trip log, the arrivals and the close-out. A pip on the tab while a load is booked.</td></tr>
     <tr><td>Brokers</td><td>The phone, and the broker directory.</td></tr>
     <tr><td>Money</td><td>The game bank, transfers to make, Broker holding, and invoices. A number on the tab is transfers waiting.</td></tr>
     <tr><td>Home</td><td>Home life, the dates on the calendar, your promise.</td></tr>
-    <tr><td>Truck &amp; clocks</td><td>Where and when, your hours, the truck and the trailer.</td></tr>
+    <tr><td>Truck &amp; clocks</td><td>Where and when, your hours of service, the truck and the trailer.</td></tr>
     <tr><td>Settings</td><td>Cost per mile, skills, Long Distance limits, the AI key.</td></tr>
     <tr><td>Log</td><td>Everything that has happened, newest first.</td></tr>
   </table>
@@ -298,7 +300,7 @@
 
   <div class="flow">
     <div><b>1. Screenshot</b>In the game, at your home garage, open the Freight Market and take a screenshot.</div>
-    <div><b>2. Paste</b>Ctrl+V on the Board tab. Check what was read and add it.</div>
+    <div><b>2. Paste</b>Every page, Ctrl+V on the Board tab. Make them a board, check, add.</div>
     <div class="a"><b>3. Call</b>Call a starter broker on the Brokers tab. <i>They</i> read the board and make the offer.</div>
     <div class="a"><b>4. Deal</b>Negotiate, take it, or try another broker.</div>
     <div class="g"><b>5. Take it</b>Take that job in the game.</div>
@@ -306,12 +308,17 @@
 
   <h3>Getting the board in</h3>
   <ul>
-    <li><b>With an AI key:</b> paste the screenshot (Ctrl+V) or drop the image file on the Board tab. The rows read off it
-      appear for checking: untick anything misread, then <span class="btn">Add ticked rows</span>. Several screenshots
-      at once is fine for a long board.</li>
+    <li><b>With an AI key:</b> the game's board shows about ten jobs at a time, so screenshot every page of it. Paste each
+      one on the Board tab (Ctrl+V), or drop or browse for the image files. They wait in a strip; remove any with
+      <b>&#x2715;</b>. Then press <span class="btn">Make them a board</span>: they are read together, and a job on two
+      pages counts once.</li>
+    <li><b>Check what was read.</b> Every job comes back in a row you can correct: cargo, destination, miles, pay and the
+      delivery window. A job already on the board comes back unticked. Then
+      <span class="btn">Add ticked jobs to the board</span>.</li>
     <li><b>Without one:</b> use <b>Add by hand</b>: cargo, destination as <code>City, ST</code>, loaded miles, pay and the
       delivery window as the game lists it.</li>
   </ul>
+  <figure><img src="img/shots-check.png"><figcaption>Two pages of the board staged and read. The first job was already on the board, so it starts unticked.</figcaption></figure>
   <p>A job you cannot run is refused with the reason: past your Long Distance limit, or needing a skill you lack.</p>
 
   <h3>The broker chooses the job, not you</h3>
@@ -323,6 +330,10 @@
     <li><b>Established brokers</b> offer from the middle of the board, <b>premium</b> ones from the top.</li>
     <li><b>Only what you can run.</b> Never past your Long Distance limit, never a job needing a skill or trailer you lack,
       never one the planner says cannot make its window.</li>
+    <li><b>The dock you are at comes first.</b> A broker knows where you are and where you are going: the receiver of the
+      load on your truck, or of the one you just delivered here. A job out of that same company's dock has no empty miles
+      to it, so it is offered first, and the broker says so. A starter still offers only from the leftovers; anyone else
+      will reach past them for it. Jobs off the game's &ldquo;from this location&rdquo; list count the same.</li>
   </ul>
   <p>The ranked board stays on screen as your own view, so an offer can be judged against everything else that was
     there. That gap is what a better record closes.</p>
@@ -452,7 +463,15 @@
     <tr><td><span class="btn">Quick pay?</span></td><td>Paid in days rather than weeks, for the broker's quick-pay fee.</td></tr>
     <tr><td><span class="btn">Detention?</span></td><td>$40 an hour after 2 hours waiting at either dock, billed from your log (Section 12).</td></tr>
     <tr><td><span class="btn">Pass</span></td><td>Ends the call. Nothing booked, no harm done.</td></tr>
+    <tr><td><span class="btn">Can't make it in time</span></td><td>Only shown when the broker warned the listing is about to come off
+      the board. <b>No penalty</b>: no patience, no standing. The broker drops that job and offers another, or says there is nothing else.</td></tr>
   </table>
+  <h3>A listing about to come off the board</h3>
+  <p>The game's jobs only stay on the market for so long. When the job a broker offers has <b>under 45 minutes</b> left on
+    its listing, the broker warns you (&ldquo;that one comes off the board in 0:36, can you get there in time?&rdquo;).
+    Only you know where you are on the road, so it is your call. If you cannot get there in time, say so: it is nobody's
+    fault. A job at the dock you are standing at cannot run out from under you, so it gets no warning. The countdown
+    comes from the screenshot reader, which reads it off the board.</p>
   <p>Push past their patience and the broker hangs up: &ldquo;I'll find another truck.&rdquo; Call again later, or call
     someone else.</p>
 
@@ -484,39 +503,101 @@
 
 <!-- ============================================================ 9 -->
 <section>
-  <h2><span class="num">9</span>Booked: the run</h2>
-  <figure><img src="img/booked.png"><figcaption>Booked. The banner names the job to take in the game; the run panel follows it.</figcaption></figure>
-  <p><b>Take that exact job in the game.</b> The banner says what the broker pays you and what the game will pay at
-    delivery. The game's figure is the shipper's money passing through, not yours (Section 11).</p>
+  <h2><span class="num">9</span>Active Load: the run</h2>
+  <p class="lede">Once a load is booked, the run lives on the <b>Active Load</b> tab, the second one, laid out like TruckSim
+    Dispatcher's. The Board keeps a short line saying what is booked.</p>
+  <figure><img src="img/booked.png"><figcaption>What stays on the Board once a load is booked.</figcaption></figure>
 
-  <h3>Logging the run</h3>
-  <p>The run panel moves through the stages with you. Put the game day and time (and the odometer, where asked) in the
-    boxes, then press the button for what just happened:</p>
+  <h3>The load, and its appointment</h3>
+  <p>The top panel says the job to take in the game (shipper and city to receiver and city), what the broker pays you, what the
+    game will pay (the shipper's money, Section 11), and the detention terms if you agreed them. Then the receiver's side, set
+    exactly as company dispatch sets it:</p>
   <table>
-    <tr><th style="width:26%">Button</th><th>When</th></tr>
-    <tr><td><span class="btn">At the shipper</span></td><td>You have arrived at the pickup. The app may say you wait for a door, like the docks in TruckSim Dispatcher.</td></tr>
-    <tr><td><span class="btn">Begin load</span> <span class="btn">End load</span></td><td>Optional; logs the dock time exactly. <b>Log them if you agreed detention</b>: that is what it is billed from.</td></tr>
-    <tr><td><span class="btn">Loaded, pulling out</span></td><td>Hooked and leaving. Put the odometer and, if you like, the weight. This is when the phone may ring.</td></tr>
-    <tr><td><span class="btn">At the receiver</span></td><td>Arrived at the drop.</td></tr>
-    <tr><td><span class="btn">Begin unload</span> <span class="btn">End unload</span></td><td>As at the shipper.</td></tr>
-    <tr><td><span class="btn">Delivered</span></td><td>Done, with the odometer. Raises the invoice and the money moves (Section 11).</td></tr>
+    <tr><th style="width:24%">It says</th><th>What it means</th></tr>
+    <tr><td>Window</td><td>When the receiver opens to the time it shuts. Nobody takes a load before the window opens.</td></tr>
+    <tr><td>Appointment</td><td>A booked slot inside the window. Aim for it. Past it you have a grace period
+      (2 hours by default) before it counts against you.</td></tr>
+    <tr><td>Taking it early</td><td>No slot to keep: any time inside the window works, and what you save is yours to reload against.</td></tr>
+    <tr><td>No slot: take your turn</td><td>A job site. It is a gate rather than a door: turn up before they open and you wait in line.</td></tr>
+    <tr><td>Due</td><td>No window on the listing, only the time it must be delivered by.</td></tr>
+    <tr><td>Parking, their hours</td><td>Whether the receiver lets you sit on their property, and a site's working day.</td></tr>
   </table>
-  <p>Every run you log teaches the planner your real speed, your roads and each dock's times, as in TruckSim Dispatcher.</p>
-  <figure><img src="img/run.png"><figcaption>The run panel with both drawers open: report your clocks and position, or log a break, rest or fuel stop.</figcaption></figure>
+  <p>Under it: <b>the plan it was booked on</b>, with its full hours-of-service timeline, and <b>From here</b>, the same plan
+    worked again off your latest clocks and position. Open <b>Report your clocks and where you are</b>, type them (or paste a GDC
+    recap screenshot, with an AI key), and press <span class="btn">Save, and re-plan from here</span>.</p>
+  <figure><img src="img/active.png"><figcaption>The top of the Active Load tab for a fresh booking: the job to take in the game, the
+    pay, the window and the plan it was booked on.</figcaption></figure>
 
-  <h3>From here</h3>
-  <p>Open <b>Report your clocks and where you are</b>, type your hours left and the city you are in (or paste a GDC recap
-    screenshot, with an AI key), and press <span class="btn">Save, and re-plan from here</span>. The green, amber or red box
-    then says whether you still make it: when you reach the gate, when the window shuts, how much to spare, and the rests
-    still to take.</p>
+  <h3>Times, days and clocks</h3>
+  <ul>
+    <li><b>A time of day</b> is typed as the game shows it: <code>6:30 PM</code>, <code>6:30 pm</code> or <code>18:30</code> all work.</li>
+    <li><b>A game day</b> has its weekday beside it as you type (Day 1 is a Monday), so a wrong day is easy to spot.</li>
+    <li><b>Clocks</b> are hours and minutes left, as the HOS display shows them: <code>9:15</code>, not 9.25.</li>
+  </ul>
 
-  <h3>Breaks, rests and fuel</h3>
-  <p>Log them under <b>A break, a rest, or fuel</b>. A break or a rest is also when you may <b>ring a broker</b> to line up
-    the next load (Section 10).</p>
+  <h3>Along the way</h3>
+  <table>
+    <tr><th style="width:28%">Panel</th><th>When</th></tr>
+    <tr><td><b>At the shipper?</b></td><td>When you pull in at the pickup, before you load or hook. The shipper's answer comes up: ready
+      now, or a time to set the game clock to, and why. Waiting on their property counts toward detention.</td></tr>
+    <tr><td><b>Report after loading</b></td><td>Hooked and leaving. <b>Type the odometer as it reads now</b>: the road to the receiver is
+      learned off it. This is when the phone may ring.</td></tr>
+    <tr><td><b>Trip log</b></td><td>Begin and end of loading and unloading (not on drop and hook), fuel, a break, a rest, a scale, a delay, a breakdown, or a note.
+      A break and a rest open an end time at their standard length; type over it if you sat longer. Put the time you rolled
+      again on a delay or a breakdown too.</td></tr>
+    <tr><td><b>At the receiver?</b></td><td>When you pull in, before you unload. Straight onto a door, or a time to set the clock to and the reason.</td></tr>
+  </table>
+  <figure><img src="img/triplog.png"><figcaption>The trip log beside the arrival and close-out panels.</figcaption></figure>
+  <p>Typed a stamp wrong? Press <b>fix</b> on the entry to correct it or drop it. An AM/PM slip otherwise teaches the planner a
+    dock time that never happened. <b>On a live load, log the Begin and End pairs at each dock if you agreed detention</b>: that is what it is
+    billed from. Every run you log teaches the planner your real speed, your roads and each dock's times.</p>
+  <div class="note"><h4>The odometer box starts empty on purpose</h4>
+    <p>The road from shipper to receiver is learned from the odometer when you pull out and when you deliver, and the next
+      job on that road is planned at what you drove. Leave it empty when you pull out and nothing is learned from that run;
+      that is better than a reading from before the drive to the shipper, which would teach the planner a road far longer
+      than it is.</p></div>
+  <div class="rule"><h4>No trailer of your own: drop and hook</h4>
+    <p>Running power-only off the Freight Market is drop and hook, as in TruckSim Dispatcher: you back under the shipper's
+      trailer and drop it at the receiver. There is no dock time, so there are no Begin and End pairs to log, and the trip log
+      does not offer them. Press <b>I am at the shipper</b> and <b>I have arrived</b> as you pull in: if a gate holds you, that
+      wait is what detention is worked out from, and the stamps are what win a broker's dispute over it. The close-out shows
+      the waits at each gate in place of dock times.</p></div>
+
+  <h3>Closing the load out</h3>
+  <p>Once it is delivered in the game, fill in <b>Close the load out</b>:</p>
+  <table>
+    <tr><th style="width:28%">Field</th><th>What to put</th></tr>
+    <tr><td>Arrived at the receiver</td><td>Filled from your log. It is what the window is judged on, not the time you are closing out.</td></tr>
+    <tr><td>Ending odometer</td><td>Required: the run is measured off it.</td></tr>
+    <tr><td>Clocks as you arrived</td><td>Drive, shift, break and cycle, read when you backed in. The dock time comes off them, and the
+      next broker plans you on them. Leave them blank and the clocks on file are marked as needing a re-read.</td></tr>
+    <tr><td>Dock time and detention</td><td>Worked out from your log, with the detention the invoice will bill. Where you did not log a
+      pair, type the time instead. On drop and hook, the waits at each gate. If the receiver took you at a different time from
+      the one quoted at the gate, say so.</td></tr>
+    <tr><td>Cargo damage %</td><td>Damaged freight is a claim: it goes on your record and costs standing with the broker.</td></tr>
+    <tr><td>Fuel % now</td><td>So the next plan knows when you need to stop.</td></tr>
+    <tr><td>What happened, and whose fault</td><td>For a late: <b>Mine</b>, <b>Nobody's</b> (traffic, weather, a dock that held you),
+      <b>The truck</b>, or <b>The game</b>. Left alone, it is worked out from the log and what you wrote. Only <b>Mine</b> counts
+      against you with the broker.</td></tr>
+    <tr><td>Notes</td><td>Anything worth keeping with the run.</td></tr>
+  </table>
+  <p>Press <span class="btn">Delivered: close it out</span>. The app reads back what is about to be filed, and only
+    <span class="btn">Yes, it is delivered</span> files it.</p>
+  <figure class="md"><img src="img/closeout-confirm.png"><figcaption>The read-back before anything is filed.</figcaption></figure>
+  <p>Then the summary, as TruckSim Dispatcher gives one: whether it was on time and whose fault a late was; the dock times and
+    detention; what the run taught the planner (your speed, the dock times, the road); the plan against what happened; the
+    miles; the invoice, the detention billed and the money to move; and what was carried forward: where you are, the game
+    clock moved across the dock, and your clocks.</p>
+  <figure class="md"><img src="img/closeout-summary.png"><figcaption>The summary after a close-out. It stays on the Active Load tab
+    until you dismiss it.</figcaption></figure>
 
   <h3>Handing a load back</h3>
-  <p><span class="btn">Hand it back</span> on the booked banner cancels the booking. It goes on your record as a
-    cancellation and costs standing with that broker. Cancel the job in the game too.</p>
+  <p><span class="btn">Hand it back</span> cancels the booking. It goes on your record as a cancellation and costs standing with
+    that broker. Cancel the job in the game too.</p>
+  <h3>When the game loses the job</h3>
+  <p>A game reset, a crash or a profile reload can make the job vanish, and you could not have stopped it. Press
+    <span class="btn">The game lost it</span> instead: the booking is cancelled, but <b>not on your record</b>, and the broker
+    holds nothing against you. Keep it for that: a load you chose to drop is a hand-back.</p>
 </section>
 
 <!-- ============================================================ 10 -->
@@ -541,14 +622,24 @@
     ring. <b>Not every run gets a call.</b> The chance starts around even, and is higher the better your standing with
     that broker.</p>
   <figure><img src="img/ringing.png"></figure>
-  <p><span class="btn">Answer</span> opens the call on the Brokers tab. <span class="btn">Let it ring</span> lets the lane go.</p>
+  <p><span class="btn">Answer</span> asks for your clocks first: drive, shift, break and cycle left, as the HOS display shows
+    them. Telling a broker your hours is how they know how far they can plan you, and the lane's pickup is worked again off
+    them: answer with a full cycle on a lane planned around a restart, and the pickup comes forward. Then the call opens on the
+    Brokers tab. <span class="btn">Let it ring</span> lets the lane go.</p>
+  <div class="rule"><h4>A call is never missed</h4>
+    <p>The phone only rings when you report something to the app, such as pulling out loaded, and a ringing call
+      <b>waits</b> until you answer it or let it ring. While it waits, the <b>Phone</b> tile in the top bar says
+      &#x260E; Ringing on every tab (click it to go to the call), and the browser tab's title says who is calling. A short
+      ring plays once. With the app on another screen, turn on <b>Desktop alerts</b> in Settings and Windows shows the call
+      too. A call from home shows the same way.</p></div>
+  <figure><img src="img/topbar-ringing.png"><figcaption>The Phone tile, first in the top bar, while a broker is calling.</figcaption></figure>
   <figure><img src="img/phone-lane.png"><figcaption>A lane call: the offer is for the middle of the band, booked as a rate per mile.</figcaption></figure>
   <p>Negotiate it like any call. &ldquo;At your cost&rdquo; is what the middle of the band leaves you at your cost per mile.</p>
 
   <h3>Outbound: ringing round</h3>
   <p>On a run, you can call a broker yourself, but <b>only from a break or a rest</b>: not from behind the wheel. Log the
-    break first, then press <span class="btn">Call</span>. The broker offers a lane out of where this run ends. It is
-    based on the lane, not on any board.</p>
+    break first, then press <span class="btn">Call</span> and tell them your clocks. The broker offers a lane out of where
+    this run ends, planned off them. It is based on the lane, not on any board.</p>
 
   <h3>At the pickup</h3>
   <figure><img src="img/lane.png"><figcaption>The booked lane, waiting for its pickup.</figcaption></figure>
@@ -598,9 +689,9 @@
     <div><b>5. The rest</b>$275 is the broker's share. It stays in Broker holding.</div>
   </div>
   <div class="warn"><h4>Moves out of the game bank need the game closed</h4>
-    <p>The Companion App can only move money in or out of the game while ATS is closed. The app sees when ATS is running,
-      and the <span class="btn">I've moved it</span> button for those moves waits until it is closed. Moves between the
-      Companion App's own accounts do not need the game closed.</p></div>
+    <p>The Companion App can only move money in or out of the game while ATS is closed. Close it, make the move, and press
+      <span class="btn">I've moved it</span>: the app takes your word for it. Moves between the Companion App's own accounts
+      do not need the game closed.</p></div>
   <figure><img src="img/money.png"><figcaption>The Money tab after the first delivery: the game's pay waiting to move to Broker holding, and the rate the broker owes.</figcaption></figure>
 
   <h3>Game bank: allowed to spend</h3>
@@ -703,9 +794,17 @@
 <section>
   <h2><span class="num">14</span>Truck, trailer and clocks</h2>
   <figure><img src="img/truck.png"><figcaption>The Truck &amp; clocks tab.</figcaption></figure>
-  <h3>Where and when, and the clocks</h3>
-  <p>Correct the app here whenever it is out of step with the game: the city, the game day and time, the odometer, the fuel,
-    and your hours left on the drive, shift, break and cycle clocks. The planner works from these.</p>
+  <h3>Where and when</h3>
+  <p>Correct the app here whenever it is out of step with the game: the city, the game day and time, the odometer and the fuel.</p>
+  <h3>Hours of service</h3>
+  <p>Laid out as in TruckSim Dispatcher: your HOS display is the authority, so type what it says, as h:mm. Drive, shift, the
+    break clock (driving left before the 30-minute break, not driving time) and cycle, plus <b>hours coming back</b> on your
+    recap, as <code>8:00 in 1, 10:30 in 2</code>. Or paste a GDC recap screenshot, with an AI key. The panel says how fresh they are:</p>
+  <ul>
+    <li><b>Read at a close-out</b>: still good if you have not driven since.</li>
+    <li><b>Worked out, not read</b>: carried across an unload with no reading. Check them against your display.</li>
+    <li><b>Not confirmed</b>: a load has run since they were read. Re-read them before a broker plans anything off them.</li>
+  </ul>
   <h3>Owning a trailer</h3>
   <p>Bought a trailer in the game? Choose its kind, put its plate or ID and year, and press
     <span class="btn">I own this trailer</span>. It goes behind the truck:</p>
@@ -738,6 +837,9 @@
   </table>
   <p><b>Economy mods change these</b>, GDC's among them. Set each level to match yours; a blank means anywhere.
     <span class="btn">Back to the game's defaults</span> restores the table.</p>
+  <h3>Phone alerts</h3>
+  <p><span class="btn">Turn on desktop alerts</span> asks the browser to let the app show Windows notifications, so a call
+    shows even when the app is on another screen (Section 10).</p>
   <h3>AI</h3>
   <p>Your Anthropic API key (Section 2). Stored in your career file on this PC only. Paste a new one to replace it.</p>
 </section>
@@ -747,13 +849,15 @@
   <h2><span class="num">16</span>Your record and standing</h2>
   <h3>Your record as a carrier</h3>
   <p>What every broker looks at before taking you on, shown at the top of the directory: <b>loads delivered</b>,
-    <b>percentage on time</b>, and <b>days with your own authority</b>. Cancellations count against you. The tier
+    <b>percentage on time</b>, and <b>days with your own authority</b>. Cancellations and cargo claims count against you; a late
+    that was not your fault does not. The tier
     requirements in Section 7 are measured against it.</p>
   <h3>Standing with each broker</h3>
   <table>
     <tr><th style="width:50%">What</th><th>Standing</th></tr>
     <tr><td>Delivered on time</td><td>+5</td></tr>
-    <tr><td>Delivered late</td><td>&minus;10</td></tr>
+    <tr><td>Delivered late, your fault</td><td>&minus;10 (a late that was not yours counts as on time)</td></tr>
+    <tr><td>Cargo damaged (a claim)</td><td>&minus;5 and more with the damage, up to &minus;20</td></tr>
     <tr><td>Booking a load with them</td><td>+2</td></tr>
     <tr><td>Caught in a false argument</td><td>&minus;5</td></tr>
     <tr><td>Pushing until they hang up</td><td>&minus;3</td></tr>
@@ -785,7 +889,9 @@
     <tr><td>Overdue</td><td>More than a day past due</td></tr>
     <tr><td>Collections</td><td>Half the rate, about two weeks later</td></tr>
     <tr><td>Inbound lane call</td><td>Once loaded, within about 36 h of empty; not every run</td></tr>
-    <tr><td>Ringing round</td><td>From a break or a rest only</td></tr>
+    <tr><td>Ringing round</td><td>From a break or a rest only, with your clocks</td></tr>
+    <tr><td>Answering a broker</td><td>With your clocks; the lane is planned again off them</td></tr>
+    <tr><td>Appointment grace</td><td>2 hours past a booked slot before it counts as late</td></tr>
     <tr><td>Restart before a lane</td><td>When the cycle will be under 11 h at empty: 34 h first</td></tr>
     <tr><td>Home life</td><td>Starts 80; &minus;2/day out, &minus;5 past the promise, +10/day home</td></tr>
     <tr><td>Home calls</td><td>Below 40</td></tr>
@@ -800,6 +906,8 @@
   <h4>A broker offered me a worse job than the best one on the board.</h4>
   <p>That is the starter tier working as meant. Ask &ldquo;anything better?&rdquo;, try another broker, or build the record
     that gets you to established brokers.</p>
+  <h4>The game reset and my job is gone.</h4>
+  <p>Press <b>The game lost it</b> on the booked banner. Cancelled, and not held against you.</p>
   <h4>The phone never rang on my last run.</h4>
   <p>Not every run gets a call. The broker who rings has to work the region you are delivering into, and has to know you:
     on your first runs into a new region you may not know anyone there yet. Ring round yourself from your next break.</p>
@@ -808,14 +916,15 @@
     bottom.</p>
   <h4>&ldquo;Pull over&rdquo; when I call.</h4>
   <p>You are on a run. Log a break or a rest, then call.</p>
-  <h4>The <span class="btn">I've moved it</span> button is greyed out.</h4>
-  <p>That move is out of the game bank and ATS is running. Close the game, make the move in the Companion App, and mark it.</p>
+  <h4>I typed a time and it came out wrong.</h4>
+  <p>Times of day take AM and PM or the 24-hour clock: <code>6:30 PM</code> and <code>18:30</code> are the same. Check the weekday
+    beside the day number: Day 1 is a Monday. A wrong entry in the trip log can be put right with <b>fix</b>.</p>
   <h4>The game bank figure is wrong.</h4>
   <p>The app cannot see you spend in the game. Type the balance in again on the Money tab.</p>
   <h4>Nothing on the board fits my lane.</h4>
   <p>Take a break or a rest and paste the board again; boards refresh. If still nothing, press <b>Nothing fits</b>.</p>
   <h4>The planner thinks I am somewhere else.</h4>
-  <p>Correct the city, time and clocks on the Truck &amp; clocks tab, or in the run panel's drawer.</p>
+  <p>Correct the city, time and clocks on the Truck &amp; clocks tab, or under <b>From here</b> on the Active Load tab.</p>
   <h4>Can I bring my TruckSim Dispatcher career across?</h4>
   <p>Not yet. The two apps keep separate careers.</p>
 </section>

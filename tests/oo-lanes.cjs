@@ -16,6 +16,7 @@ async function api(p, m = 'GET', b) {
 let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? ' -- ' + d : ''}`); } else { fail++; console.log(`  FAIL  ${l}${d ? ' -- ' + d : ''}`); } };
 const head = (t) => console.log(`\n=== ${t} ===`);
+const CLOCKS = { driveRemaining: 9, shiftRemaining: 11, breakRemaining: 6, cycleRemaining: 55 };
 const hrs = (a, b) => (Date.parse(b + ':00Z') - Date.parse(a + ':00Z')) / 3600000;
 
 async function bookAndLoad(S, day) {
@@ -45,7 +46,10 @@ async function bookAndLoad(S, day) {
   ok('priced off what the game pays', S.call.offer > 0 && S.call.offer < S.payPerMile * (lane.minMiles + lane.maxMiles) / 2, `${S.call.offer} vs ${S.payPerMile}/mi`);
 
   head('2. Answer, and take it');
-  let r = await api(`/calls/${S.call.id}/answer`, 'POST');
+  let why = '';
+  try { await api(`/calls/${S.call.id}/answer`, 'POST', {}); } catch (e) { why = e.message; }
+  ok('answering means telling them your clocks', /Tell them your clocks/.test(why), why);
+  let r = await api(`/calls/${S.call.id}/answer`, 'POST', { clocks: CLOCKS });
   ok('answered', r.call.status === 'Open');
   r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
   S = r.snapshot;
@@ -82,7 +86,10 @@ async function bookAndLoad(S, day) {
   if (low) ok('with the pickup after a 34-hour restart', hrs(S.status.gameTime, low.pickupFromGameTime) >= 34, `${S.status.gameTime} -> ${low.pickupFromGameTime}`);
 
   head('5. Nothing fits');
-  r = await api(`/calls/${S.call.id}/answer`, 'POST');
+  // Rung off a cycle of six: the lane waits for a restart. Answered with a full cycle (it was a misread), it does not.
+  r = await api(`/calls/${S.call.id}/answer`, 'POST', { clocks: { ...CLOCKS, cycleRemaining: 60 } });
+  ok('answered with a full cycle: the broker plans it again, sooner', /With those clocks/.test(r.call.turns.at(-1).text)
+    && hrs(r.snapshot.status.gameTime, r.snapshot.call.lane.pickupFromGameTime) < 34, r.call.turns.at(-1).text);
   r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
   S = r.snapshot;
   const broker = S.directory.find((x) => x.name === S.lane.brokerName);
@@ -106,11 +113,14 @@ async function bookAndLoad(S, day) {
   head('7. Ringing for the next load yourself');
   S = r.snapshot;
   const destBroker = S.directory.find((b) => b.tier === 'Starter' && b.worksHere && b.takesYou);
-  let why = '';
+  why = '';
   try { await api('/calls', 'POST', { brokerId: destBroker.id }); } catch (e) { why = e.message; }
   ok('not from the wheel', /Pull over/.test(why), why);
   S = await api('/run/event', 'POST', { kind: 'Break', day: 8, time: '08:30', hours: 0.5 });
-  r = await api('/calls', 'POST', { brokerId: destBroker.id });
+  why = '';
+  try { await api('/calls', 'POST', { brokerId: destBroker.id }); } catch (e) { why = e.message; }
+  ok('and telling them your clocks', /Tell them your clocks/.test(why), why);
+  r = await api('/calls', 'POST', { brokerId: destBroker.id, clocks: CLOCKS });
   ok('from a break: a lane out of where the run ends', r.call.status === 'Open' && r.call.lane && r.call.lane.pickupCity,
     JSON.stringify({ s: r.call.status, lane: r.call.lane && r.call.lane.pickupCity, said: r.call.turns.at(-1)?.text }));
   ok('not tied to any board', r.call.lane && r.call.lane.minMiles > 0 && !r.call.load?.destCity);
@@ -124,6 +134,19 @@ async function bookAndLoad(S, day) {
     `${before} -> ${r.snapshot.directory.find((b) => b.id === destBroker.id).standing}`);
   S = await api('/booking/handback', 'POST', { why: 'truck trouble' });
   ok('a booked load handed back for any reason is a cancellation on the record', S.bookings[0].status === 'Cancelled' && S.bookings[0].onCarrier && !S.booking);
+
+  head('9. The game lost the job');
+  S = await api('/status', 'POST', { locationCity: 'Kansas City', locationState: 'KS', day: 9, time: '06:00' });
+  await api('/board/add-many', 'POST', [{ cargo: 'Paper', destCity: 'Topeka', destState: 'KS', loadedMiles: 70, gameRevenue: 380, deadlineHours: 30 }]);
+  const b9 = S.directory.find((b) => b.tier === 'Starter' && b.worksHere && b.takesYou);
+  r = await api('/calls', 'POST', { brokerId: b9.id });
+  r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
+  const standing9 = r.snapshot.directory.find((b) => b.id === b9.id).standing;
+  const claims9 = r.snapshot.record.claims;
+  S = await api('/booking/handback', 'POST', { why: 'game reset', gameLost: true });
+  const k9 = S.bookings.find((k) => k.brokerName === b9.name && k.status === 'Cancelled' && !k.onCarrier);
+  ok('cancelled, and not on the record', !!k9 && !S.booking && S.record.claims === claims9, `claims ${claims9} -> ${S.record.claims}`);
+  ok('and the broker holds nothing against you', S.directory.find((b) => b.id === b9.id).standing === standing9);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

@@ -2418,6 +2418,67 @@ public static class DispatchEngine
 
     // ------------------------------------------------------------- authorization
 
+    /// <summary>
+    /// When the receiver's window opens, on the receiver's clock, as a stamp. Empty where the listing gave no opening.
+    /// Shared by authorisation here and by the owner/operator app's booking, so a load is set up the same way in both.
+    /// </summary>
+    internal static string ReceiverOpens(AppState s, BoardLoad load) =>
+        load.AppointmentOpensHours > 0 && GameClock.TryParse(s.Status.GameTime) is { } opensFrom
+            ? GameClock.Format(GameZones.AtReceiver(s, opensFrom.AddHours(load.AppointmentOpensHours), load.DestState))
+            : "";
+
+    /// <summary>
+    /// Whether the receiver takes this load whenever it turns up, inside the window.
+    ///
+    /// Rolled with the receiver's own odds rather than the old fleet-wide 12%, but NOT read off the evaluation: the
+    /// card's flag is the narrower question of whether a BOOKED slot will be waived, and answers false on a load that
+    /// never had a slot to waive. This one is the plain fact the trip carries for the rest of the run.
+    /// </summary>
+    internal static bool ReceiverTakesEarly(AppState s, BoardLoad load) =>
+        DeliveryWindow.TakesEarly(s, load,
+            FacilityProfile.TakesEarlyPercent(s,
+                string.IsNullOrWhiteSpace(load.TrailerType) ? AssignedTrailer(s)?.Type : load.TrailerType,
+                load.Cargo));
+
+    /// <summary>
+    /// The slot the dock is expecting, stamped once so the plan, the close-out and the report all measure against the
+    /// same time. Needs the trip's window and its takes-early flag set first.
+    /// </summary>
+    internal static void BookSlot(AppState s, Trip trip, BoardLoad load, LoadEvaluation eval)
+    {
+        // Only where somebody actually booked one. This fired on any load with a window at all, which is
+        // how an UNBOOKED tanker — whose whole card said "no appointment, they take it when you get
+        // there" — also carried a 19:00 appointment it was then told to aim for. A window opening is not
+        // a door being held.
+        if (!trip.ReceiverTakesEarly
+            && GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opensAt
+            && GameClock.TryParse(trip.DueGameTime) is { } dueAt && dueAt > opensAt)
+        {
+            // Straight off the same helper the plan waits on, so the stated slot and the planned slot
+            // cannot drift apart — and so the shift-clock clamp applies to both.
+            // Receiver's clock throughout this block: opensAt, dueAt and the projected arrival are all
+            // already on it, and a slot quoted on the truck's clock would be compared against three
+            // times that are not.
+            var slot = GameClock.TryParse(s.Status.GameTime) is { } slotFrom
+                ? GameZones.AtReceiver(s, slotFrom.AddHours(eval.BookedSlotHours > 0 ? eval.BookedSlotHours : AppointmentHoursFor(s, load)), load.DestState)
+                : opensAt;
+
+            // A dock does not book you in before you can physically get there, and neither should we.
+            // Where our own plan arrives later than the slot — an overnight rest at the shipper, a long
+            // leg, a required 34 — the arrival IS the appointment. Handing out a plan that cannot meet
+            // the slot we just invented, then marking the driver late for the difference, is the app
+            // blaming somebody for its own arithmetic.
+            // Against the time the plan is STOOD AT THE GATE, not the time it finishes unloading. The
+            // end of the plan includes the dock work, so comparing a slot with it pushed every
+            // appointment out by the dock hours and quietly undid the shift-clock clamp above.
+            if (GateArrivalOf(eval.Feasibility) is { } planned && planned > slot)
+                slot = DeliveryWindow.NextHalfHour(planned);
+
+            // Past the deadline there is no slot worth stating; the window closing governs.
+            trip.AppointmentGameTime = slot <= dueAt ? GameClock.Format(slot) : "";
+        }
+    }
+
     public static Trip Authorize(AppState s, string loadId, string? rationaleOverride, bool overrideTight)
     {
         var load = s.Board.FirstOrDefault(b => b.Id == loadId)
@@ -2578,21 +2639,8 @@ public static class DispatchEngine
             ExtraStops = load.ExtraStops,
             IsHazmat = load.IsHazmat,
             HazmatClass = load.HazmatClass,
-            AppointmentOpensGameTime = load.AppointmentOpensHours > 0
-                && GameClock.TryParse(s.Status.GameTime) is { } opensFrom
-                ? GameClock.Format(GameZones.AtReceiver(
-                    s, opensFrom.AddHours(load.AppointmentOpensHours), load.DestState))
-                : "",
-            // Rolled with the receiver's own odds rather than the old fleet-wide 12%, but NOT read off
-            // the evaluation: the card's flag is the narrower question of whether a BOOKED slot will be
-            // waived, and answers false on a load that never had a slot to waive. This one is the plain
-            // fact the trip carries for the rest of the run — will they take it whenever it turns up.
-            ReceiverTakesEarly = DeliveryWindow.TakesEarly(s, load,
-                FacilityProfile.TakesEarlyPercent(s,
-                    string.IsNullOrWhiteSpace(load.TrailerType)
-                        ? AssignedTrailer(s)?.Type
-                        : load.TrailerType,
-                    load.Cargo)),
+            AppointmentOpensGameTime = ReceiverOpens(s, load),
+            ReceiverTakesEarly = ReceiverTakesEarly(s, load),
             IsOversize = load.IsOversize,
             TarpsUsed = load.RequiresTarp ? 1 : 0,
             FeasibilityAtDispatch = eval.Feasibility,
@@ -2664,40 +2712,7 @@ public static class DispatchEngine
             Detail = $"Authorized by operations. {trip.AuthorizationRationale}"
         });
 
-        // The slot the dock is expecting, stamped once so the plan, the close-out and the report all
-        // measure against the same time.
-        //
-        // Only where somebody actually booked one. This fired on any load with a window at all, which is
-        // how an UNBOOKED tanker — whose whole card said "no appointment, they take it when you get
-        // there" — also carried a 19:00 appointment it was then told to aim for. A window opening is not
-        // a door being held.
-        if (!trip.ReceiverTakesEarly
-            && GameClock.TryParse(trip.AppointmentOpensGameTime) is { } opensAt
-            && GameClock.TryParse(trip.DueGameTime) is { } dueAt && dueAt > opensAt)
-        {
-            // Straight off the same helper the plan waits on, so the stated slot and the planned slot
-            // cannot drift apart — and so the shift-clock clamp applies to both.
-            // Receiver's clock throughout this block: opensAt, dueAt and the projected arrival are all
-            // already on it, and a slot quoted on the truck's clock would be compared against three
-            // times that are not.
-            var slot = GameClock.TryParse(s.Status.GameTime) is { } slotFrom
-                ? GameZones.AtReceiver(s, slotFrom.AddHours(eval.BookedSlotHours > 0 ? eval.BookedSlotHours : AppointmentHoursFor(s, load)), load.DestState)
-                : opensAt;
-
-            // A dock does not book you in before you can physically get there, and neither should we.
-            // Where our own plan arrives later than the slot — an overnight rest at the shipper, a long
-            // leg, a required 34 — the arrival IS the appointment. Handing out a plan that cannot meet
-            // the slot we just invented, then marking the driver late for the difference, is the app
-            // blaming somebody for its own arithmetic.
-            // Against the time the plan is STOOD AT THE GATE, not the time it finishes unloading. The
-            // end of the plan includes the dock work, so comparing a slot with it pushed every
-            // appointment out by the dock hours and quietly undid the shift-clock clamp above.
-            if (GateArrivalOf(eval.Feasibility) is { } planned && planned > slot)
-                slot = DeliveryWindow.NextHalfHour(planned);
-
-            // Past the deadline there is no slot worth stating; the window closing governs.
-            trip.AppointmentGameTime = slot <= dueAt ? GameClock.Format(slot) : "";
-        }
+        BookSlot(s, trip, load, eval);
 
         // Both of these are only worth anything before the driver leaves, so they go on the rationale
         // the dispatcher gives at authorisation rather than turning up in the close-out.

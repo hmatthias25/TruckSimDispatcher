@@ -129,15 +129,7 @@ app.MapPost("/api/status", (StatusRequest u) => Results.Ok(store.Mutate(c =>
 app.MapPost("/api/hos", (HosRequest h) => Results.Ok(store.Mutate(c =>
 {
     RequireStarted(c);
-    var s = c.Game;
-    s.Hos.DriveRemaining = Math.Max(0, h.DriveRemaining);
-    s.Hos.ShiftRemaining = Math.Max(0, h.ShiftRemaining);
-    s.Hos.BreakRemaining = Math.Max(0, h.BreakRemaining);
-    s.Hos.CycleRemaining = Math.Max(0, h.CycleRemaining);
-    s.Hos.AsOfGameTime = s.Status.GameTime;
-    s.Hos.Source = "Reported";
-    s.Hos.Confirmed = true;
-    s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
+    ApplyClocks(c, h, "Reported");
     Lanes.MaybeRing(c);
     return Snapshot(c);
 })));
@@ -255,6 +247,14 @@ app.MapPost("/api/calls", async (CallRequest r, CancellationToken ct) =>
     var (callId, reply) = store.Mutate(c =>
     {
         RequireStarted(c);
+        // On the road, the call is about the next load, and the broker plans it off the clocks you give them: the same
+        // as when a broker rings you. From a break or a rest only, so that is checked first.
+        if (Calls.ActiveBooking(c) != null)
+        {
+            if (Lanes.PullOver(c) is { } wheel) throw new InvalidOperationException(wheel);
+            ApplyClocks(c, r.Clocks ?? throw new InvalidOperationException(
+                "Tell them your clocks: drive, shift, break and cycle left. That is how far they can plan you."), "Told the broker");
+        }
         var (call, rep) = Calls.Start(c, r.BrokerId ?? "");
         return (call.Id, rep);
     });
@@ -282,16 +282,16 @@ app.MapPost("/api/calls/{id}/say", async (string id, SayRequest r, CancellationT
 app.MapPost("/api/deliver", (DeliverRequest r) => Results.Ok(store.Mutate(c =>
 {
     RequireStarted(c);
-    var invoice = Ledger.Deliver(c, r);
-    return new { invoice, snapshot = Snapshot(c) };
+    var invoice = Ledger.Deliver(c, r, out var audit);
+    return new { invoice, audit, snapshot = Snapshot(c) };
 })));
 
 // ---------------------------------------------------------------- the run
 
 app.MapPost("/api/run/at-shipper", (RunStageRequest r) => Results.Ok(store.Mutate(c =>
 {
-    var said = Run.AtShipper(c, r.Day, r.Time);
-    return new { said, snapshot = Snapshot(c) };
+    var (said, call) = Run.AtShipper(c, r.Day, r.Time);
+    return new { said, call, snapshot = Snapshot(c) };
 })));
 
 app.MapPost("/api/run/loaded", (RunStageRequest r) => Results.Ok(store.Mutate(c =>
@@ -312,18 +312,36 @@ app.MapPost("/api/run/event", (RunEventRequest r) => Results.Ok(store.Mutate(c =
     return Snapshot(c);
 })));
 
-app.MapPost("/api/run/arrived", (RunStageRequest r) => Results.Ok(store.Mutate(c =>
+app.MapPost("/api/run/event/{id}", (string id, AmendRequest r) => Results.Ok(store.Mutate(c =>
 {
-    var said = Run.Arrived(c, r.Day, r.Time);
-    Lanes.MaybeRing(c);
+    var said = Run.Amend(c, id, r);
     return new { said, snapshot = Snapshot(c) };
 })));
 
-app.MapPost("/api/calls/{id}/answer", async (string id, CancellationToken ct) =>
+app.MapPost("/api/run/window", (WindowFixRequest r) => Results.Ok(store.Mutate(c =>
+{
+    var said = Run.CorrectWindow(c, r.DeadlineHours, r.Note);
+    return new { said, snapshot = Snapshot(c) };
+})));
+
+app.MapPost("/api/run/arrived", (RunStageRequest r) => Results.Ok(store.Mutate(c =>
+{
+    var (said, call) = Run.Arrived(c, r.Day, r.Time);
+    Lanes.MaybeRing(c);
+    return new { said, call, snapshot = Snapshot(c) };
+})));
+
+app.MapPost("/api/calls/{id}/answer", async (string id, AnswerRequest? r, CancellationToken ct) =>
 {
     var reply = store.Mutate(c =>
     {
+        var ringing = c.Calls.FirstOrDefault(x => x.Id == id && x.Status == "Ringing") ?? throw new InvalidOperationException("Nobody is calling.");
+        // A broker ringing about the next load wants to know how much time you have: the lane is planned off it.
+        if (ringing.Inbound)
+            ApplyClocks(c, r?.Clocks ?? throw new InvalidOperationException(
+                "Tell them your clocks: drive, shift, break and cycle left. That is how far they can plan you."), "Told the broker");
         var call = Calls.Answer(c, id);
+        if (Lanes.Refit(c, call) is { } moved) call.Turns.Add(new CallTurn { Who = "broker", Text = moved });
         return new BrokerReply("offer", call.Turns.Last().Text);
     });
     await Voice(id, reply, ct);
@@ -364,7 +382,7 @@ app.MapPost("/api/trailer/power-only", () => Results.Ok(store.Mutate(c =>
 
 app.MapPost("/api/booking/handback", (HandBackRequest r) => Results.Ok(store.Mutate(c =>
 {
-    Ledger.HandBack(c, r.Why ?? "");
+    Ledger.HandBack(c, r.Why ?? "", r.GameLost == true);
     return Snapshot(c);
 })));
 
@@ -524,6 +542,22 @@ static object Snapshot(OoCareer c)
             shift = s.Hos.ShiftRemaining,
             brk = s.Hos.BreakRemaining,
             cycle = s.Hos.CycleRemaining,
+            recap = s.Hos.Recap,
+            asOf = s.Hos.AsOfGameTime,
+            confirmed = s.Hos.Confirmed,
+            projected = s.Hos.Projected,
+            carriedForwardFrom = s.Hos.CarriedForwardFrom,
+            source = s.Hos.Source,
+        },
+        rules = new
+        {
+            breakLength = s.Settings.Hos.BreakLength,
+            offDutyReset = s.Settings.Hos.OffDutyReset,
+            appointmentGraceHours = s.Settings.AppointmentGraceHours,
+            // The free time at a dock before detention runs, and the shorter free time on a wait for the door: what the
+            // close-out bills on, so the preview on the Active Load tab can show the same figure before it is pressed.
+            detentionFreeHours = s.Driver.Pay.DetentionFreeHours,
+            queueFreeHours = s.Driver.Pay.QueueFreeHours,
         },
         truck = truck == null ? null : new { truck.Unit, truck.Year, truck.Make, truck.Model, truck.AvgMpg },
         trailer = DispatchEngine.AssignedTrailer(s) is { } tr ? new
@@ -543,18 +577,18 @@ static object Snapshot(OoCareer c)
         lane = Lanes.Booked(c) is { } bl ? Lanes.View(c, bl) : null,
         laneFits = Lanes.Booked(c) is { } fl && c.Started ? Lanes.Fits(c, fl, LoadDesk.Evaluate(c)).Select(v => v.Load.Id) : Enumerable.Empty<string>(),
         payPerMile = Lanes.PayPerMile(c),
-        trip = Run.Trip(c, Calls.ActiveBooking(c)) is { } t ? new
+        // The run as Core keeps it, whole: the Active Load tab reads it the way the company-driver app's does.
+        trip = Run.Trip(c, Calls.ActiveBooking(c)),
+        tripViews = Run.Trip(c, Calls.ActiveBooking(c)) is { } t ? new
         {
-            t.Id, t.Number, t.Status, t.ShipperArrivedGameTime, t.ShipperCallNote, t.LoadStartsGameTime, t.LoadedReported,
-            t.PulledOutGameTime, t.ArrivedGameTime, t.ReceiverCallNote, t.WorkStartsGameTime, t.DueGameTime,
-            plan = t.FeasibilityAtDispatch,
             fromHere = Run.FromHere(c) is { } fh ? new
             {
                 fh.Verdict, fh.SlackHours, fh.ProjectedArrivalGameTime, fh.ProjectedDockStartGameTime, fh.DueGameTime,
                 fh.RestsRequired, fh.BreaksRequired, fh.Blockers, fh.Warnings, fh.Timeline,
             } : null,
-            clocksAsOf = c.Game.Hos.AsOfGameTime,
-            events = t.Events.OrderBy(e => e.GameTime).Select(e => new { e.Id, e.Kind, e.GameTime, e.EndGameTime, e.Detail, e.City, e.State, e.Gallons }),
+            receiverParking = Facilities.ParkingFor(s, t),
+            receiverSiteHours = FacilityProfile.SiteHoursFor(s, t),
+            receiverIsSite = FacilityProfile.IsSiteTrip(t),
         } : null,
         bookings = c.Bookings.AsEnumerable().Reverse().Take(20),
         aiPhone = PhoneAi.Available(c),
@@ -564,11 +598,27 @@ static object Snapshot(OoCareer c)
         gameBank = Ledger.GameBankView(c),
         holding = Ledger.HoldingView(c),
         owedToYou = c.Invoices.Where(i => i.Status is "Open" or "Overdue" or "Collections").Sum(i => i.Amount),
-        gameRunning = Ledger.GameRunning(),
         home = c.Started ? HomeLife.View(c) : null,
         phoneModel = c.Settings.PhoneModel,
         events = s.Events.Take(30),
     };
+}
+
+/// The clocks, as the driver read them off the game: hours left on each, the recap, as of the game clock now.
+static void ApplyClocks(OoCareer c, HosRequest h, string source)
+{
+    var s = c.Game;
+    s.Hos.DriveRemaining = Math.Max(0, h.DriveRemaining);
+    s.Hos.ShiftRemaining = Math.Max(0, h.ShiftRemaining);
+    s.Hos.BreakRemaining = Math.Max(0, h.BreakRemaining);
+    s.Hos.CycleRemaining = Math.Max(0, h.CycleRemaining);
+    if (h.Recap != null) s.Hos.Recap = h.Recap.Where(x => x.Hours > 0 && x.InDays > 0).ToList();
+    s.Hos.AsOfGameTime = s.Status.GameTime;
+    s.Hos.Source = source;
+    s.Hos.Confirmed = true;
+    s.Hos.Projected = false;
+    s.Hos.CarriedForwardFrom = "";
+    s.Hos.UpdatedUtc = DateTime.UtcNow.ToString("o");
 }
 
 /// A row the screenshot reader returned, as a listing the board can take.
@@ -629,13 +679,14 @@ static int FindFreePort(int preferred)
 
 record ResetRequest(string? Confirm);
 record StatusRequest(string? LocationCity, string? LocationState, int? Day, string? Time, double? Odometer, double? FuelPct);
-record HosRequest(double DriveRemaining, double ShiftRemaining, double BreakRemaining, double CycleRemaining);
+record HosRequest(double DriveRemaining, double ShiftRemaining, double BreakRemaining, double CycleRemaining, List<RecapDay>? Recap = null);
+record AnswerRequest(HosRequest? Clocks);
 record SettingsRequest(decimal? CostPerMile, List<double?>? LongDistanceLimits, bool? ResetLongDistance,
                        string? AnthropicApiKey, string? AnthropicModel, SkillsRequest? Skills, string? PhoneModel = null);
 record SkillsRequest(int LongDistance, int HighValue, int Fragile, int JustInTime, List<string>? Adr);
 record ExtractRequest(List<ScreenshotImage>? Images);
-record CallRequest(string? BrokerId);
-record HandBackRequest(string? Why);
+record CallRequest(string? BrokerId, HosRequest? Clocks = null);
+record HandBackRequest(string? Why, bool? GameLost = null);
 record TrailerRequest(string? Type, string? GameId, int? Year);
 record TakeLaneRequest(string? LoadId);
 record TestHomeRequest(double Score);

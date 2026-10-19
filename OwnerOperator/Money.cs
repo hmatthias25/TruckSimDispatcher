@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using TruckSimDispatcher.Models;
 using TruckSimDispatcher.Services;
 
@@ -85,7 +84,9 @@ public static class Ledger
     /// The booked load is delivered. The game has just paid its figure into the game bank, which is the shipper's
     /// money and not the player's; the broker owes the booked rate on their terms.
     /// </summary>
-    public static Invoice Deliver(OoCareer c, DeliverRequest r)
+    public static Invoice Deliver(OoCareer c, DeliverRequest r) => Deliver(c, r, out _);
+
+    public static Invoice Deliver(OoCareer c, DeliverRequest r, out TripAudit? audit)
     {
         var k = Calls.ActiveBooking(c) ?? throw new InvalidOperationException("Nothing is booked to deliver.");
         var s = c.Game;
@@ -101,24 +102,30 @@ public static class Ledger
 
         // The window is the time to be there by, the same way the company-driver app grades it. With a trip on the
         // log, Core closes it and judges it on the arrival it logged; without one, on the time given here.
-        var findings = new List<string>();
+        audit = null;
+        var moved = !k.Load.DestCity.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase);
         if (Run.Trip(c, k) is { } trip)
         {
-            var (said, lateByClock) = Run.Close(c, trip, at, r.Odometer);
-            findings = said;
-            k.Late = lateByClock ?? (GameClock.TryParse(k.BookedGameTime) is { } f0 && at > f0.AddHours(k.Load.DeadlineHours));
+            // The close-out moves the truck, the clock across the dock, and the clocks; see Run.Close.
+            var (closed, late, fault) = Run.Close(c, k, trip, r, at);
+            audit = closed;
+            // A late counts against the record only where it was the driver's: a dock that held the truck, the game,
+            // or a breakdown is said, and not held against them. The same rule as the company-driver app.
+            k.Late = late && fault == "Driver";
+            k.LateExcused = late && !k.Late;
+            k.Fault = fault;
+            k.CargoDamagePct = trip.CargoDamagePct;
         }
         else
+        {
             k.Late = GameClock.TryParse(k.BookedGameTime) is { } from && at > from.AddHours(k.Load.DeadlineHours);
+            s.Status.LocationCity = k.Load.DestCity;
+            s.Status.LocationState = k.Load.DestState;
+            s.Status.LocationKind = "Receiver";
+            s.Status.GameTime = GameClock.Format(at);
+            if (r.Odometer is { } o) s.Status.AtsOdometer = o;
+        }
         k.Status = BookingStatus.Delivered;
-
-        // The truck is where the load went.
-        var moved = !k.Load.DestCity.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase);
-        s.Status.LocationCity = k.Load.DestCity;
-        s.Status.LocationState = k.Load.DestState;
-        s.Status.LocationKind = "Receiver";
-        s.Status.GameTime = GameClock.Format(at);
-        if (r.Odometer is { } o) s.Status.AtsOdometer = o;
         if (moved) s.Board.Clear();
         if (!DiscoveryService.IsDiscovered(s, s.Status.LocationCity, s.Status.LocationState))
         {
@@ -128,7 +135,14 @@ public static class Ledger
         }
 
         var broker = c.Brokers.FirstOrDefault(b => b.Id == k.BrokerId);
+        var standingWas = broker?.Standing ?? 0;
         if (broker != null) broker.Standing = Math.Clamp(broker.Standing + (k.Late ? -10 : 5), -100, 100);
+        // Damaged freight is a claim against the carrier: on the record, and the broker remembers it.
+        if (k.CargoDamagePct >= 1 && broker != null)
+        {
+            broker.Standing = Math.Clamp(broker.Standing - (int)Math.Min(20, 5 + k.CargoDamagePct / 2), -100, 100);
+            audit?.EquipmentFindings.Add($"{k.CargoDamagePct:0.#}% cargo damage: a claim on your record, and {k.BrokerName} remembers it.");
+        }
 
         var invoice = new Invoice
         {
@@ -156,7 +170,22 @@ public static class Ledger
               $"The game paid {Units.Money(k.GamePay)} for {k.Number}. Move all of it to Broker holding in the Companion App: " +
               $"it is the shipper's money, not yours until {k.BrokerName} pays. Close the game first.", k.Number, needsGameClosed: true);
 
-        foreach (var f in findings) OoStore.Log(c, "run", f, k.Number);
+        if (audit != null)
+        {
+            audit.MoneyFindings.Add($"{invoice.Number} to {k.BrokerName}: {Units.Money(invoice.Amount)}" +
+                                    (k.QuickPay ? " on quick pay" : $", net {k.DaysToPay}") + $", due {GameClock.Pretty(invoice.DueGameTime)}.");
+            if (invoice.DetentionAmount > 0)
+                audit.MoneyFindings.Add($"Detention billed: {Hhmm.Of(invoice.DetentionHours)} at {Units.Money(k.DetentionPerHour)}/h = " +
+                                        $"{Units.Money(invoice.DetentionAmount)} ({invoice.DetentionStatus.ToLowerInvariant()}).");
+            else if (k.DetentionPerHour > 0)
+                audit.MoneyFindings.Add(DropHook.Is(Run.Trip(c, k)?.TrailerType)
+                    ? $"Detention was agreed, but neither gate held you past the free {Hhmm.Of(k.DetentionAfterHours)}."
+                    : $"Detention was agreed, but nothing past the free {Hhmm.Of(k.DetentionAfterHours)} was logged at either dock.");
+            audit.MoneyFindings.Add($"The game paid {Units.Money(k.GamePay)}: move all of it to Broker holding with the game closed (Money tab).");
+            if (broker != null && broker.Standing != standingWas)
+                audit.MoneyFindings.Add($"Standing with {k.BrokerName}: {standingWas} → {broker.Standing}.");
+            foreach (var f in audit.ServiceFindings.Concat(audit.MileageFindings)) OoStore.Log(c, "run", f, k.Number);
+        }
         OoStore.Log(c, "money", $"{k.Number} delivered{(k.Late ? " late" : " on time")} at {k.Load.DestCity}, {k.Load.DestState}. " +
                                 $"{invoice.Number} to {k.BrokerName} for {Units.Money(invoice.Amount)}, due {GameClock.Pretty(invoice.DueGameTime)}.", k.Number);
         Advance(c);
@@ -173,17 +202,27 @@ public static class Ledger
     /// <summary>
     /// The booked load handed back to the broker: a cancellation on the carrier's record. What the call from home
     /// costs when the load cannot be delivered on the way. Cancel the job in the game as well.
+    ///
+    /// <paramref name="gameLost"/>: the game lost the job (a reset, a crash, a profile reload) and the driver could not
+    /// have stopped it. Cancelled all the same, but not on the record and not held against them by the broker, the way
+    /// the company-driver app's game-limitation fault works. Reported from play.
     /// </summary>
-    public static Booking HandBack(OoCareer c, string why)
+    public static Booking HandBack(OoCareer c, string why, bool gameLost = false)
     {
         var k = Calls.ActiveBooking(c) ?? throw new InvalidOperationException("Nothing is booked to hand back.");
         k.Status = BookingStatus.Cancelled;
-        k.OnCarrier = true;
+        k.OnCarrier = !gameLost;
         if (Run.Trip(c, k) is { } trip)
         {
             trip.Status = "Cancelled";
             trip.CancelReason = why;
             c.Game.Status.ActiveTripId = "";
+        }
+        if (gameLost)
+        {
+            OoStore.Log(c, "broker", $"{k.Number} cancelled with {k.BrokerName}: the game lost the job{(string.IsNullOrWhiteSpace(why) ? "" : $" ({why})")}. " +
+                                     "Not on your record, and nothing held against you.", k.Number);
+            return k;
         }
         if (c.Brokers.FirstOrDefault(b => b.Id == k.BrokerId) is { } broker)
             broker.Standing = Math.Max(-100, broker.Standing - 15);
@@ -196,8 +235,8 @@ public static class Ledger
     {
         var t = c.Transfers.FirstOrDefault(x => x.Id == id) ?? throw new InvalidOperationException("No such transfer.");
         if (t.Status == "Done") return t;
-        if (t.NeedsGameClosed && GameRunning())
-            throw new InvalidOperationException("The game is still running. The Companion App can only move money in or out of the game bank with the game closed: close it, make the transfer, then mark it done.");
+        // The player's word, always. The app cannot tell whether the game is running on the PC that matters, or whether
+        // the money was moved before it was started, so it does not try. Reported from play: a move refused that was done.
         t.Status = "Done";
         t.DoneGameTime = c.Game.Status.GameTime;
         if (t.From == Accounts.GameBank && c.GameBank.Estimate is { } bank) c.GameBank.Estimate = bank - t.Amount;
@@ -246,24 +285,6 @@ public static class Ledger
         };
     }
 
-    /// <summary>
-    /// Whether ATS or ETS2 is running on this PC. Both apps are on the same machine, so the process list says so.
-    /// TSO_GAME_RUNNING overrides it, for the tests.
-    /// </summary>
-    public static bool GameRunning()
-    {
-        var forced = Environment.GetEnvironmentVariable("TSO_GAME_RUNNING");
-        if (!string.IsNullOrWhiteSpace(forced)) return forced == "1";
-        try
-        {
-            return Process.GetProcessesByName("amtrucks").Length > 0 || Process.GetProcessesByName("eurotrucks2").Length > 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     internal static void Raise(OoCareer c, string kind, string from, string to, decimal amount, string reason, string reference, bool needsGameClosed)
     {
         if (amount <= 0) return;
@@ -275,4 +296,13 @@ public static class Ledger
     }
 }
 
-public record DeliverRequest(int Day, string? Time, double? Odometer);
+/// <summary>
+/// The close-out. Day, time and odometer are all that is required; the rest is what the company-driver app's close-out
+/// asks that an owner/operator still has: the clocks as you arrived, the dock times where the log does not have them,
+/// when they really took you, a late's reason and whose it was, cargo damage, fuel and a note. Times are full stamps.
+/// </summary>
+public record DeliverRequest(int Day, string? Time, double? Odometer,
+    double? Drive = null, double? Shift = null, double? Break = null, double? Cycle = null,
+    string? TookYou = null, string? Released = null, bool? UnloadAlreadyRan = null,
+    double? LoadingHours = null, double? UnloadingHours = null, double? DetentionHours = null,
+    string? DelayReason = null, string? Fault = null, double? CargoDamagePct = null, double? FuelPct = null, string? Notes = null);
