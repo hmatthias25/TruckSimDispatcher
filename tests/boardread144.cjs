@@ -22,7 +22,7 @@ let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? ' -- ' + d : ''}`); } else { fail++; console.log(`  FAIL  ${l}${d ? ' -- ' + d : ''}`); } };
 const head = (t) => console.log(`\n=== ${t} ===`);
 
-const SRC = fs.readFileSync(path.join(__dirname, '..', 'Services', 'AiService.cs'), 'utf8');
+const SRC = fs.readFileSync(path.join(__dirname, '..', 'Core', 'Services', 'AiService.cs'), 'utf8');
 
 /**
  * The body of one method, so an assertion cannot accidentally read a different one.

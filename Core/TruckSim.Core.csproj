@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What the company-driver app and the owner/operator app share: the career model, hours-of-service
+       planning, routing, ferries, road distances, the board and the trip log. See docs/owner-operator-plan.md.
+
+       Moved here whole as the first step of the extraction, so the company-driver app's behaviour cannot
+       change underneath it. Company-only services come back out to the app one at a time, with the test
+       suite run at each step. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TruckSim.Core</AssemblyName>
+    <!-- The namespaces are the company-driver app's, unchanged by the move. Renaming them is churn for later. -->
+    <RootNamespace>TruckSimDispatcher</RootNamespace>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TruckSimDispatcher" />
+    <InternalsVisibleTo Include="TruckSimOwnerOperator" />
+  </ItemGroup>
+
+  <!-- The data tables live with the code that reads them: Geo and RoadTable load these from their own
+       assembly. Kept in data-embedded/ at the repo root, where the tools that build them write. -->
+  <ItemGroup>
+    <!-- Real US city coordinates, so distances are measured rather than guessed. MIT, attributed
+         in the file header and in the credits. -->
+    <EmbeddedResource Include="..\data-embedded\us-cities.txt" LogicalName="data/us-cities.txt" />
+    <!-- And Canada, for the map mods that go there. CC BY 4.0, attributed the same way. -->
+    <EmbeddedResource Include="..\data-embedded\ca-cities.txt" LogicalName="data/ca-cities.txt" />
+    <!-- European coordinates for ETS2 careers, from GeoNames (CC BY 4.0). Built for #269. -->
+    <EmbeddedResource Include="..\data-embedded\eu-cities.txt" LogicalName="data/eu-cities.txt" />
+    <!-- Road distances between the ETS2 and ProMods cities, measured on real roads: OSRM over OpenStreetMap
+         (ODbL), attributed in the file header. Built by tools/ets2-data/build_roads.py. -->
+    <EmbeddedResource Include="..\data-embedded\eu-roads.txt" LogicalName="data/eu-roads.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Anthropic" Version="12.40.0" />
+  </ItemGroup>
+
+</Project>

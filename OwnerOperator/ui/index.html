@@ -1,0 +1,85 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TruckSim Owner-Operator</title>
+<link rel="stylesheet" href="/styles.css">
+
+<div id="boot" class="boot">Starting up…</div>
+
+<!-- ============================================================ FIRST SCREEN -->
+<div id="start" class="hidden">
+  <div class="tape"></div>
+  <div class="wrap narrow">
+    <div class="hero">
+      <div class="hero-kicker">Owner-Operator</div>
+      <h1>Your truck, your authority</h1>
+      <p>Where home is, what the game's clock and odometer say, and the skills you have unlocked. That is all
+        it takes to plan the first load. Start the game on a fresh profile, and fill this in from it.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>The first screen</h2></div>
+      <div class="grid2">
+        <label>Game
+          <select id="st-game" disabled><option value="ATS">American Truck Simulator</option></select>
+          <span class="hint">ATS first. Euro Truck Simulator 2 follows.</span></label>
+        <label>Your name<input id="st-name" placeholder="e.g. Lincoln Hawk"></label>
+
+        <label class="span2">Home
+          <input id="st-home" list="st-cities" placeholder="Start typing a city, e.g. Kansas City, KS">
+          <datalist id="st-cities"></datalist>
+          <span class="hint">Where you live: the truck's home garage, and where it starts. On a fresh profile it is
+            the garage the game started you in.</span></label>
+
+        <label>Game day<input id="st-day" type="number" min="1" value="1">
+          <span class="hint">Off the game's clock. A new profile is Day 1.</span></label>
+        <label>Time of day<input id="st-time" placeholder="HH:MM" value="08:00"></label>
+
+        <label>Odometer<input id="st-odo" type="number" min="0" step="1" value="0">
+          <span class="hint">The truck's odometer in the game, so every mile is measured from the first load.</span></label>
+        <label>Driver level<input id="st-level" type="number" min="0" value="0">
+          <span class="hint">0 is fine. That is a fresh profile.</span></label>
+      </div>
+
+      <h3 class="subhead">Skills</h3>
+      <p class="hint">The points you have in each, 0 to 6. None is fine. The game hides jobs you have not unlocked,
+        and brokers will not book them.</p>
+      <div class="skillgrid">
+        <label>Long Distance<input id="st-ld" type="number" min="0" max="6" value="0"></label>
+        <label>High Value<input id="st-hv" type="number" min="0" max="6" value="0"></label>
+        <label>Fragile<input id="st-fr" type="number" min="0" max="6" value="0"></label>
+        <label>Just-In-Time<input id="st-jit" type="number" min="0" max="6" value="0"></label>
+      </div>
+      <label>ADR classes</label>
+      <div class="chkrow" id="st-adr"></div>
+
+      <h3 class="subhead">How hard</h3>
+      <div class="chkrow" id="st-preset"></div>
+      <p class="hint" id="st-preset-hint"></p>
+
+      <div class="row-actions"><button class="btn primary" id="st-go">Start the career</button></div>
+      <div id="st-error" class="callout hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ APP -->
+<div id="app" class="hidden">
+  <div class="tape"></div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark">O/O</div>
+      <div>
+        <div class="brand-name" id="brand-name"></div>
+        <div class="brand-sub" id="brand-sub"></div>
+      </div>
+    </div>
+    <div class="statstrip" id="stats"></div>
+    <div class="topbar-actions"><span class="verchip" id="ver"></span></div>
+  </header>
+  <nav class="tabs" id="tabs"></nav>
+  <main id="view" class="wrap"></main>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<script src="/app.js"></script>

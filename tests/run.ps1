@@ -33,6 +33,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $dll = Join-Path $root 'bin\Release\net10.0\win-x64\TruckSimDispatcher.dll'
+# Suites named oo-*.cjs test the owner/operator app: its own exe, and its own data folder variable.
+$ooDll = Join-Path $root 'OwnerOperator\bin\Release\net10.0\win-x64\TruckSimOwnerOperator.dll'
 $work = Join-Path $env:TEMP 'tsd-tests'
 
 $runStarted = Get-Date
@@ -49,6 +51,11 @@ try {
         if ($LASTEXITCODE -ne 0) {
             $out | Where-Object { $_ -match 'error' } | ForEach-Object { Write-Host $_ -ForegroundColor Red }
             throw 'build failed'
+        }
+        $out = dotnet build OwnerOperator\TruckSimOwnerOperator.csproj -c Release -r win-x64 --self-contained -v q --nologo 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $out | Where-Object { $_ -match 'error' } | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+            throw 'owner/operator build failed'
         }
     }
     if (-not (Test-Path $dll)) { throw "no binary at $dll - build first" }
@@ -179,12 +186,16 @@ try {
             New-Item -ItemType Directory -Path $data -Force | Out-Null
 
             $env:TSD_DATA_DIR = $data
+            $env:TSO_DATA_DIR = $data
+            # Whatever is running on this PC, the owner/operator app is told the game is closed.
+            $env:TSO_GAME_RUNNING = '0'
             $env:TSD_PORT = $port
+            $suiteDll = if ($suite.BaseName -like 'oo-*') { $ooDll } else { $dll }
 
             $log = Join-Path $work "$($suite.BaseName).server.log"
             $err = Join-Path $work "$($suite.BaseName).server.err"
             $server = Start-Process -FilePath 'dotnet' -PassThru -NoNewWindow `
-                -ArgumentList $dll, '--port', $port, '--no-browser' `
+                -ArgumentList $suiteDll, '--port', $port, '--no-browser' `
                 -RedirectStandardOutput $log -RedirectStandardError $err
 
             [void]$live.Add([pscustomobject]@{
@@ -249,7 +260,7 @@ try {
         $results += $r
     }
 
-    Remove-Item Env:\TSD_DATA_DIR, Env:\TSD_PORT -ErrorAction SilentlyContinue
+    Remove-Item Env:\TSD_DATA_DIR, Env:\TSO_DATA_DIR, Env:\TSO_GAME_RUNNING, Env:\TSD_PORT -ErrorAction SilentlyContinue
 
     $totalPass = ($results | Measure-Object -Property Pass -Sum).Sum
     $totalFail = ($results | Measure-Object -Property Fail -Sum).Sum

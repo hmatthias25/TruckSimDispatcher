@@ -1103,7 +1103,7 @@ public static class AiService
         public string Notes { get; set; } = "";
     }
 
-    private static string Describe(Exception ex) => ex switch
+    internal static string Describe(Exception ex) => ex switch
     {
         AnthropicUnauthorizedException => "API key rejected (401). Check the key in Settings — it must be an API key from console.anthropic.com, not your Claude subscription login.",
         AnthropicNotFoundException => "Model not found (404). Check the model ID in Settings.",

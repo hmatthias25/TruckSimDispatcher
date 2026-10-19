@@ -171,8 +171,8 @@ async function comeHome(day) {
   // field inside that form. So a home time with no change coming asked nothing at all, and the arrival
   // brief had no figure to work from. The days are wanted on every run to the yard.
   ok('the decision says to ask for the days on its own', /AskHomeDays/.test(
-    fs.readFileSync(path.join(__dirname, '..', 'Models', 'Models.cs'), 'utf8')), 'on the decision');
-  const eng = fs.readFileSync(path.join(__dirname, '..', 'Services', 'DispatchEngine.cs'), 'utf8');
+    fs.readFileSync(path.join(__dirname, '..', 'Core', 'Models', 'Models.cs'), 'utf8')), 'on the decision');
+  const eng = fs.readFileSync(path.join(__dirname, '..', 'Core', 'Services', 'DispatchEngine.cs'), 'utf8');
   const method = eng.slice(eng.indexOf('void AskAboutTrailersHome'), eng.indexOf('void AskAboutTrailersHome') + 2600);
   ok('and it is set before any of the trailer reasoning can return early',
     method.indexOf('AskHomeDays = true') < method.indexOf('ComingType(s) is not'), 'set first');

@@ -55,7 +55,7 @@ def find(cc, name):
 
 
 # The game's cities: the market table as the app has it.
-src = open(r'..\..\..\..\..\..\code\TruckSimDispatcher\TruckSimDispatcher\Services\Ets2Data.Generated.cs', encoding='utf-8').read() \
+src = open(r'..\..\..\..\..\..\code\TruckSimDispatcher\TruckSimDispatcher\Core\Services\Ets2Data.Generated.cs', encoding='utf-8').read() \
     if False else open(sys.argv[1], encoding='utf-8').read()
 i = src.index('MarketTable = """'); j = src.index('""";', i)
 game = [l.strip().split('|')[:2] for l in src[i:j].split('\n')[1:] if l.strip().count('|') >= 4]

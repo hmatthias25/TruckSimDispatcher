@@ -1,6 +1,6 @@
 # Owner/operator app: plan
 
-Status: **proposed**, written 2026-10-16 against v0.87 (`80649f9`), revised the same day around the GDC Companion App (v1.61.1), and on 2026-10-17 for the clearing account, broker personalities, specialist brokers, the Long Distance skill, the broker directory, reputation tiers, the first screen, home life, and skill and endorsement requirements; and on 2026-10-18 the leased-on start was dropped. Nothing here is built. Files and symbols named below are as they stood at that commit; check them before relying on this, because the code will have moved on.
+Status: **proposed**, written 2026-10-16 against v0.87 (`80649f9`), revised the same day around the GDC Companion App (v1.61.1), and on 2026-10-17 for the clearing account, broker personalities, specialist brokers, the Long Distance skill, the broker directory, reputation tiers, the first screen, home life, and skill and endorsement requirements; and on 2026-10-18 the leased-on start was dropped, brokers came to choose the job off the board, and the clearing account became Broker holding. Version 0.9 is being built from it. Files and symbols named below are as they stood at that commit; check them before relying on this, because the code will have moved on.
 
 ## The idea
 
@@ -32,7 +32,7 @@ What follows from it:
 
 - **This app never posts fuel, repairs, insurance, hotels, meals, tolls or loan payments.** If both apps did, every one of them would be counted twice.
 - **This app never moves money itself.** It says what should move, between which accounts, and when; the player moves it with the Companion App's own transfer interface and tells this app it is done (see [Two banks](#two-banks)).
-- **The game bank holds only money the player can spend.** Pay the game hands over at delivery is not the player's until the broker pays, so it is moved out to a clearing account in the Companion App.
+- **The game bank holds only money the player can spend.** Pay the game hands over at delivery is not the player's until the broker pays, so all of it is moved out to a **Broker holding** account in the Companion App. The app tracks what the player is allowed to spend meanwhile.
 - **Costs come from the Companion App**: the all-in cost per km every load is judged on is worked out from its records, not from this app's own model.
 - **Clocks come from the Companion App** where it can tell us: it tracks hours of service live, so the driver should not have to type them in.
 
@@ -133,8 +133,9 @@ Walked through on screen the first time, step by step:
 
 1. **In the game**, at the home garage, open the **Freight Market** and screenshot the home city's board. With no trailer it is the Freight Market, not the Cargo Market, which needs a trailer of your own.
 2. **Give the screenshot to the app.** It reads the jobs as it does now.
-3. **Call a starter broker** from the directory who works your home city. The board's jobs come up as spot loads, and the call books one.
-4. **Take that job in the game.** The app plans it like any other.
+3. **Call a starter broker** from the directory who works your home city. **The broker reads the board and makes the offer:** which job, and at what rate. A starter broker offers a rookie what is left over (see [Spot loads off the board](#spot-loads-off-the-board)).
+4. **Negotiate, take it, or try another broker.** The ranked board stays on screen as your own view of what is really on offer, so you can see what you are being handed.
+5. **Take that job in the game.** The app plans it like any other.
 
 From the second load on, the phone rings before delivery with the next one, and the home-city board is only needed again when you are home.
 
@@ -261,9 +262,19 @@ A **rate confirmation** for a lane, for example:
 - **Call to renegotiate:** take the nearest fit, at a rate worked out on the call.
 - **The broker cancels.** A reliable broker pays the cancellation fee (truck ordered not used, TONU); a flaky one leaves you with nothing — which is why reliability matters.
 
-### Where you already are
+### Spot loads off the board
 
-The current flow stays as the base: the dock you are standing at, then the city board. Those jobs can be booked as **spot loads** through a broker on the spot, with no deadhead to plan. It always works, whatever lanes are on offer.
+The current flow stays as the base: the dock you are standing at, then the city board. Those jobs are booked as **spot loads** through a broker on the spot, with no deadhead to plan. It always works, whatever lanes are on offer, and it is how every career starts.
+
+**The broker chooses the job, not the player.** Paste the board, call a broker, and they read it and offer one of its jobs at their rate. Which one depends on who you are to them:
+
+- **Starter brokers offer the leftovers**: the weaker-paying jobs, tight windows, destinations in thin markets. A new authority does not get the best freight on the board, even though the player can see it.
+- **Established brokers offer from the middle**, and **premium** ones from the top.
+- **Only what you can run.** A broker never offers a job past your Long Distance limit, one that needs a skill you lack, or one the plan says cannot make its window.
+- **"Anything better?"** can be asked once. A broker who likes you may find another job; a starter broker usually says take it or leave it, and the asking costs patience.
+- **The rate is the broker's**: the game's pay less their margin, and the margin is widest at the starter tier. The call negotiates it within the limits the app sets (see [Phone calls](#phone-calls)).
+
+The ranked board stays on screen beside the call as the player's own view, so an offer can be judged against what else was there. That is the gap a better record closes.
 
 ### Generalists, specialists and the shippers themselves
 
@@ -341,7 +352,7 @@ A new authority cannot ring a big shipper and ask for freight. Nobody books an u
 
 | Tier | Who | Takes on | What you get |
 |---|---|---|---|
-| Starter | Brokers who work with new authorities | Anyone with an authority | Rates at the bottom of the band; leftover loads, short notice, tight windows; lanes into thin markets you have to deadhead out of; slower pay and more arguments over detention |
+| Starter | Brokers who work with new authorities | Anyone with an authority | Rates at the bottom of the band; off a pasted board, the leftover jobs rather than the best; short notice, tight windows; lanes into thin markets you have to deadhead out of; slower pay and more arguments over detention |
 | Established | Most general and specialist brokers | A record: some months with your authority, a few dozen loads, on time | Fair rates, normal terms, better destinations |
 | Premium | Contract desks and the shippers themselves | A long, clean record, and standing with them in particular | Regular lanes, the best rates, quick pay, no broker margin from a shipper |
 
@@ -434,31 +445,33 @@ There are two banks, and the Companion App already moves money between them in b
 
 - **The game bank**: the balance in ATS or ETS2. **Kept to money the player can spend.** The game pays a job's figure into it at delivery, and takes in-game spending out of it.
 - **The Companion App bank** (Nexora), which holds several accounts. An owner/operator career uses two:
-  - **Freight clearing**: the game's pay for each delivery, which is the shipper's money passing through. None of it is the player's until the broker pays.
-  - **The business account**: the business's own money, with the ledger behind it.
+  - **Broker holding**: the game's pay for each delivery, all of it, which is the shipper's money passing through. None of it is the player's until the broker pays.
+  - **Your account**: the player's own money, with the ledger behind it.
 
 The owner/operator app never touches any of them. It works out **what should move, between which accounts, and when**; the player does it through the Companion App's transfer screen and tells this app it is done.
+
+### What the app keeps track of
+
+1. **What you are allowed to spend.** The game bank balance, as the player last read it, kept current since: up by each delivery's pay, down by each move to Broker holding marked done. Less the delivery pay still waiting to move, that is what the player may spend in the game. Spending in the game is not seen, so the player reads the balance again after spending.
+2. **What has to move to Broker holding**, with the game closed, and whether the player has marked it done.
+3. **What you can move out of Broker holding**, once a broker pays: the booked rate, into your account. The rest of that load's pay is the broker's share and stays in Broker holding.
 
 ### Transfers wait for the game to close
 
 The Companion App can only move money into or out of the game bank while ATS or ETS2 is closed. So:
 
 - **Every transfer this app asks for is pending until the player marks it done.** The list carries over between sessions and is the first thing shown when the app opens.
-- **Until it moves, the app says how much of the game balance is not yours:** "€14,200 in the ATS bank; €5,100 of it is shipper money waiting to go to Freight clearing." Anything that budgets the game bank (fuel, a repair, a truck) counts only the rest.
-- **The app can check whether the game is running**, since both are on the same PC, and offer the transfers once it is not.
+- **Until it moves, "allowed to spend" leaves it out:** "$14,200 in the ATS bank; $5,100 of it is shipper money waiting to go to Broker holding. You may spend $9,100." Anything that budgets the game bank (fuel, a repair, a truck) counts only that.
+- **The app checks whether the game is running**, since both are on the same PC, and the "moved it" button waits for it to close.
 - **Marking a transfer done is the player's word.** Once the Companion App link exists (open question 2), it can be checked against the balances.
 
 ### A broker load through the accounts
 
-1. **Delivery.** The game pays the job's figure into the game bank. The app adds a pending transfer: move it to Freight clearing.
-2. **Game closed, money moved.** The player moves it in the Companion App and marks it done here. The game bank is back to the player's own money.
+1. **Delivery.** The game pays the job's figure into the game bank. The app raises a pending move: all of it to Broker holding.
+2. **Game closed, money moved.** The player moves it in the Companion App and marks it done here. The game bank is back to money the player can spend.
 3. **The broker's terms run.** The invoice sits in this app's receivables until it is due (net 30, or sooner with quick pay or factoring).
-4. **Paid.** Move the booked amount from Freight clearing to the business account: "Hegel Logistics paid invoice 0041: move €2,150 from Freight clearing to the business account." This does not involve the game bank, so it should not need the game closed.
-5. **Square the load.** Each load should leave Freight clearing at zero:
-   - **The game paid more** (the usual case: the broker kept a margin). What is left is the broker's, and comes out of Freight clearing without becoming your income.
-   - **The game paid less** (you negotiated above the game's pay). Freight clearing is short, and the difference has to be put in from outside the game.
-
-How step 5 is recorded depends on what the Companion App allows; see open question 1.
+4. **Paid.** The app says how much the player can move out of Broker holding into their account: "Hegel Logistics paid invoice 0041: move $2,150 out of Broker holding into your account. The other $350 of the load's pay is the broker's share: leave it in Broker holding." This does not involve the game bank, so it should not need the game closed.
+5. **Never above the game's pay.** A broker's rate is capped at what the game pays for the job, so the load's pay always covers it. Negotiating claws back the broker's margin and nothing more.
 
 ### The other way
 
@@ -474,7 +487,7 @@ The Companion App moves money back to the game when the game needs it: to buy fu
 - **Live hours-of-service clocks**, so the driver does not type them in.
 - **The driver's home**, for home time and backhauls.
 
-**Moves between the accounts**, done by the player through the Companion App's transfer interface on this app's word, and marked done here: each delivery's pay out of the game bank into Freight clearing, paid invoices on to the business account, cancellation fees, factoring fees and advances, and squaring each load. See [Two banks](#two-banks).
+**Moves between the accounts**, done by the player through the Companion App's transfer interface on this app's word, and marked done here: each delivery's pay out of the game bank into Broker holding, a paid invoice's rate out of Broker holding into your account, cancellation fees, factoring fees and advances. See [Two banks](#two-banks).
 
 **How:** the Companion App's v1.61.1 release notes describe no export, API or data format. It reads game saves and telemetry, writes game files through a runtime mod, and keeps its own records. The options, best first:
 
@@ -496,7 +509,7 @@ At some point the owner/operator hires a driver. The Companion App already handl
 | 0 | **Core extraction** | Planning, routing, game data and the board into a class library; the company-driver app on top of it; the full test suite green at every step |
 | 1 | **Owner/operator skeleton** | The first screen and the first-load walkthrough; the presets and the recommended nest egg; the home-time promise and home life, with backhauls planned toward home; board import, spot loads booked through a starter broker on the counter-offer box, profit ranking on a typed-in cost per km, the trip lifecycle from Core |
 | 2 | **Brokers** | The broker directory; skill and endorsement requirements; the carrier record and the starter tier; the Long Distance limit as a setting that every lane respects; a roster of general and specialist brokers, with their personalities as negotiation rules; lane offers from discovered cities, rate confirmations, matching the pickup board to the booking, invoices and payment terms |
-| 3 | **Getting paid** | Freight clearing; pending transfers that wait for the game to close and are marked done by the player; receivables, factoring, collections, the cash forecast |
+| 3 | **Getting paid** | Broker holding and "allowed to spend"; pending transfers that wait for the game to close and are marked done by the player; receivables, factoring, collections, the cash forecast |
 | 4 | **Companion App link** | The adapter: costs, balance, truck status and clocks read; money written. Depends on open question 2 |
 | 5 | **Relationships and calls** | Dates at home and the call from home; broker scores, the established and premium tiers, inbound calls, regular lanes; the shippers themselves, on the dedicated-account pattern (which companies: ask first); the AI phone calls in each broker's personality over the phase 2 negotiation rules, then optional voice |
 | 6 | **Growth** | A second truck and driver, the freight side from the company-driver app's fleet code |
@@ -505,7 +518,7 @@ Phase 1 runs on a typed-in cost per km and typed-in clocks, so the link does not
 
 ## Open questions
 
-1. **How is each load squared in Freight clearing?** (See [Two banks](#two-banks).) The broker's margin has to leave the account without arriving as income, and a rate negotiated above the game's pay has to be topped up from somewhere. It depends on what the Companion App's ledger allows: a withdrawal recorded as the broker's share, and a deposit recorded as revenue.
+1. ~~**What happens to the brokers' share in Broker holding?**~~ Decided 2026-10-18: it stays in Broker holding, and rates are capped at the game's pay, so nothing ever has to come in from outside. (See [Two banks](#two-banks).)
 2. **How does the Companion App expose its data?** An export, a local file, an API, nothing? This decides whether phase 4 is a live link, an import, or typing.
 3. **How long is "net 30" in game time?** Thirty game days is a long time at the game's pace. Payment terms may need scaling so cash flow matters without being tedious.
 4. **How tight should a lane fit be?** A ±20% distance band and a named region are a guess. Too tight and nothing fits at the pickup; too loose and booking means nothing.

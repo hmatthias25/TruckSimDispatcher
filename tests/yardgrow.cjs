@@ -137,7 +137,7 @@ async function prosperUntilItAsks(count, day0) {
   // "It already has one everywhere it runs" is a different fact and sends the player looking in the
   // wrong place. The two cases are told apart.
   const js = fs.readFileSync(path.join(__dirname, '..', 'ui', 'app.js'), 'utf8');
-  const cs = fs.readFileSync(path.join(__dirname, '..', 'Services', 'CompanyHealth.cs'), 'utf8');
+  const cs = fs.readFileSync(path.join(__dirname, '..', 'Core', 'Services', 'CompanyHealth.cs'), 'utf8');
   ok('the expansion filter is discovery-gated', /DiscoveryService\.IsDiscovered\(s, c\.City, c\.State\)/.test(cs),
     'gated');
   ok('and an empty list distinguishes "not been there" from "have them all"',

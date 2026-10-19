@@ -50,7 +50,7 @@ const dist = (a, sa, b, sb) => api(`/geo/distance?cityA=${encodeURIComponent(a)}
   }
 
   head('4. Every game city has coordinates');
-  const src = fs.readFileSync(path.join(__dirname, '..', 'Services', 'Ets2Data.Generated.cs'), 'utf8');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'Core', 'Services', 'Ets2Data.Generated.cs'), 'utf8');
   const i = src.indexOf('MarketTable = """');
   const rows = src.slice(i, src.indexOf('""";', i)).split('\n').slice(1).map((l) => l.trim().split('|')).filter((r) => r.length >= 5 && r[1].length === 2);
   const missing = [];

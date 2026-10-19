@@ -8,7 +8,7 @@ Distances come from OSRM (https://project-osrm.org/) over OpenStreetMap data, ©
 ODbL (https://www.openstreetmap.org/copyright). The public demo server routes by land where it can: the long sea
 crossings the app plans for itself are not in these figures (checked: Travemünde to Helsinki comes back 2,898 km by
 road, no ferry). The game's roads are not the real ones, so a figure here is an estimate the trip log corrects as
-loads are driven (Services/RoadLearning).
+loads are driven (Core/Services/RoadLearning).
 
 Run from tools/ets2-data:  python build_roads.py
 Writes ../../data-embedded/eu-roads.txt. About a hundred requests to the demo server, a second apart.
@@ -33,7 +33,7 @@ def norm(name):
 
 
 def game_cities():
-    text = open(f'{ROOT}/Services/Ets2Data.Generated.cs', encoding='utf-8').read()
+    text = open(f'{ROOT}/Core/Services/Ets2Data.Generated.cs', encoding='utf-8').read()
     seen, out = set(), []
     for m in re.finditer(r'^\s+([^|/\n]+)\|([A-Z]{2})\|\d\|\d\|', text, re.M):
         key = (m.group(2), norm(m.group(1)))
