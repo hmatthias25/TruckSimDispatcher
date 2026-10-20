@@ -24,6 +24,8 @@ public class Booking
     /// <summary>What the game pays at delivery: the shipper's money passing through.</summary>
     public decimal GamePay { get; set; }
     public bool QuickPay { get; set; }
+    /// <summary>The broker's quick-pay fee, in percent, where quick pay was agreed: it comes off the invoice.</summary>
+    public decimal QuickPayFeePct { get; set; }
     public decimal DetentionPerHour { get; set; }
     public double DetentionAfterHours { get; set; }
     public int DaysToPay { get; set; }
@@ -401,9 +403,9 @@ public static class Calls
             var (k, r) = Price(c, b, p, call, load, ask, arguments);
             // A broker who trades terms, not rate, gives the terms and holds the figure.
             if (r.Situation == "norate")
-                return Reword(k, r with { Situation = "terms", Line = t == "quickpay" ? Templates.QuickPay(b, p, call.Offer) : Templates.Detention(b, p, call.Offer) });
+                return Reword(k, r with { Situation = "terms", Line = t == "quickpay" ? Templates.QuickPay(b, p, call.Offer, call.LaneId.Length > 0) : Templates.Detention(b, p, call.Offer) });
             if (r.Situation is "booked" or "moved" or "final")
-                return Reword(k, r with { Line = r.Line + " " + (t == "quickpay" ? Templates.QuickPayToo() : Templates.DetentionToo()) });
+                return Reword(k, r with { Line = r.Line + " " + (t == "quickpay" ? Templates.QuickPayToo(b, call.Offer, call.LaneId.Length > 0) : Templates.DetentionToo()) });
             // Caught out, or hung up on: no terms with that.
             if (t == "quickpay") call.QuickPay = false; else call.DetentionPerHour = 0;
             return (k, r);
@@ -537,7 +539,7 @@ public static class Calls
         if (t == "quickpay" && !call.QuickPay && easy)
         {
             call.QuickPay = true;
-            return Say(c, call, b, new BrokerReply("terms", Templates.QuickPay(b, p, call.Offer)));
+            return Say(c, call, b, new BrokerReply("terms", Templates.QuickPay(b, p, call.Offer, call.LaneId.Length > 0)));
         }
         if (t == "detention" && call.DetentionPerHour == 0 && easy)
         {
@@ -619,6 +621,7 @@ public static class Calls
             lane.Status = "Booked";
             lane.RatePerMile = Math.Round(rate / (decimal)Math.Max(1, lane.MidMiles), 2);
             lane.QuickPay = call.QuickPay;
+            lane.QuickPayFeePct = call.QuickPay ? b.QuickPayFeePct : 0;
             lane.DetentionPerHour = call.DetentionPerHour;
             call.Status = "Booked";
             call.Offer = rate;
@@ -640,6 +643,7 @@ public static class Calls
             Rate = rate,
             GamePay = call.GamePay,
             QuickPay = call.QuickPay,
+            QuickPayFeePct = call.QuickPay ? b.QuickPayFeePct : 0,
             DetentionPerHour = call.DetentionPerHour,
             DetentionAfterHours = call.DetentionPerHour > 0 ? 2 : 0,
             DaysToPay = call.QuickPay ? 2 : b.DaysToPay,
@@ -693,7 +697,9 @@ public static class Calls
             lane = c.Lanes.FirstOrDefault(l => l.Id == call.LaneId) is { } ln ? Lanes.View(c, ln) : null,
             // How the broker sounds, not how many rounds are left: the count is the app's to know.
             mood = call.Patience >= 3 ? "relaxed" : call.Patience == 2 ? "getting short" : "losing patience",
-            call.QuickPay, call.DetentionPerHour, call.AskedForBetter, call.FinalOffer, call.ListingLeftHours, call.CheckPosition,
+            call.QuickPay, quickPayFeePct = b?.QuickPayFeePct ?? 0,
+            quickPayNet = call.QuickPay && b != null ? Templates.Net(call.Offer, b.QuickPayFeePct) : (decimal?)null,
+            call.DetentionPerHour, call.AskedForBetter, call.FinalOffer, call.ListingLeftHours, call.CheckPosition,
             call.Turns, call.BookingId,
         };
     }

@@ -108,16 +108,26 @@ public static class Templates
     public static string NoRate(Broker b, Personality p, decimal offer) =>
         $"I'm not able to adjust the rate, it stays at {M(offer)}. I could look at quick pay, or detention terms.";
 
-    public static string QuickPay(Broker b, Personality p, decimal offer) => Pick(p,
-        ("Corporate", $"I can offer quick pay at no fee. The rate remains {M(offer)}."),
-        ("", $"Fine, I'll put you on quick pay. Still {M(offer)}."));
+    /// <summary>The rate less a quick-pay fee.</summary>
+    public static decimal Net(decimal rate, decimal feePct) => Math.Round(rate * (1 - feePct / 100m), 2);
+
+    /// <summary>Quick pay agreed: the fee said, and what it leaves. On a lane, off whatever the job for it pays.</summary>
+    public static string QuickPay(Broker b, Personality p, decimal offer, bool lane = false) => lane
+        ? Pick(p,
+            ("Corporate", $"Quick pay is available at a {b.QuickPayFeePct:0.#}% fee, off whatever the job pays, within two days. The rate remains {M(offer)}."),
+            ("", $"Fine, quick pay. It's {b.QuickPayFeePct:0.#}% off whatever the job pays, in two days. Still {M(offer)}."))
+        : Pick(p,
+            ("Corporate", $"Quick pay is available at a {b.QuickPayFeePct:0.#}% fee: {M(Net(offer, b.QuickPayFeePct))} within two days, on a rate of {M(offer)}."),
+            ("", $"Fine, quick pay. It's {b.QuickPayFeePct:0.#}%, so {M(Net(offer, b.QuickPayFeePct))} in two days on the {M(offer)}."));
 
     public static string Detention(Broker b, Personality p, decimal offer) => Pick(p,
         ("Corporate", $"Detention at $40 an hour after two hours can be added. The rate remains {M(offer)}."),
         ("Hustler", $"Sure, sure, detention, forty after two. {M(offer)}."),
         ("", $"Detention at forty an hour after two. Rate's still {M(offer)}."));
 
-    public static string QuickPayToo() => "And quick pay, you've got it.";
+    public static string QuickPayToo(Broker b, decimal rate, bool lane = false) => lane
+        ? $"And quick pay, {b.QuickPayFeePct:0.#}% off whatever the job pays."
+        : $"And quick pay: {b.QuickPayFeePct:0.#}%, so {M(Net(rate, b.QuickPayFeePct))} in two days.";
     public static string DetentionToo() => "And detention at forty an hour after two.";
     public static string NotThoseTerms(string term) =>
         term == "quickpay" ? "Quick pay's not something I can do on this one." : "I can't add detention on this one.";

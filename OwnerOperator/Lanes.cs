@@ -35,6 +35,7 @@ public class Lane
     public string LeanedFor { get; set; } = "";
     /// <summary>Terms agreed on the call that booked the lane, carried onto the job taken for it.</summary>
     public bool QuickPay { get; set; }
+    public decimal QuickPayFeePct { get; set; }
     public decimal DetentionPerHour { get; set; }
     /// <summary>Offered, Booked, Matched, Cancelled or Expired.</summary>
     public string Status { get; set; } = "Offered";
@@ -484,6 +485,7 @@ public static class Lanes
             GamePay = v.Load.GameRevenue,
             // The terms agreed on the lane's call. Reported from play: quick pay agreed on a lane, then lost on the job.
             QuickPay = lane.QuickPay,
+            QuickPayFeePct = lane.QuickPay ? lane.QuickPayFeePct : 0,
             DetentionPerHour = lane.DetentionPerHour,
             DetentionAfterHours = lane.DetentionPerHour > 0 ? 2 : 0,
             DaysToPay = lane.QuickPay ? 2 : broker.DaysToPay,

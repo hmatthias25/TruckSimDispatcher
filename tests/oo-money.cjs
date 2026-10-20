@@ -51,7 +51,9 @@ async function bookOne(S) {
   r = await api('/deliver', 'POST', { day: 3, time: '12:00', odometer: 1000 + k.load.loadedMiles });
   S = r.snapshot;
   const inv = r.invoice;
-  ok('an invoice for the booked rate', inv.amount === k.rate && inv.number === 'INV-001', `${inv.amount} vs ${k.rate}`);
+  // Quick pay was agreed above, so the broker's fee comes off the rate.
+  const net = Math.round((k.rate - Math.round(k.rate * k.quickPayFeePct) / 100) * 100) / 100;
+  ok('an invoice for the booked rate, less the quick-pay fee', Math.abs(inv.amount - net) < 0.01 && inv.quickPayFee > 0 && inv.number === 'INV-001', `${inv.amount} vs ${k.rate} less ${k.quickPayFeePct}%`);
   ok('due on the broker\'s terms', inv.dueGameTime > inv.issuedGameTime, `${inv.issuedGameTime} -> ${inv.dueGameTime}`);
   ok('the truck is at the receiver', S.status.city === k.load.destCity, S.status.city);
   ok('the record counts it, on time', S.record.loads === 1 && S.record.onTimePct === 100, JSON.stringify(S.record));
@@ -66,7 +68,7 @@ async function bookOne(S) {
   ok('allowed to spend is unknown until the balance is read', S.gameBank.allowedToSpend === null);
   S = await api('/bank', 'POST', { balance: 5000 + k.gamePay });
   ok('read with the delivery in it, the shipper money is not spendable', S.gameBank.allowedToSpend === 5000, `${S.gameBank.allowedToSpend}`);
-  ok('owed to you', S.owedToYou === k.rate);
+  ok('owed to you', Math.abs(S.owedToYou - net) < 0.01);
   S = await api(`/transfers/${toHold.id}/done`, 'POST');
   ok('moved: nothing in the game bank that is not yours', S.gameBank.notYours === 0 && S.transfers.find((t) => t.id === toHold.id).status === 'Done');
   ok('and the game bank is what you can spend', S.gameBank.estimate === 5000 && S.gameBank.allowedToSpend === 5000, `${S.gameBank.estimate}`);
@@ -79,14 +81,14 @@ async function bookOne(S) {
   const paid = S.invoices.find((i) => i.id === inv.id);
   ok('paid', paid.status === 'Paid', paid.status);
   const toYou = S.transfers.find((t) => t.kind === 'ToYou');
-  ok('the rate is yours to move out of Broker holding into your account', toYou && toYou.amount === k.rate && toYou.from === 'Broker holding' && toYou.to === 'Your account',
+  ok('the rate is yours to move out of Broker holding into your account', toYou && Math.abs(toYou.amount - net) < 0.01 && toYou.from === 'Broker holding' && toYou.to === 'Your account',
     JSON.stringify(toYou && { a: toYou.amount, f: toYou.from, t: toYou.to }));
   ok('which does not wait for the game', toYou.needsGameClosed === false);
   ok('and it says the rest is the broker\'s share, left in holding', /broker's share/.test(toYou.reason), toYou.reason);
   ok('nothing else to move', !S.transfers.some((t) => t.status === 'Pending' && t.id !== toYou.id));
-  ok('yours to move out is the rate', S.holding.yoursToMove === k.rate);
+  ok('yours to move out is the rate, less the fee', Math.abs(S.holding.yoursToMove - net) < 0.01);
   S = await api(`/transfers/${toYou.id}/done`, 'POST');
-  ok('moved: holding keeps the broker\'s share', Math.abs(S.holding.balance - (k.gamePay - k.rate)) < 0.01 && Math.abs(S.holding.brokersShare - (k.gamePay - k.rate)) < 0.01,
+  ok('moved: holding keeps the broker\'s share', Math.abs(S.holding.balance - (k.gamePay - net)) < 0.01 && Math.abs(S.holding.brokersShare - (k.gamePay - net)) < 0.01,
     `${S.holding.balance} ${S.holding.brokersShare}`);
   ok('the game bank is untouched by it', S.gameBank.estimate === 5000);
   ok('nothing owed now', S.owedToYou === 0);

@@ -1364,7 +1364,10 @@ function phoneView() {
   const turns = (c.turns || []).map((t) => `<div class="turn ${t.who}"><b>${t.who === 'broker' ? esc(c.rep) : 'You'}:</b> ${esc(t.text)}</div>`).join('');
   return `<div class="panel phone">
     <div class="panel-head"><h2>On the phone: ${esc(c.rep)}, ${esc(c.broker)}</h2>
-      <span class="badge ${open ? 'warn' : c.status === 'Booked' ? 'ok' : 'mute'}">${open ? esc(c.mood) : esc(c.status)}</span></div>
+      <span class="badge ${open ? 'warn' : c.status === 'Booked' ? 'ok' : 'mute'}">${open ? esc(c.mood) : esc(c.status)}</span>
+      ${c.quickPay ? `<span class="badge ok" title="Quick pay agreed: paid in two days, less the broker's fee">Quick pay ✓ ${c.quickPayFeePct}%${
+        c.quickPayNet != null && !c.lane ? `: ${money(c.quickPayNet)}` : ''}</span>` : ''}
+      ${c.detentionPerHour ? `<span class="badge ok" title="Detention agreed: per hour after two hours at a dock">Detention ✓ ${money(c.detentionPerHour)}/h</span>` : ''}</div>
     ${c.lane && open ? `<div class="figs">
       <div><div class="k">Offer</div><div class="money">${money(c.offer)}</div></div>
       <div><div class="k">Pick up</div><div class="money">${esc(c.lane.pickupCity)}, ${esc(c.lane.pickupState)}</div></div>
@@ -1402,7 +1405,7 @@ function phoneView() {
           title="No penalty: they drop it and offer the next. Only you know where you really are.">Can't make it in time${
           c.listingLeftHours != null ? ` (${hhmm(c.listingLeftHours)} left)` : ''}</button>` : ''}
         <button class="btn ghost" data-move="better">Anything better?</button>
-        <button class="btn ghost" data-move="quickpay">Quick pay?</button>
+        <button class="btn ghost" data-move="quickpay" title="Paid in two days, less their ${c.quickPayFeePct}% fee">Quick pay?</button>
         <button class="btn ghost" data-move="detention">Detention?</button>
         <button class="btn danger" data-move="decline">Pass</button>
       </div>` : ''}
@@ -1492,7 +1495,7 @@ function moneyView() {
   <div class="panel"><div class="panel-head"><h2>Owed to you</h2><span class="sub">${money(S.owedToYou)} outstanding</span></div>
     ${inv.length ? `<div class="tablewrap"><table class="grid"><thead><tr><th>Invoice</th><th>Load</th><th>Broker</th><th>Rate</th><th>Detention</th><th>Game paid</th><th>Due</th><th>Status</th><th></th></tr></thead>
       <tbody>${inv.map((i) => `<tr><td>${esc(i.number)}</td><td>${esc(i.bookingNumber)}</td><td>${esc(i.brokerName)} <span class="hint">${esc(i.credit)}</span></td>
-        <td>${money(i.amount)}</td>
+        <td>${money(i.amount)}${i.quickPayFee ? `<div class="hint">quick pay, ${money(i.quickPayFee)} fee</div>` : ''}</td>
         <td>${i.detentionAmount ? `${money(i.detentionAmount)} <span class="hint">${esc(i.detentionStatus)}</span>` : ''}</td>
         <td>${money(i.gamePay)}</td><td>${esc(gt(i.dueGameTime))}</td>
         <td><span class="badge ${i.status === 'Paid' ? 'ok' : i.status === 'WrittenOff' ? 'bad' : 'warn'}">${esc(i.status)}</span></td>

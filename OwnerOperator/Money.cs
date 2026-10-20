@@ -29,6 +29,8 @@ public class Invoice
     /// <summary>Sent to collections: paid, if at all, at half.</summary>
     public bool Collected { get; set; }
     public decimal FactorFee { get; set; }
+    /// <summary>The quick-pay fee taken off the rate: the broker's, for paying in days.</summary>
+    public decimal QuickPayFee { get; set; }
 
     /// <summary>Detention agreed on the call, billed from the dock times logged. Billed, Disputed, Granted, Denied or Factored.</summary>
     public double DetentionHours { get; set; }
@@ -153,7 +155,9 @@ public static class Ledger
             BookingNumber = k.Number,
             BrokerId = k.BrokerId,
             BrokerName = k.BrokerName,
-            Amount = k.Rate,
+            // Quick pay is paid for: the broker's fee off the rate. It stays in Broker holding, theirs.
+            Amount = k.Rate - QuickPayFee(k),
+            QuickPayFee = QuickPayFee(k),
             GamePay = k.GamePay,
             IssuedGameTime = s.Status.GameTime,
             DueGameTime = GameClock.Format(at.AddDays(Math.Max(1, k.DaysToPay))),
@@ -286,6 +290,9 @@ public static class Ledger
             allowedToSpend = c.GameBank.Estimate is { } e ? Math.Max(0, e - notYours) : (decimal?)null,
         };
     }
+
+    /// <summary>The quick-pay fee on a booking, in dollars: none where quick pay was not agreed, or agreed before it was charged.</summary>
+    public static decimal QuickPayFee(Booking k) => k.QuickPay ? Math.Round(k.Rate * k.QuickPayFeePct / 100m, 2) : 0;
 
     internal static void Raise(OoCareer c, string kind, string from, string to, decimal amount, string reason, string reference, bool needsGameClosed)
     {
