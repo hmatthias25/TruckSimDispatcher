@@ -437,12 +437,17 @@
 
   <h3>Credit ratings</h3>
   <table>
-    <tr><th style="width:12%">Credit</th><th>How they really pay</th></tr>
-    <tr><td>A</td><td>On the day.</td></tr>
-    <tr><td>B</td><td>A day or two late.</td></tr>
-    <tr><td>C</td><td>About a week late, sometimes more.</td></tr>
-    <tr><td>D</td><td>Two to three weeks late at best, and four times in ten not at all. Only starter brokers are D.</td></tr>
+    <tr><th style="width:12%">Credit</th><th>How they really pay</th><th style="width:38%">What they give for it</th></tr>
+    <tr><td>A</td><td>On the day.</td><td>&mdash;</td></tr>
+    <tr><td>B</td><td>A day or two late.</td><td>&mdash;</td></tr>
+    <tr><td>C</td><td>About a week late, sometimes more.</td><td>Keep 4 points less of the game's pay; quick pay while they have any patience left.</td></tr>
+    <tr><td>D</td><td>Two to three weeks late at best, and four times in ten not at all without collections. Only starter brokers are D.</td>
+      <td>Keep 9 points less of the game's pay; quick pay to anyone who asks. No factor buys their invoices.</td></tr>
   </table>
+  <p><b>Why take a D?</b> The money. A D broker pays well over the odds to get a truck at all, so a D load can leave you more
+    than a B one, if it is paid. Quick pay does not make them good for it: it brings the date forward, not the certainty.
+    Chase an overdue one (twice sends it to collections, for half). On the Brokers tab, hover a broker's credit for what it
+    means; under it is how that broker has really paid you: on time, late and by how much, to collections, never paid.</p>
 
   <h3>Personalities</h3>
   <p>Every broker has a fixed personality. It is not printed in the directory: you learn it from the calls.</p>
@@ -474,12 +479,12 @@
   <h3>Your moves</h3>
   <table>
     <tr><th style="width:22%">Move</th><th>What happens</th></tr>
-    <tr><td><span class="btn">Take it</span></td><td>Booked at the offer. Take the job in the game.</td></tr>
+    <tr><td><span class="btn">Take it</span></td><td>Booked at the offer. Take the job in the game. The board clears: the next one is read where this load ends.</td></tr>
     <tr><td><span class="btn">Counter</span></td><td>Ask for a figure, with arguments ticked. A broker moves towards it as far as
       their personality and margin allow; the true arguments buy more.</td></tr>
     <tr><td><span class="btn">Anything better?</span></td><td>Asks for a different job. Once per call. A friendly broker, or
       one you have standing with, may find one; a starter usually says take it or leave it.</td></tr>
-    <tr><td><span class="btn">Quick pay?</span></td><td>Paid in days rather than weeks, for the broker's quick-pay fee.</td></tr>
+    <tr><td><span class="btn">Quick pay?</span></td><td>Paid in days rather than weeks, for the broker's quick-pay fee. Ask in the same breath as a price if you like (&ldquo;$350 and quick pay&rdquo;): you get both, or they say no to the terms and the price waits for your yes, never booked without them. Terms agreed on a lane go onto the job you take for it.</td></tr>
     <tr><td><span class="btn">Detention?</span></td><td>$40 an hour after 2 hours waiting at either dock, billed from your log (Section 12).</td></tr>
     <tr><td><span class="btn">Pass</span></td><td>Ends the call. Nothing booked, no harm done.</td></tr>
     <tr><td><span class="btn">Can't make it in time</span></td><td>On any job a broker offers. <b>No penalty</b>: no patience, no standing.
@@ -571,13 +576,13 @@
   <table>
     <tr><th style="width:28%">Panel</th><th>When</th></tr>
     <tr><td><b>At the shipper?</b></td><td>When you pull in at the pickup, before you load or hook. The shipper's answer comes up: ready
-      now, or a time to set the game clock to, and why. Waiting on their property counts toward detention.</td></tr>
+      now, or a time to set the game clock to, and why: the freight late off the line, or a queue in the yard. Never shut: you took the job live off the board, so they are open for it at any hour. Waiting on their property counts toward detention.</td></tr>
     <tr><td><b>Report after loading</b></td><td>Hooked and leaving. <b>Type the odometer as it reads now</b>: the road to the receiver is
       learned off it. This is when the phone may ring.</td></tr>
     <tr><td><b>Trip log</b></td><td>Begin and end of loading and unloading (not on drop and hook), fuel, a break, a rest, a scale, a delay, a breakdown, or a note.
       A break and a rest open an end time at their standard length; type over it if you sat longer. Put the time you rolled
       again on a delay or a breakdown too.</td></tr>
-    <tr><td><b>At the receiver?</b></td><td>When you pull in, before you unload. Straight onto a door, or a time to set the clock to and the reason.</td></tr>
+    <tr><td><b>At the receiver?</b></td><td>When you pull in, before you unload. Straight onto a door, or a time to set the clock to and the reason. Inside the delivery window they <b>never hold you past it</b>: a site is open for the whole window whatever its usual hours, and whatever the line, the unload starts in time to finish by the close. Early, you wait for the window to open.</td></tr>
   </table>
   <figure><img src="img/triplog.png"><figcaption>The trip log beside the arrival and close-out panels.</figcaption></figure>
   <p>Typed a stamp wrong? Press <b>fix</b> on the entry to correct it or drop it. An AM/PM slip otherwise teaches the planner a
@@ -695,6 +700,12 @@
 
   <h3>When nothing fits</h3>
   <ul>
+    <li><b>The broker puts up the closest.</b> Where nothing on the board is in the band or the region, the lane says why
+      (&ldquo;its jobs run 273 to 640 mi&rdquo;) and the broker marks the three nearest runnable jobs out of the pickup instead,
+      <b>Closest for</b> the lane with what it pays: into the region first, then nearest the band. They pay the lane's rate
+      per mile on the job's own miles, never above the game's pay. Take one, or turn them all down with
+      <span class="btn">Nothing fits</span>.</li>
+    <li><b>Calling the lane's broker</b> gets the lane: they point you at the job for it, not another load off the board.</li>
     <li><b>Wait.</b> Game boards refresh. Take a break or a rest and paste the board again.</li>
     <li><span class="btn">Nothing fits</span> tells the broker. They cancel the lane, and a broker with A or B credit pays a
       <b>TONU</b> (truck ordered, not used) of $150. A poorer one pays nothing.</li>
@@ -1019,7 +1030,8 @@
   <h4>The game bank figure is wrong.</h4>
   <p>The app cannot see you spend in the game. Type the balance in again on the Money tab.</p>
   <h4>Nothing on the board fits my lane.</h4>
-  <p>Take a break or a rest and paste the board again; boards refresh. If still nothing, press <b>Nothing fits</b>.</p>
+  <p>The broker marks the closest jobs instead, at the lane's rate: take one. Or take a break or a rest and paste the board
+    again; boards refresh. If still nothing, press <b>Nothing fits</b>.</p>
   <h4>The planner thinks I am somewhere else.</h4>
   <p>Correct the city, time and clocks under <b>Where you are</b> on the Board, or under <b>From here</b> on the Active Load tab.</p>
   <h4>Can I bring my TruckSim Dispatcher career across?</h4>

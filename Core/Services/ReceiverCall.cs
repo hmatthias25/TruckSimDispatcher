@@ -54,8 +54,51 @@ public static class ReceiverCall
     /// <summary>
     /// Work out the call for a truck arriving now. Null where there is nothing to say — a dock that takes
     /// it straight off you with no wait needs no instruction.
+    /// <para><paramref name="keepToWindow"/> (the owner/operator app): the game's window is the receiver's word. A site is
+    /// open for the whole of it, whatever working day it is seeded with, and whatever the line or the hold-up, a truck
+    /// inside the window starts in time to be unloaded by its close. Reported from play: arrived at 00:50 inside a
+    /// 21:20-04:00 window and told to wait for an 08:00 opening, four hours past the delivery time.</para>
     /// </summary>
-    public static Call? Assess(AppState s, Trip trip, DateTime arrived)
+    public static Call? Assess(AppState s, Trip trip, DateTime arrived, bool keepToWindow = false)
+    {
+        var call = Judge(s, trip, arrived, keepToWindow);
+        return keepToWindow ? InsideTheWindow(trip, arrived, call) : call;
+    }
+
+    /// <summary>
+    /// Whatever held the truck, a start no later than the window allows: the close less the unload. Past the close on
+    /// arrival there is nothing to keep to.
+    /// </summary>
+    private static Call? InsideTheWindow(Trip trip, DateTime arrived, Call? call)
+    {
+        if (call == null || GameClock.TryParse(trip.DueGameTime) is not { } due || arrived >= due) return call;
+        if (GameClock.TryParse(call.WorkStartsGameTime) is not { } start) return call;
+        var latest = due.AddHours(-Math.Max(0, trip.UnloadingHours));
+        if (latest < arrived) latest = arrived;
+        if (start <= latest) return call;
+
+        var who = string.IsNullOrWhiteSpace(trip.Receiver) ? "They" : trip.Receiver.Trim();
+        var at = GameClock.Format(latest);
+        var wait = (latest - arrived).TotalHours;
+        call.WorkStartsGameTime = at;
+        call.WaitHours = Math.Round(wait, 2);
+        if (wait < 0.01)
+        {
+            call.Kind = "StraightIn";
+            call.Headline = "Inside the window: they take you now";
+            call.Instruction = $"{who} are busy, but you are inside their window and it has to come off before " +
+                               $"{GameClock.Pretty(trip.DueGameTime)}. Log Begin unload now and get it off.";
+            return call;
+        }
+        call.Headline = $"You wait — start at {GameClock.Pretty(at)}";
+        call.Instruction = $"{who} are busy, but you are inside their window and they get you on a door by " +
+                           $"{GameClock.Pretty(at)}, in time to have it off before {GameClock.Pretty(trip.DueGameTime)}. " +
+                           $"Set the game clock to {GameClock.Pretty(at)} and log Begin unload then, so the {Hhmm.Of(wait)} " +
+                           "lands on your clocks where it actually went.";
+        return call;
+    }
+
+    private static Call? Judge(AppState s, Trip trip, DateTime arrived, bool keepToWindow)
     {
         if (trip.Kind != "Freight") return null;
 
@@ -79,8 +122,9 @@ public static class ReceiverCall
         if (booked == null && opens is { } openAt && arrived < openAt)
             return BeforeTheyOpen(s, trip, arrived, openAt, isSite, seed);
 
+        // A site inside the game's window is open: the window is their day, and the line is the one since it opened.
         return isSite && booked == null
-            ? AtSite(s, trip, arrived, seed)
+            ? AtSite(s, trip, arrived, seed, keepToWindow ? opens : null)
             : AtDock(s, trip, arrived, booked, opens, seed);
     }
 
@@ -131,7 +175,7 @@ public static class ReceiverCall
     /// A job site: open or shut, and a line at the gate. Nobody booked you in, so the only questions are
     /// whether anyone is there and who got there first.
     /// </summary>
-    private static Call? AtSite(AppState s, Trip trip, DateTime arrived, string seed)
+    private static Call? AtSite(AppState s, Trip trip, DateTime arrived, string seed, DateTime? dayOpened = null)
     {
         var hours = FacilityProfile.SeededHours(s, trip.DestCity, trip.DestState, trip.Receiver);
         var peak = FacilityProfile.QueuePeakHours(s, trip.DestCity, trip.DestState, trip.Receiver);
@@ -140,6 +184,8 @@ public static class ReceiverCall
         var tod = arrived.TimeOfDay.TotalHours;
         var untilOpen = hours.OpenHour - tod;
         if (untilOpen < -12) untilOpen += 24;          // their opening is tomorrow morning
+        // Open since the window opened, where the window is their day (only reached at or after it).
+        if (dayOpened is { } since) untilOpen = -Math.Max(0, (arrived - since).TotalHours);
 
         double startsIn;
         int ahead;

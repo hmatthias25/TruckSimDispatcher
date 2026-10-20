@@ -33,6 +33,9 @@ public class Lane
     public string HomeCity { get; set; } = "";
     /// <summary>Set where the lane leans into a busy region: the freight that is busy there, in words.</summary>
     public string LeanedFor { get; set; } = "";
+    /// <summary>Terms agreed on the call that booked the lane, carried onto the job taken for it.</summary>
+    public bool QuickPay { get; set; }
+    public decimal DetentionPerHour { get; set; }
     /// <summary>Offered, Booked, Matched, Cancelled or Expired.</summary>
     public string Status { get; set; } = "Offered";
     public string BookingId { get; set; } = "";
@@ -405,6 +408,59 @@ public static class Lanes
              .ThenBy(v => Math.Abs(v.Load.LoadedMiles - lane.MidMiles))
              .ToList();
 
+    /// <summary>How many of the nearest jobs the broker puts up when nothing fits the lane exactly.</summary>
+    public const int CloseCount = 3;
+
+    /// <summary>
+    /// The jobs the lane can be taken on: the exact fits, or where there are none, the broker's nearest. A lane is the
+    /// broker's word on a kind of run, not a listing, and the game's board is what it is: reported from play, a lane of
+    /// 150-250 mi out of Lawton against a board whose shortest job was 273, and nothing to do but call it off. So the
+    /// broker finds the closest runnable jobs out of the pickup, into the region first, then nearest the band (or home),
+    /// at the lane's rate on the job's own miles.
+    /// </summary>
+    public static (List<LoadView> Jobs, bool Close) Matches(OoCareer c, Lane lane, List<LoadView> board)
+    {
+        var exact = Fits(c, lane, board);
+        if (exact.Count > 0) return (exact, false);
+        double Off(double miles) => miles < lane.MinMiles ? lane.MinMiles - miles : miles > lane.MaxMiles ? miles - lane.MaxMiles : 0;
+        var close = board
+            .Where(v => v.Load.OriginCity.Equals(lane.PickupCity, StringComparison.OrdinalIgnoreCase)
+                        && v.Load.OriginState.Equals(lane.PickupState, StringComparison.OrdinalIgnoreCase)
+                        && v.Feasibility.Verdict != "Infeasible" && v.SkillNotes.Count == 0
+                        && (lane.ShipperName.Length > 0 ? Companies.Is(c, lane.ShipperName, v.Load.Shipper)
+                            : lane.Specialty == Specialties.General || Specialties.Of(c, v.Load) == lane.Specialty))
+            .OrderBy(v => lane.HomeFor.Length > 0
+                ? Geo.MilesBetween(v.Load.DestCity, v.Load.DestState, c.Profile.HomeCity, c.Profile.HomeState) ?? 9999
+                : (Carriers.AtsRegionOf(v.Load.DestState) == lane.DestRegion ? 0 : 1) * 100000 + Off(v.Load.LoadedMiles))
+            .Take(CloseCount)
+            .ToList();
+        return (close, close.Count > 0);
+    }
+
+    /// <summary>The booked lane against the board, for the snapshot: the jobs it can be taken on, whether they are only near, and why.</summary>
+    public static (List<string> Fits, bool Close, string? Why) Board(OoCareer c)
+    {
+        if (!c.Started || Booked(c) is not { } lane) return (new(), false, null);
+        var board = LoadDesk.Evaluate(c);
+        var (jobs, close) = Matches(c, lane, board);
+        return (jobs.Select(v => v.Load.Id).ToList(), close, Why(c, lane, board));
+    }
+
+    /// <summary>Why nothing on the board fit the lane exactly, said once the board is in.</summary>
+    public static string? Why(OoCareer c, Lane lane, List<LoadView> board)
+    {
+        var here = board.Where(v => v.Load.OriginCity.Equals(lane.PickupCity, StringComparison.OrdinalIgnoreCase)
+                                    && v.Load.OriginState.Equals(lane.PickupState, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (here.Count == 0 || Fits(c, lane, board).Count > 0) return null;
+        if (lane.HomeFor.Length > 0) return $"Nothing on the {lane.PickupCity} board ends near home.";
+        var into = here.Count(v => Carriers.AtsRegionOf(v.Load.DestState) == lane.DestRegion);
+        var lo = here.Min(v => v.Load.LoadedMiles);
+        var hi = here.Max(v => v.Load.LoadedMiles);
+        return into == 0 ? $"Nothing on the {lane.PickupCity} board goes into the {lane.DestRegion}."
+            : $"Nothing on the {lane.PickupCity} board runs {lane.MinMiles:N0}-{lane.MaxMiles:N0} mi into the {lane.DestRegion}: " +
+              $"its jobs run {lo:N0} to {hi:N0} mi.";
+    }
+
     /// <summary>
     /// Taking a fitting job for the booked lane. The broker owes the lane rate on the job's miles, never above what the
     /// game pays for it, and the run opens as for any booking.
@@ -414,7 +470,7 @@ public static class Lanes
         var lane = Booked(c) ?? throw new InvalidOperationException("No lane is booked.");
         if (Calls.ActiveBooking(c) is { } busy) throw new InvalidOperationException($"Deliver {busy.Number} first.");
         var board = LoadDesk.Evaluate(c);
-        var v = Fits(c, lane, board).FirstOrDefault(x => x.Load.Id == loadId)
+        var v = Matches(c, lane, board).Jobs.FirstOrDefault(x => x.Load.Id == loadId)
                 ?? throw new InvalidOperationException($"That job does not fit {lane.Number}: it has to start in {lane.PickupCity}, deliver into the {lane.DestRegion}, and run {lane.MinMiles:N0} to {lane.MaxMiles:N0} mi.");
         var broker = c.Brokers.First(b => b.Id == lane.BrokerId);
         var rate = Math.Min(v.Load.GameRevenue, Math.Round(lane.RatePerMile * (decimal)v.Load.LoadedMiles, 2));
@@ -426,7 +482,11 @@ public static class Lanes
             Load = v.Load,
             Rate = rate,
             GamePay = v.Load.GameRevenue,
-            DaysToPay = broker.DaysToPay,
+            // The terms agreed on the lane's call. Reported from play: quick pay agreed on a lane, then lost on the job.
+            QuickPay = lane.QuickPay,
+            DetentionPerHour = lane.DetentionPerHour,
+            DetentionAfterHours = lane.DetentionPerHour > 0 ? 2 : 0,
+            DaysToPay = lane.QuickPay ? 2 : broker.DaysToPay,
             BookedGameTime = c.Game.Status.GameTime,
         };
         c.Bookings.Add(booking);
@@ -434,7 +494,7 @@ public static class Lanes
         lane.Status = "Matched";
         lane.BookingId = booking.Id;
         broker.LoadsBooked++;
-        c.Game.Board.RemoveAll(x => x.Id == loadId);
+        c.Game.Board.Clear();   // booked: the board is done with
         OoStore.Log(c, "broker", $"{lane.Number} matched: {booking.Number}, {v.Load.Cargo} to {v.Load.DestCity}, {v.Load.DestState}, " +
                                  $"{Units.Money(rate)} ({Units.Money(lane.RatePerMile)}/mi).", booking.Number);
         return booking;

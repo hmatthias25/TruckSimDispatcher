@@ -12,6 +12,39 @@ public static class Receivables
     /// <summary>A factor's fee, by the broker's credit. A D-credit invoice is not bought at all.</summary>
     public static decimal FactorFeePct(string credit) => credit switch { "A" => 2.5m, "B" => 3.5m, "C" => 6m, _ => 0m };
 
+    /// <summary>
+    /// What a broker with poor credit gives up of their margin to get a truck at all: the risk is paid for. A C broker
+    /// keeps four points less, a D nine. Asked for from play: "so what would be the reason to even go to a D broker?"
+    /// </summary>
+    public static decimal CreditPremium(string credit) => credit switch { "C" => 0.04m, "D" => 0.09m, _ => 0m };
+
+    /// <summary>
+    /// How this broker has really paid you: the invoices raised, paid on time, paid late (and by how many days on
+    /// average), sent to collections or written off, and still open.
+    /// </summary>
+    public static object PayRecord(OoCareer c, Broker b)
+    {
+        var mine = c.Invoices.Where(i => i.BrokerId == b.Id && i.GamePay > 0).ToList();
+        int onTime = 0, late = 0; double daysLate = 0;
+        foreach (var i in mine.Where(i => i.Status == "Paid" && i.FactorFee == 0 && !i.Collected))
+        {
+            var due = GameClock.TryParse(i.DueGameTime);
+            var paid = GameClock.TryParse(i.PaidGameTime);
+            if (due is null || paid is null) continue;
+            var over = (paid.Value - due.Value).TotalDays;
+            if (over > 1) { late++; daysLate += over; } else onTime++;
+        }
+        return new
+        {
+            invoices = mine.Count, onTime, late,
+            avgDaysLate = late > 0 ? Math.Round(daysLate / late, 1) : 0,
+            collections = mine.Count(i => i.Collected),
+            writtenOff = mine.Count(i => i.Status == "WrittenOff"),
+            open = mine.Count(i => i.Status is "Open" or "Overdue"),
+            overdue = mine.Count(i => i.Status == "Overdue"),
+        };
+    }
+
     /// <summary>What collections keeps of a broker who would not pay.</summary>
     public const decimal CollectionsShare = 0.5m;
 
@@ -178,6 +211,7 @@ public static class Receivables
         else
         {
             inv.Status = "Collections";
+            inv.Collected = true;
             inv.WillPay = true;
             inv.PaysGameTime = GameClock.Format(now.AddDays(15));
             said = $"{inv.Number} goes to collections. Expect half of it, about {GameClock.Pretty(inv.PaysGameTime)}.";

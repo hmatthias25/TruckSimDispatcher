@@ -392,7 +392,11 @@ function laneBanner() {
       ${esc(gt(l.pickupToGameTime))}, ${l.homeFor ? `delivering <b>home to ${esc(l.homeCity)}</b> (any job ending near it)`
         : `delivering into the <b>${esc(l.destRegion)}</b>, ${l.minMiles}-${l.maxMiles} mi${l.leanedFor ? ` (busy for ${esc(l.leanedFor)} this month)` : ''}`},
       at <b>${money(l.ratePerMile)}/mi</b> (never above the game's pay).</p>
-    <p>${S.booking ? 'Deliver the load you are on first.' : fits ? `${fits} job(s) on the board fit it: take one below.`
+    <p>${S.booking ? 'Deliver the load you are on first.'
+      : fits && S.laneClose ? `${S.laneWhy ? esc(S.laneWhy) + ' ' : ''}${esc(l.brokerName)} puts up the ${fits} closest instead, at the lane's
+          ${money(l.ratePerMile)}/mi on their own miles: marked below. Take one, or press <b>Nothing fits</b>.`
+      : fits ? `${fits} job(s) on the board fit it: take one below.`
+      : S.laneWhy ? `${esc(S.laneWhy)} Nothing runnable is close either: press <b>Nothing fits</b>.`
       : `At ${esc(l.pickupCity)}, paste that city's Freight Market board and the app marks the jobs that fit.`}</p>
     <div class="row-actions">${!S.booking ? '<button class="btn danger" id="ln-none">Nothing fits</button>' : ''}
       <button class="btn tiny ghost" id="ln-cancel">Call it off</button></div></div>`;
@@ -495,7 +499,8 @@ function loadCard(v) {
       ${(S.cantMake || []).includes(l.id) ? '<span class="badge mute">you couldn\'t make it</span>' : ''}
       ${v.trade && v.trade !== 'General' ? `<span class="badge info">${esc(v.trade)}</span>` : ''}
       <span class="spacer"></span>
-      ${(S.laneFits || []).includes(l.id) && !S.booking ? `<span class="badge info">Fits ${esc(S.lane.number)}</span>
+      ${(S.laneFits || []).includes(l.id) && !S.booking ? `<span class="badge info">${S.laneClose ? 'Closest for' : 'Fits'} ${esc(S.lane.number)}:
+          ${money(Math.min(l.gameRevenue, Math.round(S.lane.ratePerMile * l.loadedMiles * 100) / 100))}</span>
         <button class="btn tiny primary" data-take="${esc(l.id)}">Take for the lane</button>` : ''}
       <button class="btn tiny ghost" data-del="${esc(l.id)}">Remove</button>
     </div>
@@ -1327,12 +1332,27 @@ function brokersView() {
         <td>${esc(b.city)}, ${esc(b.state)}</td>
         <td>${esc(b.regions.join(', '))}</td>
         <td>net ${b.daysToPay}<div class="hint">quick pay ${b.quickPayFeePct}%</div></td>
-        <td>${esc(b.credit)}</td>
+        <td title="${esc(b.creditSays || '')}">${badge(b.credit === 'A' ? 'ok' : b.credit === 'B' ? 'info' : b.credit === 'C' ? 'warn' : 'bad', b.credit)}
+          ${b.credit === 'C' || b.credit === 'D' ? `<div class="hint">pays more, slower</div>` : ''}
+          ${payRecordHtml(b.payRecord)}</td>
         <td>${b.takesYou ? '<span class="badge ok">Will take you</span>' : `<span class="hint">${esc(b.requirement)}</span>`}</td>
         <td class="hint">${esc((b.notes || []).join(' '))}</td>
         <td><button class="btn tiny ${b.takesYou && b.worksHere ? 'primary' : ''}" data-call="${esc(b.id)}">Call</button></td>
       </tr>`).join('')}</tbody></table></div>` : '<div class="empty">Nobody in this view yet.</div>'}
   </div>`;
+}
+
+/** How a broker has really paid you, in a line under their credit grade. */
+function payRecordHtml(r) {
+  if (!r || !r.invoices) return '';
+  const bits = [];
+  if (r.onTime) bits.push(`${r.onTime} on time`);
+  if (r.late) bits.push(`${r.late} late (avg ${r.avgDaysLate} d)`);
+  if (r.collections) bits.push(`${r.collections} to collections`);
+  if (r.writtenOff) bits.push(`${r.writtenOff} never paid`);
+  if (r.overdue) bits.push(`${r.overdue} overdue now`);
+  else if (r.open) bits.push(`${r.open} open`);
+  return `<div class="hint">${esc(bits.join(' · ') || `${r.invoices} invoice(s)`)}</div>`;
 }
 
 function phoneView() {

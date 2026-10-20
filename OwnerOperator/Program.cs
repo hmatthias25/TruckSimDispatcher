@@ -542,9 +542,10 @@ static PlayerMove LocalParse(string text)
     else if (t.Contains("take it") || t.Contains("deal") || t.Contains("book it") || t.Contains("accept")) move.Kind = "accept";
     else if (t.Contains("pass") || t.Contains("no thanks") || t.Contains("bye")) move.Kind = "decline";
     else if (t.Contains("better") || t.Contains("anything else")) move.Kind = "better";
-    else if (t.Contains("quick pay")) { move.Kind = "terms"; move.Term = "quickpay"; }
-    else if (t.Contains("detention")) { move.Kind = "terms"; move.Term = "detention"; }
+    else if (PhoneAi.TermIn(t) is { } term) { move.Kind = "terms"; move.Term = term; }
     else move.Kind = "unclear";
+    // A price with terms ("350 and quick pay") is a counter that carries them.
+    if (move.Kind == "counter" && PhoneAi.TermIn(t) is { } with) move.Term = with;
     if (t.Contains("dead")) move.Arguments.Add("deadMarket");
     if (t.Contains("tight")) move.Arguments.Add("tight");
     if (t.Contains("empty") || t.Contains("deadhead")) move.Arguments.Add("deadhead");
@@ -557,6 +558,7 @@ static object Snapshot(OoCareer c)
 {
     var s = c.Game;
     var truck = DispatchEngine.AssignedTruck(s);
+    var laneBoard = Lanes.Board(c);
     return new
     {
         version = OoBuild.Version,
@@ -638,7 +640,9 @@ static object Snapshot(OoCareer c)
         {
             miles = hr.TotalMiles, arrival = hr.ProjectedArrivalGameTime, hr.RestsRequired, hr.BreaksRequired, hr.Timeline,
         } : null,
-        laneFits = Lanes.Booked(c) is { } fl && c.Started ? Lanes.Fits(c, fl, LoadDesk.Evaluate(c)).Select(v => v.Load.Id) : Enumerable.Empty<string>(),
+        laneFits = laneBoard.Fits,
+        laneClose = laneBoard.Close,
+        laneWhy = laneBoard.Why,
         payPerMile = Lanes.PayPerMile(c),
         // The run as Core keeps it, whole: the Active Load tab reads it the way the company-driver app's does.
         trip = Run.Trip(c, Calls.ActiveBooking(c)),

@@ -120,8 +120,10 @@ public static class Calls
         // The season where the lane picks up, for the freight this broker deals in: busy gives some margin back.
         var season = Seasons.MarginBack(Seasons.Now(c, Seasons.KindOf(DispatchEngine.AssignedTrailer(c.Game)?.Type, b.Specialty),
                                                    Carriers.AtsRegionOf(lane.PickupState)));
-        var target = call.GamePay * (1 - b.TargetMargin - quiet + season);
-        var ceiling = call.GamePay * (1 - b.MinMargin - quiet + season + b.Standing / 100m * 0.02m);
+        // Poor credit pays for the risk: see Receivables.CreditPremium.
+        var risk = Receivables.CreditPremium(b.Credit);
+        var target = call.GamePay * (1 - b.TargetMargin - quiet + season + risk);
+        var ceiling = call.GamePay * (1 - b.MinMargin - quiet + season + risk + b.Standing / 100m * 0.02m);
         call.Ceiling = Math.Min(Math.Floor(call.GamePay / 5m) * 5m, Round5(Math.Max(target, ceiling)));
         call.Offer = Round5(Math.Min(call.Ceiling, target + (decimal)p.Opening * (call.Ceiling - target)));
         call.Patience = p.Patience + (b.Standing > 30 ? 1 : 0);
@@ -165,6 +167,16 @@ public static class Calls
         {
             call.Status = "NotYet";
             return Say(c, call, b, new BrokerReply("notyet", Templates.NotYet(b, p, missing)));
+        }
+
+        // Booked on a lane with this broker: they talk about the lane, not some other load off the board at a starter's
+        // rate. Reported from play: calling the lane's broker at the pickup and offered $245 for 381 mi.
+        if (Lanes.Booked(c) is { } lane && lane.BrokerId == b.Id)
+        {
+            call.Status = "Nothing";
+            call.LaneId = lane.Id;
+            var (jobs, close) = Lanes.Matches(c, lane, LoadDesk.Evaluate(c));
+            return Say(c, call, b, new BrokerReply("lane", Templates.OnTheLane(b, lane, jobs.Select(v => v.Load).ToList(), close)));
         }
 
         var pick = Pick(c, b, call);
@@ -309,9 +321,11 @@ public static class Calls
         var quiet = HomeLife.HolidayNow(c) != null ? 0.05m : 0m;
         // The season, for this freight where it loads: a busy month gives some of their margin back, a slow one keeps more.
         var season = Seasons.MarginBack(Seasons.Of(c, pick.Load));
-        var target = pick.GamePay * (1 - b.TargetMargin - quiet + season);
+        // Poor credit pays for the risk: a C or D broker keeps less of it, to get a truck at all.
+        var risk = Receivables.CreditPremium(b.Credit);
+        var target = pick.GamePay * (1 - b.TargetMargin - quiet + season + risk);
         // Standing buys a little of their margin: up to two points either way.
-        var ceiling = pick.GamePay * (1 - b.MinMargin - quiet + season + b.Standing / 100m * 0.02m);
+        var ceiling = pick.GamePay * (1 - b.MinMargin - quiet + season + risk + b.Standing / 100m * 0.02m);
         // Never above what the game pays: a rate over it would be money that was never in the game bank. Agreed with
         // the project owner on 2026-10-18; negotiating claws back the broker's margin and nothing more.
         call.Ceiling = Math.Min(Math.Floor(pick.GamePay / 5m) * 5m, Round5(Math.Max(target, ceiling)));
@@ -362,18 +376,63 @@ public static class Calls
             case "counter":
                 if (move.Amount is not { } ask || ask <= 0)
                     return Say(c, call, b, new BrokerReply("unclear", Templates.Unclear(b)));
-                return Counter(c, b, p, call, load, Round5(ask), move.Arguments ?? new());
+                return Counter(c, b, p, call, load, Round5(ask), move.Arguments ?? new(), move.Term);
 
             default:
                 return Say(c, call, b, new BrokerReply("unclear", Templates.Unclear(b)));
         }
     }
 
+    /// <summary>
+    /// A price, and terms with it where they were asked for ("$350 and quick pay"). The terms are judged as a terms move
+    /// is, in the same breath: granted, they go on the deal and the broker says so; refused, nothing is booked on the price
+    /// alone, so the player is never booked on terms they did not ask for. Reported from play: "I want $350 and quick pay"
+    /// booked at $350 without the quick pay, twice.
+    /// </summary>
     private static (Call, BrokerReply) Counter(OoCareer c, Broker b, Personality p, Call call, BoardLoad load,
-                                                decimal ask, List<string> arguments)
+                                                decimal ask, List<string> arguments, string? term = null)
     {
+        var t = (term ?? "").ToLowerInvariant();
+        var wanted = t == "quickpay" ? !call.QuickPay : t == "detention" && call.DetentionPerHour == 0;
+        if (!wanted) return Price(c, b, p, call, load, ask, arguments);
+        if (Gives(b, p, call, t))
+        {
+            if (t == "quickpay") call.QuickPay = true; else call.DetentionPerHour = 40;
+            var (k, r) = Price(c, b, p, call, load, ask, arguments);
+            // A broker who trades terms, not rate, gives the terms and holds the figure.
+            if (r.Situation == "norate")
+                return Reword(k, r with { Situation = "terms", Line = t == "quickpay" ? Templates.QuickPay(b, p, call.Offer) : Templates.Detention(b, p, call.Offer) });
+            if (r.Situation is "booked" or "moved" or "final")
+                return Reword(k, r with { Line = r.Line + " " + (t == "quickpay" ? Templates.QuickPayToo() : Templates.DetentionToo()) });
+            // Caught out, or hung up on: no terms with that.
+            if (t == "quickpay") call.QuickPay = false; else call.DetentionPerHour = 0;
+            return (k, r);
+        }
+        // Refused: the price can still be met, but it is not booked without the terms the player asked for.
+        var (held, reply) = Price(c, b, p, call, load, ask, arguments, hold: true);
+        return Reword(held, reply with { Line = Templates.NotThoseTerms(t) + " " + reply.Line });
+    }
+
+    /// <summary>The broker's last line, said differently: on the call's record as well as in the reply.</summary>
+    private static (Call, BrokerReply) Reword(Call call, BrokerReply reply)
+    {
+        if (call.Turns.LastOrDefault() is { Who: "broker" } last) last.Text = reply.Line;
+        return (call, reply);
+    }
+
+    private static (Call, BrokerReply) Price(OoCareer c, Broker b, Personality p, Call call, BoardLoad load,
+                                              decimal ask, List<string> arguments, bool hold = false)
+    {
+        // Met, or offered on terms the player did not get: where hold is set, the figure stands and they say yes or no.
+        (Call, BrokerReply) Agree(decimal rate, string line)
+        {
+            if (!hold) return Book(c, b, call, rate, line);
+            call.Offer = rate;
+            return Say(c, call, b, new BrokerReply("terms", Templates.PriceWithoutTerms(rate)));
+        }
+
         // At or under what they offered: nobody argues with that.
-        if (ask <= call.Offer) return Book(c, b, call, ask, Templates.Done(b, p, ask));
+        if (ask <= call.Offer) return Agree(ask, Templates.Done(b, p, ask));
 
         // Arguments are checked against the truth. A true one earns more; a false one costs trust and patience.
         var (trueArgs, lie) = call.LaneId.Length > 0 ? CheckLaneArguments(c, call, arguments) : CheckArguments(c, load, arguments);
@@ -404,7 +463,7 @@ public static class Calls
         }
         step = Math.Min(step, room);
 
-        if (ask <= call.Offer + step) return Book(c, b, call, ask, Templates.Met(b, p, ask));
+        if (ask <= call.Offer + step) return Agree(ask, Templates.Met(b, p, ask));
 
         call.Patience--;
         if (call.Patience <= 0 && !call.FinalOffer) return HangUp(c, b, p, call);
@@ -460,10 +519,19 @@ public static class Calls
         return Say(c, call, b, new BrokerReply("offer", Templates.Better(b, p, next.Load, call.Offer) + Asides(c, call, next.Load)));
     }
 
+    /// <summary>
+    /// Whether the broker gives these terms now. A broker who trades terms, not rate, always does; one with patience to
+    /// spare usually. Quick pay comes easier from poor credit, because it is how they win trucks: a D broker always gives
+    /// it, a C one with any patience left. It does not make them good for the money.
+    /// </summary>
+    private static bool Gives(Broker b, Personality p, Call call, string term) =>
+        p.TradesTermsNotRate || call.Patience >= 2
+        || (term == "quickpay" && (b.Credit == "D" || (b.Credit == "C" && call.Patience >= 1)));
+
     private static (Call, BrokerReply) Terms(OoCareer c, Broker b, Personality p, Call call, string term)
     {
         var t = (term ?? "").ToLowerInvariant();
-        var easy = p.TradesTermsNotRate || call.Patience >= 2;
+        var easy = Gives(b, p, call, t);
         call.Patience--;
         if (!easy && call.Patience <= 0) return HangUp(c, b, p, call);
         if (t == "quickpay" && !call.QuickPay && easy)
@@ -550,6 +618,8 @@ public static class Calls
         {
             lane.Status = "Booked";
             lane.RatePerMile = Math.Round(rate / (decimal)Math.Max(1, lane.MidMiles), 2);
+            lane.QuickPay = call.QuickPay;
+            lane.DetentionPerHour = call.DetentionPerHour;
             call.Status = "Booked";
             call.Offer = rate;
             b.Standing = Math.Min(100, b.Standing + 2);
@@ -583,8 +653,8 @@ public static class Calls
         b.LoadsBooked++;
         b.Standing = Math.Min(100, b.Standing + 2);
         Learn(b);
-        // Taken: off the board, so nobody else books it.
-        c.Game.Board.RemoveAll(x => x.Id == load.Id);
+        // Booked: the board is done with. It was this city's market at this hour, and the next one is read where the load ends.
+        c.Game.Board.Clear();
         OoStore.Log(c, "broker", $"{booking.Number} booked with {b.Name}: {load.Cargo} to {load.DestCity}, {load.DestState} at {Units.Money(rate)} (the game pays {Units.Money(call.GamePay)}).", booking.Number);
         return Say(c, call, b, new BrokerReply("booked", line));
     }

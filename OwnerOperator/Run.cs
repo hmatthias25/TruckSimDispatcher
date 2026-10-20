@@ -87,7 +87,9 @@ public static class Run
         if (!string.IsNullOrWhiteSpace(trip.ShipperArrivedGameTime))
             throw new InvalidOperationException($"Already at the shipper from {GameClock.Pretty(trip.ShipperArrivedGameTime)}.");
         var at = At(c, day, time);
-        var call = ShipperCall.Assess(c.Game, trip, at)!;
+        // Open for it: the job was taken live off the board, and the window has been running since. Reported from play:
+        // a site shut until the next day at pickup, which no window survives.
+        var call = ShipperCall.Assess(c.Game, trip, at, listedNow: true)!;
         ShipperCall.Record(trip, call);
         c.Game.Status.GameTime = GameClock.Format(at);
         var said = $"{trip.Number}: at the shipper {GameClock.Pretty(trip.ShipperArrivedGameTime)}. {call.Headline}. {call.Instruction}";
@@ -163,7 +165,8 @@ public static class Run
         if (!string.IsNullOrWhiteSpace(trip.ArrivedGameTime))
             throw new InvalidOperationException($"Already at the receiver from {GameClock.Pretty(trip.ArrivedGameTime)}.");
         var at = At(c, day, time);
-        var call = ReceiverCall.Assess(c.Game, trip, at);
+        // Kept to the game's window: never told to wait past the delivery time. Reported from play.
+        var call = ReceiverCall.Assess(c.Game, trip, at, keepToWindow: true);
         trip.ArrivedGameTime = GameClock.Format(at);
         trip.ReceiverCallKind = call?.Kind ?? "StraightIn";
         trip.WorkStartsGameTime = call?.WorkStartsGameTime ?? GameClock.Format(at);

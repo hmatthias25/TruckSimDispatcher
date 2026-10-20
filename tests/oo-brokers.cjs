@@ -5,7 +5,7 @@
  *   - a starter broker offers from the bottom half of the board, below the game's pay, never past the skills
  *   - countering moves them toward a ceiling the page never sees; pushing too far ends the call
  *   - an argument that is not true is called out and earns nothing
- *   - taking it books the load: off the board, on the record, and one booking at a time
+ *   - taking it books the load: the board cleared, on the record, and one booking at a time
  *   - typed words work without a key: a figure is a counter
  */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5991}/api`;
@@ -103,6 +103,7 @@ const BOARD = [
   ok('the booking is the rate confirmation', S.booking && S.booking.rate === typed && S.booking.number === 'OO-001', JSON.stringify(S.booking && { n: S.booking.number, rate: S.booking.rate }));
   ok('the game\'s pay is kept beside it', S.booking.gamePay === call.gamePay);
   ok('the load is off the board', !S.board.some((v) => v.load.id === call.load.id));
+  ok('and the board is cleared: it was this city\'s market, and the next one is read where the load ends', S.board.length === 0, `${S.board.length} left`);
   ok('the broker has learned something and so have you', S.directory.find((b) => b.id === starters[1].id).loadsBooked === 1
     && S.directory.find((b) => b.id === starters[1].id).notes.length > 0);
   ok('never above what the game pays', S.bookings.every((b) => b.rate <= b.gamePay), S.bookings.map((b) => `${b.rate}/${b.gamePay}`).join(' '));

@@ -117,6 +117,12 @@ public static class Templates
         ("Hustler", $"Sure, sure, detention, forty after two. {M(offer)}."),
         ("", $"Detention at forty an hour after two. Rate's still {M(offer)}."));
 
+    public static string QuickPayToo() => "And quick pay, you've got it.";
+    public static string DetentionToo() => "And detention at forty an hour after two.";
+    public static string NotThoseTerms(string term) =>
+        term == "quickpay" ? "Quick pay's not something I can do on this one." : "I can't add detention on this one.";
+    public static string PriceWithoutTerms(decimal rate) => $"I can do {M(rate)} on my usual terms. Want it?";
+
     public static string NoTerms(Broker b, Personality p, decimal offer) =>
         $"No, that's not something I can do on this one. {M(offer)}.";
 
@@ -150,6 +156,22 @@ public static class Templates
         Hello(b) + $" I don't have anything out of {city}. My freight's in the {string.Join(" and ", b.Regions)}.";
 
     public static string NothingFits(Broker b) => Hello(b) + " Nothing on that board I can put you on. Try me after your next load.";
+
+    /// <summary>Calling the broker you are booked on a lane with: they point you at the job for it, at the lane rate.</summary>
+    public static string OnTheLane(Broker b, Lane lane, List<BoardLoad> jobs, bool close)
+    {
+        var rate = $"{Units.Money(lane.RatePerMile)}/mi";
+        if (jobs.Count == 0)
+            return Hello(b) + $" You're on {lane.Number} with me, out of {lane.PickupCity}. Get me that board when you're there and " +
+                   $"I'll find you the one at {rate}. If there's nothing, press Nothing fits and we'll settle up.";
+        var j = jobs[0];
+        var pay = Math.Min(j.GameRevenue, Math.Round(lane.RatePerMile * (decimal)j.LoadedMiles, 2));
+        return Hello(b) + (close
+            ? $" Nothing out of {lane.PickupCity} runs quite like we said, so here's the closest: {j.Cargo} to {j.DestCity}, {j.DestState}, " +
+              $"{j.LoadedMiles:N0} mi, at the lane's {rate}, {Units.Money(pay)}. Take it for the lane on your board, or press Nothing fits."
+            : $" {lane.Number}'s right there: {j.Cargo} to {j.DestCity}, {j.DestState}, {j.LoadedMiles:N0} mi at {rate}, {Units.Money(pay)}. " +
+              "Take it for the lane on your board.");
+    }
 
     public static string Unclear(Broker b) => "Sorry, what are you asking? Give me a number, or take it.";
 

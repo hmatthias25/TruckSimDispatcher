@@ -40,8 +40,11 @@ public static class ShipperCall
     /// <summary>
     /// Work out the call for a truck arriving at the shipper. Always answers — even "straight in" is worth
     /// saying at a pickup, because the driver is about to set the clock off it.
+    /// <para><paramref name="listedNow"/>: the job was taken live off the game's board, so the shipper is open for it
+    /// whatever its hours (the owner/operator app). A site shut until morning would eat the delivery window, which the
+    /// game started running when the job was taken. The freight can still be late off the line, and a yard still queue.</para>
     /// </summary>
-    public static Call? Assess(AppState s, Trip trip, DateTime arrived, bool auto = false)
+    public static Call? Assess(AppState s, Trip trip, DateTime arrived, bool auto = false, bool listedNow = false)
     {
         if (trip.Kind != "Freight") return null;
 
@@ -62,7 +65,8 @@ public static class ShipperCall
             var hours = FacilityProfile.SeededHours(s, trip.OriginCity, trip.OriginState, trip.Shipper);
             var peak = FacilityProfile.QueuePeakHours(s, trip.OriginCity, trip.OriginState, trip.Shipper);
             var tod = arrived.TimeOfDay.TotalHours;
-            var open = tod >= hours.OpenHour && tod < hours.CloseHour;
+            var inHours = tod >= hours.OpenHour && tod < hours.CloseHour;
+            var open = inHours || listedNow;
 
             if (!open)
             {
@@ -79,7 +83,7 @@ public static class ShipperCall
                             $", so you are {Hhmm.Of(untilOpen)} ahead of them" +
                             (ahead > 0 ? $", with {ahead} in front of you when the gate goes up." : " and first through the gate."));
             }
-            else
+            else if (inHours)
             {
                 ahead = (int)Math.Round(FacilityProfile.QueueAt(peak, tod - hours.OpenHour) / ReceiverCall.HoursPerTruckAhead);
                 if (ahead > 0)

@@ -26,6 +26,8 @@ public class Invoice
     public bool WillPay { get; set; } = true;
     public string PaysGameTime { get; set; } = "";
     public int Chases { get; set; }
+    /// <summary>Sent to collections: paid, if at all, at half.</summary>
+    public bool Collected { get; set; }
     public decimal FactorFee { get; set; }
 
     /// <summary>Detention agreed on the call, billed from the dock times logged. Billed, Disputed, Granted, Denied or Factored.</summary>

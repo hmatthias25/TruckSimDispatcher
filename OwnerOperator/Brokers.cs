@@ -282,6 +282,16 @@ public static class BrokerBook
         + (b.Specialty == Specialties.General ? "" : $"; a {string.Join(" or ", Specialties.Trailers(b.Specialty)).ToLowerInvariant()}" +
            (Specialties.Adr(b.Specialty) is { } adr ? $" and ADR for {adr.ToLowerInvariant()}" : ""));
 
+    /// <summary>What a credit grade means for getting paid, and for the rate: said plainly on the Brokers tab.</summary>
+    public static string CreditSays(string credit) => credit switch
+    {
+        "A" => "Pays on time.",
+        "B" => "Pays on time or a day or two late.",
+        "C" => "Pays, but up to ten days late. Pays a little more for it, and gives quick pay more readily.",
+        _ => "Slow, and about four in ten invoices never paid without collections. Pays well over the odds for it, " +
+             "and gives quick pay to anyone who asks. No factor will buy their invoices.",
+    };
+
     /// <summary>The directory as the player sees it. Margins, ceilings and the personality stay private.</summary>
     public static object View(OoCareer c, Broker b)
     {
@@ -295,6 +305,8 @@ public static class BrokerBook
             takesYou = notYet == null,
             notYet,
             worksHere = b.Regions.Contains(here),
+            creditSays = CreditSays(b.Credit),
+            payRecord = Receivables.PayRecord(c, b),
         };
     }
 
