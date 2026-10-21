@@ -21,7 +21,7 @@ const refused = async (fn) => { try { await fn(); return ''; } catch (e) { retur
 (async () => {
   head('1. Before the first screen');
   let S = await api('/bootstrap');
-  ok('not started, version 0.9', S.started === false && S.version === '0.9', `${S.started} ${S.version}`);
+  ok('not started, version 0.91', S.started === false && S.version === '0.91', `${S.started} ${S.version}`);
   ok('the board is refused until then', (await refused(() => api('/board/add-many', 'POST', [{ cargo: 'x' }]))).length > 0);
   const cities = await api('/cities');
   ok('the home picker has the game\'s cities', cities.length > 100 && cities.some((c) => c.city === 'Kansas City'), `${cities.length}`);

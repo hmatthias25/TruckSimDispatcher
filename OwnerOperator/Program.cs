@@ -439,7 +439,52 @@ app.MapPost("/api/home/promise", (PromiseRequest r) => Results.Ok(store.Mutate(c
 app.MapPost("/api/bank", (BankRequest r) => Results.Ok(store.Mutate(c =>
 {
     RequireStarted(c);
-    Ledger.ReportGameBank(c, r.Balance);
+    // Any reading of the bank finds what went out unseen since the last, not only the Monday one.
+    Finance.ReportBalance(c, r.Balance, 0, "Balance update", out _);
+    return Snapshot(c);
+})));
+
+// ---------------------------------------------------------------- financial health
+
+/// A fill, any time: on a run it goes on the trip log too (Run.Event logs it once for the books).
+app.MapPost("/api/fuel", (FuelRequest r) => Results.Ok(store.Mutate(c =>
+{
+    RequireStarted(c);
+    var s = c.Game;
+    var at = r.Day is > 0 ? GameClock.FromDayTime(r.Day.Value, r.Time) ?? throw new InvalidOperationException("The time of day, as HH:MM.")
+                          : GameClock.TryParse(s.Status.GameTime) ?? GameClock.Epoch;
+    if (GameClock.TryParse(s.Status.GameTime) is { } now && at > now) s.Status.GameTime = GameClock.Format(at);
+    if (r.Odometer is { } odo && odo > 0)
+    {
+        if (odo + 1 < s.Status.AtsOdometer) throw new InvalidOperationException($"The odometer reads {s.Status.AtsOdometer:N0} already: that one is lower.");
+        s.Status.AtsOdometer = odo;
+    }
+    if (r.FuelPct is { } pct) s.Status.FuelPct = Math.Clamp(pct, 0, 100);
+    var gallons = r.Gallons ?? 0;
+    var price = r.PricePerGal ?? (r.Total is > 0 && gallons > 0 ? Math.Round(r.Total.Value / (decimal)gallons, 3) : 0);
+    if (Calls.ActiveBooking(c) is not null && Run.Trip(c, Calls.ActiveBooking(c)) is not null)
+        Run.Event(c, new RunEventRequest("Fuel", GameClock.DayOf(at), at.ToString("HH:mm"), null, null, null, "Fuel",
+                                         r.City, r.State, gallons, price, r.Odometer));
+    else
+        Finance.LogFuel(c, new FuelBuy
+        {
+            GameTime = GameClock.Format(at), City = r.City ?? "", State = (r.State ?? "").ToUpperInvariant(),
+            Gallons = gallons, PricePerGal = price, Total = r.Total ?? 0, Odometer = r.Odometer,
+        });
+    return Snapshot(c);
+})));
+
+app.MapPost("/api/finance/check", (CheckRequest r) => Results.Ok(store.Mutate(c =>
+{
+    RequireStarted(c);
+    var said = Finance.Check(c, r.Balance, r.MovedIn ?? 0, r.Note);
+    return new { said, snapshot = Snapshot(c) };
+})));
+
+app.MapPost("/api/finance/bills", (Bills r) => Results.Ok(store.Mutate(c =>
+{
+    RequireStarted(c);
+    Finance.SetBills(c, r);
     return Snapshot(c);
 })));
 
@@ -559,6 +604,7 @@ static object Snapshot(OoCareer c)
     var s = c.Game;
     var truck = DispatchEngine.AssignedTruck(s);
     var laneBoard = Lanes.Board(c);
+    var finance = c.Started ? Finance.View(c) : null;
     return new
     {
         version = OoBuild.Version,
@@ -663,6 +709,8 @@ static object Snapshot(OoCareer c)
         transfers = c.Transfers.Where(t => t.Status == "Pending").Concat(c.Transfers.Where(t => t.Status == "Done").Reverse().Take(15)),
         notYoursInGameBank = Ledger.NotYoursInGameBank(c),
         gameBank = Ledger.GameBankView(c),
+        finance,
+        mondayCheck = c.Started ? Finance.CheckView(c) : null,
         holding = Ledger.HoldingView(c),
         owedToYou = c.Invoices.Where(i => i.Status is "Open" or "Overdue" or "Collections").Sum(i => i.Amount),
         home = c.Started ? HomeLife.View(c) : null,

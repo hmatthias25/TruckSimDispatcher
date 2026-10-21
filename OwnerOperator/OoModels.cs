@@ -5,7 +5,7 @@ namespace TruckSimOwnerOperator;
 public static class OoBuild
 {
     /// <summary>The owner/operator app's own version. The company-driver app keeps its own, in Core's Build.</summary>
-    public const string Version = "0.9";
+    public const string Version = "0.91";
 }
 
 /// <summary>
@@ -53,6 +53,8 @@ public class OoCareer
     /// <summary>Jobs on the board the driver told a broker they could not reach in time: no broker offers them again.</summary>
     public List<string> CantMakeLoadIds { get; set; } = new();
     public PaySeen PaySeen { get; set; } = new();
+    /// <summary>Fuel, the Monday checks of the game bank, the bills and the cost factor's history: see <see cref="Finance"/>.</summary>
+    public FinanceState Finance { get; set; } = new();
 }
 
 /// <summary>What the first screen asks, and what follows from it.</summary>

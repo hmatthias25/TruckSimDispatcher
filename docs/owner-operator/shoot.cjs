@@ -209,6 +209,29 @@ async function shot(name, sel) {
     await shot('settings', '#view');
     await tab('log');
     await shot('log', '#view');
+
+    // 8. Financial health: fills, the bills, then the game's Monday and its check.
+    await api('/fuel', 'POST', { day: 3, time: '14:00', gallons: 92, pricePerGal: 4.09, odometer: 1250 + miles, fuelPct: 100 });
+    await tab('board');
+    await ev(`fuelModal()`);
+    await sleep(300);
+    await shot('fuel', '#modal .modal-box');
+    await ev(`closeModal()`);
+    await api('/status', 'POST', { day: 5, time: '09:00', odometer: 1250 + miles + 560 });
+    await api('/fuel', 'POST', { day: 5, time: '09:00', gallons: 96, pricePerGal: 3.95, odometer: 1250 + miles + 560, fuelPct: 100 });
+    await api('/finance/bills', 'POST', { truckPayment: 1850, insurance: 750, maintenance: 300, other: 400 });
+    await api('/status', 'POST', { day: 8, time: '07:30' });
+    await tab('finance');
+    await sleep(300);
+    await shot('monday-check', '#modal .modal-box');
+    S = await api('/bootstrap');
+    await ev(`(() => { document.getElementById('mc-bal').value = ${Math.round((S.mondayCheck?.expected ?? 30000) - 185)};
+      document.getElementById('mc-go').click(); })()`);
+    await sleep(1200);
+    await shot('monday-checked', '#modal .modal-box');
+    await ev(`closeModal()`);
+    await tab('finance');
+    await shot('finance', 'nav.tabs, #view');
   } finally {
     try { ws && ws.close(); } catch {}
     chrome.kill(); app.kill();

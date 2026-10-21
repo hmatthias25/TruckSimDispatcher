@@ -32,6 +32,8 @@ public class OoStore
         Activate(_career);
         if (HomeLife.MigrateFamily(_career)) Save();
         Companies.Apply(_career);
+        // Money tracking starts this week; the first Monday check, and the factor's first recalculation, come next week.
+        if (_career.Started && _career.Finance.StartWeek == 0) { Finance.Ensure(_career); Save(); }
     }
 
     public string DataDirectory => _dir;
@@ -46,6 +48,8 @@ public class OoStore
         {
             var result = action(_career);
             Activate(_career);
+            // Every change of the odometer, kept with the game time: a week's miles are read off it.
+            Finance.Sample(_career);
             Save();
             return result;
         }

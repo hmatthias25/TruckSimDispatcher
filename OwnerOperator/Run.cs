@@ -132,6 +132,13 @@ public static class Run
             PricePerGal = r.PricePerGal ?? 0,
         });
         if (!string.IsNullOrWhiteSpace(r.City)) BrokerBook.Refresh(c);
+        // A fill on the run is a fill: on Financial health once, from here, whichever way it was logged.
+        if (kind == "Fuel" && (r.Gallons is > 0 || r.PricePerGal is > 0))
+            Finance.LogFuel(c, new FuelBuy
+            {
+                GameTime = GameClock.Format(at), City = r.City ?? "", State = (r.State ?? "").ToUpperInvariant(),
+                Gallons = r.Gallons ?? 0, PricePerGal = r.PricePerGal ?? 0, Odometer = r.Odometer, TripNumber = trip.Number,
+            });
     }
 
     /// <summary>Correcting or dropping an entry already logged, as the company-driver app does: Core re-derives what it fed.</summary>
@@ -415,5 +422,6 @@ public static class Run
 public record AmendRequest(int? Day, string? Time, int? EndDay, string? EndTime, string? Detail, bool Remove);
 public record WindowFixRequest(double DeadlineHours, string? Note);
 public record RunEventRequest(string? Kind, int? Day, string? Time, int? EndDay, string? EndTime, double? Hours,
-                              string? Detail, string? City, string? State, double? Gallons, decimal? PricePerGal);
+                              string? Detail, string? City, string? State, double? Gallons, decimal? PricePerGal,
+                              double? Odometer = null);
 public record RunStageRequest(int? Day, string? Time, double? WeightLbs, double? Odometer);

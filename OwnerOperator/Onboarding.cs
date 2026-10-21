@@ -159,6 +159,7 @@ public static class Onboarding
             StartOdometer = r.Odometer,
         };
         c.Started = true;
+        Finance.Ensure(c);
 
         // The broker roster, fixed for the career, and the directory: the brokers who work home.
         c.Brokers = BrokerBook.Generate(c);

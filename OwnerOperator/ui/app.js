@@ -290,7 +290,7 @@ async function startCareer() {
 
 // ---------------------------------------------------------------- app shell
 
-const TABS = [['board', 'Board'], ['active', 'Active Load'], ['brokers', 'Brokers'], ['money', 'Money'], ['home', 'Home'], ['settings', 'Settings'], ['log', 'Log']];
+const TABS = [['board', 'Board'], ['active', 'Active Load'], ['brokers', 'Brokers'], ['money', 'Money'], ['finance', 'Financial health'], ['home', 'Home'], ['settings', 'Settings'], ['log', 'Log']];
 
 function showApp() {
   $('boot').classList.add('hidden');
@@ -316,9 +316,9 @@ function render() {
   phoneAlert();
   $('tabs').innerHTML = TABS.map(([id, name]) => `<button class="${id === tab ? 'on' : ''}" data-tab="${id}">${name}</button>`).join('');
   $('tabs').querySelectorAll('button').forEach((b) => b.onclick = () => { tab = b.dataset.tab; render(); });
-  const views = { board: boardView, active: activeView, brokers: brokersView, money: moneyView, home: homeView, settings: settingsView, log: logView };
+  const views = { board: boardView, active: activeView, brokers: brokersView, money: moneyView, finance: financeView, home: homeView, settings: settingsView, log: logView };
   $('view').innerHTML = homeBanner() + views[tab]();
-  ({ board: wireBoard, active: wireActive, brokers: wireBrokers, money: wireMoney, home: wireHome, settings: wireSettings, log: () => {} })[tab]();
+  ({ board: wireBoard, active: wireActive, brokers: wireBrokers, money: wireMoney, finance: wireFinance, home: wireHome, settings: wireSettings, log: () => {} })[tab]();
   wireHomeBanner();
   document.querySelectorAll('[data-goto]').forEach((a) => a.onclick = (e) => { e.preventDefault(); tab = a.dataset.goto; render(); });
   const at = $('tabs').querySelector('[data-tab=active]');
@@ -326,6 +326,9 @@ function render() {
   const pending = (S.transfers || []).filter((t) => t.status === 'Pending').length;
   const mt = $('tabs').querySelector('[data-tab=money]');
   if (pending && mt) mt.innerHTML += ` <span class="pip amber">${pending}</span>`;
+  const ft = $('tabs').querySelector('[data-tab=finance]');
+  if (S.mondayCheck && ft) ft.innerHTML += ' <span class="pip amber">1</span>';
+  maybeAskCheck();
 }
 
 // ---------------------------------------------------------------- the phone, wherever you are in the app
@@ -1458,6 +1461,218 @@ function wireBrokers() {
 
 // ---------------------------------------------------------------- money
 
+// ---------------------------------------------------------------- financial health
+
+/**
+ * How the business is doing, by game week. Decided with the project owner on 2026-10-21: a Monday check of the game
+ * bank finds what went out unseen, fuel is logged at every fill, and the cost factor is worked out again after each check
+ * from fuel and that spending per mile plus the monthly bills spread over the miles driven.
+ */
+let CHECK_ASKED = 0;   // the week whose Monday check has popped up this session
+
+const signed = (n) => `<span class="money ${n >= 0 ? 'pos' : 'neg'}">${money(n)}</span>`;
+const perMi = (n) => (n == null ? '--' : `${money(n)}/mi`);
+
+function financeView() {
+  const f = S.finance;
+  if (!f) return '<div class="empty">Start a career first.</div>';
+  const w = f.weeks[0] || {};
+  const owed = f.owed || 0;
+  const bank = S.gameBank.estimate;
+  const ck = S.mondayCheck;
+  const tile = (k, v, sub = '') => `<div><div class="k">${k}</div><div class="money">${v}</div>${sub ? `<div class="hint">${sub}</div>` : ''}</div>`;
+  return `${ck ? `<div class="callout warn"><h4>Monday check: Week of Day ${ck.week}</h4>
+      <p style="margin:0">What does the game bank show? It finds what went out that nothing logged (tolls, tickets, repairs) and
+        works the cost factor out again. <button class="btn tiny primary" id="fh-check">Check the game bank</button></p></div>` : ''}
+    <div class="panel"><div class="panel-head"><h2>This week</h2><span class="sub">${esc(w.label || '')}${w.current ? ', so far' : ''}</span>
+        <span class="spacer"></span><button class="btn tiny" id="fh-fuel">Log fuel</button></div>
+      <div class="figs">
+        ${tile('Net this week', w.net != null ? signed(w.net) : '--', `${w.loads || 0} load(s), ${num(w.miles || 0)} mi`)}
+        ${tile('Earned per mile', perMi(w.earnedPerMile), 'all miles, loaded and empty')}
+        ${tile('Cost per mile, measured', perMi(f.measuredPerMile), f.measuredPerMile == null ? `after 300 mi tracked (${num(f.measuredMiles)} so far)` : 'fuel and other spending, last 4 weeks')}
+        ${tile('Cost factor', perMi(f.factor.now), 'what loads are ranked on')}
+        ${tile('Cash', bank == null ? '--' : money(bank), `game bank; ${money(owed)} still owed to you`)}
+      </div>
+      ${!ck && f.nextCheck ? `<p class="hint" style="margin:6px 0 0">Next game bank check: Monday, Day ${f.nextCheck}.</p>` : ''}
+    </div>
+    ${weeksHtml(f.weeks)}
+    ${fuelHtml(f.fuel)}
+    ${loadsHtml(f.loads)}
+    ${brokersMoneyHtml(f.brokers)}
+    ${factorHtml(f)}`;
+}
+
+function weeksHtml(weeks) {
+  const shown = weeks.filter((w) => w.tracked || w.loads);
+  if (!shown.length) return '';
+  const top = Math.max(1, ...shown.map((w) => Math.abs(Number(w.net) || 0)));
+  const bars = [...shown].reverse().map((w) => {
+    const h = Math.max(2, Math.round(Math.abs(w.net) / top * 60));
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px" title="${esc(w.label)}: ${money(w.net)}">
+      <div style="width:70%;max-width:48px;height:${h}px;background:${w.net >= 0 ? '#3fb950' : '#f85149'};border-radius:3px"></div>
+      <div class="hint" style="font-size:11px">D${w.monday}</div></div>`;
+  }).join('');
+  return `<div class="panel"><div class="panel-head"><h2>Week by week</h2><span class="sub">Game weeks, Monday to Sunday</span></div>
+    <div style="display:flex;gap:6px;align-items:flex-end;height:80px;margin:0 0 10px">${bars}</div>
+    <div class="tablewrap"><table class="grid"><thead><tr>
+      <th>Week</th><th>Loads</th><th>Miles</th><th>Empty</th><th>Earned</th><th>Fees</th><th>Fuel</th><th>Other spending</th><th>Net</th><th>Net/mi</th>
+    </tr></thead><tbody>${shown.map((w) => `<tr>
+      <td>${esc(w.label)}${w.current ? ' <span class="badge info">now</span>' : ''}</td><td>${w.loads}</td><td>${num(w.miles)}</td><td>${w.emptyPct}%</td>
+      <td>${money(w.earned)}</td><td>${money(w.fees)}</td><td>${money(w.fuel)}</td><td>${money(w.other)}</td>
+      <td>${signed(w.net)}</td><td>${perMi(w.netPerMile)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="hint">Earned: the booked rates, detention and TONUs. Fees: quick pay and factoring. Other spending: what the game bank
+      checks found gone that nothing logged.</p></div>`;
+}
+
+function fuelHtml(fu) {
+  const r = fu.recent, a = fu.all;
+  const fig = (x) => `${x.fills} fill(s), ${num(x.gallons)} gal${x.avgPrice != null ? `, ${money(x.avgPrice)}/gal` : ''}`;
+  return `<div class="panel"><div class="panel-head"><h2>Fuel</h2><span class="spacer"></span><button class="btn tiny" id="fh-fuel2">Log fuel</button></div>
+    <div class="figs">
+      <div><div class="k">Last 4 weeks</div><div class="money">${money(r.spent)}</div><div class="hint">${fig(r)}</div></div>
+      <div><div class="k">Real MPG</div><div class="money">${r.mpg ?? a.mpg ?? '--'}</div><div class="hint">${r.mpg != null || a.mpg != null ? 'miles between fills over the fuel put in' : 'two fills with the odometer to work it out'}</div></div>
+      <div><div class="k">Fuel per mile</div><div class="money">${perMi(r.perMile ?? a.perMile)}</div></div>
+      <div><div class="k">All time</div><div class="money">${money(a.spent)}</div><div class="hint">${fig(a)}</div></div>
+    </div>
+    ${fu.log.length ? `<div class="tablewrap"><table class="grid"><thead><tr><th>When</th><th>Where</th><th>Gallons</th><th>Price</th><th>Total</th><th>Odometer</th><th>Load</th></tr></thead>
+      <tbody>${fu.log.map((x) => `<tr><td>${esc(gt(x.gameTime))}</td><td>${esc(x.city)}, ${esc(x.state)}</td><td>${num(x.gallons)}</td>
+        <td>${money(x.pricePerGal)}</td><td>${money(x.total)}</td><td>${x.odometer ? num(x.odometer) : ''}</td><td>${esc(x.tripNumber || '')}</td></tr>`).join('')}</tbody></table></div>`
+      : '<p class="hint">No fills logged yet. Log every fill, on a load or not: with the odometer, it gives your real MPG.</p>'}</div>`;
+}
+
+function loadsHtml(loads) {
+  if (!loads.length) return '';
+  return `<div class="panel"><div class="panel-head"><h2>Per load</h2><span class="sub">The last ${loads.length}, at today's cost factor</span></div>
+    <div class="tablewrap"><table class="grid"><thead><tr>
+      <th>Load</th><th>Broker</th><th>Game pay</th><th>Rate</th><th>Their cut</th><th>Rate/mi</th><th>Miles</th><th>Est. cost</th><th>Fees</th><th>Left you</th>
+    </tr></thead><tbody>${loads.map((l) => `<tr>
+      <td><b>${esc(l.number)}</b><div class="hint">${esc(l.cargo)} to ${esc(l.to)}</div></td><td>${esc(l.brokerName)}</td>
+      <td>${money(l.gamePay)}</td><td>${money(l.rate)}${l.detention ? `<div class="hint">+${money(l.detention)} detention</div>` : ''}</td>
+      <td>${l.brokerCutPct}%</td><td>${money(l.ratePerMile)}</td>
+      <td>${num(l.miles)}${l.emptyMiles ? `<div class="hint">${num(l.emptyMiles)} empty</div>` : ''}</td>
+      <td>${money(l.estCost)}</td><td>${money(l.fees)}</td><td>${signed(l.left)}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+function brokersMoneyHtml(b) {
+  const a = b.aging;
+  return `<div class="panel"><div class="panel-head"><h2>Brokers and getting paid</h2><span class="sub">${money(a.total)} owed to you</span></div>
+    <div class="figs">
+      <div><div class="k">Under 7 days</div><div class="money">${money(a.under7)}</div></div>
+      <div><div class="k">7 to 30 days</div><div class="money">${money(a.to30)}</div></div>
+      <div><div class="k">Over 30 days</div><div class="money">${money(a.over30)}</div></div>
+      <div><div class="k">Overdue</div><div class="money ${a.overdue ? 'neg' : ''}">${money(a.overdue)}</div></div>
+      <div><div class="k">In collections</div><div class="money">${money(a.collections)}</div></div>
+    </div>
+    ${b.brokers.length ? `<div class="tablewrap"><table class="grid"><thead><tr><th>Broker</th><th>Credit</th><th>Loads</th><th>Avg rate/mi</th><th>Avg days to pay</th><th>Owed now</th></tr></thead>
+      <tbody>${b.brokers.map((x) => `<tr><td>${esc(x.name)}</td><td>${esc(x.credit)}</td><td>${x.loads}</td><td>${money(x.avgRatePerMile)}</td>
+        <td>${x.avgDaysToPay ?? '--'}</td><td>${money(x.owed)}</td></tr>`).join('')}</tbody></table></div>` : ''}</div>`;
+}
+
+function factorHtml(f) {
+  const b = f.factor.bills;
+  const box = (k, label) => `<label>${label}<input id="bl-${k}" type="number" min="0" step="10" value="${b[k] || ''}" placeholder="0"></label>`;
+  const held = f.factor.billsTotal ? '' : " Until they are in, the rest of today's factor is held for them.";
+  return `<div class="panel"><div class="panel-head"><h2>The cost factor</h2><span class="sub">Now ${perMi(f.factor.now)}, worked out again after every Monday check</span></div>
+    <h3 class="sect">Your monthly bills</h3>
+    <p class="hint">What the Companion App pays out of Nexora each month, which the game bank never sees. Copy them in; each Monday they
+      are spread over the miles you actually drove, so a busy month costs less per mile.${held}</p>
+    <div class="grid4">${box('truckPayment', 'Truck payment')}${box('insurance', 'Insurance')}${box('maintenance', 'Maintenance')}${box('other', 'Other (living, phone...)')}</div>
+    <div class="row-actions"><button class="btn primary" id="bl-save">Save bills</button>
+      <span class="hint">${money(f.factor.billsTotal)} a month</span></div>
+    ${f.factor.history.length ? `<h3 class="sect">Each Monday</h3><div class="tablewrap"><table class="grid"><thead><tr>
+        <th>Checked</th><th>Miles</th><th>Fuel + other</th><th>Bills</th><th>Factor</th></tr></thead>
+      <tbody>${f.factor.history.map((h) => `<tr><td>${esc(gt(h.gameTime))}</td><td>${num(h.miles)} in ${h.days} d</td>
+        <td>${h.measured ? perMi(h.measured) : '--'}</td><td>${h.fixed ? perMi(h.fixed) : '--'}</td>
+        <td>${money(h.was)} → <b>${money(h.total)}</b>${h.changed ? '' : '<div class="hint">left as it was</div>'}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${f.checks.length ? `<h3 class="sect">Game bank checks</h3><div class="tablewrap"><table class="grid"><thead><tr>
+        <th>When</th><th>Expected</th><th>Moved in</th><th>The game showed</th><th>Gone unseen</th></tr></thead>
+      <tbody>${f.checks.map((x) => `<tr><td>${esc(gt(x.gameTime))}</td><td>${x.expected != null ? money(x.expected) : 'first reading'}</td>
+        <td>${money(x.movedIn)}</td><td>${money(x.reported)}</td>
+        <td>${x.gap > 0.5 ? money(x.gap) : x.gap < -0.5 ? `<span class="hint">${money(-x.gap)} more than expected</span>` : '--'}</td></tr>`).join('')}</tbody></table></div>` : ''}
+  </div>`;
+}
+
+function wireFinance() {
+  [$('fh-fuel'), $('fh-fuel2')].forEach((b) => { if (b) b.onclick = fuelModal; });
+  const ck = $('fh-check');
+  if (ck) ck.onclick = checkModal;
+  const save = $('bl-save');
+  if (save) save.onclick = async () => {
+    const v = (k) => Number($(`bl-${k}`).value) || 0;
+    try {
+      S = await api('/finance/bills', 'POST', { truckPayment: v('truckPayment'), insurance: v('insurance'), maintenance: v('maintenance'), other: v('other') });
+      toast('Bills saved: in the cost factor from the next Monday check.'); render();
+    } catch (e) { toast(e.message, 'bad'); }
+  };
+}
+
+/** A fill, any time: on a load it goes on the trip log as well. */
+function fuelModal() {
+  modal(`<div class="panel-head"><h2>Log fuel</h2></div>
+    <div class="grid3">
+      ${dayTimeInput('fu', S.status.gameTime, 'When')}
+      <label>City<input id="fu-city" value="${esc(S.status.city)}"></label>
+      <label>State<input id="fu-state" class="up" maxlength="2" value="${esc(S.status.state)}"></label>
+      <label>Gallons<input id="fu-gal" type="number" min="0" step="0.1"></label>
+      <label>Price per gallon<input id="fu-price" type="number" min="0" step="0.001" placeholder="or the total"></label>
+      <label>Total paid<input id="fu-total" type="number" min="0" step="0.01" placeholder="or the price"></label>
+      <label>Odometer<input id="fu-odo" type="number" min="0" placeholder="${num(S.status.odometer)}"></label>
+      <label>Fuel % after<input id="fu-pct" type="number" min="0" max="100" placeholder="100"></label>
+    </div>
+    <p class="hint">${S.trip ? `On ${esc(S.trip.number)}: it goes on the trip log as well, counted once.` : 'Not on a load: it still counts, against the week.'}
+      The odometer gives your real MPG.</p>
+    <div class="row-actions"><button class="btn primary" id="fu-save">Log it</button><button class="btn ghost" data-close>Cancel</button></div>`);
+  $('fu-save').onclick = async () => {
+    try {
+      const at = readWhen('fu', 'When you filled up');
+      const n = (id) => ($(id).value === '' ? null : Number($(id).value));
+      S = await api('/fuel', 'POST', { day: at.day, time: at.time, city: $('fu-city').value, state: $('fu-state').value,
+        gallons: n('fu-gal'), pricePerGal: n('fu-price'), total: n('fu-total'), odometer: n('fu-odo'), fuelPct: n('fu-pct') });
+      closeModal(); toast('Fill logged.'); render();
+    } catch (e) { toast(e.message, 'bad'); }
+  };
+}
+
+/** The Monday check: the game bank as the game shows it, and anything moved in. Pops up once a session until done. */
+function checkModal() {
+  const ck = S.mondayCheck;
+  if (!ck) return;
+  CHECK_ASKED = ck.week;
+  const expected = ck.expected != null
+    ? `By what the app has seen move, it should read about <b>${money(ck.expected)}</b>: ${money(ck.lastReported ?? 0)} when you last
+       checked (${esc(gt(ck.lastReportedGameTime))}), plus delivery pay, less moves to Broker holding${ck.fuelSince ? ` and ${money(ck.fuelSince)} of fuel` : ''}.
+       Whatever else has gone is tolls, tickets and repairs, and it counts as this week's other spending.`
+    : 'This is the first reading, so there is nothing to check it against yet.';
+  modal(`<div class="panel-head"><h2>Monday check: Week of Day ${ck.week}</h2></div>
+    <p>What does the game bank show right now? ${expected}</p>
+    <div class="grid3">
+      <label>The game bank shows<input id="mc-bal" type="number" min="0" step="1" placeholder="e.g. 8450"></label>
+      <label>Moved into it since last time<input id="mc-in" type="number" min="0" step="1" value="0"
+        title="Money you moved from your account into the game bank: not income, and not counted as spending either"></label>
+      <label>Note<input id="mc-note" placeholder="optional"></label>
+    </div>
+    <p class="hint">Then the cost factor is worked out again from your fuel, that spending and your bills.</p>
+    <div class="row-actions"><button class="btn primary" id="mc-go">Check it</button><button class="btn ghost" data-close>Later</button></div>`);
+  $('mc-go').onclick = async () => {
+    const bal = $('mc-bal').value;
+    if (bal === '') { toast('The game bank balance, as the game shows it.', 'bad'); return; }
+    try {
+      const r = await api('/finance/check', 'POST', { balance: Number(bal), movedIn: Number($('mc-in').value) || 0, note: $('mc-note').value });
+      S = r.snapshot;
+      render();
+      modal(`<div class="panel-head"><h2>Checked</h2></div><p>${esc(r.said)}</p>
+        <div class="row-actions"><button class="btn primary" data-close>OK</button></div>`);
+    } catch (e) { toast(e.message, 'bad'); }
+  };
+}
+
+/** The check pops up by itself once a game Monday has come round, when nothing else is on the screen. */
+function maybeAskCheck() {
+  const ck = S.mondayCheck;
+  if (!ck || CHECK_ASKED === ck.week || !$('modal').classList.contains('hidden')) return;
+  checkModal();
+}
+
 function moneyView() {
   const tr = S.transfers || [], inv = S.invoices || [], g = S.gameBank, h = S.holding;
   const pending = tr.filter((t) => t.status === 'Pending'), done = tr.filter((t) => t.status === 'Done');
@@ -1664,6 +1879,7 @@ function whereHtml() {
     : h.asOf ? `Clocks read ${esc(gt(h.asOf))}${h.source ? ` (${esc(h.source.toLowerCase())})` : ''}.` : '';
   return `<div class="panel" id="where"><div class="panel-head"><h2>Where you are</h2>
       ${h.confirmed === false ? badge('warn', 'clocks need a re-read') : ''}<div class="spacer"></div>
+      <button class="btn tiny" id="wh-fuel">Log fuel</button>
       <button class="btn tiny ${h.confirmed === false ? 'primary' : ''}" id="wh-toggle">${WHERE_OPEN ? 'Close' : 'Update'}</button></div>
     <p style="margin:0"><b>${esc(st.city)}, ${esc(st.state)}</b> · ${dowForDay(dayOf(st.gameTime))}, ${esc(st.monthDay)} · ${fmtTod(timeOf(st.gameTime))}
       &nbsp;·&nbsp; drive ${hhmm(h.drive)} · shift ${hhmm(h.shift)} · break ${hhmm(h.brk)} · cycle ${hhmm(h.cycle)}
@@ -1691,6 +1907,7 @@ function whereHtml() {
 
 function wireWhere() {
   $('wh-toggle').onclick = () => { WHERE_OPEN = !WHERE_OPEN; render(); };
+  $('wh-fuel').onclick = fuelModal;
   const save = $('wh-save');
   if (!save) return;
   save.onclick = async () => {

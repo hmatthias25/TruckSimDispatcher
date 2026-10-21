@@ -98,7 +98,7 @@
     through brokers, negotiating the rate on the phone, planning whether a load can legally be made, and getting paid
     &mdash; with the money kept honest between the game and the GDC Companion App.</p>
   <div class="facts">
-    <div><span>Version</span>0.9 alpha</div>
+    <div><span>Version</span>0.91 alpha</div>
     <div><span>Game</span>American Truck Simulator (Euro Truck Simulator 2 to follow)</div>
     <div><span>Runs beside</span>The GDC Companion App, and TruckSim Dispatcher if you play both</div>
     <div><span>Program</span>TruckSimOwnerOperator.exe &middot; opens in your browser</div>
@@ -127,12 +127,13 @@
     <div><span class="n">10</span><span class="t"><b>Lanes: the next load</b><span>Inbound calls, ringing round, at the pickup</span></span></div>
     <div><span class="n">11</span><span class="t"><b>Money</b><span>Two banks, Broker holding, transfers</span></span></div>
     <div><span class="n">12</span><span class="t"><b>Getting paid</b><span>Invoices, factoring, chasing, detention</span></span></div>
-    <div><span class="n">13</span><span class="t"><b>Home life</b><span>The promise, dates, the call from home</span></span></div>
-    <div><span class="n">14</span><span class="t"><b>Where you are, and your trailer</b><span>Position, clocks, owning a trailer</span></span></div>
-    <div><span class="n">15</span><span class="t"><b>Settings</b><span>Cost per mile, skills, Long Distance, the AI key</span></span></div>
-    <div><span class="n">16</span><span class="t"><b>Your record and standing</b><span>What builds it and what costs it</span></span></div>
-    <div><span class="n">17</span><span class="t"><b>Quick reference</b><span>Every number in one place</span></span></div>
-    <div><span class="n">18</span><span class="t"><b>Questions</b><span>When something is not what you expected</span></span></div>
+    <div><span class="n">13</span><span class="t"><b>Financial health</b><span>The Monday check, fuel, the cost factor</span></span></div>
+    <div><span class="n">14</span><span class="t"><b>Home life</b><span>The promise, dates, the call from home</span></span></div>
+    <div><span class="n">15</span><span class="t"><b>Where you are, and your trailer</b><span>Position, clocks, owning a trailer</span></span></div>
+    <div><span class="n">16</span><span class="t"><b>Settings</b><span>Cost per mile, skills, Long Distance, the AI key</span></span></div>
+    <div><span class="n">17</span><span class="t"><b>Your record and standing</b><span>What builds it and what costs it</span></span></div>
+    <div><span class="n">18</span><span class="t"><b>Quick reference</b><span>Every number in one place</span></span></div>
+    <div><span class="n">19</span><span class="t"><b>Questions</b><span>When something is not what you expected</span></span></div>
   </div>
 </section>
 
@@ -184,7 +185,7 @@
 <section>
   <h2><span class="num">2</span>Installing and starting</h2>
   <ol>
-    <li>Unzip <code>TruckSimOwnerOperator-v0.9-alpha.zip</code> into a folder of its own, for example
+    <li>Unzip <code>TruckSimOwnerOperator-v0.91-alpha.zip</code> into a folder of its own, for example
       <code>Documents\TruckSim Owner-Operator</code>.</li>
     <li>Double-click <b>TruckSimOwnerOperator.exe</b>. A small console window opens and your browser opens the app at
       <code>http://127.0.0.1:5273</code>. Nothing needs installing: no .NET, no internet connection.</li>
@@ -237,7 +238,7 @@
     <tr><td>Skills</td><td>The points you have in Long Distance, High Value, Fragile and Just-In-Time (0&ndash;6), and the ADR
       classes you have. None is fine. The game hides jobs you have not unlocked, and brokers will not book them.</td></tr>
     <tr><td>At home</td><td>Single, or married or with a partner, and how many kids, each optionally named. It decides how much home
-      asks of you (Section 13), and the promise suggested.</td></tr>
+      asks of you (Section 14), and the promise suggested.</td></tr>
     <tr><td>How hard</td><td>The preset: see below. Normal is the intended game.</td></tr>
   </table>
 
@@ -253,11 +254,11 @@
     <tr><td>Hard</td><td>2013 Peterbilt 579, 6.0 mpg</td><td>$1.85</td><td>The legal minimum. Every load counts.</td></tr>
   </table>
   <p>The cost per mile is a starting figure. Set your own in <b>Settings</b> from what the Companion App says you spend
-    (see Section 15).</p>
+    (see Section 16).</p>
 
   <h3>No trailer: power-only</h3>
   <p>You start without a trailer, so you pull the shipper's: the game's <b>Freight Market</b>, not the Cargo Market, which
-    needs a trailer of your own. Buying a trailer later is a growth step (Section 14).</p>
+    needs a trailer of your own. Buying a trailer later is a growth step (Section 15).</p>
 
   <h3>Starting over</h3>
   <p>There is no button for it on purpose. Delete or rename the <code>oo-data</code> folder with the app closed, and the
@@ -275,7 +276,7 @@
     <tr><td>Cost</td><td>Your all-in cost per mile.</td></tr>
     <tr><td>Can spend</td><td>What you may spend in the game bank: its balance less shipper money still waiting to move
       (Section 11). <b>--</b> until you tell the app the balance.</td></tr>
-    <tr><td>Home life</td><td>0 to 100 (Section 13). Green from 70, amber from 40, red below.</td></tr>
+    <tr><td>Home life</td><td>0 to 100 (Section 14). Green from 70, amber from 40, red below.</td></tr>
     <tr><td>Phone</td><td>Quiet, or &#x260E; Ringing when a broker or home is calling. Click it to go to the call.</td></tr>
   </table>
   <h3>The tabs</h3>
@@ -285,6 +286,8 @@
     <tr><td>Active Load</td><td>The booked run: its appointment, the plans, the trip log, the arrivals and the close-out. A pip on the tab while a load is booked.</td></tr>
     <tr><td>Brokers</td><td>The phone, and the broker directory.</td></tr>
     <tr><td>Money</td><td>The game bank, transfers to make, Broker holding, and invoices. A number on the tab is transfers waiting.</td></tr>
+    <tr><td>Financial health</td><td>How the business is doing, week by week: what you earned, spent and kept, fuel, each load, the
+      brokers, and the cost factor. A number on the tab is the Monday check waiting.</td></tr>
     <tr><td>Home</td><td>Home life, the dates on the calendar, your promise.</td></tr>
     <tr><td>Settings</td><td>Cost per mile, skills, Long Distance limits, the AI key.</td></tr>
     <tr><td>Log</td><td>Everything that has happened, newest first.</td></tr>
@@ -431,7 +434,7 @@
     <li>Only their own freight, from their own depots: they offer only that company's jobs off the board.</li>
     <li>Almost no margin, net 15, credit A, a 1% quick-pay fee.</li>
     <li>Only for a long, clean record: 120 days, 60 loads, 97% on time, plus the trailer and endorsements their freight needs.</li>
-    <li>Running <b>Real Companies</b> or another mod that renames them? Tell the app the names in Settings (Section 15), and
+    <li>Running <b>Real Companies</b> or another mod that renames them? Tell the app the names in Settings (Section 16), and
       they go by what your game calls them and find their own freight on your boards.</li>
   </ul>
 
@@ -530,7 +533,7 @@
     takes a plain figure.</p>
 
   <h3>Brokers remember</h3>
-  <p>Each broker keeps a <b>standing</b> with you, from &minus;100 to 100 (Section 16). It buys a little of their margin,
+  <p>Each broker keeps a <b>standing</b> with you, from &minus;100 to 100 (Section 17). It buys a little of their margin,
     more patience, an easier &ldquo;anything better?&rdquo;, and earlier calls with lanes. Let them down and they cool off;
     far enough, and they stop taking your calls.</p>
 </section>
@@ -661,7 +664,7 @@
       you land where the next load is easy. The broker says so (&ldquo;produce on reefers is running out of there right
       now&rdquo;). It only leans where the busy region has several cities in reach of the lane's distance, judged in the game's
       miles, which the app learns from your boards (the game's roads run shorter than the real map).</li>
-    <li>When home is pulling (Section 13), the lane goes home: it fits any job that ends near your home city, or, where home is
+    <li>When home is pulling (Section 14), the lane goes home: it fits any job that ends near your home city, or, where home is
       more than one load away, it heads into your home region.</li>
   </ul>
 
@@ -807,7 +810,60 @@
 
 <!-- ============================================================ 13 -->
 <section>
-  <h2><span class="num">13</span>Home life</h2>
+  <h2><span class="num">13</span>Financial health</h2>
+  <p class="lede">How the business is really doing. Three habits keep it true: <b>log every fill</b>, <b>check the game bank
+    every game Monday</b>, and <b>keep your monthly bills in</b>. From them the app works out what a mile costs you, and every
+    load and offer is judged on that.</p>
+  <figure><img src="img/finance.png"><figcaption>The Financial health tab.</figcaption></figure>
+
+  <h3>Log every fill</h3>
+  <p><span class="btn">Log fuel</span>, beside <b>Where you are</b> on the Board and on this tab, any time, on a load or not:
+    gallons, the price per gallon or the total, and the odometer. On a load it goes on the trip log as well, counted once (a
+    fill logged from the trip log counts the same). The odometer at each fill gives your <b>real MPG</b>.</p>
+  <figure><img src="img/fuel.png"><figcaption>Logging a fill.</figcaption></figure>
+
+  <h3>The Monday check</h3>
+  <p>The first time you use the app on or after a game Monday (Day 1 is a Monday), it asks what the game bank shows. It
+    knows what to expect: the last reading, plus delivery pay, less the moves to Broker holding and the fuel you logged.
+    <b>What else has gone</b> is tolls, tickets and in-game repairs, and it counts as that week's <b>other spending</b>.</p>
+  <ul>
+    <li><b>Moved money into the game bank</b> (from your own account, say for fuel)? Put it in the second box: it is not
+      income, and not spending either.</li>
+    <li>A bank <b>higher</b> than expected is noted, not counted as income: money in that you did not enter.</li>
+    <li><span class="btn">Later</span> puts it off; the tab keeps a number on it until it is done. A balance typed on the Money
+      tab finds unseen spending the same way.</li>
+  </ul>
+  <figure><img src="img/monday-check.png"><figcaption>The Monday check, and what it found.</figcaption></figure>
+  <figure><img src="img/monday-checked.png"></figure>
+
+  <h3>The cost factor</h3>
+  <p>Worked out again after every Monday check, from the last four weeks: <b>fuel and other spending per mile</b>, plus
+    <b>your monthly bills</b> (truck payment, insurance, maintenance, other) spread over the miles you actually drove. Copy the
+    bills from the Companion App, which pays them out of Nexora where the game bank never sees them. A busy month spreads them
+    thinner. Until they are in, the rest of the old factor is held for them, so loads do not suddenly look better than they
+    are. Under 300 miles in the window, it is left as it was. A career from before this keeps its factor until the first game
+    Monday after it is opened.</p>
+
+  <h3>What the tab shows</h3>
+  <table>
+    <tr><th style="width:24%">Panel</th><th>What it shows</th></tr>
+    <tr><td>This week</td><td>Net so far, earned per mile, the measured cost per mile, the cost factor, and cash: the game bank
+      and what brokers still owe you.</td></tr>
+    <tr><td>Week by week</td><td>The last eight game weeks: loads, miles (off the odometer, empty ones too), earned (rates,
+      detention, TONUs), fees (quick pay, factoring), fuel, other spending, net and net per mile.</td></tr>
+    <tr><td>Fuel</td><td>The last four weeks and all time: fills, gallons, money, price per gallon, real MPG, fuel per mile,
+      and the fill log.</td></tr>
+    <tr><td>Per load</td><td>The last ten: the game's pay against your rate (the broker's cut), rate per mile, miles, the cost
+      at today's factor, fees, and what each really left you.</td></tr>
+    <tr><td>Brokers and getting paid</td><td>What is owed by age, overdue and in collections; each broker's loads, rate per
+      mile, days to pay and what they owe now.</td></tr>
+    <tr><td>The cost factor</td><td>Your bills, the factor at each Monday and what it was built from, and the game bank
+      checks.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="num">14</span>Home life</h2>
   <p class="lede">In the US nothing sends a driver home, and an owner/operator who never goes home loses nothing by it.
     This app does not support the driver who lives in the truck: every driver has a home, and has to go back to it.</p>
   <figure><img src="img/home.png"><figcaption>The Home tab.</figcaption></figure>
@@ -885,7 +941,7 @@
 
 <!-- ============================================================ 14 -->
 <section>
-  <h2><span class="num">14</span>Where you are, and your trailer</h2>
+  <h2><span class="num">15</span>Where you are, and your trailer</h2>
   <p class="lede">Where the truck is and what your clocks say are kept current as you play: by the run (arrivals, the
     close-out), by your calls to brokers, by <b>Running late? Check it from here</b> and by <b>I'm home</b>. You only need to
     correct them yourself with nothing booked.</p>
@@ -917,12 +973,12 @@
 
 <!-- ============================================================ 15 -->
 <section>
-  <h2><span class="num">15</span>Settings</h2>
+  <h2><span class="num">16</span>Settings</h2>
   <figure class="md"><img src="img/settings.png"></figure>
   <h3>All-in cost per mile</h3>
-  <p>Everything it costs to run a mile: fuel, tolls, the truck note, insurance, maintenance and living on the road. Take it
-    from the Companion App's records: what you spent over a month, divided by the miles you ran. Every load and every offer
-    is judged on this one figure.</p>
+  <p>Everything it costs to run a mile: fuel, tolls, the truck note, insurance, maintenance and living on the road. Every load
+    and every offer is judged on this one figure. After the first game Monday it is worked out for you at each Monday check
+    (Section 13); typed here, it holds until the next.</p>
   <h3>Skills</h3>
   <p>Update them when you put a point into a skill or earn an ADR class. Brokers and the board follow at once: a new Long
     Distance level is a reason to ring round, because longer lanes pay better.</p>
@@ -955,7 +1011,7 @@
 
 <!-- ============================================================ 16 -->
 <section>
-  <h2><span class="num">16</span>Your record and standing</h2>
+  <h2><span class="num">17</span>Your record and standing</h2>
   <h3>Your record as a carrier</h3>
   <p>What every broker looks at before taking you on, shown at the top of the directory: <b>loads delivered</b>,
     <b>percentage on time</b>, and <b>days with your own authority</b>. Cancellations and cargo claims count against you; a late
@@ -984,7 +1040,7 @@
 
 <!-- ============================================================ 17 -->
 <section>
-  <h2><span class="num">17</span>Quick reference</h2>
+  <h2><span class="num">18</span>Quick reference</h2>
   <table>
     <tr><th style="width:44%">Rule</th><th>Number</th></tr>
     <tr><td>A broker's rate</td><td>Never above the game's pay for the job</td></tr>
@@ -1013,7 +1069,7 @@
 
 <!-- ============================================================ 18 -->
 <section>
-  <h2><span class="num">18</span>Questions</h2>
+  <h2><span class="num">19</span>Questions</h2>
   <h4>A broker offered me a worse job than the best one on the board.</h4>
   <p>That is the starter tier working as meant. Ask &ldquo;anything better?&rdquo;, try another broker, or build the record
     that gets you to established brokers.</p>
