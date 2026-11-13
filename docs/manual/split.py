@@ -53,6 +53,7 @@ PLAYER_TITLES = {
     "After a delivery you usually just confirm",
     "Hours of service \u2014 the four clocks",
     "Reporting and reading your clocks",
+    "Taking a rest, and a clock that jumped",
     "The speed factor teaches itself",
     "Reading your clocks off a screenshot",
     "The board: the dock first, then the city",
@@ -173,7 +174,7 @@ OPS_COVER = """<div class="page">
 """
 
 
-BUILD_CS = pathlib.Path(__file__).resolve().parents[2] / "Services" / "Build.cs"
+BUILD_CS = pathlib.Path(__file__).resolve().parents[2] / "Core" / "Services" / "Build.cs"
 
 
 def build_label() -> str:

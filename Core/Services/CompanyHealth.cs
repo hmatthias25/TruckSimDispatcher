@@ -101,7 +101,7 @@ public static class CompanyHealth
         };
 
         v.Evidence.Add($"Net {(v.NetOverWindow < 0 ? "-" : "")}{Units.Money0(Math.Abs(v.NetOverWindow))} over the " +
-                       $"last {reports.Count} report(s), after wages and repairs.");
+                       $"last {reports.Count} report(s): your own loads and the hired fleet's, after repairs and spending.");
         v.Evidence.Add(v.Improving
             ? "And the trend is upward — the recent reports are better than the older ones."
             : "The trend is flat or downward on the recent reports.");

@@ -1656,13 +1656,105 @@ public static class Carriers
     /// marking the city reached before they have would hand them freight out of a city ATS will not
     /// generate any for. See <see cref="Changeover"/>.
     /// </param>
+    /// <summary>
+    /// Leaving a job: everything the last company had, ran or decided goes with it. Its loads and books, its fleet and
+    /// the drivers in it, its fleet reports, the orders and requests it was working through, the reviews it held, the
+    /// home-time and trailer arrangements it made. The new company is set up from nothing, the way a first job is.
+    /// Reported from play: hired drivers, fleet reports and reviews from the old company carried into the new one.
+    ///
+    /// What stays is the driver's: the record a new employer reads (employment history, prior loads and miles, skills,
+    /// endorsements, a termination), pay stubs and W-2s, and what the game itself knows — the cities reached, the
+    /// roads learned, the clocks and the rests on them.
+    /// </summary>
+    public static void ClearTheOldJob(AppState s)
+    {
+        s.Trips.Clear();
+        s.Board.Clear();
+        s.Ledger.Clear();
+        s.WorkOrders.Clear();
+        s.Incidents.Clear();
+        s.Discipline.Clear();
+        s.Trucks.Clear();
+        s.Trailers.Clear();
+        s.HiredDrivers.Clear();
+        s.FleetReports.Clear();
+        s.EquipmentOrders.Clear();
+        s.TrailerRequests.Clear();
+        s.YardRequests.Clear();
+        s.TrailerSwaps.Clear();
+        s.HomeTimeRequests.Clear();
+        s.ProbationReviews.Clear();
+        s.PeriodicReviews.Clear();
+        s.TrailerTypeRequests.Clear();
+        s.DedicatedAccountRequests.Clear();
+        s.LoadRefusals.Clear();
+        s.AlternateAsks.Clear();
+        s.CabotageByTruck.Clear();
+        s.Tow = null;
+        s.DamageRunHomeSinceGameTime = "";
+        s.Counters = new Counters();
+        s.Status.ActiveTripId = "";
+
+        var d = s.Driver;
+        var now = s.Status.GameTime;
+        d.AssignedTruckUnit = "";
+        d.AssignedTrailerUnit = "";
+        d.HomeTerminalId = "";
+        d.Transfers.Clear();
+        d.HomeTimeGranted = false;
+        d.HomeTimeGrantedGameTime = "";
+        d.AtHomeYard = false;
+        d.LastUnitRequestRefusedGameTime = "";
+        d.HomeTimesOnTrailer = 0;
+        d.HomeTimesTaken = 0;
+        d.LastHomeGameTime = now;
+        d.LastRankBriefing = null;
+        d.LastTrailerDecision = "";
+        d.LastTrailerDecisionGameTime = "";
+        d.ChangeoverUnit = "";
+        d.ChangeoverType = "";
+        d.ChangeoverGameTime = "";
+        d.ChangeoverWaitDays = null;
+        d.ChangeoverNote = "";
+        d.ChangeoverReserve = false;
+        d.HomeDaysPlanned = 0;
+        d.HomeArrivedGameTime = "";
+        d.HomeReadyGameTime = "";
+        d.HomeRestRecorded = false;
+        d.HomeContractRenewedGameTime = "";
+        d.HomeContractRenewalOpen = false;
+        d.LastArrivalBrief = null;
+        d.LastArrivalBriefGameTime = "";
+        d.LastArrivalBriefRead = false;
+        d.CeilingToldAtRank = "";
+        d.ShowcaseOffered = false;
+        d.ShowcaseTaken = false;
+        d.TrueUpShortfall = 0;
+        d.LastTrueUpDay = LedgerService.MondayOnOrBefore(GameClock.DayOf(now) ?? 0);
+        d.TrailerByRequest = false;
+        d.DedicatedVanillaName = "";
+        d.OnDedicated = false;
+        d.DedicatedAccount = "";
+        d.OffAccountLoads = 0;
+        d.Notes = "";
+    }
+
     public static void Employ(AppState s, string code, DriverApplication app, bool markHqReached = true)
     {
         var spec = AllSpecs.FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase))
                    ?? throw new InvalidOperationException("No such carrier.");
 
-        // Garages the driver bought in ATS survive a change of employer — the app cannot un-buy them.
-        var keptTerminals = s.Company.Terminals.Count > 0 ? s.Company.Terminals.ToList() : null;
+        // A garage the driver bought in ATS is still theirs after a change of employer, but it is only one of the new
+        // company's yards where the new company runs one: its headquarters, or a city on its network. The rest are the
+        // old job's, and the changeover says to sell them (see Changeover.Raise) — they used to stay on the new books as
+        // though the new employer ran them. A new job starts from what the new company has. Reported from play.
+        var network = NetworkFor(spec);
+        var kept = s.Company.Terminals
+            .Where(t => (t.City.Equals(spec.HqCity, StringComparison.OrdinalIgnoreCase)
+                         && t.State.Equals(spec.HqState, StringComparison.OrdinalIgnoreCase))
+                        || network.Any(n => n.Equals($"{t.City},{t.State}", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        var keptTerminals = kept.Count > 0 ? kept : null;
 
         s.Company = new Company
         {

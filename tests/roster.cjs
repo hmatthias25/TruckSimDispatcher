@@ -77,6 +77,16 @@ async function rosterOf(which) {
   ok('with no name shared between them',
     real.every((r) => !fict.some((f) => f.name === r.name)), 'no overlap');
 
+  head('1b. Chosen on the first screen, before any hire');
+  // Reported from play on 2026-11-01: only Settings had it, and Settings is not there before the first hire.
+  const chosen = (await api('/onboarding/market', 'POST', { ...APP, carrierRoster: 'Real' })).market;
+  ok('real companies, picked on the application', chosen.every((c) => real.some((r) => r.name === c.name)), chosen.slice(0, 3).map((c) => c.name).join(', '));
+  const invented = (await api('/onboarding/market', 'POST', { ...APP, carrierRoster: 'Fictional' })).market;
+  ok('and invented ones', invented.length === fict.length && invented.every((c) => fict.some((f) => f.name === c.name)),
+    invented.slice(0, 3).map((c) => c.name).join(', '));
+  ok('an application that does not say leaves it as it was',
+    (await api('/onboarding/market', 'POST', APP)).market.every((c) => fict.some((f) => f.name === c.name)));
+
   head('2. The truckload field the report asked for');
   // The top of the US truckload market, which is the list a driver would recognise. LTL and parcel are
   // deliberately absent: there is no seat in this game for a package car.

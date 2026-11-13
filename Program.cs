@@ -99,6 +99,9 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     if (u.LocationCity != null) s.Status.LocationCity = u.LocationCity.Trim();
     if (u.LocationState != null) s.Status.LocationState = Ets2Data.Region(s, u.LocationState);
     if (u.LocationKind != null) s.Status.LocationKind = u.LocationKind;
+    // Where the clock and the odometer stood, so a jump long enough to have been a rest can be asked about.
+    var clockBefore = GameClock.TryParse(s.Status.GameTime);
+    var odometerBefore = s.Status.AtsOdometer;
     if (u.GameTime != null) s.Status.GameTime = u.GameTime;
     if (u.FuelPct.HasValue) s.Status.FuelPct = Math.Clamp(u.FuelPct.Value, 0, 100);
     if (u.TruckDamagePct.HasValue) s.Status.TruckDamagePct = Math.Clamp(u.TruckDamagePct.Value, 0, 100);
@@ -135,6 +138,20 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
     if (tr != null && u.TrailerDamagePct.HasValue && !DropHook.Is(tr.Type))
         tr.DamagePct = s.Status.TrailerDamagePct;
 
+    // A place the map does not know is measured from a guess, and everything that reads a distance off it is out — home
+    // time's trigger among them. Said, with the nearest spelling the map does know. Reported from play on 2026-11-04:
+    // "Gedster, DK" was taken without a word and put about 600 km from Rotterdam, where Gedser is nearer 1,000.
+    string? unplaced = null;
+    if (moved && !Geo.Knows(s.Status.LocationCity, s.Status.LocationState) && Geo.KnowsState(s.Status.LocationState))
+    {
+        var place = DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState);
+        unplaced = $"I cannot find {place} on the map, so distances from here are a guess." +
+                   (Geo.Nearest(s.Status.LocationCity, s.Status.LocationState) is { } near
+                       ? $" Did you mean {near}? Correct the city and report in again."
+                       : " Check the spelling against the game's map, and report in again. A town a map mod adds may simply not be on file.");
+        store.Log(s, "dispatch", unplaced);
+    }
+
     // Arriving somewhere new grows the network — and may be worth a yard.
     var discovery = DiscoveryService.Note(s, s.Status.LocationCity, s.Status.LocationState, s.Status.GameTime);
 
@@ -146,6 +163,7 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
 
     // Reporting in at the home yard is how home time gets taken — we observe it, we do not schedule it.
     var wentHome = HomeTime.Touch(s);
+    Restart.NoteGap(s, clockBefore, odometerBefore, wentHome);
     if (wentHome)
         store.Log(s, "career", $"Home time taken at {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)}.");
     var homeBrief = wentHome ? HomeTime.ArrivalBrief(s) : null;
@@ -170,7 +188,7 @@ app.MapPost("/api/status", (StatusUpdate u) => Results.Ok(store.Mutate<object>(s
         : CareerService.AutoAdvance(s);
     if (advance != null) store.Log(s, "career", advance.Headline);
 
-    return new { snapshot = Snapshot(s), discovery, wentHome, homeBrief, paid, redeemed, advance };
+    return new { snapshot = Snapshot(s), discovery, wentHome, homeBrief, paid, redeemed, advance, unplaced };
 })));
 
 // ---------------------------------------------------------------- discovery
@@ -315,6 +333,7 @@ app.MapPost("/api/onboarding/screen", (DriverApplication a) => Results.Ok(Seed.S
 app.MapPost("/api/onboarding/market", (DriverApplication a) => Results.Ok(store.Mutate(s =>
 {
     s.Application = a;
+    if (a.CarrierRoster is "Real" or "Fictional") s.Settings.CarrierRoster = a.CarrierRoster;
     return new { market = Carriers.Market(s, includeCurrent: true), application = a };
 })));
 
@@ -347,7 +366,9 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
         store.Log(s, "pay", $"{finalPay.Number} — final settlement from {s.Company.Name}, " +
                             $"{Units.Money(finalPay.Gross)} gross, {Units.Money(finalPay.Stub?.Net ?? finalPay.Gross)} net.", finalPay.Number);
 
-    // Close out the stint that is ending.
+    // Close out the stint that is ending. A driver who was let go did not resign, and is not asked why they are leaving:
+    // the record says why. Reported from play — fired, then asked for a reason for leaving at the second-chance carrier.
+    var fired = s.Driver.Status == "Terminated";
     var stats = CareerService.Compute(s);
     s.Driver.EmploymentHistory.Insert(0, new EmploymentRecord
     {
@@ -363,8 +384,8 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
         Earnings = s.Driver.LifetimeEarnings,
         // Taken now, because the trips it is read from are cleared a few lines down.
         DivisionDays = DivisionExperience.ServedDaysByDivision(s),
-        Separation = "Resigned",
-        Reason = req.Reason ?? ""
+        Separation = fired ? "Terminated" : "Resigned",
+        Reason = fired ? s.Driver.TerminationReason : req.Reason ?? ""
     });
     s.Driver.PriorLoads += stats.LoadsDelivered;
     s.Driver.PriorMiles += stats.TotalMiles;
@@ -380,16 +401,7 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     //
     // Settlements are deliberately NOT cleared. They are the driver's pay history, not the company's
     // books — including the final stub issued moments ago, which they have not even seen yet.
-    s.Trips.Clear();
-    s.Board.Clear();
-    s.Ledger.Clear();
-    s.WorkOrders.Clear();
-    s.Incidents.Clear();
-    s.Discipline.Clear();
-    s.Counters = new Counters();
-    s.Driver.Transfers.Clear();
-    s.Driver.HomeTerminalId = "";
-    s.Status.ActiveTripId = "";
+    Carriers.ClearTheOldJob(s);
 
     var carriedApp = s.Application ?? new DriverApplication();
     Carriers.Employ(s, req.Code, carriedApp, markHqReached: had.NewHqAlreadyReached);
@@ -420,7 +432,9 @@ app.MapPost("/api/market/apply", (CarrierApplication req) => Results.Ok(store.Mu
     var hqTerminal = s.Company.Terminals.FirstOrDefault(t => t.IsHeadquarters);
     if (hqTerminal != null) s.Driver.HomeTerminalId = hqTerminal.Id;
 
-    store.Log(s, "career", $"Resigned from {leaving} and hired at {s.Company.Name} as {s.Driver.RankTitle}.");
+    store.Log(s, "career", fired
+        ? $"Let go by {leaving}; hired at {s.Company.Name} as {s.Driver.RankTitle}."
+        : $"Resigned from {leaving} and hired at {s.Company.Name} as {s.Driver.RankTitle}.");
 
     // Sell what belonged to the last company, buy what this one runs, and get to the cities where that
     // has to happen. The app cannot do any of it, so it is written down and worked through.
@@ -1683,6 +1697,38 @@ app.MapPost("/api/restart/complete", (RestartCompleteRequest req) => Results.Ok(
     return new { snapshot = Snapshot(s), message, accepted, order };
 })));
 
+// The driver says they are taking a rest — daily or weekly (the 34 in ATS) — and it goes through the same two
+// steps: parked up, then done. Reported from play: a 45 sat while the truck was repaired, with nowhere to say so.
+app.MapPost("/api/rest/take", (RestTakeRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var order = Restart.Take(s, req.Kind ?? "");
+    var message = $"{order.Number}: {Restart.What(s, order)} — report in when you have parked up.";
+    store.Log(s, "hos", message, order.Number);
+    return new { snapshot = Snapshot(s), message, order };
+})));
+
+app.MapPost("/api/rest/cancel", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var order = Restart.Cancel(s);
+    var message = $"{order.Number}: {Restart.What(s, order)} called off — not counted.";
+    store.Log(s, "hos", message, order.Number);
+    return new { snapshot = Snapshot(s), message, order };
+})));
+
+// A jump in the clock answered: yes, a rest, from then to then — or no.
+app.MapPost("/api/rest/gap", (RestGapRequest req) => Results.Ok(store.Mutate<object>(s =>
+{
+    var (order, message) = Restart.LogGap(s, req.Kind ?? "", req.From ?? "", req.To ?? "");
+    store.Log(s, "hos", message, order.Number);
+    return new { snapshot = Snapshot(s), message, order };
+})));
+
+app.MapPost("/api/rest/gap/dismiss", () => Results.Ok(store.Mutate(s =>
+{
+    Restart.DismissGap(s);
+    return Snapshot(s);
+})));
+
 // Asking to be moved into a better unit sitting at the yard. Answered on the spot, because the driver
 // is standing there looking at it.
 app.MapPost("/api/equipment/ask-better-unit", () => Results.Ok(store.Mutate<object>(s =>
@@ -2226,11 +2272,33 @@ app.MapGet("/api/maintenance/quote", (double? truck, double? trailer, bool? comp
 // never guesses at it, and never invents a number ATS did not show them.
 app.MapPost("/api/maintenance/writeoff", (WriteOffRequest req) => Results.Ok(store.Mutate(s =>
 {
+    // The wreck as it stood, before the write-off clears it off the truck.
+    var wreck = s.Trucks.FirstOrDefault(t => t.Unit.Equals(req.Unit ?? "", StringComparison.OrdinalIgnoreCase));
+    // Only the driver's own tractor is theirs to answer for; a hired driver's wreck is on their file, not the player's.
+    var mine = wreck != null && wreck.Unit.Equals(s.Driver.AssignedTruckUnit, StringComparison.OrdinalIgnoreCase);
+    var damageAtWriteOff = wreck == null ? 0 : Math.Max(wreck.DamagePct, mine ? s.Status.TruckDamagePct : 0);
+    var damageBefore = wreck == null ? 0 : SafetyService.DamageBefore(s, wreck, Math.Max(damageAtWriteOff, s.Settings.Maintenance.TotalLossPct));
     var result = Shop.WriteOff(s, req.Unit, req.DriverFault, req.ScrapRecovery, req.Notes ?? "");
     store.Log(s, "maintenance",
         $"Unit {Equip.Label(s, result.Unit)} written off — insurance {Units.Money(result.InsurancePayout)} less {Units.Money(result.Deductible)} deductible, " +
         $"scrap {Units.Money(result.ScrapRecovery)}, net {Units.Money(result.NetRecovery)}.", result.Unit);
-    return new { writeOff = result, snapshot = Snapshot(s) };
+
+    // Down to the driver, and no incident on file for it: the wreck goes on the record now, and what follows is said
+    // in the same place as the write-off. See SafetyService.CoverWriteOff.
+    object? filed = null;
+    if (req.DriverFault && mine && SafetyService.CoverWriteOff(s, wreck, damageAtWriteOff, damageBefore) is var (inc, action, probation))
+    {
+        store.Log(s, "safety", $"{inc.Number} {inc.Kind} (Driver fault): {inc.Description}", inc.Number);
+        result.Instructions.Add($"{inc.Number}: the wreck is on your safety record — a preventable, graded {inc.Severity.ToLowerInvariant()}.");
+        if (probation != null) result.Instructions.Add(probation.Message);
+        if (action != null)
+        {
+            store.Log(s, "safety", $"{action.Number} {action.Level} issued on {inc.Number}.", action.Number);
+            result.Instructions.Add($"{action.Number}: {SafetyService.CorrectiveFor(action.Level, inc)}");
+        }
+        filed = new { incident = inc, action, probation };
+    }
+    return new { writeOff = result, filed, snapshot = Snapshot(s) };
 })));
 
 // ---------------------------------------------------------------- safety
@@ -2241,6 +2309,12 @@ app.MapPost("/api/incidents", (Incident inc) => Results.Ok(store.Mutate<object>(
     // Damage reported with the incident goes on the truck first, because whether the tractor survives is
     // read off that figure and the driver has just told us what it is.
     var truck = DispatchEngine.AssignedTruck(s);
+    // What the wreck did, measured against the truck BEFORE the figure goes on it. It used to be measured after, so
+    // every incident with a damage reading was graded against itself: a 100% rollover came out as no damage, below
+    // the noise floor, and neither discipline nor probation heard of it. Reported from play.
+    if (inc.DamageIncurredPct < 0 && inc.TruckDamagePctAfter >= 0)
+        inc.DamageIncurredPct = Math.Max(0, inc.TruckDamagePctAfter
+            - SafetyService.DamageBefore(s, truck, inc.TruckDamagePctAfter, inc.TripNumber));
     if (inc.TruckDamagePctAfter >= 0 && truck != null)
     {
         truck.DamagePct = Math.Clamp(inc.TruckDamagePctAfter, 0, 100);
@@ -3049,6 +3123,16 @@ object Snapshot(AppState? given = null)
                 : Restart.Needed(s)
                     ? new { order = (RestartOrder?)null, instructions = new List<string>(), needed = true }
                     : null,
+            // The driver's own rest: a daily one on order or running, the rests they can say they are taking, and a
+            // jump in the clock that may have been one.
+            rest = new
+            {
+                daily = Restart.OpenDaily(s) is { } dr ? new { order = dr, instructions = Restart.Instructions(s, dr) } : null,
+                choices = Restart.Choices(s),
+                gap = GameClock.TryParse(s.Status.RestGapFrom) is { } gf && GameClock.TryParse(s.Status.RestGapTo) is { } gt
+                    ? new { from = s.Status.RestGapFrom, to = s.Status.RestGapTo, hours = Math.Round((gt - gf).TotalHours, 2) }
+                    : null,
+            },
             // Out of window on a customer's property: legal, not their fault, and they cannot move.
             stranded = Stranded.Assess(s),
             finance = LedgerService.Summary(s),
@@ -3119,6 +3203,11 @@ object Snapshot(AppState? given = null)
             rerig = TrailerSwap.Open(s),
             maintenanceAlerts = MaintenanceService.FleetAlerts(s),
             dispatchBlockers = DispatchEngine.DispatchBlockers(s, truck, trailer),
+            // Let go, and not finished: the carriers that would take the driver now, by name. The banner used to send a
+            // fired driver to start a new career when the second-chance carriers were open to them. Reported from play.
+            rehire = s.Driver.Status == "Terminated" && !s.Driver.CareerOver
+                ? Carriers.Market(s).Where(l => l.WouldHire).Select(l => l.Name).ToList()
+                : null,
             // How long the truck has been over the run-home line, so the squeeze on the board is
             // visible rather than mysterious. Null when there is no damage order.
             damageDaysOverdue = Shop.DamageDaysOverdue(s),
@@ -3230,6 +3319,9 @@ object Snapshot(AppState? given = null)
             // Sell, buy and drive-to-first, left over from a change of employer. Standing, because it is
             // work across several sessions in ATS rather than something to read once and lose.
             changeover = Changeover.View(s),
+            // Setting the new company up, while the move is still being squared: the same guide a first job gets,
+            // kept on the Career tab rather than shown once in the welcome. Reported from play.
+            setup = s.Changeover is { Closed: false } ? Carriers.SetupChecklist(s) : null,
 
             // A drive figure that matches the break clock, which is what a break-capped HOS display looks
             // like. Computed off state rather than off a request, so hand entry, the screenshot reader and
@@ -3405,6 +3497,8 @@ record DeclineRequest(string RequestId);
 record TrailerDeclineRequest(string RequestId, string? GameTime);
 record RestartArrivedRequest(string? GameTime, string? City, string? State);
 record RestartCompleteRequest(string? GameTime);
+record RestTakeRequest(string? Kind);
+record RestGapRequest(string? Kind, string? From, string? To);
 record WindowReadRequest(string? Text, string? DestState);
 record WindowFixRequest(double DeadlineHours, string? Note);
 record AskHomeRequest(string? Reason);

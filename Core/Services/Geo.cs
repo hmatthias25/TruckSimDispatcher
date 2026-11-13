@@ -173,6 +173,52 @@ public static class Geo
 
     public static bool Knows(string? city, string? state) => Locate(city, state) != null;
 
+    /// <summary>
+    /// The known town in the same country or state whose name is nearest a spelling the app cannot place — "Gedser" for
+    /// "Gedster" — or null where none is within a few letters. Named as the table has it (accents folded), title-cased.
+    /// </summary>
+    public static string? Nearest(string? city, string? state)
+    {
+        var c = Normalise(city ?? "");
+        var st = (state ?? "").Trim().ToUpperInvariant();
+        if (c.Length < 3 || st.Length != 2) return null;
+        var suffix = "|" + st;
+        var limit = Math.Max(1, Math.Min(3, c.Length / 3));
+        string? best = null;
+        var bestD = int.MaxValue;
+        foreach (var key in Cities().Keys)
+        {
+            if (!key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
+            var name = key[..^suffix.Length];
+            if (Math.Abs(name.Length - c.Length) > limit) continue;
+            var d = Distance(c, name, limit);
+            if (d < bestD) { bestD = d; best = name; }
+        }
+        return best == null || bestD > limit ? null
+            : System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(best);
+    }
+
+    /// <summary>Edit distance, given up past <paramref name="limit"/>.</summary>
+    private static int Distance(string a, string b, int limit)
+    {
+        var prev = new int[b.Length + 1];
+        var cur = new int[b.Length + 1];
+        for (var j = 0; j <= b.Length; j++) prev[j] = j;
+        for (var i = 1; i <= a.Length; i++)
+        {
+            cur[0] = i;
+            var rowMin = cur[0];
+            for (var j = 1; j <= b.Length; j++)
+            {
+                cur[j] = Math.Min(Math.Min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+                rowMin = Math.Min(rowMin, cur[j]);
+            }
+            if (rowMin > limit) return int.MaxValue;
+            (prev, cur) = (cur, prev);
+        }
+        return prev[b.Length];
+    }
+
     // Every known town as a point with its country, for telling which country a stretch of road is in.
     private static readonly Dictionary<string, (double Lat, double Lon, string Cc)[]> _points = new(StringComparer.OrdinalIgnoreCase);
 

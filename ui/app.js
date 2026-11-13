@@ -782,6 +782,7 @@ function closeModal() { $('modal').classList.add('hidden'); $('modal-body').inne
     if (!S.onboarded) {
       $('onboarding').classList.remove('hidden');
       $('ap-gameday').value = 1;
+      $('ap-roster').value = S.settings.carrierRoster === 'Fictional' ? 'Fictional' : 'Real';
       onboardingForGame();
       gameWordsIn(document.body);   // the static application page, in the career's game's words
       // Choosing the game puts the career on it, with that game's defaults, before anything is applied for.
@@ -842,6 +843,7 @@ function onboardingForGame() {
 function readApplication() {
   return {
     driverName: sv('ap-name'),
+    carrierRoster: sv('ap-roster'),
     preferredDivision: sv('ap-div1'),
     secondDivision: sv('ap-div2'),
     experienceYears: fv('ap-exp'),
@@ -1141,6 +1143,7 @@ const CHG_KIND = {
   Buy: ['info', 'Buy in ATS'],
   Reach: ['bad', 'Drive there first'],
   Keep: ['ok', 'Keeps'],
+  Release: ['warn', 'Let go in ATS'],
 };
 
 function changeoverHtml(c, compact, readOnly) {
@@ -1624,8 +1627,20 @@ function bannerHtml() {
 
   if (S.driver.status === 'Suspended')
     out += `<div class="callout stop"><h4>Driver suspended</h4><p>No freight until Safety clears you. See the Safety tab.</p></div>`;
-  if (S.driver.status === 'Terminated')
-    out += `<div class="callout stop"><h4>Employment terminated</h4><p>This career file is closed. Start a new one from Settings → Data.</p></div>`;
+  // Let go is not the end where a second-chance carrier will still have them; only a finished career is.
+  if (S.driver.status === 'Terminated' && S.driver.careerOver)
+    out += `<div class="callout stop"><h4>Career over</h4><p>${esc(S.driver.careerOverReason || 'Nobody is hiring.')}
+      Start a new career from Settings → Data when you are ready — nothing here is deleted.</p></div>`;
+  else if (S.driver.status === 'Terminated') {
+    const who = v.rehire || [];
+    out += `<div class="callout stop"><h4>Let go by ${esc(S.company.name)}</h4>
+      ${S.driver.terminationReason ? `<p>${esc(S.driver.terminationReason)}</p>` : ''}
+      <p>${who.length
+        ? `The ordinary market will not have you now, but ${who.length === 1 ? 'a second-chance carrier will' : 'second-chance carriers will'}:
+           <b>${who.map(esc).join(', ')}</b>. Apply on the Job Market tab.`
+        : 'The ordinary market will not have you now. Second-chance carriers are on the Job Market tab.'}</p>
+      <div class="row-actions"><button class="btn primary" data-act="tab" data-tab="market">Go to the Job Market</button></div></div>`;
+  }
   if (v.dispatchBlockers.length && TAB !== 'settings')
     out += `<div class="callout stop"><h4>Not clear to run</h4><ul>${v.dispatchBlockers.map((b) => `<li>${esc(b)}</li>`).join('')}</ul></div>`;
   if (v.maintenanceAlerts.length && TAB !== 'maint')
@@ -1665,6 +1680,7 @@ function viewDispatch() {
   ${cabotageHtml()}
   <div class="cols">
     <div>
+      ${restGapHtml()}
       <div class="panel">
         <div class="panel-head"><h2>Report from the game</h2>
           <span class="sub">Operations plans off these numbers — keep them current.</span></div>
@@ -1832,6 +1848,7 @@ function viewDispatch() {
       </div>
 
       ${restartHtml()}
+      ${takeRestHtml()}
       ${screenshotHtml()}
       ${boardTableHtml()}
       ${decisionHtml()}
@@ -2054,39 +2071,53 @@ function recapAdviceHtml() {
 }
 
 /**
- * Reporting a 34-hour restart. Two stages on purpose: arriving starts the clock, and the app checks the
- * elapsed game time and the cycle before it puts freight back on. A restart taken on trust is not a
- * restart — it is a way of ignoring the one rule the app exists to enforce.
+ * A rest, through its two stages: parked up, which starts the clock, and done, which the app checks — the elapsed
+ * game time, and for the 34 the cycle — before it puts freight back on. A restart taken on trust is not a restart; it
+ * is a way of ignoring the one rule the app exists to enforce. The weekly rest dispatch orders (the 34 in ATS), and
+ * any rest the driver chose; a daily one shows first, since it is the one running.
  */
 function restartHtml() {
   const r = S.views.restart;
-  if (!r || !r.needed) return '';
-  const o = r.order;
+  const daily = S.views.rest?.daily;
+  if (!daily && (!r || !r.needed)) return '';
+  const o = daily ? daily.order : r.order;
+  const instructions = daily ? daily.instructions : r.instructions;
+  const eu = S.views.hos.ruleset === 'EU561';
+  const isDaily = o && o.kind === 'Daily';
+  const chosen = o && o.trigger === 'Chosen';
+  // "The 34 is done" was the button on an ETS2 weekly rest too. Said for the rest it is.
+  const doneLabel = eu ? `The ${isDaily ? 'daily' : 'weekly'} rest is done`
+    : `The ${num(isDaily ? S.settings.hos.offDutyReset : (o ? o.requiredHours : S.settings.hos.cycleRestartHours), 0)} is done`;
 
   return `<div class="panel">
-    <div class="panel-head"><h2>${S.views.hos.ruleset === 'EU561' ? 'Weekly rest' : '34-hour restart'}</h2>
+    <div class="panel-head"><h2>${esc(restName(o))}</h2>
       ${badge(o && o.status === 'Arrived' ? 'warn' : 'bad', o ? o.status.toLowerCase() : 'required')}
       <div class="spacer"></div>
-      <span class="sub">no freight until this is sat</span></div>
+      <span class="sub">${isDaily ? 'no freight while you are parked' : 'no freight until this is sat'}</span></div>
 
-    ${(r.instructions || []).map((x) => `<p>${esc(x)}</p>`).join('')}
+    ${(instructions || []).map((x) => `<p>${esc(x)}</p>`).join('')}
+    ${daily && r && r.order ? `<p class="hint">${esc(r.order.number)}, your weekly rest, is still on order after this.</p>` : ''}
 
     ${!o || o.status === 'Ordered' ? `
       <p class="hint">Report in when you are parked up and I will start the clock. Give me the game time
-        you got there, and where, if it is not where I sent you.</p>
+        you stopped — earlier than now if you are already resting — and where, if it is not where ${chosen ? 'you are' : 'I sent you'}.</p>
       <div class="grid3">
-        ${dayTimeInput('rs-arr', S.status.gameTime, 'Arrived at (game)')}
+        ${dayTimeInput('rs-arr', S.status.gameTime, 'Parked at (game)')}
         <label>City<input id="rs-city" value="${esc(S.status.locationCity)}"></label>
-        <label>State<input id="rs-state" value="${esc(S.status.locationState)}" maxlength="2"></label>
+        <label>${eu ? 'Country' : 'State'}<input id="rs-state" value="${esc(S.status.locationState)}" maxlength="2"></label>
       </div>
-      <div class="row-actions"><button class="btn primary" data-act="restart-arrived">I am parked up</button></div>`
+      <div class="row-actions"><button class="btn primary" data-act="restart-arrived">I am parked up</button>
+        ${chosen ? '<button class="btn ghost" data-act="rest-cancel">Call it off</button>' : ''}</div>`
     : `
       <div class="callout info">
         <p style="margin:0">Clock started ${gt(o.arrivedGameTime)}. Eligible
           <b>${gt(o.eligibleGameTime)}</b> — that is the earliest you can legally roll.</p>
       </div>
-      <p class="hint">${S.views.hos.ruleset === 'EU561'
-        ? `When you have taken the ${hhmm(o.requiredHours)} dispatch set, confirm here. I check the elapsed time, and what
+      <p class="hint">${isDaily
+        ? `When you are rolling again, confirm here. I check it was long enough and put your ${eu
+            ? 'day back — D, B and the spread' : 'drive and shift clocks back'}.`
+        : eu
+        ? `When you have taken the ${hhmm(o.requiredHours)}${chosen ? '' : ' dispatch set'}, confirm here. I check the elapsed time, and what
           it was short of 45 hours is owed back on your next weekly rest.`
         : `When you have sat the full ${num(o.requiredHours, 0)} hours, re-read your HOS display,
         report your clocks above, then confirm here. I check the elapsed time and the cycle before I put
@@ -2094,9 +2125,64 @@ function restartHtml() {
       <div class="grid2">
         ${dayTimeInput('rs-done', S.status.gameTime, 'Rolling again at (game)')}
         <div class="row-actions" style="align-self:end">
-          <button class="btn go" data-act="restart-complete">The 34 is done</button>
+          <button class="btn go" data-act="restart-complete">${doneLabel}</button>
+          ${chosen ? '<button class="btn ghost" data-act="rest-cancel">Call it off</button>' : ''}
         </div>
       </div>`}
+  </div>`;
+}
+
+/** What a rest is called: "Daily rest", "Reduced weekly rest", "34-hour restart". */
+function restName(o) {
+  const eu = S.views.hos.ruleset === 'EU561';
+  if (!o) return eu ? 'Weekly rest' : `${num(S.settings.hos.cycleRestartHours, 0)}-hour restart`;
+  if (o.kind === 'Daily') return eu ? 'Daily rest' : `${num(S.settings.hos.offDutyReset, 0)}-hour rest`;
+  if (eu) return o.requiredHours < ((S.settings.euHos || {}).regularWeeklyRest || 45) - 0.01 ? 'Reduced weekly rest' : 'Weekly rest';
+  return `${num(o.requiredHours, 0)}-hour restart`;
+}
+
+/**
+ * A rest the driver chooses to take — daily, or weekly (the 34 in ATS). Picking one opens the parked-up step, which
+ * takes a time already past for a rest already under way. Reported from play: a 45 sat while the truck was in the
+ * shop, with nowhere to tell the app, which then ordered the weekly rest again.
+ */
+function takeRestHtml() {
+  let ch = S.views.rest?.choices || [];
+  // A weekly rest dispatch has ordered is taken through its own panel: only a daily one on the way to it here.
+  if (S.views.restart?.needed) ch = ch.filter((c) => c.key === 'daily');
+  if (!ch.length) return '';
+  return `<div class="panel">
+    <div class="panel-head"><h2>Taking a rest?</h2><div class="spacer"></div>
+      <span class="sub">Say which, and I count it</span></div>
+    <div class="row-actions">${ch.map((c) =>
+      `<button class="btn ghost" data-act="rest-take" data-kind="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>
+    <p class="hint">${ch.map((c) => `<b>${esc(c.label)}</b>: ${esc(c.note)}.`).join('<br>')}<br>
+      Then tell me when you parked up — now, or earlier if you are already resting.</p>
+  </div>`;
+}
+
+/**
+ * The clock jumped by a rest's length or more with nothing logged across it. Asked, not assumed: a long jump is as
+ * often a day's driving reported late. Reported from play: a 45 sat while the truck was repaired, the new time typed
+ * in sixty hours on, and the weekly rest ordered all over again.
+ */
+function restGapHtml() {
+  const g = S.views.rest?.gap;
+  if (!g) return '';
+  const ch = (S.views.rest.choices || []).filter((c) => c.hours <= g.hours + 0.01);
+  return `<div class="panel">
+    <div class="panel-head"><h2>Were you resting?</h2>${badge('warn', 'not logged')}</div>
+    <p>The clock moved on ${hhmm(g.hours)} — ${gt(g.from)} to ${gt(g.to)} — and nothing is logged across it.
+      If that was a rest, say which and I will count it. Move the times in if you drove some of it.</p>
+    <div class="grid2">
+      ${dayTimeInput('rg-from', g.from, 'Rest began')}
+      ${dayTimeInput('rg-to', g.to, 'Rest ended')}
+    </div>
+    <div class="row-actions">
+      ${ch.length ? ch.map((c) => `<button class="btn go" data-act="rest-gap" data-kind="${esc(c.key)}">${esc(c.label)}</button>`).join('')
+        : '<span class="hint">Finish the rest that is open first.</span>'}
+      <button class="btn ghost" data-act="rest-gap-dismiss">No, I was working</button>
+    </div>
   </div>`;
 }
 
@@ -2581,8 +2667,11 @@ function euClocksHtml(h, v) {
         ${tile('10-hour days', `${extUsed} of ${extMax}`, 'used this week', extUsed >= extMax ? 'warn' : '')}
         ${tile('Spread left', hhmm(h.shiftRemaining), 'estimated', (+h.shiftRemaining || 0) < 2 ? 'warn' : '')}
         ${tile('Reduced rests', `${redUsed} of ${redMax}`, 'since the weekly rest', redUsed >= redMax ? 'warn' : '')}
-        ${tile('Since weekly rest', since == null ? '—' : hhmm(since),
-          since == null ? 'none logged · counted from Monday'
+        ${tile('Since weekly rest', since != null ? hhmm(since)
+            // None logged: the hours the planner counts anyway, from Monday 00:00. A dash read as "not tracked".
+            : v.weeklyRestDueInHours != null ? hhmm(Math.max(0, (r.weeklyRestDueAfterHours || 144) - v.weeklyRestDueInHours)) : '—',
+          since == null ? (v.weeklyRestDueInHours != null
+              ? `none logged · from Monday · due in ${hhmm(v.weeklyRestDueInHours)}` : 'none logged · counted from Monday')
             : v.weeklyRestDueInHours != null ? `next due in ${hhmm(v.weeklyRestDueInHours)}` : (h.euLastWeeklyRestReduced ? 'it was reduced' : 'a full rest'))}
         ${tile('Owed back', hhmm(owed), owed > 0 ? 'from a reduced rest' : 'nothing owed', owed > 0 ? 'warn' : '')}
       </div>`;
@@ -2852,6 +2941,9 @@ function viewActive() {
   <div class="cols">
    <div style="display:flex;flex-direction:column;gap:15px">
 
+    ${restGapHtml()}
+    ${restartHtml()}
+    ${takeRestHtml()}
     <div class="panel">
       <div class="panel-head"><h2>Trip log</h2><span class="sub">Log events as they happen.</span></div>
       <div class="grid2">
@@ -3600,6 +3692,8 @@ function afterStatus(r, fallback = 'Status updated.') {
     r.homeBrief ? () => homeBriefModal(r.homeBrief) : null,
   ]);
   if (!shown) toast(DISCOVERY ? DISCOVERY.headline : fallback, 'ok');
+  // A town the map cannot place: said every time, whatever else came up. Distances from it are a guess.
+  if (r.unplaced) toast(r.unplaced, 'bad');
 }
 
 /* What a promotion looks like when the company hands it to you rather than you taking it.
@@ -4023,7 +4117,7 @@ function auditModal(a) {
   const cls = late ? (a.faultAttribution === 'Driver' ? 'stop' : 'warn') : 'go';
 
   modal(`<div class="panel-head"><h2>${esc(a.trip.number)} closed</h2>
-      ${badge(late ? 'bad' : 'ok', a.trip.serviceResult)}
+      ${badge(late ? 'bad' : 'ok', late ? 'late' : a.trip.serviceResult === 'OnTime' ? 'on time' : 'closed')}
       <div class="spacer"></div>
       <button class="btn tiny ghost" data-act="close-modal">Close</button></div>
 
@@ -4058,20 +4152,9 @@ function auditModal(a) {
       <h4>${a.gotYouHome ? 'That load got you home' : 'Home time'}</h4>
       <p style="margin:0">${esc(a.homeTimeNote)}</p></div>` : ''}
 
-    <div class="cols">
-      <div>
-        ${auditSection('Service', a.serviceFindings)}
-        ${auditSection('Mileage', a.mileageFindings)}
-        ${auditSection('Money', a.moneyFindings)}
-      </div>
-      <div>
-        ${auditSection('Equipment', a.equipmentFindings)}
-        ${a.trip.pay.lines.length ? `<h3 class="sect">Your pay — ${money(a.driverPay)}</h3>
-          <ul class="reasons">${a.trip.pay.lines.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-        ${a.carriedForward && a.carriedForward.length ? `<h3 class="sect">Carried forward</h3>
-          <ul class="reasons">${a.carriedForward.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-      </div>
-    </div>
+    ${summaryHtml(a)}
+    ${notesHtml(a)}
+    ${payLinesHtml(a)}
 
     ${a.homeTimeInstructions && a.homeTimeInstructions.length ? `<div class="callout go">
       <h4>When you get in</h4>
@@ -4087,6 +4170,7 @@ function auditModal(a) {
 
     ${a.discovery ? discoveryHtml(a.discovery) : ''}
     ${advanceHtml(a.advance)}
+    ${workingHtml(a)}
 
     <div class="row-actions">
       <div style="flex:1"></div>
@@ -4097,20 +4181,41 @@ function auditModal(a) {
 const auditSection = (title, items) => items && items.length
   ? `<h3 class="sect">${title}</h3><ul class="reasons">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
 
+/** The close-out as figures: each section a short list of label and value, with a line under a value that needs one. */
+function summaryHtml(a) {
+  if (!(a.summary || []).length) return '';
+  return `<div class="sum">${a.summary.map((sec) => `<section>
+      <h3 class="sect">${esc(sec.title)}</h3>
+      <dl>${sec.rows.map((r) => `<dt>${esc(r.label)}</dt><dd${r.tone ? ` class="${esc(r.tone)}"` : ''}>${esc(r.value)}${
+        r.detail ? `<small>${esc(r.detail)}</small>` : ''}</dd>`).join('')}</dl>
+    </section>`).join('')}</div>`;
+}
+
+const notesHtml = (a) => (a.notes || []).length ? `<div class="callout info">
+    <h4>Worth knowing</h4>${a.notes.map((x) => `<p>${esc(x)}</p>`).join('')}</div>` : '';
+
+const payLinesHtml = (a) => a.trip.pay && a.trip.pay.lines.length ? `<details class="working">
+    <summary>How your pay adds up: ${money(a.driverPay)}</summary>
+    <ul class="reasons">${a.trip.pay.lines.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : '';
+
+/** The working behind the figures: every finding as the close-out wrote it, folded away unless there are no figures. */
+function workingHtml(a) {
+  const body = auditSection('Delivery and docks', a.serviceFindings) + auditSection('Distance', a.mileageFindings)
+    + auditSection('Money', a.moneyFindings) + auditSection('Equipment', a.equipmentFindings)
+    + auditSection('Carried forward', a.carriedForward);
+  return body ? `<details class="working"${(a.summary || []).length ? '' : ' open'}>
+    <summary>How it was worked out</summary>${body}</details>` : '';
+}
+
 function auditHtml(a) {
-  const sec = (title, items) => items.length
-    ? `<h3 class="sect">${title}</h3><ul class="reasons">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
   return `<div class="panel">
     <div class="panel-head"><h2>Trip audit — ${esc(a.trip.number)}</h2>
-      ${badge(a.trip.serviceResult === 'OnTime' ? 'ok' : a.trip.serviceResult === 'Late' ? 'bad' : 'mute', a.trip.serviceResult)}</div>
+      ${badge(a.trip.serviceResult === 'OnTime' ? 'ok' : a.trip.serviceResult === 'Late' ? 'bad' : 'mute', a.trip.serviceResult === 'OnTime' ? 'on time' : a.trip.serviceResult === 'Late' ? 'late' : 'closed')}</div>
     <div class="callout ${a.trip.serviceResult === 'Late' ? (a.faultAttribution === 'Driver' ? 'stop' : 'warn') : 'go'}">
       <h4>${esc(a.headline)}</h4>${a.faultRationale ? `<p>${esc(a.faultRationale)}</p>` : ''}</div>
-    ${sec('Service', a.serviceFindings)}${sec('Mileage', a.mileageFindings)}
-    ${sec('Money', a.moneyFindings)}${sec('Equipment', a.equipmentFindings)}
-    ${a.carriedForward && a.carriedForward.length ? `<div class="callout go" style="margin-top:14px">
-      <h4>Carried forward to the next dispatch${a.clocksReported ? ', clocks included' : ''}</h4>
-      <p>You do not need to type any of this again — confirm it on the Dispatch tab.</p>
-      <ul>${a.carriedForward.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+    ${summaryHtml(a)}
+    ${notesHtml(a)}
+    ${payLinesHtml(a)}
     ${a.homeTimeInstructions && a.homeTimeInstructions.length ? `<div class="callout go" style="margin-top:14px">
       <h4>Home time — report to the yard</h4>
       <ul>${a.homeTimeInstructions.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
@@ -4118,8 +4223,7 @@ function auditHtml(a) {
     ${advanceHtml(a.advance)}
     ${a.directives.length ? `<div class="callout ${a.maintenanceStatus === 'OutOfService' ? 'stop' : 'info'}" style="margin-top:14px">
       <h4>What happens next</h4><ul>${a.directives.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
-    ${a.trip.pay.lines.length ? `<h3 class="sect">Driver pay accrued — ${money(a.driverPay)}</h3>
-      <ul class="reasons">${a.trip.pay.lines.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    ${workingHtml(a)}
     ${a.disciplineRecommendation ? `<div class="callout stop" style="margin-top:14px">
       <h4>Safety has issued: ${esc(a.disciplineRecommendation.replace(/([a-z])([A-Z])/g, '$1 $2'))}</h4>
       <p>Incident ${esc(a.incidentNumber || '')} was opened and the action follows from it.
@@ -5402,7 +5506,25 @@ function fleetOpsHtml() {
         ${trailerSectionHtml()}
         <label>Report note<input id="fr-note" placeholder="optional"></label>
         <div class="row-actions"><button class="btn go" data-act="file-report">File report &amp; post to the books</button></div>`
-        : '<div class="empty">No hired drivers yet. Hire one in ATS, then add them here.</div>'}
+        : `<div class="empty">No hired drivers yet. Hire one in ATS, then add them here.</div>
+        ${/* A company of one still files: its own loads, its bank, its truck and trailer. Reported from play on
+              2026-11-04: with no hired drivers no report was ever due, and the company could never grow. */ ''}
+        <h3 class="sect">File the company report</h3>
+        <p class="hint">Every ${f.due?.intervalDays ?? 15} game days, even with nobody hired. Your own loads are on the books
+          already, so the report reads them back: what your truck made the company over the period. Add the bank balance and
+          your truck's and trailer's condition, and the company judges how it is doing on it — whether to grow, hold or cut back.</p>
+        ${f.due?.isDue ? `<div class="callout warn"><p>${esc(f.due.message)}</p></div>`
+          : f.due?.nextDueGameTime ? `<p class="hint">Next report due ${gt(f.due.nextDueGameTime)}.</p>` : ''}
+        <div class="grid2">
+          ${dayTimeInput('fr-start', f.due?.lastPeriodEnd || '', 'Period start (game)')}
+          ${dayTimeInput('fr-end', S.status.gameTime, 'Period end (game)')}
+          <label>Bank balance now $ <span class="sub">— optional</span>
+            <input id="fr-bank" type="number" step="1" min="0" placeholder="read it off ATS"></label>
+        </div>
+        ${playerLineHtml()}
+        ${trailerSectionHtml()}
+        <label>Report note<input id="fr-note" placeholder="optional"></label>
+        <div class="row-actions"><button class="btn go" data-act="file-report">File report &amp; post to the books</button></div>`}
 
       ${reports.length ? `<h3 class="sect">Fleet reports</h3>
         ${reports.length > 2 ? `<p class="hint">Showing the last 2 of ${reports.length}.
@@ -5417,6 +5539,7 @@ function fleetOpsHtml() {
             <b style="font-family:var(--mono)">net ${money(r.netContribution)}</b></div>
           ${/* Same two retired fields as the filing modal — see the note there. */ ''}
           <div class="kv">
+            ${r.ownOperations ? `<span>your loads <b>${money(r.ownOperations)}</b></span>` : ''}
             <span>contribution <b>${money(r.totalContribution)}</b></span>${
               r.lines?.find((l) => l.revenueBasis)
                 ? `<span class="hint">from ${esc(r.lines.find((l) => l.revenueBasis).revenueBasis)}${
@@ -6884,6 +7007,13 @@ function viewCareer() {
       <div class="spacer"></div>
       <span class="sub">only you can do these — the app cannot touch the game</span></div>
     ${changeoverHtml(chg, true)}
+  </div>` : ''}
+  ${/* A new job is set up from nothing, like the first one, and the guide stays here while the move is open rather
+        than living only in the welcome. */ ''}
+  ${chg && S.views.setup?.length ? `<div class="panel">
+    <div class="panel-head"><h2>Setting up at ${esc(S.company.name)}</h2>
+      <div class="spacer"></div><span class="sub">a new job starts from nothing</span></div>
+    ${setupChecklistHtml(S.views.setup)}
   </div>` : ''}
   ${dedicatedHtml()}
   <div class="panel">
@@ -8743,8 +8873,24 @@ async function handleAction(act, d, ev) {
     case 'restart-arrived': {
       return run(async () => absorb(await api('/restart/arrived', 'POST', {
         gameTime: readDayTime('rs-arr'), city: sv('rs-city'), state: sv('rs-state'),
-      })), 'Clock started on the restart.');
+      })), 'Clock started.');
     }
+    case 'rest-take': return run(async () => {
+      const r = absorb(await api('/rest/take', 'POST', { kind: d.kind }));
+      toast(r.message, 'ok');
+    });
+    case 'rest-cancel': {
+      if (!confirm('Call this rest off? It will not be counted.')) return;
+      return run(async () => {
+        const r = absorb(await api('/rest/cancel', 'POST', {}));
+        toast(r.message, 'ok');
+      });
+    }
+    case 'rest-gap': return run(async () => {
+      const r = absorb(await api('/rest/gap', 'POST', { kind: d.kind, from: readDayTime('rg-from'), to: readDayTime('rg-to') }));
+      toast(r.message, 'ok');
+    });
+    case 'rest-gap-dismiss': return run(async () => absorb(await api('/rest/gap/dismiss', 'POST', {})), 'Noted — not a rest.');
     case 'rest-here': {
       if (!confirm('Take your weekly rest here, starting now?\n\nThe board is cleared, and dispatch tells you when you are back on the road.')) return;
       return run(async () => {
@@ -8851,7 +8997,9 @@ async function handleAction(act, d, ev) {
 
       // Trailers are their own section, so a report with no hired drivers but a yard full of boxes is
       // still worth filing — that is precisely the company asking whether it owns too many trailers.
-      if (!lines.length && !trailerLines.some((x) => x.utilisationPct >= 0 || x.distanceOnJobMi >= 0))
+      // A company of one files with nothing more than the date: its own loads are on the books already.
+      const hiredNow = (FLEETOPS?.drivers || []).some((x) => x.status === 'Active');
+      if (hiredNow && !lines.length && !trailerLines.some((x) => x.utilisationPct >= 0 || x.distanceOnJobMi >= 0))
         return toast('Nothing to report - give me a driver figure or a trailer figure.', 'bad');
       return run(async () => {
         const r = absorb(await api('/fleetops/report', 'POST', {
@@ -8871,9 +9019,14 @@ async function handleAction(act, d, ev) {
     case 'apply-move': {
       const c = (MARKET || []).find((x) => x.code === d.code);
       const name = c ? c.name : d.code;
-      const reason = prompt(`Resign from ${S.company.name} and apply to ${name}?\n\n` +
-        `Your record follows you. The company's books, equipment and trip history do not — ` +
-        `you start a fresh probation there.\n\nReason for leaving (optional):`);
+      // Let go: there is nothing to resign from and no reason to give — the record says why.
+      const fired = S.driver.status === 'Terminated';
+      const reason = fired
+        ? (confirm(`Apply to ${name}?\n\nThey know why ${S.company.name} let you go, and will take you anyway. ` +
+            `The old company's books, equipment and trip history stay behind — you start a fresh probation there.`) ? '' : null)
+        : prompt(`Resign from ${S.company.name} and apply to ${name}?\n\n` +
+            `Your record follows you. The company's books, equipment and trip history do not — ` +
+            `you start a fresh probation there.\n\nReason for leaving (optional):`);
       if (reason === null) return;
       return run(async () => {
         const r = await api('/market/apply', 'POST', { code: d.code, reason });

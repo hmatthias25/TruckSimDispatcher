@@ -53,6 +53,15 @@ public class Broker
     public int LoadsBooked { get; set; }
     /// <summary>What the player has learned of them from calls, in plain words. The personality itself is never shown.</summary>
     public List<string> Notes { get; set; } = new();
+
+    /// <summary>Active, Closed or Bankrupt (<see cref="BrokerStatus"/>), and since when. See <see cref="BrokerMarket"/>.</summary>
+    public string Status { get; set; } = BrokerStatus.Active;
+    public string StatusGameTime { get; set; } = "";
+    /// <summary>When they opened, for a broker who opened during the career; empty for those there from the start.</summary>
+    public string OpenedGameTime { get; set; } = "";
+
+    /// <summary>Still in business: takes calls, books loads, rings.</summary>
+    public bool IsTrading() => Status == BrokerStatus.Active;
 }
 
 public static class BrokerTiers
@@ -244,7 +253,7 @@ public static class BrokerBook
     {
         var joined = new List<Broker>();
         var reached = c.Game.Discovered.Select(d => Carriers.AtsRegionOf(d.State)).ToHashSet();
-        foreach (var b in c.Brokers.Where(b => !b.Known && b.Regions.Any(reached.Contains)))
+        foreach (var b in c.Brokers.Where(b => !b.Known && b.IsTrading() && b.Regions.Any(reached.Contains)))
         {
             b.Known = true;
             b.KnownSinceGameTime = c.Game.Status.GameTime;
@@ -285,26 +294,49 @@ public static class BrokerBook
     /// <summary>What a credit grade means for getting paid, and for the rate: said plainly on the Brokers tab.</summary>
     public static string CreditSays(string credit) => credit switch
     {
-        "A" => "Pays on time.",
-        "B" => "Pays on time or a day or two late.",
-        "C" => "Pays, but up to ten days late. Pays a little more for it, and gives quick pay more readily.",
-        _ => "Slow, and about four in ten invoices never paid without collections. Pays well over the odds for it, " +
-             "and gives quick pay to anyone who asks. No factor will buy their invoices.",
+        "A" => "Pays on time. Rarely goes under.",
+        "B" => "Pays on time or a day or two late. Seldom goes under.",
+        "C" => "Pays, but up to ten days late, and goes under more often. Keeps 4 points less of the rate for it.",
+        _ => "Slow, about four in ten invoices never paid without collections, and the likeliest to go bankrupt. " +
+             "Keeps 9 points less of the rate for it. No factor will buy their invoices, and quick pay does not make them pay.",
     };
+
+    /// <summary>A name no broker in this career has yet: off the same lists, with a number after it once they run out.</summary>
+    public static string NewName(Random rng, HashSet<string> taken)
+    {
+        var free = First.SelectMany(f => Second.Select(sec => $"{f} {sec}")).Where(n => !taken.Contains(n)).ToList();
+        if (free.Count > 0) return free[rng.Next(free.Count)];
+        var n = 2;
+        var baseName = $"{First[rng.Next(First.Length)]} {Second[rng.Next(Second.Length)]}";
+        while (taken.Contains($"{baseName} {n}")) n++;
+        return $"{baseName} {n}";
+    }
+
+    /// <summary>Somebody to answer the phone, not already on another broker's desk if it can be helped.</summary>
+    public static string NewRep(Random rng, HashSet<string> taken)
+    {
+        var free = Reps.Where(r => !taken.Contains(r)).ToList();
+        return free.Count > 0 ? free[rng.Next(free.Count)] : Reps[rng.Next(Reps.Length)];
+    }
 
     /// <summary>The directory as the player sees it. Margins, ceilings and the personality stay private.</summary>
     public static object View(OoCareer c, Broker b)
     {
-        var notYet = NotYet(c, b);
+        var trading = b.IsTrading();
+        var notYet = trading ? NotYet(c, b) : null;
         var here = Carriers.AtsRegionOf(c.Game.Status.LocationState);
         return new
         {
             b.Id, b.Name, b.Rep, b.Tier, b.Specialty, b.Kind, b.City, b.State, b.Regions,
             b.DaysToPay, b.QuickPayFeePct, b.Credit, b.Standing, b.LoadsBooked, b.Notes,
+            b.Status, b.StatusGameTime, b.OpenedGameTime,
+            trading,
             requirement = Requirement(b),
-            takesYou = notYet == null,
+            takesYou = trading && notYet == null,
             notYet,
-            worksHere = b.Regions.Contains(here),
+            worksHere = trading && b.Regions.Contains(here),
+            // The odds a broker above the starters gives today's freight to someone more experienced. See BrokerMarket.
+            refusalPct = trading && notYet == null ? BrokerMarket.RefusalPct(c, b, BrokerMarket.RegionFor(c, b)) : 0,
             creditSays = CreditSays(b.Credit),
             payRecord = Receivables.PayRecord(c, b),
         };

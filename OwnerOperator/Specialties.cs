@@ -20,7 +20,8 @@ public static class Specialties
     /// <summary>The trailers a specialty's freight goes on. A specialist will not take a carrier without one.</summary>
     public static string[] Trailers(string specialty) => specialty switch
     {
-        Agriculture => new[] { "Hopper", "Dry Van", "Reefer", "Livestock" },
+        // A food-grade tanker carries the farm's liquids: milk, vegetable oil, molasses. See CargoTrade.
+        Agriculture => new[] { "Hopper", "Dry Van", "Reefer", "Livestock", "Tanker" },
         Fuel => new[] { "Tanker" },
         Lumber => new[] { "Log", "Flatbed" },
         Construction => new[] { "Flatbed", "Step Deck", "Lowboy" },
@@ -43,6 +44,7 @@ public static class Specialties
     /// <summary>The same, knowing the career's company names: a renaming mod's "Exxon" is Gallon Oil, and fuel.</summary>
     public static string Of(OoCareer? c, BoardLoad l)
     {
+        if (CargoTrade(l.Cargo) is { } byCargo) return byCargo;
         var firm = c != null ? Companies.FirmOf(c, l.Shipper) : AtsCompanies.Find(l.Shipper);
         if (firm != null)
         {
@@ -60,6 +62,30 @@ public static class Specialties
             "Step Deck" or "Lowboy" => Construction,
             _ => General,
         };
+    }
+
+    /// <summary>The farm's own liquids and bulk: on a tanker they are food-grade, not fuel.</summary>
+    private static readonly string[] FarmCargo =
+    {
+        "soybean", "soy oil", "vegetable oil", "corn oil", "canola", "sunflower oil", "olive oil", "cooking oil", "edible oil",
+        "palm oil", "milk", "cream", "whey", "juice", "molasses", "syrup", "honey", "liquid sugar", "fertilizer", "fertiliser",
+    };
+
+    /// <summary>Liquids that are neither fuel nor the farm's: drinking water. Any broker's.</summary>
+    private static readonly string[] PlainLiquids = { "water" };
+
+    /// <summary>
+    /// The trade the cargo itself names, ahead of the shipper and the trailer: soybean oil is the farm's even in a tanker
+    /// from a chemical firm. Null when the name says nothing. Reported from play on 2026-10-30: Soybean Oil was booked on a
+    /// petroleum broker's lane, because every tanker load not from a known company counted as fuel.
+    /// </summary>
+    public static string? CargoTrade(string? cargo)
+    {
+        var name = (cargo ?? "").ToLowerInvariant();
+        if (name.Length == 0) return null;
+        if (FarmCargo.Any(name.Contains)) return Agriculture;
+        if (PlainLiquids.Any(w => System.Text.RegularExpressions.Regex.IsMatch(name, $@"\b{w}\b"))) return General;
+        return null;
     }
 
     /// <summary>Why the carrier cannot run this trade yet: the trailer, and the ADR where it is needed. Null when it can.</summary>

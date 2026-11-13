@@ -238,7 +238,7 @@ public static class Crossings
                                       double listedMiles, List<string> noWay)
     {
         var have = Ferries.Available(s).ToList();
-        var across = Scale(Options(have, fromCity, fromCc, toCity, toCc), listedMiles);
+        var across = Scale(Options(have, fromCity, fromCc, toCity, toCc), listedMiles, fromCity, fromCc, toCity, toCc);
         if (across.Count > 0)
         {
             // The road to the port can itself go round a sea, and a ferry can cut that short. Reported from play:
@@ -279,8 +279,19 @@ public static class Crossings
         // list is on by default and not confirmed against ProMods' map, so as an optional shortcut it is only tried
         // where nothing confirmed is. Reported from play: Rotterdam to Kokkola planned over Stockholm – Turku, a
         // ProMods sailing, where the game routes by Kapellskär and Naantali.
+        //
+        // Unless a ProMods crossing is the one the listing fits, and nothing confirmed fits it as well: the listing is the
+        // game's own route, so a crossing it fits is one the game has. Reported from play on 2026-11-04: Gothenburg to
+        // Bobolice at 608 km fits Świnoujście, and was planned over Gedser – Rostock with the far side squeezed to fit.
         if (shortcuts.Any(o => !IsProMods(o)))
-            shortcuts = shortcuts.Where(o => !IsProMods(o)).ToList();
+        {
+            var nearest = round is { ListingIsTheFerry: true }
+                ? shortcuts.OrderBy(o => Math.Abs(o.ListedMiles - listedMiles)).First() : null;
+            var confirmed = shortcuts.Where(o => !IsProMods(o)).ToList();
+            var fitsBest = nearest != null && IsProMods(nearest)
+                           && Math.Abs(nearest.ListedMiles - listedMiles) < confirmed.Min(o => Math.Abs(o.ListedMiles - listedMiles)) * 0.6;
+            if (!fitsBest) shortcuts = confirmed;
+        }
         if (round is { ListingIsTheFerry: true } && shortcuts.Count > 0)
         {
             // Read at the scale of the crossing whose road matches the listing — that one is the game's route. The
@@ -291,7 +302,9 @@ public static class Crossings
             // scaled. Matched against the road alone, the road either side came out as the whole listing — found in a
             // ferry audit: Stockholm to Helsinki planned at 400 mi of road, where the road is about 160.
             var near = shortcuts.OrderBy(o => Math.Abs(o.ListedMiles - listedMiles)).First();
-            shortcuts = ScaleRoad(shortcuts, near, listedMiles);
+            var original = shortcuts;
+            shortcuts = ScaleRoad(shortcuts, near, listedMiles)
+                .Select((o, i) => UnderTheLine(o, fromCity, fromCc, toCity, toCc) ? original[i] : o).ToList();
         }
         ways.AddRange(shortcuts);
         return ways;
@@ -422,12 +435,31 @@ public static class Crossings
         return best.Plan;
     }
 
-    /// <summary>Legs scaled so the way across nearest the listing reads the listing's own distance, sea and road.</summary>
-    private static List<Option> Scale(List<Option> options, double listedMiles)
+    /// <summary>
+    /// Legs scaled so the way across nearest the listing reads the listing's own distance, sea and road — except that no
+    /// road is ever scaled shorter than the straight line between its ends. A listing that would squeeze a leg under that
+    /// is not this crossing's route: the game has taken another (one the app does not know, or one switched off), and the
+    /// estimates stand. Reported from play on 2026-11-04: Gothenburg to Bobolice listed at 608 km, fitted to Gedser –
+    /// Rostock, and Rostock to Bobolice squeezed to 273 km — under its 290 km straight line — where the game drove 640.
+    /// </summary>
+    private static List<Option> Scale(List<Option> options, double listedMiles,
+                                      string? fromCity, string? fromCc, string? toCity, string? toCc)
     {
         if (options.Count == 0 || listedMiles <= 0) return options;
         var near = options.OrderBy(o => Math.Abs(o.ListedMiles - listedMiles)).First();
-        return ScaleRoad(options, near, listedMiles);
+        var scaled = ScaleRoad(options, near, listedMiles);
+        return scaled.Select((o, i) => UnderTheLine(o, fromCity, fromCc, toCity, toCc) ? options[i] : o).ToList();
+    }
+
+    /// <summary>Whether either end's road is shorter than the straight line to its port: a road no truck could drive.</summary>
+    private static bool UnderTheLine(Option o, string? fromCity, string? fromCc, string? toCity, string? toCc)
+    {
+        var (pc, pcc) = Near(o.Route, o.FromA);
+        var last = o.Route2 ?? o.Route;
+        var (qc, qcc) = Far(last, o.Route2 != null ? o.FromA2 : o.FromA);
+        static bool Short(double miles, double? straight) => straight is { } line && line > 5 && miles < line * 0.95;
+        return Short(o.MilesBefore, Geo.StraightMiles(fromCity, fromCc, pc, pcc))
+               || Short(o.MilesAfter, Geo.StraightMiles(qc, qcc, toCity, toCc));
     }
 
     /// <summary>
@@ -447,7 +479,11 @@ public static class Crossings
             return options.Select(o => o.RoadMiles <= 0.01 ? o with { MilesBefore = roadLeft / 2, MilesBetween = 0, MilesAfter = roadLeft / 2 } : o).ToList();
         var k = roadLeft / near.RoadMiles;
         if (k <= 0.5 || k >= 2) return options;
-        return options.Select(o => o with { MilesBefore = o.MilesBefore * k, MilesBetween = o.MilesBetween * k, MilesAfter = o.MilesAfter * k }).ToList();
+        // Shorter is only ever said of the route the listing fits. Another crossing's road is not shown shorter by it, and
+        // squeezing it let a route the game does not take win on paper. Reported from play on 2026-11-04: Gothenburg to
+        // Bobolice, fitted to Świnoujście, squeezed Gedser – Rostock's far side by the same factor and planned over it.
+        return options.Select(o => o != near && k < 1 ? o
+            : o with { MilesBefore = o.MilesBefore * k, MilesBetween = o.MilesBetween * k, MilesAfter = o.MilesAfter * k }).ToList();
     }
 }
 

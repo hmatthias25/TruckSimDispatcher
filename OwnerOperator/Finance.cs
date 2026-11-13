@@ -90,6 +90,78 @@ public class Bills
     public decimal Total => TruckPayment + Insurance + Maintenance + Other;
 }
 
+/// <summary>
+/// An odometer reading that cannot be right, caught where it is typed so it can be put right. Reported from play: 682,790
+/// typed for 628,790 at a close-out, 54,288 mi on a 397 mi run, and every mile on Financial health off with it.
+/// </summary>
+public static class Odometer
+{
+    /// <summary>Faster than this over the game time between two readings, the reading is wrong (or the time is).</summary>
+    public const double MaxMph = 75;
+    /// <summary>Miles allowed on top, for a reading taken before the clock was moved on.</summary>
+    public const double Slack = 100;
+
+    /// <summary>The most a run can have put on the odometer: twice its listed miles, and never less than 300 over them.</summary>
+    public static double MostForRun(double listed) => Math.Max(listed * 2, listed + 300);
+
+    /// <summary>Why a reading against the last one cannot be right in the game time between them, or null.</summary>
+    public static string? Implausible(double was, double now, double hours)
+    {
+        if (was <= 0 || now <= 0) return null;
+        if (now + 1 < was) return $"The odometer reads {now:N0}, lower than the {was:N0} it read before. Check it against the game.";
+        var miles = now - was;
+        var most = Slack + MaxMph * Math.Max(0, hours);
+        return miles <= most ? null
+            : $"The odometer reads {now:N0}: {miles:N0} mi since it read {was:N0}, in {Hhmm.Of(Math.Max(0, hours))} of game time. " +
+              "A digit typed wrong? Check it against the game (or the game time, if that is behind).";
+    }
+
+    /// <summary>Why a reading at the end of a run cannot be right for the run, or null.</summary>
+    public static string? ImplausibleForRun(double start, double end, double listed, string number)
+    {
+        if (start <= 0 || end <= 0 || listed <= 0) return null;
+        if (end + 1 < start) return $"The odometer reads {end:N0}, lower than the {start:N0} it read when {number} started. Check it against the game.";
+        var miles = end - start;
+        return miles <= MostForRun(listed) ? null
+            : $"The odometer reads {end:N0}: {miles:N0} mi since {number} started at {start:N0}, on a {listed:N0} mi run. " +
+              "A digit typed wrong? Check it against the game.";
+    }
+
+    /// <summary>
+    /// Readings that got through before these checks, put right on load: a delivered run's end reading that cannot be
+    /// right is set to its start plus the run's listed miles (all there is to go on), and odometer readings kept for
+    /// Financial health that jump further than any truck drives are dropped. True where anything changed.
+    /// </summary>
+    public static bool Repair(OoCareer c)
+    {
+        var changed = false;
+        foreach (var t in c.Game.Trips.Where(t => t.Status == "Delivered" && t.EndOdometer > 0))
+        {
+            var start = t.DispatchOdometer > 0 ? t.DispatchOdometer : t.StartOdometer;
+            var listed = t.DispatchedMiles + t.DeadheadMiles;
+            if (start <= 0 || listed <= 0) continue;
+            var miles = t.EndOdometer - start;
+            if (miles >= -1 && miles <= MostForRun(listed)) continue;
+            var was = t.EndOdometer;
+            t.EndOdometer = (t.StartOdometer > 0 ? t.StartOdometer : start) + t.DispatchedMiles;
+            if (t.ActualMiles <= 0 || t.ActualMiles > MostForRun(t.DispatchedMiles)) t.ActualMiles = t.DispatchedMiles;
+            OoStore.Log(c, "run", $"{t.Number}: the odometer at the close-out read {was:N0}, {miles:N0} mi on a {t.DispatchedMiles:N0} mi run. " +
+                                  $"Set to {t.EndOdometer:N0}, the run's own miles, so the books are not thrown by it.", t.Number);
+            changed = true;
+        }
+        var kept = new List<OdoReading>();
+        foreach (var r in c.Finance.Odometer)
+        {
+            var last = kept.LastOrDefault();
+            var hours = last != null && GameClock.TryParse(last.GameTime) is { } a && GameClock.TryParse(r.GameTime) is { } b ? (b - a).TotalHours : 0;
+            if (last != null && Implausible(last.Miles, r.Miles, hours) != null) { changed = true; continue; }
+            kept.Add(r);
+        }
+        c.Finance.Odometer = kept;
+        return changed;
+    }
+}
+
 public static class Finance
 {
     /// <summary>The cost factor looks back this far: four weeks, so one bad week does not swing it.</summary>
@@ -119,8 +191,14 @@ public static class Finance
         var odo = c.Game.Status.AtsOdometer;
         var last = c.Finance.Odometer.LastOrDefault();
         if (last != null && Math.Abs(last.Miles - odo) < 0.5) return;
+        // Belt and braces: a jump no truck makes is never kept, whatever let it through.
+        var hours = last != null && GameClock.TryParse(last.GameTime) is { } a && GameClock.TryParse(c.Game.Status.GameTime) is { } b ? (b - a).TotalHours : 0;
+        if (last != null && Odometer.Implausible(last.Miles, odo, hours) != null) return;
         c.Finance.Odometer.Add(new OdoReading { GameTime = c.Game.Status.GameTime, Miles = odo });
     }
+
+    /// <summary>When the odometer was last read, for judging the next reading against the time since.</summary>
+    public static string? LastOdometerTime(OoCareer c) => c.Finance.Odometer.LastOrDefault()?.GameTime;
 
     /// <summary>The odometer as it stood at a moment: the last reading at or before it, the reading now counted as of now.</summary>
     private static double OdoAt(OoCareer c, DateTime at)
@@ -163,22 +241,95 @@ public static class Finance
     /// (tolls, tickets, in-game repairs) and is kept as other spending. A bank higher than expected is money the app
     /// was not told of, kept on the check but not counted as income.
     /// </summary>
-    public static decimal? ReportBalance(OoCareer c, decimal balance, decimal movedIn, string source, out decimal? expected)
+    public static decimal? ReportBalance(OoCareer c, decimal balance, decimal movedIn, string source, out decimal? expected, string? dated = null) =>
+        ReportBalance(c, balance, movedIn, source, out expected, out _, dated);
+
+    /// <summary>
+    /// A reading of the game bank against what was expected. Short of it: spending nothing logged. Over it: money that was
+    /// counted as unseen spending at an earlier reading was not spent after all (moved out to the Companion App, and later
+    /// said so), so that much of it is taken back off (<paramref name="tookBack"/>). Reported from play on 2026-11-01: $10,000
+    /// moved out was counted as spending by a balance update on Day 1, then entered as moved out at the Monday check too.
+    /// </summary>
+    public static decimal? ReportBalance(OoCareer c, decimal balance, decimal movedIn, string source, out decimal? expected,
+                                         out decimal tookBack, string? dated = null)
     {
+        tookBack = 0;
         expected = c.GameBank.Estimate is { } e ? e + movedIn : null;
         var gap = expected is { } x ? Math.Round(x - balance, 2) : (decimal?)null;
         if (gap is > 0.5m)
-            c.Finance.Other.Add(new Spend { GameTime = c.Game.Status.GameTime, Amount = gap.Value, Source = source });
+            c.Finance.Other.Add(new Spend { GameTime = dated ?? c.Game.Status.GameTime, Amount = gap.Value, Source = source });
+        else if (gap is < -0.5m)
+        {
+            tookBack = TakeBack(c, -gap.Value, LastCheckTime(c), Now(c));
+            gap += tookBack;
+        }
         Ledger.ReportGameBank(c, balance);
         return gap;
+    }
+
+    /// <summary>When the last Monday check was, or where tracking began: unseen spending since then can still be taken back.</summary>
+    private static DateTime LastCheckTime(OoCareer c, DateTime? before = null) =>
+        c.Finance.Checks.Select(x => GameClock.TryParse(x.GameTime)).Where(t => t is not null && (before is null || t < before))
+            .OrderBy(t => t).LastOrDefault() ?? StartOf(c.Finance.StartWeek);
+
+    /// <summary>
+    /// Unseen spending found by a reading between two times, taken back off, largest first (a transfer is one lump), up to
+    /// the amount. The amount taken back.
+    /// </summary>
+    private static decimal TakeBack(OoCareer c, decimal amount, DateTime from, DateTime to)
+    {
+        var left = amount;
+        foreach (var s in c.Finance.Other
+                     .Where(o => o.Source is "Balance update" or "Monday check"
+                                 && GameClock.TryParse(o.GameTime) is { } t && t >= from && t <= to)
+                     .OrderByDescending(o => o.Amount).ToList())
+        {
+            if (left <= 0.5m) break;
+            var take = Math.Min(s.Amount, left);
+            s.Amount -= take;
+            left -= take;
+            if (s.Amount <= 0.5m) c.Finance.Other.Remove(s);
+        }
+        return Math.Round(amount - Math.Max(0, left), 2);
+    }
+
+    /// <summary>
+    /// Monday checks that found more money than expected while unseen spending found earlier was standing: the spending
+    /// taken back, and the cost factor worked out again where that check's was the last. True where anything changed.
+    /// For careers from before readings took it back (2026-11-01).
+    /// </summary>
+    public static bool RepairTakeBacks(OoCareer c)
+    {
+        var changed = false;
+        foreach (var check in c.Finance.Checks.Where(x => x.Gap < -0.5m).ToList())
+        {
+            if (GameClock.TryParse(check.GameTime) is not { } at) continue;
+            var took = TakeBack(c, -check.Gap, LastCheckTime(c, at), at);
+            if (took <= 0) continue;
+            check.Gap += took;
+            changed = true;
+            OoStore.Log(c, "money", $"Monday check Day {check.Week}: {Units.Money(took)} counted as unseen spending earlier was money moved out, not spent. Taken back off.");
+            // The factor that check worked out counted it: worked out again, where nothing has been worked out since.
+            if (c.Finance.Factor.LastOrDefault() is { } last && last.Week == check.Week)
+            {
+                c.Settings.CostPerMile = last.Was;
+                c.Finance.Factor.Remove(last);
+                var step = Recalc(c, check.Week);
+                OoStore.Log(c, "money", step.Note);
+            }
+        }
+        return changed;
     }
 
     /// <summary>The Monday check: the balance, what was moved in, then the cost factor worked out again.</summary>
     public static string Check(OoCareer c, decimal balance, decimal movedIn, string? note)
     {
         var week = CheckDue(c) ?? throw new InvalidOperationException("No check is due: the next one is on the game's next Monday.");
-        if (balance < 0 || movedIn < 0) throw new InvalidOperationException("The game bank as the game shows it, and what you moved in.");
-        var gap = ReportBalance(c, balance, movedIn, "Monday check", out var expected);
+        // A negative moved-in is money taken out (to the companion app's account, say): not spending, so the gap leaves it out.
+        if (balance < 0) throw new InvalidOperationException("The game bank as the game shows it.");
+        // What the check finds went out over the week just ended: it goes on that week, and the new one starts at nothing.
+        // Reported from play: repairs found at the Monday check landed on the new week.
+        var gap = ReportBalance(c, balance, movedIn, "Monday check", out var expected, out var tookBack, WeekEnd(week));
         c.Finance.Checks.Add(new WeekCheck
         {
             Week = week, GameTime = c.Game.Status.GameTime, Reported = balance, Expected = expected, MovedIn = movedIn,
@@ -187,14 +338,35 @@ public static class Finance
         var said = gap switch
         {
             null => $"Game bank {Units.Money(balance)}: the first reading, so nothing to check it against yet.",
-            > 0.5m => $"Game bank {Units.Money(balance)} against {Units.Money(expected!.Value)} expected: {Units.Money(gap.Value)} went out that nothing logged (tolls, tickets, repairs). Counted as this week's other spending.",
+            > 0.5m => $"Game bank {Units.Money(balance)} against {Units.Money(expected!.Value)} expected: {Units.Money(gap.Value)} went out that nothing logged (tolls, tickets, repairs). Counted as last week's other spending.",
             < -0.5m => $"Game bank {Units.Money(balance)}, {Units.Money(-gap.Value)} more than expected. Money in that was not entered? It is noted, not counted as income.",
             _ => $"Game bank {Units.Money(balance)}: just as expected.",
         };
+        if (tookBack > 0)
+            said += $" {Units.Money(tookBack)} counted as unseen spending at an earlier reading was money moved out, not spent: taken back off.";
         var step = Recalc(c, week);
         said += " " + step.Note;
         OoStore.Log(c, "money", said);
         return said;
+    }
+
+    /// <summary>The last minute of the week before this Monday: where a Monday check's findings are dated.</summary>
+    private static string WeekEnd(int monday) => GameClock.Format(StartOf(monday).AddMinutes(-1));
+
+    /// <summary>
+    /// Monday checks done before their findings went on the week before: moved there. True where anything moved. For a
+    /// career from before the fix (one player, two weeks, at the time).
+    /// </summary>
+    public static bool MoveMondayGaps(OoCareer c)
+    {
+        var moved = false;
+        foreach (var check in c.Finance.Checks)
+            foreach (var spend in c.Finance.Other.Where(o => o.Source == "Monday check" && o.GameTime == check.GameTime))
+            {
+                spend.GameTime = WeekEnd(check.Week);
+                moved = true;
+            }
+        return moved;
     }
 
     public static void SetBills(OoCareer c, Bills b)
@@ -274,6 +446,8 @@ public static class Finance
         if (t == null) return (d.Booking.Load.LoadedMiles + d.Booking.Load.DeadheadMiles, d.Booking.Load.DeadheadMiles);
         var empty = t.StartOdometer > 0 && t.DispatchOdometer > 0 ? Math.Max(0, t.StartOdometer - t.DispatchOdometer) : t.DeadheadMiles;
         var total = t.EndOdometer > 0 && t.DispatchOdometer > 0 ? Math.Max(0, t.EndOdometer - t.DispatchOdometer) : t.ActualMiles + empty;
+        // A reading that cannot be right for the run is not taken: the run's own miles are.
+        if (total > Odometer.MostForRun(t.DispatchedMiles + t.DeadheadMiles)) { total = t.DispatchedMiles + empty; }
         return (total, empty);
     }
 

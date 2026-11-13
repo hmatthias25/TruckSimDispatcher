@@ -255,6 +255,13 @@ async function showStart() {
     $('st-cities').innerHTML = cities.map((c) => `<option value="${esc(c.city)}, ${esc(c.state)}">`).join('');
   } catch { /* typing still works */ }
   $('st-go').onclick = startCareer;
+  // Other careers on file: this screen is for starting one, not the only way out of it.
+  const others = (S.careerCount || 1) > 1;
+  $('st-careers').classList.toggle('hidden', !others);
+  $('st-careers').innerHTML = others ? `<p style="margin:0">${esc(S.careerName)} has not started yet. You have
+      ${S.careerCount - 1} other career(s) on file.</p>
+    <div class="row-actions"><button class="btn ghost" id="st-careers-go">Switch to another career</button></div>` : '';
+  if (others) $('st-careers-go').onclick = openCareers;
 }
 
 async function startCareer() {
@@ -302,6 +309,8 @@ function render() {
   $('brand-name').textContent = S.profile.driverName;
   $('brand-sub').textContent = `Home: ${S.profile.homeCity}, ${S.profile.homeState} · ${S.profile.preset}`;
   $('ver').textContent = `v${S.version}`;
+  $('tb-careers').textContent = `${S.careerName} ▾`;
+  $('tb-careers').onclick = openCareers;
   const h = S.hos;
   const stat = (k, v, cls = '') => `<div class="stat ${cls}"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`;
   $('stats').innerHTML = phoneStat() +
@@ -326,9 +335,14 @@ function render() {
   const pending = (S.transfers || []).filter((t) => t.status === 'Pending').length;
   const mt = $('tabs').querySelector('[data-tab=money]');
   if (pending && mt) mt.innerHTML += ` <span class="pip amber">${pending}</span>`;
+  const bt = $('tabs').querySelector('[data-tab=board]');
+  if (atDockStage() && !(S.laneFits || []).length && bt) bt.innerHTML += ' <span class="pip amber">1</span>';
   const ft = $('tabs').querySelector('[data-tab=finance]');
   if (S.mondayCheck && ft) ft.innerHTML += ' <span class="pip amber">1</span>';
   maybeAskCheck();
+  maybeShowNews();
+  const brt = $('tabs').querySelector('[data-tab=brokers]');
+  if (brt && ((S.market && S.market.unseen) || []).length) brt.innerHTML += ' <span class="pip amber">!</span>';
 }
 
 // ---------------------------------------------------------------- the phone, wherever you are in the app
@@ -386,6 +400,16 @@ function firstLoadWalkthrough() {
     </ol></div>`;
 }
 
+/* Which board is going in: what is going out of the dock the truck is standing on, or the whole city. The dock first
+   where a lane picks up here (the broker asks for it), as the company-driver app does; the player's own pick holds. */
+let BOARD_STAGE = 'city';
+let BOARD_STAGE_PINNED = false;
+const atDockStage = () => !!(S.lane && S.lane.stage === 'dock' && !S.booking);
+function boardStage() {
+  if (!BOARD_STAGE_PINNED) BOARD_STAGE = atDockStage() && !S.laneAskCity ? 'dock' : 'city';
+  return BOARD_STAGE;
+}
+
 function laneBanner() {
   const l = S.lane;
   if (!l) return '';
@@ -393,15 +417,30 @@ function laneBanner() {
   return `<div class="callout info"><h4>Lane ${esc(l.number)} with ${esc(l.brokerName)}</h4>
     <p>Pick up in <b>${esc(l.pickupCity)}, ${esc(l.pickupState)}</b> from ${esc(gt(l.pickupFromGameTime))} to
       ${esc(gt(l.pickupToGameTime))}, ${l.homeFor ? `delivering <b>home to ${esc(l.homeCity)}</b> (any job ending near it)`
-        : `delivering into the <b>${esc(l.destRegion)}</b>, ${l.minMiles}-${l.maxMiles} mi${l.leanedFor ? ` (busy for ${esc(l.leanedFor)} this month)` : ''}`},
+        : `delivering into the <b>${esc(l.destRegion)}</b>, ${l.minMiles}-${l.maxMiles} mi${l.leanedFor ? ` (busy for ${esc(l.leanedFor)} this month)` : ''}${
+          l.want ? `, and you asked for one <b>${esc(l.want)}</b>` : ''}`},
       at <b>${money(l.ratePerMile)}/mi</b> (never above the game's pay).</p>
+    ${atDockStage() && !fits ? `<p class="said"><b>${esc(l.rep || l.brokerName)}:</b> ${S.laneAskCity
+        ? `"Nothing at ${esc(l.dockName)} works for ${esc(l.number)}. Send me the whole ${esc(l.pickupCity)} board."`
+        : `"You're at ${esc(l.dockName)}. Send me what they've got going out of there."`}</p>
+      <p class="hint">${S.laneAskCity
+        ? `Open the full Freight Market board for ${esc(l.pickupCity)} and paste it with <b>Full city board</b> selected.`
+        : `In ATS: <b>find other load from this location</b>, and paste those with <b>Jobs at this location</b> selected. A job right
+           here counts for the lane at ${l.dockMinMiles}-${l.dockMaxMiles} mi (the band loosened: no run across town), and you can
+           pick it up now.`}</p>` : ''}
     <p>${S.booking ? 'Deliver the load you are on first.'
+      : atDockStage() && !fits && !(S.board || []).length ? ''
       : fits && S.laneClose ? `${S.laneWhy ? esc(S.laneWhy) + ' ' : ''}${esc(l.brokerName)} puts up the ${fits} closest instead, at the lane's
           ${money(l.ratePerMile)}/mi on their own miles: marked below. Take one, or press <b>Nothing fits</b>.`
+      : fits && S.laneWant && S.laneWant.none ? `<b>${esc(S.laneWant.said)}</b>`
+      : fits && S.laneWant ? `${fits} job(s) on the board fit it. ${esc(S.laneWant.said)}`
       : fits ? `${fits} job(s) on the board fit it: take one below.`
       : S.laneWhy ? `${esc(S.laneWhy)} Nothing runnable is close either: press <b>Nothing fits</b>.`
       : `At ${esc(l.pickupCity)}, paste that city's Freight Market board and the app marks the jobs that fit.`}</p>
-    <div class="row-actions">${!S.booking ? '<button class="btn danger" id="ln-none">Nothing fits</button>' : ''}
+    <div class="row-actions">${!S.booking && !atDockStage() ? '<button class="btn danger" id="ln-none">Nothing fits</button>' : ''}
+      ${!S.booking && atDockStage() ? `<button class="btn" id="dk-leave">I've left ${esc(l.dockName)}</button>
+        <span class="hint">Moved on (a rest, a truck stop)? The broker asks for the whole ${esc(l.pickupCity)} board then.
+        Nothing fits only once the city board is in.</span>` : ''}
       <button class="btn tiny ghost" id="ln-cancel">Call it off</button></div></div>`;
 }
 
@@ -410,7 +449,8 @@ function bookingBanner() {
   if (!k) return '';
   const l = k.load;
   return `<div class="callout ok"><h4>Booked: ${esc(k.number)} with ${esc(k.brokerName)}</h4>
-    <p style="margin:0">${esc(l.cargo)} to ${esc(l.destCity)}, ${esc(l.destState)} at ${money(k.rate)}. The run, the clocks and the close-out
+    <p style="margin:0">${esc(l.cargo)} to ${esc(l.destCity)}, ${esc(l.destState)} at ${money(k.rate)}${
+      k.detentionPerHour ? `, detention ${money(k.detentionPerHour)}/h after ${k.detentionAfterHours || 2} h` : ''}. The run, the clocks and the close-out
       are on <a href="#" class="lnk" data-goto="active">Active Load</a>.</p></div>`;
 }
 
@@ -467,9 +507,21 @@ function seasonTableHtml() {
 function boardView() {
   const loads = S.board || [];
   const intro = (S.bookings || []).length === 0 ? firstLoadWalkthrough() : '';
-  return whereHtml() + bookingBanner() + laneBanner() + intro + seasonTableHtml() + `
+  const stage = boardStage();
+  const stageButtons = atDockStage() ? `<div class="row-actions" style="margin:0 0 10px">
+      <button class="btn ${stage === 'dock' ? 'primary' : 'ghost'}" data-stage="dock">Jobs at this location</button>
+      <button class="btn ${stage === 'city' ? 'primary' : 'ghost'}" data-stage="city">Full city board</button></div>
+    <p class="hint" style="margin:0 0 8px">${stage === 'dock'
+      ? `Just what is going out of ${esc(S.lane.dockName)}: no run to the shipper. Show the broker these first.`
+      : `Everything on offer in ${esc(S.status.city)}, including jobs across town.`}</p>` : '';
+  const dockLine = S.status.atDock && !atDockStage() ? `<div class="callout"><p style="margin:0">At <b>${esc(S.status.dock || 'the receiver')}</b>,
+      where you dropped: brokers offer its own jobs first (no empty miles to them).
+      <button class="btn tiny" id="dk-leave">I've left the dock</button>
+      <span class="hint">After a rest of 8 hours or more, the app takes it you have.</span></p></div>` : '';
+  return whereHtml() + bookingBanner() + laneBanner() + dockLine + intro + seasonTableHtml() + `
     <div class="panel">
-      <div class="panel-head"><h2>Add from screenshots</h2><span class="sub">The ${esc(S.trailer?.market || 'Freight Market')} board</span></div>
+      <div class="panel-head"><h2>${stage === 'dock' ? 'Jobs at this location' : 'Add from screenshots'}</h2><span class="sub">The ${esc(S.trailer?.market || 'Freight Market')} board</span></div>
+      ${stageButtons}
       <div id="shotzone"></div>
     </div>
     <div class="panel">
@@ -501,9 +553,11 @@ function loadCard(v) {
       <span class="badge ${verdict}">${esc(f.verdict)}</span>
       ${(S.cantMake || []).includes(l.id) ? '<span class="badge mute">you couldn\'t make it</span>' : ''}
       ${v.trade && v.trade !== 'General' ? `<span class="badge info">${esc(v.trade)}</span>` : ''}
+      ${l.atLocation ? badge('info', 'at this dock') : ''}
       <span class="spacer"></span>
       ${(S.laneFits || []).includes(l.id) && !S.booking ? `<span class="badge info">${S.laneClose ? 'Closest for' : 'Fits'} ${esc(S.lane.number)}:
           ${money(Math.min(l.gameRevenue, Math.round(S.lane.ratePerMile * l.loadedMiles * 100) / 100))}</span>
+        ${S.laneWant ? (S.laneWant.ids.includes(l.id) ? badge('ok', S.laneWant.words) : badge('warn', `not ${S.laneWant.words}`)) : ''}
         <button class="btn tiny primary" data-take="${esc(l.id)}">Take for the lane</button>` : ''}
       <button class="btn tiny ghost" data-del="${esc(l.id)}">Remove</button>
     </div>
@@ -628,7 +682,7 @@ function wireShots() {
     const picked = [], skipped = [];
     preview.loads.forEach((l, i) => {
       if (!$(`pv-use-${i}`).checked) return;
-      const row = { ...l, cargo: v('cargo', i) || 'Freight', destCity: v('city', i), destState: v('state', i).toUpperCase(),
+      const row = { ...l, atLocation: BOARD_STAGE === 'dock', cargo: v('cargo', i) || 'Freight', destCity: v('city', i), destState: v('state', i).toUpperCase(),
         loadedMiles: Number(v('miles', i)) || 0, gameRevenue: Number(v('pay', i)) || 0, windowText: v('window', i) };
       // A row the planner cannot judge is held back rather than sent: a blank pay would read as free freight.
       if (!row.destCity || row.loadedMiles <= 0 || row.gameRevenue <= 0 || (!row.windowText && !(row.deadlineHours > 0))) skipped.push(row.cargo);
@@ -639,6 +693,7 @@ function wireShots() {
       const r = await api('/board/add-many', 'POST', picked);
       S = r.snapshot; shots = []; preview = null;
       toast(`${r.added} job(s) on the board.${skipped.length ? ` Skipped, incomplete: ${skipped.join(', ')}.` : ''}`);
+      if (r.said) { toast(r.said, 'warn'); BOARD_STAGE = 'city'; BOARD_STAGE_PINNED = false; }
       (r.refused || []).forEach((x) => toast(`${x.cargo} to ${x.destCity}: ${x.reason}`, 'warn'));
       render();
     } catch (e) { toast(e.message, 'bad'); }
@@ -669,12 +724,17 @@ function wireBoard() {
     if (why === null) return;
     try { const r = await api('/lane/cancel', 'POST', { why }); S = r.snapshot; toast(r.said); render(); } catch (e) { toast(e.message, 'bad'); }
   };
+  const leave = $('dk-leave');
+  if (leave) leave.onclick = async () => {
+    try { const r = await api('/dock/leave', 'POST'); S = r.snapshot; toast(r.said); BOARD_STAGE_PINNED = false; render(); } catch (e) { toast(e.message, 'bad'); }
+  };
   const none = $('ln-none');
   if (none) none.onclick = async () => {
     if (!confirm('Tell the broker nothing on the board fits? They cancel the lane.')) return;
     try { const r = await api('/lane/nothing-fits', 'POST'); S = r.snapshot; toast(r.said); render(); } catch (e) { toast(e.message, 'bad'); }
   };
   document.querySelectorAll('[data-goto]').forEach((a) => a.onclick = (e) => { e.preventDefault(); tab = a.dataset.goto; render(); });
+  document.querySelectorAll('[data-stage]').forEach((b) => b.onclick = () => { BOARD_STAGE = b.dataset.stage; BOARD_STAGE_PINNED = true; render(); });
   renderShots();
   $('ad-go').onclick = async () => {
     const dest = $('ad-dest').value.split(',').map((x) => x.trim());
@@ -682,7 +742,7 @@ function wireBoard() {
       const r = await api('/board/add-many', 'POST', [{
         cargo: $('ad-cargo').value, destCity: dest[0] || '', destState: dest[1] || '',
         loadedMiles: Number($('ad-miles').value), gameRevenue: Number($('ad-pay').value),
-        windowText: $('ad-window').value, notes: 'Typed in',
+        windowText: $('ad-window').value, notes: 'Typed in', atLocation: BOARD_STAGE === 'dock',
       }]);
       S = r.snapshot;
       (r.refused || []).forEach((x) => toast(x.reason, 'warn'));
@@ -971,6 +1031,9 @@ function activeView() {
     <div class="panel-head"><h2>From here</h2><span class="sub">The rest of this run, off your latest clocks and position</span></div>
     ${fh ? fromHereView(fh) : `<p class="hint">${t.arrivedGameTime ? 'At the receiver: nothing left to plan.' : 'Nothing to plan from yet: your clocks are needed.'}</p>`}
     ${S.hos.asOf ? `<p class="hint">${esc(clocksFrom(S.hos))}. Calling a broker, or answering one, updates this too: nothing else to do.</p>` : ''}
+    ${!S.lane && !t.loadedReported && !t.arrivedGameTime && (t.shipperArrivedGameTime || (t.events || []).some((e) => e.kind === 'BeginLoad' || e.kind === 'EndLoad'))
+      ? `<p class="hint">Waiting to load? Ring a broker for the next load now, on the <a href="#" class="lnk" data-goto="brokers">Brokers</a> tab.
+      They offer a lane out of where this run ends. Brokers still ring you themselves once you pull away.</p>` : ''}
     ${!S.lane && t.loadedReported ? `<p class="hint">To line up the next load: log a break or a rest in the trip log below, then ring a broker on the
       <a href="#" class="lnk" data-goto="brokers">Brokers</a> tab straight away. They offer a lane out of where this one ends.</p>` : ''}
     <details ${fh && fh.verdict !== 'Feasible' ? 'open' : ''}><summary>Running late? Check it from here</summary>
@@ -1115,10 +1178,32 @@ function auditModal(a) {
       <h4>${esc(a.headline)}</h4>${a.faultRationale ? `<p>${esc(a.faultRationale)}</p>` : ''}</div>
     ${(a.warnings || []).length ? `<div class="callout warn"><h4>Check these numbers</h4>
       ${a.warnings.map((w) => `<p>${esc(w)}</p>`).join('')}</div>` : ''}
-    <div class="cols"><div>${auditSection('Service', a.serviceFindings)}${auditSection('Mileage', a.mileageFindings)}</div>
-      <div>${auditSection('Money', a.moneyFindings)}${auditSection('The load', a.equipmentFindings)}
-        ${auditSection(`Carried forward${a.clocksReported ? ', clocks included' : ''}`, a.carriedForward)}</div></div>
+    ${summaryHtml(a)}
+    ${notesHtml(a)}
+    ${workingHtml(a)}
     <div class="row-actions"><div class="spacer"></div><button class="btn primary" data-close>Got it</button></div>`);
+}
+
+/** The close-out as figures: each section a short list of label and value, with a line under a value that needs one. */
+function summaryHtml(a) {
+  if (!(a.summary || []).length) return '';
+  return `<div class="sum">${a.summary.map((sec) => `<section>
+      <h3 class="sect">${esc(sec.title)}</h3>
+      <dl>${sec.rows.map((r) => `<dt>${esc(r.label)}</dt><dd${r.tone ? ` class="${esc(r.tone)}"` : ''}>${esc(r.value)}${
+        r.detail ? `<small>${esc(r.detail)}</small>` : ''}</dd>`).join('')}</dl>
+    </section>`).join('')}</div>`;
+}
+
+const notesHtml = (a) => (a.notes || []).length ? `<div class="callout info">
+    <h4>Worth knowing</h4>${a.notes.map((x) => `<p>${esc(x)}</p>`).join('')}</div>` : '';
+
+/** The working behind the figures: every finding as the close-out wrote it, folded away unless there are no figures. */
+function workingHtml(a) {
+  const body = auditSection('Delivery and docks', a.serviceFindings) + auditSection('Distance', a.mileageFindings)
+    + auditSection('Money', a.moneyFindings) + auditSection('The load', a.equipmentFindings)
+    + auditSection('Carried forward', a.carriedForward);
+  return body ? `<details class="working"${(a.summary || []).length ? '' : ' open'}>
+    <summary>How it was worked out</summary>${body}</details>` : '';
 }
 
 function auditHtml(a) {
@@ -1127,11 +1212,9 @@ function auditHtml(a) {
     <div class="panel-head"><h2>Last close-out: ${esc(a.trip.number)}</h2>${badge(late ? 'bad' : 'ok', late ? 'late' : 'on time')}</div>
     <div class="callout ${late ? (a.faultAttribution === 'Driver' ? 'stop' : 'warn') : 'go'}">
       <h4>${esc(a.headline)}</h4>${a.faultRationale ? `<p>${esc(a.faultRationale)}</p>` : ''}</div>
-    ${auditSection('Service', a.serviceFindings)}${auditSection('Mileage', a.mileageFindings)}
-    ${auditSection('Money', a.moneyFindings)}${auditSection('The load', a.equipmentFindings)}
-    ${a.carriedForward && a.carriedForward.length ? `<div class="callout go" style="margin-top:14px">
-      <h4>Carried forward${a.clocksReported ? ', clocks included' : ''}</h4>
-      <ul>${a.carriedForward.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+    ${summaryHtml(a)}
+    ${notesHtml(a)}
+    ${workingHtml(a)}
     <div class="row-actions"><button class="btn ghost" id="audit-dismiss">Dismiss</button></div>
   </div>`;
 }
@@ -1213,6 +1296,8 @@ function confirmCloseOut() {
       closeModal();
       S = r.snapshot;
       LAST_AUDIT = r.audit;
+      // New dock, new starting point: a pick of board made at the last one does not carry over.
+      BOARD_STAGE_PINNED = false;
       render();
       if (r.audit) auditModal(r.audit);
       else toast(`${r.invoice.number} raised: ${money(r.invoice.amount)} due from ${r.invoice.brokerName}.`);
@@ -1314,35 +1399,108 @@ function brokersView() {
   const dir = S.directory || [];
   const shown = dir
     .filter((b) => brokerFilter === 'all' || (brokerFilter === 'here' ? b.worksHere : b.takesYou))
-    .sort((a, b) => (b.takesYou - a.takesYou) || ['Starter', 'Established', 'Premium'].indexOf(a.tier) - ['Starter', 'Established', 'Premium'].indexOf(b.tier));
+    .sort((a, b) => (b.trading - a.trading) || (b.takesYou - a.takesYou) || ['Starter', 'Established', 'Premium'].indexOf(a.tier) - ['Starter', 'Established', 'Premium'].indexOf(b.tier));
   const r = S.record;
   const tierBadge = (t) => `<span class="badge ${t === 'Starter' ? 'mute' : t === 'Established' ? 'info' : 'violet'}">${esc(t)}</span>`;
-  return phoneView() + `<div class="panel">
+  const isNew = (b) => b.openedGameTime && dayOf(S.status.gameTime) - dayOf(b.openedGameTime) <= 28;
+  return phoneView() + marketNewsView() + `<div class="panel">
     <div class="panel-head"><h2>Broker directory</h2>
       <span class="sub">Your record: ${r.loads} load(s), ${r.onTimePct}% on time, ${r.daysWithAuthority} day(s) with your authority</span>
       <span class="spacer"></span>
       <select id="br-filter">
         <option value="here" ${brokerFilter === 'here' ? 'selected' : ''}>Work ${esc(S.status.state)}'s region</option>
         <option value="takes" ${brokerFilter === 'takes' ? 'selected' : ''}>Will take my call</option>
-        <option value="all" ${brokerFilter === 'all' ? 'selected' : ''}>Everyone I know</option>
+        <option value="all" ${brokerFilter === 'all' ? 'selected' : ''}>Everyone I know, closed and bankrupt too</option>
       </select></div>
-    ${shown.length ? `<div class="tablewrap"><table class="grid"><thead><tr>
-        <th>Broker</th><th>Tier</th><th>Based</th><th>Works</th><th>Pays</th><th>Credit</th><th>Requirement</th><th>Notes</th><th></th>
-      </tr></thead><tbody>${shown.map((b) => `<tr>
-        <td><b>${esc(b.name)}</b>${b.kind === 'Shipper' ? ' <span class="badge violet">Company</span>' : ''}
+    ${reputationView()}
+    ${shown.length ? `<div class="tablewrap"><table class="grid brokers"><thead><tr>
+        <th>Broker</th><th>Tier</th><th>Based</th><th>Works</th><th>Pays</th><th class="credit">Credit</th><th>Requirement</th><th>Notes</th><th></th>
+      </tr></thead><tbody>${shown.map((b) => `<tr class="${b.trading ? '' : 'gone'}">
+        <td><b>${esc(b.name)}</b>${b.kind === 'Shipper' ? ' <span class="badge violet">Company</span>' : ''}${isNew(b) ? ' <span class="badge info">New</span>' : ''}
+          ${b.trading ? '' : ` <span class="badge ${b.status === 'Bankrupt' ? 'bad' : 'mute'}">${esc(b.status)}${b.statusGameTime ? ' ' + esc(gt(b.statusGameTime)) : ''}</span>`}
           <div class="hint">${esc(b.rep)} · ${esc(b.specialty)}${b.loadsBooked ? ` · ${b.loadsBooked} load(s) with you` : ''}</div></td>
         <td>${tierBadge(b.tier)}</td>
         <td>${esc(b.city)}, ${esc(b.state)}</td>
         <td>${esc(b.regions.join(', '))}</td>
-        <td>net ${b.daysToPay}<div class="hint">quick pay ${b.quickPayFeePct}%</div></td>
-        <td title="${esc(b.creditSays || '')}">${badge(b.credit === 'A' ? 'ok' : b.credit === 'B' ? 'info' : b.credit === 'C' ? 'warn' : 'bad', b.credit)}
-          ${b.credit === 'C' || b.credit === 'D' ? `<div class="hint">pays more, slower</div>` : ''}
+        <td class="nowrap">net ${b.daysToPay}<div class="hint">quick pay ${b.quickPayFeePct}%</div></td>
+        <td class="credit" title="${esc(b.creditSays || '')}">${badge(b.credit === 'A' ? 'ok' : b.credit === 'B' ? 'info' : b.credit === 'C' ? 'warn' : 'bad', b.credit)}
+          <span class="hint">${b.credit === 'C' ? 'you keep +4 pts, slow' : b.credit === 'D' ? 'you keep +9 pts, risky' : b.credit === 'A' ? 'safe' : 'sound'}</span>
           ${payRecordHtml(b.payRecord)}</td>
-        <td>${b.takesYou ? '<span class="badge ok">Will take you</span>' : `<span class="hint">${esc(b.requirement)}</span>`}</td>
+        <td>${!b.trading ? `<span class="hint">${b.status === 'Bankrupt' ? 'Gone under. Claim a settlement on what they owe.' : 'Closed: no calls, but they pay what they owe.'}</span>`
+          : b.takesYou ? `<span class="badge ok">Will take you</span>${b.refusalPct > 0 ? `<div class="hint">New to them: ${b.refusalPct}% of days they give the loads to more experienced drivers</div>` : ''}`
+          : `<span class="hint">${esc(b.requirement)}</span>`}</td>
         <td class="hint">${esc((b.notes || []).join(' '))}</td>
-        <td><button class="btn tiny ${b.takesYou && b.worksHere ? 'primary' : ''}" data-call="${esc(b.id)}">Call</button></td>
+        <td>${b.trading ? `<button class="btn tiny ${b.takesYou && b.worksHere ? 'primary' : ''}" data-call="${esc(b.id)}">Call</button>` : ''}</td>
       </tr>`).join('')}</tbody></table></div>` : '<div class="empty">Nobody in this view yet.</div>'}
+    ${creditRiskView()}
   </div>`;
+}
+
+/** What each credit grade costs and pays: the margin a poor payer gives up, against the risk of slow pay, no pay and bankruptcy. */
+function creditRiskView() {
+  return `<details class="riskbox"><summary>Credit grades: the risk, and what it pays you to take it</summary>
+    <p class="hint">A broker with poor credit struggles to get trucks, so they give up some of their margin: on the same load you keep
+      more of the money. In return you wait longer for it, and sometimes it never comes. The game's own companies are always A and never go under.</p>
+    <div class="tablewrap"><table class="grid"><thead><tr><th>Credit</th><th>The broker keeps</th><th>On a $2,000 load you get</th><th>When they pay</th><th>Never pays</th><th>Factoring</th><th>Goes bankrupt</th></tr></thead>
+    <tbody>
+      <tr><td>${badge('ok', 'A')}</td><td>their usual margin</td><td>about $1,440</td><td>on time</td><td>no</td><td>2.5% fee</td><td>very rarely</td></tr>
+      <tr><td>${badge('info', 'B')}</td><td>their usual margin</td><td>about $1,440</td><td>0 to 2 days late</td><td>no</td><td>3.5% fee</td><td>rarely</td></tr>
+      <tr><td>${badge('warn', 'C')}</td><td>4 points less</td><td>about $1,520 (+$80)</td><td>3 to 10 days late</td><td>no</td><td>6% fee</td><td>sometimes</td></tr>
+      <tr><td>${badge('bad', 'D')}</td><td>9 points less</td><td>about $1,620 (+$180)</td><td>10 to 20 days late</td><td>about 4 in 10, without collections (who keep half)</td><td>no factor will buy it</td><td>the likeliest by far</td></tr>
+    </tbody></table></div>
+    <p class="hint">The dollar figures are for a starter broker keeping 28%. When a broker goes bankrupt, what they owe you is frozen: claim a settlement
+      on the Money tab and, in two to four weeks, you get back five to twenty cents on the dollar. A factored invoice is the factor's loss, not yours.
+      A broker who closes its doors still pays what it owes. Grades move: every Friday some brokers go up a grade and some go down.</p>
+  </details>`;
+}
+
+/** What the brokers of each region you have reached say about you. */
+function reputationView() {
+  const reps = (S.market && S.market.reputation) || [];
+  if (!reps.length) return '';
+  const cls = (w) => ({ Strong: 'ok', Good: 'ok', Fair: 'info', Poor: 'warn', Bad: 'bad' })[w] || 'mute';
+  return `<div class="repline"><span class="hint">Your name with the brokers:</span>
+    ${reps.map((x) => `<span class="badge ${cls(x.words)}" title="${x.score}">${esc(x.region)}: ${esc(x.words)}</span>`).join(' ')}
+    <span class="hint">On-time loads out of a region build it; late loads, claims and loads handed back cost it. A good name gets you past
+      brokers who give their loads to more experienced drivers; a bad one gets you turned away more.</span></div>`;
+}
+
+/** The Fridays' news, for the regions you have reached. */
+function marketNewsView() {
+  const recent = (S.market && S.market.recent) || [];
+  if (!recent.length) return '';
+  return `<div class="panel"><div class="panel-head"><h2>The brokers' week</h2><span class="sub">Every Friday evening, in the regions you have reached</span></div>
+    ${recent.map((r) => `<div class="newsday"><b>Friday, Day ${r.day}</b>${newsList(r.news)}</div>`).join('')}</div>`;
+}
+
+function newsList(news) {
+  if (!news.length) return `<p class="hint" style="margin:6px 0 10px">A quiet week: no broker opened, closed, went bankrupt or changed credit in the regions you have reached.</p>`;
+  const icon = { New: ['info', 'New'], Closed: ['mute', 'Closed'], Bankrupt: ['bad', 'Bankrupt'], Up: ['ok', 'Credit up'], Down: ['warn', 'Credit down'] };
+  return `<ul class="news">${news.map((n) => `<li><span class="badge ${(icon[n.kind] || ['mute'])[0]}">${esc((icon[n.kind] || [n.kind, n.kind])[1])}</span>
+    <span class="hint">${esc(n.region)}</span> ${esc(n.said)}</li>`).join('')}</ul>`;
+}
+
+/** Friday's report, once: what happened among the brokers in the regions you have reached. */
+let NEWS_SHOWN = '';
+function maybeShowNews() {
+  const unseen = (S.market && S.market.unseen) || [];
+  if (!unseen.length || !$('modal').classList.contains('hidden')) return;
+  const key = unseen.map((r) => r.id).join(',');
+  if (NEWS_SHOWN === key) return;
+  NEWS_SHOWN = key;
+  modal(`<div class="panel-head"><h2>The brokers' week</h2></div>
+    <p class="hint">Friday evening: what changed among the brokers in the regions you have reached.</p>
+    ${unseen.map((r) => `<div class="newsday"><b>Friday, Day ${r.day}</b>${newsList(r.news)}</div>`).join('')}
+    <div class="row-actions"><button class="btn primary" id="nw-ok">Got it</button>
+      <button class="btn ghost" id="nw-brokers">Open the Brokers tab</button></div>`);
+  const seen = async (go) => {
+    try { S = await api('/brokers/news/seen', 'POST'); } catch (e) { toast(e.message, 'bad'); }
+    closeModal();
+    if (go) tab = 'brokers';
+    render();
+  };
+  $('nw-ok').onclick = () => seen(false);
+  $('nw-brokers').onclick = () => seen(true);
 }
 
 /** How a broker has really paid you, in a line under their credit grade. */
@@ -1353,6 +1511,7 @@ function payRecordHtml(r) {
   if (r.late) bits.push(`${r.late} late (avg ${r.avgDaysLate} d)`);
   if (r.collections) bits.push(`${r.collections} to collections`);
   if (r.writtenOff) bits.push(`${r.writtenOff} never paid`);
+  if (r.bankrupt) bits.push(`${r.bankrupt} lost in bankruptcy`);
   if (r.overdue) bits.push(`${r.overdue} overdue now`);
   else if (r.open) bits.push(`${r.open} open`);
   return `<div class="hint">${esc(bits.join(' · ') || `${r.invoices} invoice(s)`)}</div>`;
@@ -1368,9 +1527,9 @@ function phoneView() {
   return `<div class="panel phone">
     <div class="panel-head"><h2>On the phone: ${esc(c.rep)}, ${esc(c.broker)}</h2>
       <span class="badge ${open ? 'warn' : c.status === 'Booked' ? 'ok' : 'mute'}">${open ? esc(c.mood) : esc(c.status)}</span>
-      ${c.quickPay ? `<span class="badge ok" title="Quick pay agreed: paid in two days, less the broker's fee">Quick pay ✓ ${c.quickPayFeePct}%${
-        c.quickPayNet != null && !c.lane ? `: ${money(c.quickPayNet)}` : ''}</span>` : ''}
-      ${c.detentionPerHour ? `<span class="badge ok" title="Detention agreed: per hour after two hours at a dock">Detention ✓ ${money(c.detentionPerHour)}/h</span>` : ''}</div>
+      </div>
+    <p class="hint" style="margin:0 0 8px">On every load with ${esc(c.broker)}: detention at ${money(c.detentionRate)}/h after 2 free hours,
+      billed off your dock times. Quick pay (${c.quickPayFeePct}% off, paid in two days) you choose on the invoice after delivery.</p>
     ${c.lane && open ? `<div class="figs">
       <div><div class="k">Offer</div><div class="money">${money(c.offer)}</div></div>
       <div><div class="k">Pick up</div><div class="money">${esc(c.lane.pickupCity)}, ${esc(c.lane.pickupState)}</div></div>
@@ -1408,8 +1567,10 @@ function phoneView() {
           title="No penalty: they drop it and offer the next. Only you know where you really are.">Can't make it in time${
           c.listingLeftHours != null ? ` (${hhmm(c.listingLeftHours)} left)` : ''}</button>` : ''}
         <button class="btn ghost" data-move="better">Anything better?</button>
-        <button class="btn ghost" data-move="quickpay" title="Paid in two days, less their ${c.quickPayFeePct}% fee">Quick pay?</button>
-        <button class="btn ghost" data-move="detention">Detention?</button>
+        ${(c.load && !c.lane) || (c.lane && !c.lane.homeFor) ? `<span class="inline"><select id="ph-where" title="Ask for a load going somewhere: out of the state it picks up in (its fuel, say), or into a region">
+          <option value="out">Out of ${esc(c.lane ? c.lane.pickupState : S.status.state)}</option>
+          ${['Northwest', 'West', 'Plains & Southwest', 'Midwest', 'South', 'Northeast'].map((r) => `<option value="${esc(r)}">Into the ${esc(r)}</option>`).join('')}
+          </select><button class="btn ghost" data-move="where">Ask for it</button></span>` : ''}
         <button class="btn danger" data-move="decline">Pass</button>
       </div>` : ''}
   </div>`;
@@ -1454,7 +1615,8 @@ function wireBrokers() {
     if (m === 'counter') {
       say({ kind: 'counter', amount: Number($('ph-amount').value),
         arguments: [...document.querySelectorAll('#ph-args input:checked')].map((i) => i.value) });
-    } else if (m === 'quickpay' || m === 'detention') say({ kind: 'terms', term: m });
+    } else if (m === 'where') say({ kind: 'where', where: $('ph-where').value });
+    else if (m === 'quickpay' || m === 'detention') say({ kind: 'terms', term: m });
     else say({ kind: m });
   });
 }
@@ -1585,7 +1747,7 @@ function factorHtml(f) {
         <td>${h.measured ? perMi(h.measured) : '--'}</td><td>${h.fixed ? perMi(h.fixed) : '--'}</td>
         <td>${money(h.was)} → <b>${money(h.total)}</b>${h.changed ? '' : '<div class="hint">left as it was</div>'}</td></tr>`).join('')}</tbody></table></div>` : ''}
     ${f.checks.length ? `<h3 class="sect">Game bank checks</h3><div class="tablewrap"><table class="grid"><thead><tr>
-        <th>When</th><th>Expected</th><th>Moved in</th><th>The game showed</th><th>Gone unseen</th></tr></thead>
+        <th>When</th><th>Expected</th><th>Moved in/out</th><th>The game showed</th><th>Gone unseen</th></tr></thead>
       <tbody>${f.checks.map((x) => `<tr><td>${esc(gt(x.gameTime))}</td><td>${x.expected != null ? money(x.expected) : 'first reading'}</td>
         <td>${money(x.movedIn)}</td><td>${money(x.reported)}</td>
         <td>${x.gap > 0.5 ? money(x.gap) : x.gap < -0.5 ? `<span class="hint">${money(-x.gap)} more than expected</span>` : '--'}</td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -1647,8 +1809,9 @@ function checkModal() {
     <p>What does the game bank show right now? ${expected}</p>
     <div class="grid3">
       <label>The game bank shows<input id="mc-bal" type="number" min="0" step="1" placeholder="e.g. 8450"></label>
-      <label>Moved into it since last time<input id="mc-in" type="number" min="0" step="1" value="0"
-        title="Money you moved from your account into the game bank: not income, and not counted as spending either"></label>
+      <label>Moved in or out since last time<input id="mc-in" type="number" step="1" value="0"
+        title="Money you moved into the game bank (+) or took out of it (-): not income, and not spending either">
+        <span class="hint">Took money out? Enter it as a minus, e.g. -10000.</span></label>
       <label>Note<input id="mc-note" placeholder="optional"></label>
     </div>
     <p class="hint">Then the cost factor is worked out again from your fuel, that spending and your bills.</p>
@@ -1686,7 +1849,10 @@ function moneyView() {
     <p class="hint">${g.reported == null ? 'Tell the app what the game bank shows, and it keeps track from there.'
       : `Read ${esc(gt(g.reportedGameTime))} at ${money(g.reported)}, kept current since by deliveries and the moves you mark done. Spending in the game is not seen: read it again after you spend.`}</p>
     <div class="sayrow"><input id="gb-bal" type="number" step="0.01" placeholder="Game bank balance, as the game shows it">
+      <input id="gb-moved" type="number" step="1" placeholder="Moved in (+) or out (-) since" style="max-width:15rem"
+        title="Money you moved into the game bank (+) or out of it to your Companion App account (-) since the last reading: not spending, not income">
       <button class="btn" id="gb-save">Update</button></div>
+    <p class="hint">Took money out to the Companion App? Put it in the moved box as a minus, e.g. -10000, or it counts as spending.</p>
   </div>
   <div class="panel"><div class="panel-head"><h2>Transfers to make</h2>
       <span class="sub">In the GDC Companion App. This app never moves money: it says what, which way and when.</span></div>
@@ -1707,17 +1873,27 @@ function moneyView() {
     </div>
     <p class="hint">The game's pay for every load goes in. When a broker pays, your rate comes out to your account; the rest of
       that load's pay is the broker's share and stays.</p></div>
-  <div class="panel"><div class="panel-head"><h2>Owed to you</h2><span class="sub">${money(S.owedToYou)} outstanding</span></div>
+  <div class="panel"><div class="panel-head"><h2>Owed to you</h2><span class="sub">${money(S.owedToYou)} outstanding${
+    S.owedBankrupt > 0 ? `, and ${money(S.owedBankrupt)} owed by brokers who went bankrupt` : ''}</span></div>
     ${inv.length ? `<div class="tablewrap"><table class="grid"><thead><tr><th>Invoice</th><th>Load</th><th>Broker</th><th>Rate</th><th>Detention</th><th>Game paid</th><th>Due</th><th>Status</th><th></th></tr></thead>
       <tbody>${inv.map((i) => `<tr><td>${esc(i.number)}</td><td>${esc(i.bookingNumber)}</td><td>${esc(i.brokerName)} <span class="hint">${esc(i.credit)}</span></td>
         <td>${money(i.amount)}${i.quickPayFee ? `<div class="hint">quick pay, ${money(i.quickPayFee)} fee</div>` : ''}</td>
         <td>${i.detentionAmount ? `${money(i.detentionAmount)} <span class="hint">${esc(i.detentionStatus)}</span>` : ''}</td>
         <td>${money(i.gamePay)}</td><td>${esc(gt(i.dueGameTime))}</td>
-        <td><span class="badge ${i.status === 'Paid' ? 'ok' : i.status === 'WrittenOff' ? 'bad' : 'warn'}">${esc(i.status)}</span></td>
-        <td>${['Open', 'Overdue'].includes(i.status) ? `<button class="btn tiny" data-inv="factor" data-id="${esc(i.id)}">Factor</button>` : ''}
+        <td><span class="badge ${['Paid', 'Settled'].includes(i.status) ? 'ok' : ['WrittenOff', 'Bankrupt'].includes(i.status) ? 'bad' : 'warn'}">${esc(i.status)}</span>${
+          i.status === 'Claimed' ? `<div class="hint">settlement due ${esc(gt(i.paysGameTime))}</div>` : ''}${
+          i.status === 'Settled' ? `<div class="hint">${Math.round(i.settlementShare * 100)}% of it back</div>` : ''}</td>
+        <td>${i.status === 'Open' && !i.quickPayFee && i.gamePay > 0 ? `<button class="btn tiny" data-inv="quickpay" data-id="${esc(i.id)}"
+            title="Paid in two days, less the broker's fee. The broker still has to pay it: their credit decides when it really comes.">Quick pay (${
+            (S.directory || []).find((b) => b.id === i.brokerId)?.quickPayFeePct ?? '?'}%)</button>` : ''}
+          ${['Open', 'Overdue'].includes(i.status) && !i.quickPayFee ? `<button class="btn tiny" data-inv="factor" data-id="${esc(i.id)}"
+            title="Sold for cash now, less a bigger fee; the factor takes the risk of the broker not paying.">Factor</button>` : ''}
           ${i.status === 'Overdue' ? `<button class="btn tiny" data-inv="chase" data-id="${esc(i.id)}">Chase</button>` : ''}
           ${['Overdue', 'Collections'].includes(i.status) ? `<button class="btn tiny danger" data-inv="writeoff" data-id="${esc(i.id)}">Write off</button>` : ''}
-          ${i.detentionStatus === 'Disputed' ? `<button class="btn tiny" data-inv="argue" data-id="${esc(i.id)}">Argue detention</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+          ${i.detentionStatus === 'Disputed' ? `<button class="btn tiny" data-inv="argue" data-id="${esc(i.id)}">Argue detention</button>` : ''}
+          ${i.status === 'Bankrupt' ? `<button class="btn tiny primary" data-inv="settle" data-id="${esc(i.id)}"
+            title="A claim against what is left of the broker: in two to four weeks, five to twenty cents on the dollar.">Claim a settlement</button>
+            <button class="btn tiny danger" data-inv="writeoff" data-id="${esc(i.id)}">Write off</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">No invoices yet. Deliver a booked load and the broker owes you.</div>'}
   </div>
   ${done.length ? `<div class="panel"><div class="panel-head"><h2>Moved</h2></div>
@@ -1731,7 +1907,10 @@ function wireMoney() {
     catch (e) { toast(e.message, 'bad'); }
   });
   $('gb-save').onclick = async () => {
-    try { S = await api('/bank', 'POST', { balance: Number($('gb-bal').value) }); toast('Game bank updated.'); render(); }
+    try {
+      const r = await api('/bank', 'POST', { balance: Number($('gb-bal').value), movedIn: Number($('gb-moved').value) || 0 });
+      S = r.snapshot; toast(r.said); render();
+    }
     catch (e) { toast(e.message, 'bad'); }
   };
   document.querySelectorAll('[data-done]').forEach((b) => b.onclick = async () => {
@@ -2053,6 +2232,10 @@ function settingsView() {
         and in the browser tab's title. Turn on desktop alerts to see it with the app on another screen.</p>
       <div class="row-actions"><button class="btn" id="se-notify">${'Notification' in window && Notification.permission === 'granted'
         ? 'Desktop alerts are on' : 'Turn on desktop alerts'}</button></div></div>
+    <div class="panel"><div class="panel-head"><h2>Careers</h2><span class="sub">${S.careerCount || 1} on file</span></div>
+      <p class="hint">Play more than one: switch between them, start another, rename or delete one. The one you are playing
+        stays in <code>career.json</code>; the rest sit in <code>oo-data/careers</code>.</p>
+      <div class="row-actions"><button class="btn" id="se-careers">Careers…</button></div></div>
     <div class="panel"><div class="panel-head"><h2>AI</h2></div>
       <label>Anthropic API key<input id="se-key" type="password" placeholder="${S.settings.hasApiKey ? 'A key is saved. Paste a new one to replace it.' : 'sk-ant-...'}">
         <span class="hint">Reads screenshots, and will voice the brokers on the phone. Stored in your career file on this PC only.</span></label>
@@ -2073,6 +2256,7 @@ function wireSettings() {
     .map((i) => (i.value === '' ? null : Number(i.value))) }, 'Limits saved.');
   $('ld-reset').onclick = () => save({ resetLongDistance: true }, 'Back to the game defaults.');
   $('se-key-save').onclick = () => save({ anthropicApiKey: $('se-key').value }, 'Key saved.');
+  $('se-careers').onclick = openCareers;
   wireTrailer();
   wireCompanyNames();
   $('se-notify').onclick = async () => {
@@ -2090,6 +2274,68 @@ function logView() {
   return `<div class="panel"><div class="panel-head"><h2>Log</h2></div>
     ${ev.length ? `<div class="log">${ev.map((e) => `<div><span class="badge mute">${esc(e.channel)}</span> ${esc(e.message)}</div>`).join('')}</div>`
                 : '<div class="empty">Nothing yet.</div>'}</div>`;
+}
+
+// ---------------------------------------------------------------- careers
+//
+// More than one career, as the company-driver app keeps them. The list is fetched when it is opened rather than carried
+// on every snapshot: describing the parked ones reads their files.
+
+/** After a switch or a new career: the app for one that has started, the Start screen for one that has not. */
+function showCareer() {
+  closeModal();
+  if (S.started) { $('start').classList.add('hidden'); tab = 'board'; showApp(); }
+  else showStart();
+}
+
+async function openCareers() {
+  let list;
+  try { list = (await api('/careers')).careers || []; } catch (e) { return toast(e.message, 'bad'); }
+  const row = (c) => `<div class="careerrow${c.current ? ' is-current' : ''}">
+      <div><div><b>${esc(c.label)}</b>${c.current ? ' <span class="badge ok">playing</span>' : ''}</div>
+        <div class="sub">${c.started
+          ? `${esc(c.driver)} · home ${esc(c.home)} · day ${c.day} · ${c.loads} load(s) delivered`
+          : 'not started yet'}</div></div>
+      <div class="row-actions">
+        ${c.current ? '' : `<button class="btn tiny" data-cr="switch" data-slug="${esc(c.slug)}">Switch to this</button>`}
+        <button class="btn tiny ghost" data-cr="rename" data-slug="${esc(c.slug)}" data-label="${esc(c.label)}">Rename</button>
+        ${c.current ? '' : `<button class="btn tiny danger" data-cr="delete" data-slug="${esc(c.slug)}" data-label="${esc(c.label)}">Delete</button>`}
+      </div></div>`;
+  modal(`<div class="panel-head"><h2>Careers</h2><span class="sub">${list.length} on file</span></div>
+    <div class="careerlist">${list.map(row).join('')}</div>
+    <p class="hint">Switching saves the career you are on first and loads the other straight away. A new career keeps your
+      API key, cost per mile, long-distance limits and company names — they describe your game, not the career.</p>
+    <div class="row-actions"><button class="btn" data-cr="new">Start another career</button>
+      <div style="flex:1"></div><button class="btn ghost" data-cr="close">Close</button></div>`);
+
+  const done = (r, msg) => { S = r.snapshot; if (msg) toast(msg); };
+  $('modal-body').querySelectorAll('[data-cr]').forEach((b) => b.onclick = async () => {
+    const { cr, slug, label } = b.dataset;
+    try {
+      if (cr === 'close') return closeModal();
+      if (cr === 'switch') { done(await api('/careers/switch', 'POST', { slug }), 'Switched career.'); return showCareer(); }
+      if (cr === 'new') {
+        const name = prompt('A name for the new career (optional; the driver\'s name is used otherwise):', '');
+        if (name === null) return;
+        done(await api('/careers/new', 'POST', { name }), 'New career. Fill in the first screen to start it.');
+        return showCareer();
+      }
+      if (cr === 'rename') {
+        const name = prompt('What should this career be called?', label || '');
+        if (name === null || !name.trim()) return;
+        done(await api('/careers/rename', 'POST', { slug, name }), 'Renamed.');
+        if (S.started) render();
+        return openCareers();
+      }
+      if (cr === 'delete') {
+        const typed = prompt(`Delete "${label}"? A copy is kept in backups either way.\n\nType DELETE to confirm:`, '');
+        if (typed === null) return;
+        done(await api('/careers/delete', 'POST', { slug, confirm: typed.trim().toUpperCase() }), 'Deleted. A copy is in backups.');
+        if (S.started) render();
+        return openCareers();
+      }
+    } catch (e) { toast(e.message, 'bad'); }
+  });
 }
 
 // ---------------------------------------------------------------- boot

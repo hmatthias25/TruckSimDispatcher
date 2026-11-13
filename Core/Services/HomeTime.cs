@@ -1723,7 +1723,9 @@ public static class HomeTime
             b.Paperwork.Add($"{unack} disciplinary action(s) waiting on your signature — Safety tab.");
 
         if (FleetOpsService.DueCheck(s) is { IsDue: true })
-            b.Paperwork.Add("The fleet report is due. Good time to pull the hired drivers' numbers off the game.");
+            b.Paperwork.Add(s.HiredDrivers.Any(d => d.Status == "Active")
+                ? "The fleet report is due. Good time to pull the hired drivers' numbers off the game."
+                : "The company report is due: the bank balance and your truck's and trailer's condition, on the Fleet tab.");
 
         // ---- whatever review was filed on the way in
         //

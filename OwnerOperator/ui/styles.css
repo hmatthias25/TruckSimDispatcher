@@ -506,3 +506,38 @@ a.lnk{color:var(--amber);text-decoration:underline}
 label.lnk{display:inline;font:inherit;text-transform:none;letter-spacing:0;color:var(--amber);text-decoration:underline;cursor:pointer}
 .stat.ringing{animation:ring 1.2s ease-in-out infinite;cursor:pointer}
 .btn.warn{border-color:var(--amber);color:var(--amber2);background:var(--amber-dim)}
+
+/* The broker directory: the credit cell holds a grade and a line or two, so it gets room instead of a word per line. */
+table.brokers td.credit,table.brokers th.credit{min-width:13rem}
+table.brokers td.nowrap{white-space:nowrap}
+table.brokers tr.gone td{opacity:.6}
+.repline{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.repline .hint:last-child{flex-basis:100%}
+.riskbox{margin-top:12px}
+.riskbox summary{cursor:pointer;font-weight:600}
+ul.news{margin:6px 0 10px;padding-left:0;list-style:none}
+ul.news li{margin:4px 0}
+.newsday{margin-bottom:6px}
+.clockrow input{display:block;width:100%;min-width:0;white-space:normal}
+
+/* ---------------------------------------------------------------- close-out summary */
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px 26px;margin:16px 0 6px}
+.sum section{min-width:0}
+.sum h3.sect{margin-top:0}
+.sum dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0}
+.sum dt{color:var(--ink3);font-size:12.5px;padding-top:1px}
+.sum dd{margin:0;color:var(--ink);font-weight:600;min-width:0}
+.sum dd small{display:block;font-weight:400;color:var(--ink2);font-size:12px;margin-top:1px}
+.sum dd.good{color:var(--green)}
+.sum dd.bad{color:var(--red)}
+.sum dd.warn{color:var(--amber)}
+details.working{margin:12px 0 0;border-top:1px solid var(--line);padding-top:9px}
+details.working>summary{
+  cursor:pointer;font:600 11px/1.5 var(--sans);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--ink3);list-style:none}
+details.working>summary::-webkit-details-marker{display:none}
+details.working>summary::before{content:'\25B8  ';color:var(--amber)}
+details.working[open]>summary::before{content:'\25BE  '}
+details.working>summary:hover{color:var(--amber)}
+details.working>*:not(summary){margin-top:10px}
+.row-actions .spacer{flex:1}

@@ -98,6 +98,11 @@ public class PlayerMove
     public List<string> Arguments { get; set; } = new();
     /// <summary>quickpay or detention, for a terms move.</summary>
     public string Term { get; set; } = "";
+    /// <summary>
+    /// Where the load should go, for a where move: "out" (out of the state the truck is in), a state's code, or one of the
+    /// regions. See <see cref="Calls.Goes"/>.
+    /// </summary>
+    public string Where { get; set; } = "";
     /// <summary>What the player actually said, for the transcript.</summary>
     public string Said { get; set; } = "";
 }
@@ -146,6 +151,34 @@ public static class Calls
         return call;
     }
 
+    /// <summary>
+    /// A load booked but not yet delivered, on terms from before 2026-10-22: quick pay agreed on the call goes back to the
+    /// broker's normal terms (chosen on the invoice now, if wanted), and detention goes on at the broker's standard rate.
+    /// True where anything changed.
+    /// </summary>
+    public static bool MigrateTerms(OoCareer c)
+    {
+        var changed = false;
+        foreach (var k in c.Bookings.Where(k => k.Status == BookingStatus.Booked))
+        {
+            var b = c.Brokers.FirstOrDefault(x => x.Id == k.BrokerId);
+            if (b == null) continue;
+            if (k.QuickPay)
+            {
+                k.QuickPay = false; k.QuickPayFeePct = 0; k.DaysToPay = b.DaysToPay;
+                OoStore.Log(c, "money", $"{k.Number}: back on {b.Name}'s normal terms (net {b.DaysToPay}). Quick pay is chosen on the invoice now, after delivery.", k.Number);
+                changed = true;
+            }
+            if (k.DetentionPerHour <= 0)
+            {
+                k.DetentionPerHour = Receivables.DetentionRate(b); k.DetentionAfterHours = 2;
+                changed = true;
+            }
+        }
+        foreach (var l in c.Lanes.Where(l => l.Status == "Booked" && l.QuickPay)) { l.QuickPay = false; l.QuickPayFeePct = 0; changed = true; }
+        return changed;
+    }
+
     public static Booking? ActiveBooking(OoCareer c) => c.Bookings.LastOrDefault(b => b.Status == BookingStatus.Booked);
 
     // ---------------------------------------------------------------- starting a call
@@ -154,6 +187,10 @@ public static class Calls
     {
         var b = c.Brokers.FirstOrDefault(x => x.Id == brokerId && x.Known)
                 ?? throw new InvalidOperationException("That broker is not in your directory.");
+        if (!b.IsTrading())
+            throw new InvalidOperationException(b.Status == BrokerStatus.Bankrupt
+                ? $"{b.Name} went bankrupt. The number is disconnected."
+                : $"{b.Name} has closed its doors. Nobody answers, though they still pay what they owe.");
         if (Open(c) is { } open) open.Status = "Declined";
         // Mid-run, a call is about the next load: a lane out of where the run ends, not this board.
         if (ActiveBooking(c) != null) return Lanes.Ask(c, b);
@@ -169,6 +206,12 @@ public static class Calls
         {
             call.Status = "NotYet";
             return Say(c, call, b, new BrokerReply("notyet", Templates.NotYet(b, p, missing)));
+        }
+        // Above the starters, a new carrier is not always first in line. See BrokerMarket.RefusalPct.
+        if (BrokerMarket.Refuses(c, b, BrokerMarket.RegionFor(c, b)))
+        {
+            call.Status = "Refused";
+            return Say(c, call, b, new BrokerReply("refused", Templates.Refused(b, p)));
         }
 
         // Booked on a lane with this broker: they talk about the lane, not some other load off the board at a starter's
@@ -209,10 +252,11 @@ public static class Calls
     public static string CompanyHere(OoCareer c)
     {
         var s = c.Game.Status;
+        // The load just delivered counts only while the truck is still at its dock (see Lanes.LeaveDock).
         var k = ActiveBooking(c)
-                ?? c.Bookings.LastOrDefault(x => x.Status == BookingStatus.Delivered
+                ?? (s.LocationKind != "Receiver" ? null : c.Bookings.LastOrDefault(x => x.Status == BookingStatus.Delivered
                                                  && x.Load.DestCity.Equals(s.LocationCity, StringComparison.OrdinalIgnoreCase)
-                                                 && x.Load.DestState.Equals(s.LocationState, StringComparison.OrdinalIgnoreCase));
+                                                 && x.Load.DestState.Equals(s.LocationState, StringComparison.OrdinalIgnoreCase)));
         return k?.Load.Receiver ?? "";
     }
 
@@ -238,7 +282,7 @@ public static class Calls
     /// board by what a load leaves per day. Established offer from the middle, premium from the top. Never a job past
     /// the driver's skills, one the plan cannot make, or one this call has offered already.
     /// </summary>
-    public static LoadView? Pick(OoCareer c, Broker b, Call call, bool better = false)
+    public static LoadView? Pick(OoCareer c, Broker b, Call call, bool better = false, string where = "")
     {
         var here = Carriers.AtsRegionOf(c.Game.Status.LocationState);
         if (!b.Regions.Contains(here)) return null;
@@ -249,6 +293,25 @@ public static class Calls
             .OrderBy(v => v.NetPerDay)
             .ToList();
         if (runnable.Count == 0) return null;
+
+        if (where.Length > 0)
+        {
+            // Asked for somewhere: their own pool first, as for any offer; above the starters they reach past it.
+            var n0 = runnable.Count;
+            var (lo, hi) = b.Kind == "Shipper" ? (0, n0) : b.Tier switch
+            {
+                BrokerTiers.Starter => (0, Math.Max(1, (n0 + 1) / 2)),
+                BrokerTiers.Established => (n0 / 4, Math.Max(n0 / 4 + 1, (3 * n0 + 3) / 4)),
+                _ => (Math.Max(0, n0 - Math.Max(1, n0 / 4)), n0),
+            };
+            bool Fits(LoadView v) => Goes(c, v.Load, where) && !Passed(c, call, v.Load.Id) && v.Load.Id != call.LoadId;
+            var going = runnable.Skip(lo).Take(hi - lo).Where(Fits).ToList();
+            if (going.Count == 0 && b.Tier != BrokerTiers.Starter) going = runnable.Where(Fits).ToList();
+            if (going.Count == 0) return null;
+            var atDock = going.Where(v => AtTheDock(c, v.Load)).ToList();
+            var choose = atDock.Count > 0 ? atDock : going;
+            return choose[BrokerBook.Stable(call.Id + where) % choose.Count];
+        }
 
         // A company offers its own freight, whichever of it it has; no pool by tier.
         if (b.Kind == "Shipper" && !better)
@@ -372,6 +435,17 @@ public static class Calls
                 if (call.LaneId.Length > 0) { call.Patience--; return Say(c, call, b, new BrokerReply("nobetter", Templates.NoBetter(b, p, call.Offer))); }
                 return AskBetter(c, b, p, call);
 
+            case "where":
+                if (call.LaneId.Length > 0 && c.Lanes.FirstOrDefault(l => l.Id == call.LaneId) is { } asked)
+                {
+                    // A lane: the wish goes on it, for the pickup. See Lanes.AskWhere.
+                    var words = Lanes.AskWhere(c, asked, move.Where, out var no);
+                    return words == null
+                        ? Say(c, call, b, new BrokerReply(no.Length > 0 ? "nowhere" : "unclear", no.Length > 0 ? no + " " + Templates.Stands(call.Offer) : Templates.Unclear(b)))
+                        : Say(c, call, b, new BrokerReply("lanewhere", Templates.LaneGoing(b, p, words, asked, call.Offer)));
+                }
+                return AskWhere(c, b, p, call, move.Where);
+
             case "terms":
                 return Terms(c, b, p, call, move.Term);
 
@@ -391,28 +465,18 @@ public static class Calls
     /// alone, so the player is never booked on terms they did not ask for. Reported from play: "I want $350 and quick pay"
     /// booked at $350 without the quick pay, twice.
     /// </summary>
+    /// <summary>
+    /// A price, with terms asked about in the same breath ("$350 and quick pay"): the price is worked as any counter, and
+    /// the broker adds how the terms work. They are not negotiated (see <see cref="Terms"/>).
+    /// </summary>
     private static (Call, BrokerReply) Counter(OoCareer c, Broker b, Personality p, Call call, BoardLoad load,
                                                 decimal ask, List<string> arguments, string? term = null)
     {
-        var t = (term ?? "").ToLowerInvariant();
-        var wanted = t == "quickpay" ? !call.QuickPay : t == "detention" && call.DetentionPerHour == 0;
-        if (!wanted) return Price(c, b, p, call, load, ask, arguments);
-        if (Gives(b, p, call, t))
-        {
-            if (t == "quickpay") call.QuickPay = true; else call.DetentionPerHour = 40;
-            var (k, r) = Price(c, b, p, call, load, ask, arguments);
-            // A broker who trades terms, not rate, gives the terms and holds the figure.
-            if (r.Situation == "norate")
-                return Reword(k, r with { Situation = "terms", Line = t == "quickpay" ? Templates.QuickPay(b, p, call.Offer, call.LaneId.Length > 0) : Templates.Detention(b, p, call.Offer) });
-            if (r.Situation is "booked" or "moved" or "final")
-                return Reword(k, r with { Line = r.Line + " " + (t == "quickpay" ? Templates.QuickPayToo(b, call.Offer, call.LaneId.Length > 0) : Templates.DetentionToo()) });
-            // Caught out, or hung up on: no terms with that.
-            if (t == "quickpay") call.QuickPay = false; else call.DetentionPerHour = 0;
-            return (k, r);
-        }
-        // Refused: the price can still be met, but it is not booked without the terms the player asked for.
-        var (held, reply) = Price(c, b, p, call, load, ask, arguments, hold: true);
-        return Reword(held, reply with { Line = Templates.NotThoseTerms(t) + " " + reply.Line });
+        var (k, r) = Price(c, b, p, call, load, ask, arguments);
+        var aside = TermsLine(b, term);
+        return aside.Length > 0 && r.Situation is "booked" or "moved" or "final" or "norate"
+            ? Reword(k, r with { Line = r.Line + " " + aside })
+            : (k, r);
     }
 
     /// <summary>The broker's last line, said differently: on the call's record as well as in the reply.</summary>
@@ -423,15 +487,9 @@ public static class Calls
     }
 
     private static (Call, BrokerReply) Price(OoCareer c, Broker b, Personality p, Call call, BoardLoad load,
-                                              decimal ask, List<string> arguments, bool hold = false)
+                                              decimal ask, List<string> arguments)
     {
-        // Met, or offered on terms the player did not get: where hold is set, the figure stands and they say yes or no.
-        (Call, BrokerReply) Agree(decimal rate, string line)
-        {
-            if (!hold) return Book(c, b, call, rate, line);
-            call.Offer = rate;
-            return Say(c, call, b, new BrokerReply("terms", Templates.PriceWithoutTerms(rate)));
-        }
+        (Call, BrokerReply) Agree(decimal rate, string line) => Book(c, b, call, rate, line);
 
         // At or under what they offered: nobody argues with that.
         if (ask <= call.Offer) return Agree(ask, Templates.Done(b, p, ask));
@@ -522,32 +580,54 @@ public static class Calls
     }
 
     /// <summary>
-    /// Whether the broker gives these terms now. A broker who trades terms, not rate, always does; one with patience to
-    /// spare usually. Quick pay comes easier from poor credit, because it is how they win trucks: a D broker always gives
-    /// it, a C one with any patience left. It does not make them good for the money.
+    /// Asking for a load going somewhere: out of the state the truck is in (fuel in California, say), into a state, or into
+    /// a region. The broker looks at their own pool first, as for any offer; above the starters they will reach past it.
+    /// No patience spent: it is a fair question. Asked for from play on 2026-10-30.
     /// </summary>
-    private static bool Gives(Broker b, Personality p, Call call, string term) =>
-        p.TradesTermsNotRate || call.Patience >= 2
-        || (term == "quickpay" && (b.Credit == "D" || (b.Credit == "C" && call.Patience >= 1)));
-
-    private static (Call, BrokerReply) Terms(OoCareer c, Broker b, Personality p, Call call, string term)
+    private static (Call, BrokerReply) AskWhere(OoCareer c, Broker b, Personality p, Call call, string where)
     {
-        var t = (term ?? "").ToLowerInvariant();
-        var easy = Gives(b, p, call, t);
-        call.Patience--;
-        if (!easy && call.Patience <= 0) return HangUp(c, b, p, call);
-        if (t == "quickpay" && !call.QuickPay && easy)
-        {
-            call.QuickPay = true;
-            return Say(c, call, b, new BrokerReply("terms", Templates.QuickPay(b, p, call.Offer, call.LaneId.Length > 0)));
-        }
-        if (t == "detention" && call.DetentionPerHour == 0 && easy)
-        {
-            call.DetentionPerHour = 40;
-            return Say(c, call, b, new BrokerReply("terms", Templates.Detention(b, p, call.Offer)));
-        }
-        return Say(c, call, b, new BrokerReply("noterms", Templates.NoTerms(b, p, call.Offer)));
+        var words = WhereWords(c, where);
+        if (words == null) return Say(c, call, b, new BrokerReply("unclear", Templates.Unclear(b)));
+        var next = Pick(c, b, call, where: where);
+        if (next == null) return Say(c, call, b, new BrokerReply("nowhere", Templates.NothingGoing(b, p, words, call.Offer)));
+        SetOffer(c, b, p, call, next);
+        return Say(c, call, b, new BrokerReply("offer", Templates.Going(b, p, words, next.Load, call.Offer) + Asides(c, call, next.Load)));
     }
+
+    /// <summary>Whether a load ends where the driver asked: out of this state, in a state, or in a region.</summary>
+    public static bool Goes(OoCareer c, BoardLoad l, string where)
+    {
+        var w = (where ?? "").Trim();
+        if (w.Length == 0) return true;
+        if (w.Equals("out", StringComparison.OrdinalIgnoreCase))
+            return !l.DestState.Equals(c.Game.Status.LocationState, StringComparison.OrdinalIgnoreCase);
+        if (w.Length == 2) return l.DestState.Equals(w, StringComparison.OrdinalIgnoreCase);
+        return Carriers.AtsRegionOf(l.DestState).Equals(w, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The ask, said back: "out of California", "into Nevada", "into the Midwest". Null when it names nowhere known.</summary>
+    public static string? WhereWords(OoCareer c, string where)
+    {
+        var w = (where ?? "").Trim();
+        string StateName(string code) => MapCoverage.All.FirstOrDefault(r => r.Code.Equals(code, StringComparison.OrdinalIgnoreCase))?.Name ?? code;
+        if (w.Equals("out", StringComparison.OrdinalIgnoreCase)) return $"out of {StateName(c.Game.Status.LocationState)}";
+        if (w.Length == 2) return MapCoverage.All.Any(r => r.Code.Equals(w, StringComparison.OrdinalIgnoreCase)) ? $"into {StateName(w)}" : null;
+        return Seasons.Regions.FirstOrDefault(r => r.Equals(w, StringComparison.OrdinalIgnoreCase)) is { } region ? $"into the {region}" : null;
+    }
+
+    /// <summary>
+    /// Asking about terms: nothing to negotiate, and no patience spent. Detention is on every rate con, and quick pay is
+    /// chosen on the invoice after delivery; the broker says so. Decided with the project owner on 2026-10-22.
+    /// </summary>
+    private static (Call, BrokerReply) Terms(OoCareer c, Broker b, Personality p, Call call, string term) =>
+        Say(c, call, b, new BrokerReply("terms", TermsLine(b, term) + " " + Templates.Stands(call.Offer)));
+
+    private static string TermsLine(Broker b, string? term) => (term ?? "").ToLowerInvariant() switch
+    {
+        "quickpay" => Templates.QuickPayOnInvoice(b),
+        "detention" => Templates.DetentionStandard(Receivables.DetentionRate(b)),
+        _ => "",
+    };
 
     /// <summary>How many of the player's arguments are true for this load, and the first one that is not.</summary>
     public static (int TrueCount, string? Lie) CheckArguments(OoCareer c, BoardLoad load, List<string> arguments)
@@ -642,11 +722,12 @@ public static class Calls
             Load = load,
             Rate = rate,
             GamePay = call.GamePay,
-            QuickPay = call.QuickPay,
-            QuickPayFeePct = call.QuickPay ? b.QuickPayFeePct : 0,
-            DetentionPerHour = call.DetentionPerHour,
-            DetentionAfterHours = call.DetentionPerHour > 0 ? 2 : 0,
-            DaysToPay = call.QuickPay ? 2 : b.DaysToPay,
+            QuickPay = false,
+            QuickPayFeePct = 0,
+            // Detention is on every rate con; quick pay is chosen on the invoice. Neither is negotiated.
+            DetentionPerHour = Receivables.DetentionRate(b),
+            DetentionAfterHours = 2,
+            DaysToPay = b.DaysToPay,
             BookedGameTime = c.Game.Status.GameTime,
         };
         c.Bookings.Add(booking);
@@ -697,9 +778,9 @@ public static class Calls
             lane = c.Lanes.FirstOrDefault(l => l.Id == call.LaneId) is { } ln ? Lanes.View(c, ln) : null,
             // How the broker sounds, not how many rounds are left: the count is the app's to know.
             mood = call.Patience >= 3 ? "relaxed" : call.Patience == 2 ? "getting short" : "losing patience",
-            call.QuickPay, quickPayFeePct = b?.QuickPayFeePct ?? 0,
-            quickPayNet = call.QuickPay && b != null ? Templates.Net(call.Offer, b.QuickPayFeePct) : (decimal?)null,
-            call.DetentionPerHour, call.AskedForBetter, call.FinalOffer, call.ListingLeftHours, call.CheckPosition,
+            quickPayFeePct = b?.QuickPayFeePct ?? 0,
+            detentionRate = b != null ? Receivables.DetentionRate(b) : 0,
+            call.AskedForBetter, call.FinalOffer, call.ListingLeftHours, call.CheckPosition,
             call.Turns, call.BookingId,
         };
     }

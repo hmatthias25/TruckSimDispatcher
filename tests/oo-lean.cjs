@@ -17,7 +17,8 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? '
 const head = (t) => console.log(`\n=== ${t} ===`);
 
 async function ringOn(day) {
-  await api('/test/home', 'POST', { score: 100 });
+  // Nothing pulling home: a date close by would send the lane home instead of leaning it.
+  await api('/test/home', 'POST', { score: 100, clearDates: true });
   await api('/status', 'POST', { locationCity: 'Kansas City', locationState: 'KS', day, time: '06:00' });
   await api('/hos', 'POST', { driveRemaining: 11, shiftRemaining: 14, breakRemaining: 8, cycleRemaining: 70 });
   await api('/board/clear', 'POST');

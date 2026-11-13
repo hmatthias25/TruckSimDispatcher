@@ -114,7 +114,7 @@ const tripOf = (done, id) => done.snapshot.trips.find((x) => x.id === id);
     /Begin unload/i.test(findings(done)),
     (done.audit.serviceFindings || []).find((x) => /Begin unload/i.test(x))?.slice(0, 120) || '(none)');
   ok('it says whose time the dock is',
-    /receiver's, not yours/i.test(findings(done)), 'wording');
+    /does not count against you/i.test(findings(done)), 'wording');
   ok('no late note on the safety file',
     !(un(done).incidents || []).some((i) => i.kind === 'Late' && i.tripNumber === t.number), 'clean');
 

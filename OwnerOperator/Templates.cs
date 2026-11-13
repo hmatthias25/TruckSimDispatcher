@@ -67,6 +67,27 @@ public static class Templates
         ("Rookie", $"Oh, wait, there's {Lane(l)} too. {M(offer)}? Is that better?"),
         ("", $"There's {Lane(l)}. {M(offer)}, and that's the last of it."));
 
+    /// <summary>Asked for a load going somewhere, and there is one.</summary>
+    public static string Going(Broker b, Personality p, string words, BoardLoad l, decimal offer) => Pick(p,
+        ("Corporate", $"We do have freight {words}: {Lane(l)}. {M(offer)}."),
+        ("Friend", $"{Cap(words)}? Sure, I've got {Lane(l)}. {M(offer)}."),
+        ("", $"{Cap(words)}, let me look. There's {Lane(l)}. {M(offer)}."));
+
+    /// <summary>Asked for a load going somewhere, and nothing they have goes there.</summary>
+    public static string NothingGoing(Broker b, Personality p, string words, decimal offer) => Pick(p,
+        ("Corporate", $"We have no freight available {words} for your authority at this time. The offer stands at {M(offer)}."),
+        ("Friend", $"Sorry, nothing on my board going {words}. The one I had is still there at {M(offer)}."),
+        ("", $"Nothing going {words}. {M(offer)} on the one I gave you."));
+
+    /// <summary>A lane, asked to go somewhere: the broker will look for it at the pickup, and says plainly it may not be there.</summary>
+    public static string LaneGoing(Broker b, Personality p, string words, Lane lane, decimal offer) => Pick(p,
+        ("Corporate", $"Noted: a load {words} out of {lane.PickupCity}, into the {lane.DestRegion}. If the board there has none, " +
+                      $"you may take any load that fits the lane. {M(offer)}."),
+        ("", $"{Cap(words)}, got it. When you're in {lane.PickupCity}, I'll put you on one that goes {words} if the board has it, " +
+             $"into the {lane.DestRegion}. If it hasn't, it's whatever fits, and you can still run it. Same money: {M(offer)}."));
+
+    private static string Cap(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
     public static string NoBetter(Broker b, Personality p, decimal offer) => Pick(p,
         ("Grinder", $"That's what I've got. {M(offer)}, take it or leave it."),
         ("Corporate", $"That is the load available for your authority at this time. {M(offer)}."),
@@ -108,30 +129,19 @@ public static class Templates
     public static string NoRate(Broker b, Personality p, decimal offer) =>
         $"I'm not able to adjust the rate, it stays at {M(offer)}. I could look at quick pay, or detention terms.";
 
-    /// <summary>The rate less a quick-pay fee.</summary>
-    public static decimal Net(decimal rate, decimal feePct) => Math.Round(rate * (1 - feePct / 100m), 2);
+    /// <summary>Quick pay, asked about on the call: it is chosen on the invoice, after delivery.</summary>
+    public static string QuickPayOnInvoice(Broker b) =>
+        $"Quick pay you pick when you send the paperwork in: {b.QuickPayFeePct:0.#}% off, paid in two days.";
 
-    /// <summary>Quick pay agreed: the fee said, and what it leaves. On a lane, off whatever the job for it pays.</summary>
-    public static string QuickPay(Broker b, Personality p, decimal offer, bool lane = false) => lane
-        ? Pick(p,
-            ("Corporate", $"Quick pay is available at a {b.QuickPayFeePct:0.#}% fee, off whatever the job pays, within two days. The rate remains {M(offer)}."),
-            ("", $"Fine, quick pay. It's {b.QuickPayFeePct:0.#}% off whatever the job pays, in two days. Still {M(offer)}."))
-        : Pick(p,
-            ("Corporate", $"Quick pay is available at a {b.QuickPayFeePct:0.#}% fee: {M(Net(offer, b.QuickPayFeePct))} within two days, on a rate of {M(offer)}."),
-            ("", $"Fine, quick pay. It's {b.QuickPayFeePct:0.#}%, so {M(Net(offer, b.QuickPayFeePct))} in two days on the {M(offer)}."));
+    /// <summary>Detention, asked about on the call: it is on every rate con.</summary>
+    public static string DetentionStandard(decimal perHour) => $"Detention's on every rate con: {M(perHour)} an hour after two free.";
+
+    public static string Stands(decimal offer) => $"{M(offer)} stands.";
 
     public static string Detention(Broker b, Personality p, decimal offer) => Pick(p,
         ("Corporate", $"Detention at $40 an hour after two hours can be added. The rate remains {M(offer)}."),
         ("Hustler", $"Sure, sure, detention, forty after two. {M(offer)}."),
         ("", $"Detention at forty an hour after two. Rate's still {M(offer)}."));
-
-    public static string QuickPayToo(Broker b, decimal rate, bool lane = false) => lane
-        ? $"And quick pay, {b.QuickPayFeePct:0.#}% off whatever the job pays."
-        : $"And quick pay: {b.QuickPayFeePct:0.#}%, so {M(Net(rate, b.QuickPayFeePct))} in two days.";
-    public static string DetentionToo() => "And detention at forty an hour after two.";
-    public static string NotThoseTerms(string term) =>
-        term == "quickpay" ? "Quick pay's not something I can do on this one." : "I can't add detention on this one.";
-    public static string PriceWithoutTerms(decimal rate) => $"I can do {M(rate)} on my usual terms. Want it?";
 
     public static string NoTerms(Broker b, Personality p, decimal offer) =>
         $"No, that's not something I can do on this one. {M(offer)}.";
@@ -159,6 +169,13 @@ public static class Templates
         ("Corporate", $"Our carrier requirements are not met yet: {missing}. Please contact us again then."),
         ("Friend", $"I'd like to, but I can't put a new authority on our freight yet. Call me when you've got {missing}."),
         ("", $"Call me when you've got some history. I need {missing}."));
+
+    /// <summary>A broker above the starters giving today's freight to a carrier with more history. See BrokerMarket.RefusalPct.</summary>
+    public static string Refused(Broker b, Personality p) => Hello(b) + " " + Pick(p,
+        ("Corporate", "We have allocated today's freight to carriers with a longer record with us. Please try another broker."),
+        ("Friend", "Ah, I'm sorry. I gave out my loads to more experienced drivers today. Try one of the others, and call me again."),
+        ("OldHand", "Sorry, I gave today's loads to drivers I've known for years. Try somebody else."),
+        ("", "Sorry, I gave out my loads to more experienced drivers. Try another broker."));
 
     public static string NoBoard(Broker b) => Hello(b) + " Send me what's on the board where you are and I'll see what I can do.";
 
@@ -191,6 +208,8 @@ public static class Templates
         "accept" => "I'll take it.",
         "decline" => "I'll pass.",
         "better" => "Anything better?",
+        "where" => m.Where.Equals("out", StringComparison.OrdinalIgnoreCase) ? "Anything that gets me out of this state?"
+                   : $"Anything going to {(m.Where.Length == 2 ? m.Where.ToUpperInvariant() : "the " + m.Where)}?",
         "toolate" => "I can't get there in time.",
         "terms" => m.Term == "quickpay" ? "Can you do quick pay?" : "What about detention?",
         "counter" => $"I need {(m.Amount is { } a ? M(a) : "more")}." +

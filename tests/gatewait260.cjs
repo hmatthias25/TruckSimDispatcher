@@ -167,7 +167,7 @@ const bin = (id) => api(`/trips/${id}/cancel`, 'POST', { reason: 'fixture — on
     Math.abs(closed.detentionHours - (2.5 - queueFree)) < 0.01,
     `${closed.detentionHours}h = 2:30 less ${queueFree}h of queue allowance`);
   ok('and which window bit is said, not left as arithmetic',
-    /gets .* free rather than the .* the work gets/i.test(findings),
+    /of it was waiting, which gets .* free; the .* of work gets/i.test(findings),
     findings.match(/of it was waiting[^.]*\./i)?.[0]?.slice(0, 110) || '(not said)');
 
   head('4. A short queue is still just trucking');

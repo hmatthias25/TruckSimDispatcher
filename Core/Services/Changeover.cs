@@ -29,6 +29,8 @@ public static class Changeover
     public const string Buy = "Buy";
     public const string Reach = "Reach";
     public const string Keep = "Keep";
+    /// <summary>Somebody to let go in ATS: the old company's hired drivers.</summary>
+    public const string Release = "Release";
 
     /// <summary>Everything the old employer's books held that the player really owns in game.</summary>
     public class Holdings
@@ -36,6 +38,8 @@ public static class Changeover
         public List<Truck> Trucks { get; set; } = new();
         public List<Trailer> Trailers { get; set; } = new();
         public List<Terminal> Terminals { get; set; } = new();
+        /// <summary>The old company's hired drivers, still on the payroll in ATS until they are let go there.</summary>
+        public List<HiredDriver> Drivers { get; set; } = new();
         public string CarrierName { get; set; } = "";
         public string CarrierCode { get; set; } = "";
 
@@ -66,6 +70,7 @@ public static class Changeover
             CarrierCode = s.Company.Code,
             Trucks = s.Trucks.Where(t => t.InGameGarage && !t.Retired).ToList(),
             Trailers = s.Trailers.Where(t => t.InGameGarage && !t.Retired).ToList(),
+            Drivers = s.HiredDrivers.Where(d => d.Status == "Active" && string.IsNullOrWhiteSpace(d.SeparatedGameTime)).ToList(),
             Terminals = s.Company.Terminals
                 .Where(t => DiscoveryService.IsDiscovered(s, t.City, t.State))
                 .ToList(),
@@ -183,6 +188,23 @@ public static class Changeover
                 City = hqCity, State = hqState,
             });
 
+        // ---- the old company's drivers. They work for the player's company in ATS, and the new job does not take them
+        // on: let go there, before their trucks can be sold.
+        if (had.Drivers.Count > 0)
+            order.Steps.Add(new ChangeoverStep
+            {
+                Id = "release-drivers",
+                Kind = Release,
+                Title = had.Drivers.Count == 1
+                    ? $"Let {had.Drivers[0].Name} go in ATS"
+                    : $"Let the {had.Drivers.Count} drivers go in ATS",
+                Detail =
+                    $"In ATS: {string.Join("; ", had.Drivers.Select(d => string.IsNullOrWhiteSpace(d.AssignedTruckUnit) ? d.Name : $"{d.Name} (unit {d.AssignedTruckUnit})"))}.\n\n" +
+                    $"They drove for {had.CarrierName}, and they are off the books here already. Hiring drivers at " +
+                    $"{s.Company.Name} starts over once you are set up — from the Fleet tab, like a first job.",
+                Why = "ATS will not sell a truck out from under a driver, and a new job does not come with the old one's staff.",
+            });
+
         // ---- the equipment. Grouped, because none of it changes our books — they are already cleared.
         if (had.Trucks.Count > 0)
             order.Steps.Add(new ChangeoverStep
@@ -194,9 +216,8 @@ public static class Changeover
                     : $"Sell the {had.Trucks.Count} tractors on the old books",
                 Detail =
                     $"In ATS: {string.Join("; ", had.Trucks.Select(t => $"{t.Ref} — {t.Year} {t.Make} {t.Model}"))}.\n\n" +
-                    (s.HiredDrivers.Any()
-                        ? "Any of them with an AI driver in it has to be let go in game first; ATS will not sell " +
-                          "a truck out from under an employee.\n\n"
+                    (had.Drivers.Count > 0
+                        ? "Let the drivers go first (above); ATS will not sell a truck out from under an employee.\n\n"
                         : "") +
                     $"Those units belonged to {had.CarrierName}. They are already off our books — this is the " +
                     "game catching up with that.",

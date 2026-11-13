@@ -99,7 +99,9 @@ async function hireAt(code, over) {
     `${S.company.terminals.length}: ${S.company.terminals.map((t) => t.city).join(', ')}`);
   ok('nothing flagged as undiscovered backdrop', S.views.backdrop.yards === 0, JSON.stringify(S.views.backdrop));
 
-  head('Garages you own survive a change of employer');
+  // A garage you bought is still yours in ATS, but a new job starts from what the new company runs: it leaves the
+  // books and goes on the changeover's sell list (unless the new company runs a yard there).
+  head('Garages you own are on the sell list after a change of employer, not on the new books');
   S = un(await api('/terminals', 'POST', {
     city: 'Amarillo', state: 'TX', level: 'Medium', truckCapacity: 3, hasFuel: true, hasParking: true,
   }));
@@ -109,7 +111,9 @@ async function hireAt(code, over) {
   const moved = await api('/market/apply', 'POST', { code: low.code, reason: 'Better home time' });
   S = un(moved);
   const after = S.company.terminals.map((t) => t.city).sort();
-  ok('bought yard is still there', after.includes('Amarillo'), after.join(', '));
+  ok('the bought yard is not one of the new company\'s', !after.includes('Amarillo'), after.join(', '));
+  ok('and the changeover says to sell it', (moved.changeover?.steps || []).some((x) => x.kind === 'Sell' && /Amarillo/.test(x.title)),
+    (moved.changeover?.steps || []).map((x) => x.title).join(' | '));
   ok('new employer HQ present', S.company.terminals.some((t) => t.isHeadquarters),
     S.company.terminals.filter((t) => t.isHeadquarters).map((t) => t.city).join(','));
   ok('equipment standard followed the move', S.company.equipmentStars === low.equipmentStars,

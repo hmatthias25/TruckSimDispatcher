@@ -46,8 +46,11 @@ public static class Onboarding
         var s = new AppState();
         GameSetup.Choose(s, game);
         s.Settings = GameSetup.DefaultsFor(s, null);
-        // The screenshot reader and the phone both run on the player's key once there is one.
+        // The screenshot reader and the phone both run on the player's key once there is one. A career started from
+        // another one already has it, carried across (OoStore.CreateCareer).
         s.Settings.AiEnabled = true;
+        s.Settings.AnthropicApiKey = c.Game.Settings.AnthropicApiKey;
+        if (!string.IsNullOrWhiteSpace(c.Game.Settings.AnthropicModel)) s.Settings.AnthropicModel = c.Game.Settings.AnthropicModel;
 
         var city = (r.HomeCity ?? "").Trim();
         var state = (r.HomeState ?? "").Trim().ToUpperInvariant();
@@ -66,7 +69,8 @@ public static class Onboarding
         var preset = Presets.FirstOrDefault(p => p.Equals(r.Preset ?? "", StringComparison.OrdinalIgnoreCase)) ?? "Normal";
         var name = string.IsNullOrWhiteSpace(r.DriverName) ? "Owner-Operator" : r.DriverName.Trim();
 
-        s.CareerName = name;
+        // A name given when the career was created stands; otherwise it is the driver's.
+        s.CareerName = string.IsNullOrWhiteSpace(c.Game.CareerName) ? name : c.Game.CareerName.Trim();
         s.Onboarded = true;
         s.CreatedUtc = DateTime.UtcNow.ToString("o");
 

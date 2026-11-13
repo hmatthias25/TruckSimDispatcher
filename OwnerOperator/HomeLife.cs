@@ -22,6 +22,12 @@ public class HomeLifeState
     public string AtHomeSinceGameTime { get; set; } = "";
     /// <summary>Already counted the bonus for a full home time this stay.</summary>
     public bool FullStayCounted { get; set; }
+    /// <summary>
+    /// The game time, and whether the truck was home, when home life last looked. Every change catches up from here
+    /// (see <see cref="HomeLife.Catch"/>), whatever moved the clock or the truck.
+    /// </summary>
+    public string SeenGameTime { get; set; } = "";
+    public bool SeenHome { get; set; }
 
     public List<HomeDate> Dates { get; set; } = new();
     public int DatesMade { get; set; }
@@ -94,9 +100,25 @@ public static class HomeLife
     public const int BottomDays = 7;
 
 
+    /// <summary>
+    /// Home: in the home city, and not out on a run. A load pulled out and not yet delivered is the road, wherever the app
+    /// last had the truck: "arrived" moves the clock, not the truck, so a run out of a home-city shipper still read as home.
+    /// </summary>
     public static bool AtHome(OoCareer c) =>
         c.Game.Status.LocationCity.Equals(c.Profile.HomeCity, StringComparison.OrdinalIgnoreCase)
-        && c.Game.Status.LocationState.Equals(c.Profile.HomeState, StringComparison.OrdinalIgnoreCase);
+        && c.Game.Status.LocationState.Equals(c.Profile.HomeState, StringComparison.OrdinalIgnoreCase)
+        && !(Calls.ActiveBooking(c) is { } k && Run.Trip(c, k) is { } t && (t.LoadedReported || t.PulledOutGameTime.Length > 0));
+
+    /// <summary>When the truck left home between two times: the run's pull-out where one falls between them, else the first.</summary>
+    private static string Departure(OoCareer c, string fromTime)
+    {
+        var from = GameClock.TryParse(fromTime);
+        var now = GameClock.TryParse(c.Game.Status.GameTime);
+        var pulled = c.Game.Trips.Select(t => GameClock.TryParse(t.PulledOutGameTime))
+            .Where(t => t is not null && (from is null || t >= from) && (now is null || t <= now))
+            .OrderBy(t => t).FirstOrDefault();
+        return pulled is { } p ? GameClock.Format(p) : fromTime;
+    }
 
     /// <summary>Why home is pulling, in the app's words and a broker's, and the day it is pulling toward where there is one.</summary>
     public record HomePull(string Why, string Said, int? Day);
@@ -111,6 +133,8 @@ public static class HomeLife
     /// </summary>
     public static HomePull? Pull(OoCareer c)
     {
+        // A broker deciding mid-change (a ring as the truck pulls out) reads home as it is now, not as last seen.
+        Catch(c);
         if (AtHome(c)) return null;
         var h = c.HomeLife;
         if (h.Call is { Status: "Open" }) return new("home has called", "you've got family calling you home", null);
@@ -175,7 +199,10 @@ public static class HomeLife
         var h = c.HomeLife;
         if (GameClock.TryParse(fromTime) is not { } from || GameClock.TryParse(c.Game.Status.GameTime) is not { } now || now <= from)
         {
+            // Left with the clock standing still: still left.
+            if (wasHome && !AtHome(c)) h.LeftHomeGameTime = Departure(c, c.Game.Status.GameTime);
             Arrive(c, wasHome, said);
+            Seen(c);
             return said;
         }
         var home = AtHome(c);
@@ -188,7 +215,7 @@ public static class HomeLife
         }
         else
         {
-            if (wasHome) h.LeftHomeGameTime = fromTime;
+            if (wasHome) h.LeftHomeGameTime = Departure(c, fromTime);
             // Split at the promise: the days inside it cost a little, the days past it cost more. One rate for the
             // whole stretch charged a fortnight out at the broken-promise rate the moment it was reported in one go.
             var promise = GameClock.TryParse(h.LeftHomeGameTime) is { } left ? left.AddDays(h.EveryDays) : now;
@@ -265,7 +292,52 @@ public static class HomeLife
 
         ScheduleDates(c);
         foreach (var line in said) OoStore.Log(c, "home", line);
+        Seen(c);
         return said;
+    }
+
+    private static void Seen(OoCareer c)
+    {
+        c.HomeLife.SeenGameTime = c.Game.Status.GameTime;
+        c.HomeLife.SeenHome = AtHome(c);
+    }
+
+    /// <summary>
+    /// Home life caught up with whatever has moved since it last looked: the clock, the truck, or both. Run after every
+    /// change, so arriving at a shipper, pulling out, arriving at a receiver or closing a load out counts as surely as a
+    /// status report. Reported from play on 2026-10-31: a week on the road showed 0 days away, because the truck left
+    /// home through "I am at the shipper" and "arrived", which moved it without home life seeing.
+    /// </summary>
+    public static List<string> Catch(OoCareer c)
+    {
+        if (!c.Started) return new();
+        var h = c.HomeLife;
+        if (h.SeenGameTime.Length == 0) { Seen(c); return new(); }
+        if (h.SeenGameTime == c.Game.Status.GameTime && h.SeenHome == AtHome(c)) return new();
+        return Advance(c, h.SeenGameTime, h.SeenHome);
+    }
+
+    /// <summary>
+    /// A career away from home with no departure on file: the day it left, off its runs. The first run after the last
+    /// time home, at the moment it pulled out; the last time home where no run says. True where it changed. For careers from before home life caught every move (2026-10-31).
+    /// </summary>
+    public static bool RepairDeparture(OoCareer c)
+    {
+        var h = c.HomeLife;
+        if (!c.Started || AtHome(c) || h.LeftHomeGameTime.Length > 0) return false;
+        var since = GameClock.TryParse(h.AtHomeSinceGameTime);
+        // Only a run that pulled out left home: one the game lost before it rolled never did.
+        var left = c.Game.Trips
+            .Select(t => GameClock.TryParse(t.PulledOutGameTime))
+            .Where(t => t is not null && (since is null || t >= since))
+            .OrderBy(t => t)
+            .FirstOrDefault();
+        var at = left ?? since;
+        if (at is null) return false;
+        h.LeftHomeGameTime = GameClock.Format(at.Value);
+        Seen(c);
+        OoStore.Log(c, "home", $"Away from home since {GameClock.Pretty(h.LeftHomeGameTime)}: put right off your runs.");
+        return true;
     }
 
     private static void Arrive(OoCareer c, bool wasHome, List<string> said)

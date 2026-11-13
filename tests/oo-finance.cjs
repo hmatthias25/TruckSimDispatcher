@@ -28,7 +28,7 @@ const near = (a, b, tol = 0.02) => Math.abs(a - b) <= tol;
   ok('the next check is Day 8, a Monday', S.finance.nextCheck === 8, String(S.finance.nextCheck));
 
   head('2. Fuel off a load');
-  S = await api('/bank', 'POST', { balance: 10000 });
+  S = (await api('/bank', 'POST', { balance: 10000 })).snapshot;
   S = await api('/fuel', 'POST', { day: 3, time: '06:30', gallons: 100, pricePerGal: 4, odometer: 5000, fuelPct: 100 });
   ok('logged: 100 gal at $4', S.finance.fuel.all.fills === 1 && near(S.finance.fuel.all.spent, 400), JSON.stringify(S.finance.fuel.all));
   ok('and paid out of the game bank', near(S.gameBank.estimate, 9600), String(S.gameBank.estimate));
@@ -56,7 +56,7 @@ const near = (a, b, tol = 0.02) => Math.abs(a - b) <= tol;
   head('4. This week on the tab');
   const w = S.finance.weeks[0];
   ok('the load and its miles', w.loads === 1 && w.miles > 190, JSON.stringify(w));
-  ok('earned is the booked rate', near(w.earned, k.rate), `${w.earned} vs ${k.rate}`);
+  ok('earned is the booked rate and any detention', near(w.earned, k.rate + S.finance.loads[0].detention), `${w.earned} vs ${k.rate} + ${S.finance.loads[0].detention}`);
   ok("the week's miles off the odometer, empty ones too", near(w.miles, 600, 1), String(w.miles));
   ok('and what was not on a load is empty', w.emptyPct >= 60, `${w.emptyPct}%`);
   ok('fuel is the week\'s fills', near(w.fuel, 840), String(w.fuel));
@@ -79,7 +79,8 @@ const near = (a, b, tol = 0.02) => Math.abs(a - b) <= tol;
   r = await api('/finance/check', 'POST', { balance: expected + 500 - 150, movedIn: 500 });
   S = r.snapshot;
   ok('finds what went out unseen', /\$150\.00 went out/.test(r.said), r.said);
-  ok('as other spending in the week', near(S.finance.weeks[0].other, 150), String(S.finance.weeks[0].other));
+  ok('as other spending in the week just ended, not the new one', near(S.finance.weeks[1].other, 150) && S.finance.weeks[0].other === 0,
+    `${S.finance.weeks[1].other} / ${S.finance.weeks[0].other}`);
   ok('moved in is not income', !S.finance.weeks.some((x) => x.earned >= 500 && x.loads === 0));
   const step = S.finance.factor.history[0];
   const miles = 5600 - 5000;
@@ -94,8 +95,18 @@ const near = (a, b, tol = 0.02) => Math.abs(a - b) <= tol;
 
   head('7. A reading on the Money tab finds unseen spending too');
   S = await api('/status', 'POST', { day: 9, time: '08:00' });
-  S = await api('/bank', 'POST', { balance: S.gameBank.estimate - 40 });
-  ok('$40 more of other spending', near(S.finance.weeks[0].other, 190), String(S.finance.weeks[0].other));
+  S = (await api('/bank', 'POST', { balance: S.gameBank.estimate - 40 })).snapshot;
+  ok('$40 of other spending, this week (a mid-week reading)', near(S.finance.weeks[0].other, 40), String(S.finance.weeks[0].other));
+
+  head('8. A career from before: the Monday finding moved back a week; a booking off quick pay, detention on');
+  await api('/board/add-many', 'POST', [{ cargo: 'Tiles', destCity: 'Topeka', destState: 'KS', loadedMiles: 70, gameRevenue: 380, deadlineHours: 30 }]);
+  r = await api('/calls', 'POST', { brokerId: starter.id });
+  r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
+  r = await api('/test/legacy', 'POST');
+  ok('the finding moved onto the week it belongs to', r.moved === true && near(r.snapshot.finance.weeks[1].other, 150), JSON.stringify(r.snapshot.finance.weeks.map((x) => x.other)));
+  const kb = r.snapshot.booking;
+  ok("the booking back on the broker's terms, detention on", r.terms === true && !kb.quickPay && kb.quickPayFeePct === 0 && kb.daysToPay > 2 && kb.detentionPerHour > 0,
+    JSON.stringify({ q: kb.quickPay, f: kb.quickPayFeePct, d: kb.daysToPay, det: kb.detentionPerHour }));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

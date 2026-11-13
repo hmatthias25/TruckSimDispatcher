@@ -114,13 +114,14 @@ const kinds = (c, k) => (c.steps || []).filter((x) => x.kind === k);
   ok('and no note telling them to go and square the books',
     !step(c, 'true-up'), step(c, 'true-up')?.title || 'gone, as it should be');
 
-  head('6. Selling a yard takes it off our books, because it is really gone');
+  head('6. A yard the new company does not run is off its books from the start; selling it is the game catching up');
   const denver = sells.find((x) => /Denver/i.test(x.title));
-  const before = (await api('/bootstrap')).company.terminals.length;
+  const before = (await api('/bootstrap')).company.terminals;
+  ok('Denver is not one of the new company\'s yards', !before.some((t) => /Denver/i.test(t.city)), before.map((t) => t.city).join(', '));
   let r = await api('/changeover/confirm', 'POST', { stepId: denver.id });
-  ok('it says the yard is off the books', /Denver/i.test(r.message || ''), r.message);
-  ok('and the terminal really went',
-    un(r).company.terminals.length === before - 1, `${before} → ${un(r).company.terminals.length}`);
+  ok('it says the sale is done', /Denver/i.test(r.message || ''), r.message);
+  ok('and the books do not move',
+    un(r).company.terminals.length === before.length, `${before.length} → ${un(r).company.terminals.length}`);
   ok('with no Denver left on the list',
     !un(r).company.terminals.some((t) => /Denver/i.test(t.city)), 'gone');
   ok('the step shows as done', step(await chg(), denver.id).done === true, 'done');

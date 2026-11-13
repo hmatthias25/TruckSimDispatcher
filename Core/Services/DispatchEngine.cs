@@ -1342,11 +1342,22 @@ public static class DispatchEngine
         // "no dispatch authority" is true but tells the driver nothing about why.
         if (CareerOverBlocker(s) is { } finished) return new List<string> { finished };
 
+        // Let go, and not finished: that is the answer, and where to go next is part of it. The truck's state is no
+        // longer theirs to sort out. Reported from play — told only that the wrecked tractor needed writing off.
+        if (s.Driver.Status == "Terminated")
+            return new List<string> { $"You were let go by {s.Company.Name} — no dispatch authority here. A second-chance " +
+                                      "carrier will still take you: apply on the Job Market tab." };
+
         // Same again for a tractor that is finished: one reason, and everything else is beside the point.
         if (TotalLoss.Blocker(s) is { } wrecked) return new List<string> { wrecked };
 
         // No window left to work a dock is the same kind of answer: a single reason that makes every
         // other check beside the point, and one the driver can act on without reading a board.
+        // Parked on a rest the driver chose: that is the reason, whatever the clocks say until it is reported done.
+        if (Restart.OpenDaily(s) is { Status: "Arrived" } daily)
+            return new List<string> { $"{daily.Number}: you are on a {Restart.What(s, daily)} since {GameClock.Pretty(daily.ArrivedGameTime)}. " +
+                                      "Report it done before I put freight on the truck." };
+
         if (NoWindowToWorkBlocker(s, trailer) is { } noWindow) return new List<string> { noWindow };
 
         // EU: on home time, and the contract has not let them go yet. One reason, said with the date.

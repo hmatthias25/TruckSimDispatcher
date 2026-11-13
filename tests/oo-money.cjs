@@ -18,15 +18,14 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log(`  PASS  ${l}${d ? '
 const head = (t) => console.log(`\n=== ${t} ===`);
 const refused = async (fn) => { try { await fn(); return ''; } catch (e) { return e.message || 'refused'; } };
 
-// Booked on quick pay: net 30 is a month of game time on the road, and home life would (rightly) send the driver
-// home long before the broker paid.
+// Booked on the broker's terms; quick pay is chosen on the invoice after delivery (net 30 is a month of game time on the
+// road, and home life would, rightly, send the driver home long before the broker paid).
 async function bookOne(S) {
   const starter = S.directory.find((b) => b.tier === 'Starter' && b.worksHere && b.takesYou);
   // A broker who pays on time and grants quick pay: this suite is about the money moving, not about slow payers.
   await api('/test/broker', 'POST', { id: starter.id, credit: 'A', personality: 'Friend' });
   const r = await api('/calls', 'POST', { brokerId: starter.id });
   if (r.call.status !== 'Open') throw new Error(`no offer: ${r.call.turns.at(-1).text}`);
-  await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'terms', term: 'quickpay' });
   return (await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' }));
 }
 
@@ -45,15 +44,23 @@ async function bookOne(S) {
   let r = await bookOne(S);
   S = r.snapshot;
   const k = S.booking;
-  ok('booked, on quick pay', k && k.status === 'Booked' && k.quickPay && k.daysToPay === 2, `${k?.number} ${k?.quickPay} ${k?.daysToPay}`);
+  ok("booked on the broker's terms, detention on the rate con", k && k.status === 'Booked' && !k.quickPay && k.daysToPay > 2 && k.detentionPerHour > 0,
+    `${k?.number} ${k?.quickPay} ${k?.daysToPay} ${k?.detentionPerHour}`);
   ok('a time before the booking is refused', /before the load was booked/.test(await refused(() => api('/deliver', 'POST', { day: 2, time: '10:00' }))));
   ok('an odometer going backwards is refused', /lower than/.test(await refused(() => api('/deliver', 'POST', { day: 3, time: '12:00', odometer: 900 }))));
   r = await api('/deliver', 'POST', { day: 3, time: '12:00', odometer: 1000 + k.load.loadedMiles });
   S = r.snapshot;
-  const inv = r.invoice;
-  // Quick pay was agreed above, so the broker's fee comes off the rate.
-  const net = Math.round((k.rate - Math.round(k.rate * k.quickPayFeePct) / 100) * 100) / 100;
-  ok('an invoice for the booked rate, less the quick-pay fee', Math.abs(inv.amount - net) < 0.01 && inv.quickPayFee > 0 && inv.number === 'INV-001', `${inv.amount} vs ${k.rate} less ${k.quickPayFeePct}%`);
+  ok('an invoice for the booked rate', r.invoice.amount === k.rate && r.invoice.number === 'INV-001', `${r.invoice.amount} vs ${k.rate}`);
+  // Quick pay, chosen on the invoice: the broker's fee off, due in two days.
+  const feePct = S.directory.find((b) => b.id === k.brokerId).quickPayFeePct;
+  r = await api(`/invoices/${r.invoice.id}/quickpay`, 'POST');
+  S = r.snapshot;
+  const inv = S.invoices.find((i) => i.bookingNumber === k.number);
+  const net = Math.round((k.rate - Math.round(k.rate * feePct) / 100) * 100) / 100;
+  ok('quick pay on the invoice: the fee off', Math.abs(inv.amount - net) < 0.01 && inv.quickPayFee > 0, `${inv.amount} vs ${k.rate} less ${feePct}%`);
+  ok('due in two days', (Date.parse(inv.dueGameTime + ':00Z') - Date.parse(S.status.gameTime + ':00Z')) / 3600000 === 48, `${S.status.gameTime} -> ${inv.dueGameTime}`);
+  ok('not twice', /quick pay already/.test(await refused(() => api(`/invoices/${inv.id}/quickpay`, 'POST'))));
+  ok('and not factored on top', /on quick pay/.test(await refused(() => api(`/invoices/${inv.id}/factor`, 'POST'))));
   ok('due on the broker\'s terms', inv.dueGameTime > inv.issuedGameTime, `${inv.issuedGameTime} -> ${inv.dueGameTime}`);
   ok('the truck is at the receiver', S.status.city === k.load.destCity, S.status.city);
   ok('the record counts it, on time', S.record.loads === 1 && S.record.onTimePct === 100, JSON.stringify(S.record));
@@ -66,7 +73,7 @@ async function bookOne(S) {
   ok('with the game closed', toHold.needsGameClosed === true);
   ok('the game bank says how much of it is not yours', S.gameBank.notYours === k.gamePay);
   ok('allowed to spend is unknown until the balance is read', S.gameBank.allowedToSpend === null);
-  S = await api('/bank', 'POST', { balance: 5000 + k.gamePay });
+  S = (await api('/bank', 'POST', { balance: 5000 + k.gamePay })).snapshot;
   ok('read with the delivery in it, the shipper money is not spendable', S.gameBank.allowedToSpend === 5000, `${S.gameBank.allowedToSpend}`);
   ok('owed to you', Math.abs(S.owedToYou - net) < 0.01);
   S = await api(`/transfers/${toHold.id}/done`, 'POST');

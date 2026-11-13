@@ -428,7 +428,8 @@
   <h3>Choosing an employer</h3>
   <p>Submit the application and you get a market of carriers — real US fleets, with their actual
     headquarters and the freight they genuinely run. Schneider out of Green Bay, Prime out of
-    Springfield, Melton out of Tulsa, Groendyke out of Enid, and a dozen more.</p>
+    Springfield, Melton out of Tulsa, Groendyke out of Enid, and a dozen more. Rather not work for a real
+    name? Pick <b>Invented companies</b> under <b>Carriers in the job market</b> on the application.</p>
 
   <p>Each shows its pay, equipment and home-time ratings, the divisions it runs, its yards, and the bar
     it holds applicants to. You apply to the one you want.</p>
@@ -880,6 +881,58 @@
     audit will tell you to adjust the speed factor.</p>
 
   <div class="pfoot"><span>7 &middot; Hours of service</span><span>11</span></div>
+</div>
+
+<!-- ============================================================ 7b - taking a rest -->
+<div class="page">
+  <div class="kicker">Section 7, continued</div>
+  <h2>Taking a rest, and a clock that jumped</h2>
+
+  <p class="lede">Dispatch orders the 34 &mdash; on ETS2, the weekly rest &mdash; when your hours call for
+    it. You can also say you are taking a rest yourself, whenever you stop: for the night, or for two days
+    while the truck is in the shop.</p>
+
+  <h3>Taking a rest of your own</h3>
+  <p>The <b>Taking a rest?</b> panel is on the Dispatch tab, and on the Active load tab while you are
+    running one. Pick the rest:</p>
+  <table>
+    <tr><th style="width:1.2in">Game</th><th>What you can take</th></tr>
+    <tr><td><b>ATS</b></td><td>The <b>10-hour rest</b>, which gives back your drive clock, your 14-hour window
+      and the break clock; or the <b>34-hour restart</b>, which gives back the cycle.</td></tr>
+    <tr><td><b>ETS2</b></td><td>A <b>daily rest</b> &mdash; 11 hours, or 9 as a reduced one while you have one
+      left; a <b>reduced weekly rest</b> of 24 hours, with the 21 short of 45 owed back later; or a full
+      <b>weekly rest</b> of 45. The reduced weekly rest is not offered when your last weekly rest was
+      reduced.</td></tr>
+  </table>
+
+  <p>Then it is the same two steps as a rest dispatch orders:</p>
+  <table>
+    <tr><th style="width:1.2in">Step</th><th>What happens</th></tr>
+    <tr><td><b>I am parked up</b></td><td>The clock starts. Give the game time you stopped &mdash; earlier
+      than now if you are already resting.</td></tr>
+    <tr><td><b>The rest is done</b></td><td>Give the time you are rolling again. The app checks the rest was
+      long enough, then counts it: a daily rest starts a fresh day, a weekly rest starts your six days
+      again. The button names the rest &mdash; <i>The daily rest is done</i>, <i>The weekly rest is
+      done</i>, <i>The 10 is done</i>, <i>The 34 is done</i>.</td></tr>
+  </table>
+  <p>While you are parked on it, no freight is dispatched. Changed your mind? <b>Call it off</b> and it is
+    not counted. A weekly rest you choose takes the place of one dispatch had ordered and you had not
+    started. A rest taken during a load goes on that load's trip log as well, which keeps your learned
+    driving speed honest.</p>
+
+  <h3>&ldquo;Were you resting?&rdquo;</h3>
+  <p>Report a game time a rest's length or more after the last one, with the odometer barely moved, and
+    nothing logged across the gap, and the app asks rather than guessing. Pick the rest it was and it is
+    counted from the start of the gap to the end of it. If you drove some of that time, move the times in
+    first. If it was not a rest, answer <b>No, I was working</b>.</p>
+
+  <div class="note">
+    <h4>On ATS, report your clocks before you log a 34 after the fact</h4>
+    <p>A restart puts the whole cycle back, and the app checks your display says so. Report the clocks
+      first, then log the 34.</p>
+  </div>
+
+  <div class="pfoot"><span>7 &middot; Hours of service</span><span>12</span></div>
 </div>
 
 <!-- ============================================================ 7b - the speed factor -->
@@ -2628,12 +2681,15 @@
   <h2>The audit, and whose fault it was</h2>
 
   <p>Every closed load produces an audit, and it appears <b>the moment you press Deliver &amp;
-    audit</b> — as a popup you have to dismiss. It used to sit on the tab until the next dispatch was
-    taken, by which point it was about the wrong trip and easy to miss entirely.</p>
+    audit</b> — as a popup you have to dismiss. It is figures, not prose: when you got there against
+    when you were due, the time at each dock and any detention, the miles, the money, and where you and
+    your clocks stand now. Anything that needs a sentence (a strike, a claim, a service coming due) is
+    under <b>Worth knowing</b>; the working behind every figure is folded away under <b>How it was
+    worked out</b>.</p>
 
-  <figure class="shot-sm" style="max-width:53%">
+  <figure class="shot-sm" style="max-width:33%">
     <img src="img/audit-modal.png" alt="The trip audit popup at delivery">
-    <figcaption>Including where the delivery leaves you on home time.</figcaption>
+    <figcaption>Figures first, then what happens next.</figcaption>
   </figure>
 
   <p>If the load ran late, the audit decides <i>why</i> — the difference between a note and a mark on
@@ -5166,7 +5222,8 @@
 
   <p>Rough, and survivable. They are always hiring and they look past the termination, because that is
     what they are for &mdash; a freight downturn closing the only door open to you would be a dead end
-    rather than a consequence.</p>
+    rather than a consequence. The app names the ones that will take you and sends you to the
+    <b>Job Market</b> tab; applying is not a resignation, so there is no reason for leaving to give.</p>
 
   <div class="rule">
     <h4>What earns the market back</h4>
@@ -5540,9 +5597,9 @@
   <div class="kicker">Section 20, continued</div>
   <h2>Changing employer: squaring it with the game</h2>
 
-  <p class="lede">The app's books turn over cleanly &mdash; new fleet, new headquarters, new ledger. ATS
-    does not turn over at all. Whatever you actually bought is still parked in your garage under the last
-    company's colours.</p>
+  <p class="lede">A new job starts from nothing. The old company's fleet, hired drivers, fleet reports,
+    reviews and requests all stay behind, and you set the new one up the way you did the first, with the
+    set-up guide on the Career tab. ATS does not turn over at all.</p>
 
   <h3>You get an instruction, not a summary</h3>
   <p>Resigning raises a <b>changeover instruction</b> on the Career tab. It is a list of things to do in
@@ -5555,8 +5612,10 @@
     <tr><td><b>Drive there</b></td>
         <td>A city on this list you have never been to. Nothing else can happen until you have.</td></tr>
     <tr><td><b>Sell</b></td>
-        <td>Garages and equipment that belonged to the old employer. Ticking off a yard takes it off the
-            company's books, because it really is gone.</td></tr>
+        <td>Garages and equipment that belonged to the old employer. They are off the new company's books
+            already; this is the game catching up.</td></tr>
+    <tr><td><b>Let go</b></td>
+        <td>The old company's hired drivers. Let them go in ATS before selling their trucks.</td></tr>
     <tr><td><b>Buy</b></td>
         <td>The new headquarters garage, your new tractor, a trailer that suits their divisions.</td></tr>
     <tr><td><b>Keeps</b></td>
@@ -5601,7 +5660,9 @@
 
   <h3>The reporting cycle</h3>
   <p>Every fifteen game days the app asks for their numbers. You read them off the ATS company screen
-    and file a fleet report.</p>
+    and file a fleet report. With nobody hired it still comes due, as the company report: the bank
+    balance and your own truck and trailer. What your own loads made the company is read off the books
+    and counted in the net the company judges its health on.</p>
 
   <div class="rule">
     <h4>What the game actually shows you &mdash; and what it does not</h4>
@@ -7550,18 +7611,14 @@
   <h3>Bundled data</h3>
   <p>US city coordinates come from <b>kelvins/US-Cities-Database</b> (MIT, Copyright &copy; 2017
     Kelvin S. do Prado), derived from US Census place data. About 29,700 cities ship with the app so
-    distances are measured rather than guessed &mdash; which matters with a map mod like Coast to Coast,
-    where the board names cities the app's own market table has never heard of.</p>
+    distances are measured rather than guessed, map mods included.</p>
   <p>Canadian city coordinates come from <b>GeoNames</b> (CC BY 4.0) &mdash; about 19,000 populated
     places across all ten provinces and three territories, so Coast to Coast and the Canadian packs get
-    measured distances too. Without them every distance rule went quiet north of the border, the
-    home-time ceiling included. About 96,600 European places, for ETS2 and ProMods, come from GeoNames too.</p>
+    measured distances too. About 96,600 European places, for ETS2 and ProMods, come from GeoNames too.</p>
   <p>Road distances between the ETS2 and ProMods cities are measured on real roads with <b>OSRM</b> over
-    <b>OpenStreetMap</b> data (&copy; OpenStreetMap contributors, ODbL). Between those cities a planned leg is the road,
-    not a straight line; anywhere else the estimate below still applies, and what you actually drive replaces both.</p>
+    <b>OpenStreetMap</b> data (&copy; OpenStreetMap contributors, ODbL); what you actually drive replaces it.</p>
   <p class="hint">Distances are great-circle plus a road factor, not routed mileage, and land within
-    roughly a fifth of real road miles. Good enough to answer "is this taking me toward home" and "is
-    that yard worth deadheading to". Pay, fuel and feasibility always run off the distance the game reports.</p>
+    roughly a fifth of real road miles. Pay, fuel and feasibility always run off the distance the game reports.</p>
 
   <h3>What this is not</h3>
   <p>Not affiliated with or endorsed by SCS Software. ATS and ETS2 are their work.</p>
@@ -7571,10 +7628,8 @@
     pay, standards and hiring behaviour are <b>roleplay values chosen to make progression interesting
     and are not real employment terms</b>. Nothing here represents any of those companies.</p>
 
-  <p>Hours-of-service rules follow the US FMCSA pattern on an ATS career — 11 and 14 hour limits, a
-    30-minute break, 70 hours in 8 days, a 10-hour reset and a 34-hour restart — and EU Regulation
-    561/2006 on an ETS2 career. They are modelled for a game. Do not use this software to plan real
-    driving.</p>
+  <p>Hours-of-service rules follow the US FMCSA pattern on an ATS career and EU Regulation 561/2006 on an
+    ETS2 career, modelled for a game. Do not use this software to plan real driving.</p>
 
   <h3>Your data</h3>
   <p>Everything stays on your machine. No telemetry, no accounts, no network calls — unless you set an

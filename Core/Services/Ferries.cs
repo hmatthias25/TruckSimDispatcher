@@ -274,6 +274,14 @@ public static class Ferries
             "NorthLink Ferries", 1.5, false, 0, T("08:45", "13:15", "19:00"), T("06:30", "11:00", "16:45"), 0.75, "promods"),
         new("aberdeen-lerwick", "Aberdeen", "Aberdeen", "UK", "Lerwick", "Lerwick", "UK", 0, 0, "ProMods",
             "NorthLink Ferries", 12.5, true, 0, T("17:00"), T("17:30"), 1.5, "promods", Note: "Overnight, every day."),
+        // Sweden to Poland's west: Świnoujście and Ystad are both ProMods cities. Reported from play on 2026-11-04 — with
+        // neither crossing known, Gothenburg to Bobolice was planned over Gedser – Rostock, where the game's 608 km fits these.
+        new("swinoujscie-ystad", "Świnoujście", "Świnoujście", "PL", "Ystad", "Ystad", "SE", 0, 0, "ProMods",
+            "Polferries / Unity Line", 7, true, 0, T("13:00", "22:00"), T("13:30", "22:30"), 1, "promods",
+            Note: "Day and night sailings both ways; about 7 h by day, longer overnight."),
+        new("swinoujscie-trelleborg", "Świnoujście", "Świnoujście", "PL", "Trelleborg", "Trelleborg", "SE", 0, 0, "ProMods",
+            "Unity Line / TT-Line", 7.5, true, 0, T("08:00", "22:00"), T("09:00", "22:30"), 1, "promods",
+            Note: "A few sailings a day between the operators; overnight is the usual freight run."),
         new("puttgarden-rodby", "Puttgarden", "Puttgarden", "DE", "Rødby", "Rødbyhavn", "DK", 0, 0, "ProMods",
             "Scandlines", 0.75, false, 30, None, None, 0.25, "promods", Note: "Every half hour, round the clock."),
         new("hirtshals-larvik", "Hirtshals", "Hirtshals", "DK", "Larvik", "Larvik", "NO", 0, 0, "ProMods",

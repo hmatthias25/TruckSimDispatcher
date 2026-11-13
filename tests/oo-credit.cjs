@@ -1,7 +1,7 @@
 /* Owner-Operator 0.9: poor credit pays for the risk.
  *
  * Asked for from play: "so what would be the reason to even go to a D broker?" There was none: same margin, all the
- * risk. Now a C broker keeps four points less of the game's pay and a D nine, quick pay comes easier from them, and
+ * risk. Now a C broker keeps four points less of the game's pay and a D nine, and
  * the Brokers tab says what each grade means and how each broker has really paid you.
  */
 const B = `http://127.0.0.1:${process.env.TSD_PORT || 5994}/api`;
@@ -34,16 +34,9 @@ const head = (t) => console.log(`\n=== ${t} ===`);
   ok('a D broker offers a bigger share of the game\'s pay', atD - atB >= 0.07, `B ${(atB * 100).toFixed(1)}% -> D ${(atD * 100).toFixed(1)}%`);
   ok('never above the game\'s pay', r.call.offer <= r.call.gamePay);
 
-  head('2. Quick pay comes easier from a D broker');
-  // Wear their patience down asking for better: a B broker would not give terms now.
-  for (let i = 0; i < 3; i++) r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'better' });
-  ok('patience worn down, still on the line', r.call.status === 'Open', r.call.status);
-  r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'terms', term: 'quickpay' });
-  ok('and the D broker still gives quick pay', r.call.quickPay === true, r.call.turns.at(-1).text);
-
   head('3. The Brokers tab says what credit means, and how they have paid');
   const d = r.snapshot.directory.find((b) => b.id === starter.id);
-  ok('what D means, in words', /never paid|collections/.test(d.creditSays) && /quick pay/.test(d.creditSays), d.creditSays);
+  ok('what D means, in words', /never paid|collections/.test(d.creditSays) && /factor/.test(d.creditSays), d.creditSays);
   ok('a payment record, empty to start', d.payRecord && d.payRecord.invoices === 0, JSON.stringify(d.payRecord));
   r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
   await api('/run/at-shipper', 'POST', { day: 3, time: '07:00' });

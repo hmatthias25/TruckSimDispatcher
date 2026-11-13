@@ -107,6 +107,14 @@ public class TripAudit
 {
     public Trip Trip { get; set; } = new();
     public string Headline { get; set; } = "";
+    /// <summary>
+    /// What the close-out screen shows: the delivery, the docks, the miles, the money and where the truck stands, as
+    /// short label-and-value rows. Built from the trip once everything is worked out. See <see cref="CloseOutSummary"/>.
+    /// The finding lists below are the working behind it, kept for the log and shown folded away.
+    /// </summary>
+    public List<SummarySection> Summary { get; set; } = new();
+    /// <summary>The few things worth reading in a sentence: a strike on the record, a claim, a unit due in the shop.</summary>
+    public List<string> Notes { get; set; } = new();
     public List<string> ServiceFindings { get; set; } = new();
     public List<string> MileageFindings { get; set; } = new();
     /// <summary>Numbers that look wrong and were posted anyway. Surfaced loudly, never blocking.</summary>
@@ -824,9 +832,9 @@ public static class TripService
         {
             var type = FacilityLearning.Normalise(trip.TrailerType).ToLowerInvariant();
             audit.ServiceFindings.Add(
-                $"Dock time for {type} updated: load {dockBefore.Loading:0.##} → {Hhmm.Of(dockAfter.Loading)}, " +
-                $"unload {dockBefore.Unloading:0.##} → {Hhmm.Of(dockAfter.Unloading)}, now off {dockAfter.Samples} " +
-                $"measured load(s). I plan every {type} run on those figures from here.");
+                $"Dock time for {type} updated: load {Hhmm.Of(dockBefore.Loading)} → {Hhmm.Of(dockAfter.Loading)}, " +
+                $"unload {Hhmm.Of(dockBefore.Unloading)} → {Hhmm.Of(dockAfter.Unloading)}, from {dockAfter.Samples} " +
+                $"measured load(s). Every {type} run is planned on those from here.");
         }
         trip.LayoverDays = req.LayoverDays;
         trip.BreakdownDays = req.BreakdownDays;
@@ -842,7 +850,8 @@ public static class TripService
 
         // An early take is the receiver's doing, not a schedule beaten. Recorded so the figure is on the
         // file rather than quietly flattering the driver's numbers when somebody reads them back later.
-        if (trip.ReceiverTakesEarly && trip.Kind == "Freight"
+        // On time only: said under a late load it read "counts as on time" beneath "LATE" (reported 2026-11-09).
+        if (trip.ReceiverTakesEarly && trip.Kind == "Freight" && !late
             && GameClock.TryParse(trip.DeliveredGameTime) is { } deliveredAt)
         {
             var against = GameClock.TryParse(trip.AppointmentGameTime)
@@ -852,11 +861,8 @@ public static class TripService
                 : 0;
 
             audit.ServiceFindings.Add(trip.EarlyTakeHoursSaved > 0.1
-                ? $"The receiver took this one ahead of the appointment — {Hhmm.Of(trip.EarlyTakeHoursSaved)} " +
-                  "earlier than the slot. Their call, not a schedule beaten, so it counts as on time and " +
-                  "nothing more."
-                : "The receiver had agreed to take this one whenever it arrived. It still counts as on " +
-                  "time and nothing more.");
+                ? $"The receiver took it {Hhmm.Of(trip.EarlyTakeHoursSaved)} ahead of the appointment. Their call, so it counts as on time."
+                : "The receiver takes this freight whenever it arrives, so it counts as on time.");
         }
 
         // ---- fault attribution: the company owns its own bad dispatching
@@ -864,7 +870,6 @@ public static class TripService
         trip.FaultAttribution = fault;
         audit.FaultAttribution = fault;
         audit.FaultRationale = rationale;
-        if (late) audit.ServiceFindings.Add(rationale);
 
         // ---- mileage audit
         if (trip.Kind == "Freight" && trip.DispatchedMiles > 0)
@@ -883,9 +888,7 @@ public static class TripService
             && DispatchEngine.GateArrivalOf(f) is DateTime proj)
         {
             var driftHours = (del - proj).TotalHours;
-            audit.ServiceFindings.Add($"Projected arrival was {GameClock.Pretty(proj)}; you delivered {GameClock.Pretty(del)} ({driftHours:+0.#;-0.#;0} h vs plan).");
-            if (driftHours > 3)
-                audit.ServiceFindings.Add("Plan drifted by more than three hours. I am adjusting the speed factor assumption if this repeats.");
+            audit.ServiceFindings.Add($"Planned arrival {GameClock.Pretty(proj)}; you got there {GameClock.Pretty(del)} ({driftHours:+0.#;-0.#;0} h on the plan).");
         }
 
         // ---- pay
@@ -986,7 +989,7 @@ public static class TripService
                     "I may pass over something that pays better.";
             else
                 audit.HomeTimeNote =
-                    $"{homeNow.DaysOut:0.#} days out, home time in {homeNow.DaysUntilDue:0.#}. Nothing to plan around yet.";
+                    $"Home time is due in {homeNow.DaysUntilDue:0.#} days. You have been out {homeNow.DaysOut:0.#}.";
         }
         else if (!string.IsNullOrWhiteSpace(homeNow.Suggestion))
         {
@@ -1021,10 +1024,11 @@ public static class TripService
 
             if (strikes < needed)
             {
-                audit.ServiceFindings.Add(
-                    $"Late, and down to you. That is {strikes} in your last {window} loads — noted on the file and " +
-                    $"nothing more. It takes {needed} before it becomes a safety matter, and {window} clean loads " +
-                    "clears the count.");
+                var strikeNote = $"Late, and down to you. That is {strikes} in your last {window} loads: noted on the file and " +
+                                 $"nothing more. It takes {needed} before it becomes a safety matter, and {window} clean loads " +
+                                 "clears the count.";
+                audit.ServiceFindings.Add(strikeNote);
+                audit.Notes.Add(strikeNote);
                 SafetyService.RecordIncident(s, new Incident
                 {
                     Kind = "Late",
@@ -1058,9 +1062,10 @@ public static class TripService
                 });
                 audit.IncidentNumber = inc.Number;
                 audit.DisciplineRecommendation = action?.Level;
-                audit.ServiceFindings.Add(
-                    $"That is {strikes} late in your last {window} loads, all down to you. One is a bad day; this is " +
-                    $"a pattern, so it goes on the record. {window} clean loads clears the count.");
+                var patternNote = $"That is {strikes} late in your last {window} loads, all down to you. One is a bad day; this is " +
+                                  $"a pattern, so it goes on the record. {window} clean loads clears the count.";
+                audit.ServiceFindings.Add(patternNote);
+                audit.Notes.Add(patternNote);
             }
         }
 
@@ -1077,6 +1082,9 @@ public static class TripService
                     $"{damageJump:0.#}% of damage, logged as {Humanize(dmgFault)} — not your fault and not on your " +
                     "record. Get it into a shop before the next load: damage left on a unit comes back as more " +
                     "damage, and it is the company's bill either way. Book it on the Maintenance tab.");
+            audit.Notes.Add(dmgFault == "Driver"
+                ? $"The tractor took {damageJump:0.#}% damage on this load with no cause given, so it is on your record. Say what happened and it can be re-attributed."
+                : $"The tractor took {damageJump:0.#}% damage, logged as {Humanize(dmgFault)}: not on your record. Book the repair on the Maintenance tab.");
             var (inc, dmgAction, _) = SafetyService.FileAndDecide(s, new Incident
             {
                 Kind = "Damage",
@@ -1096,22 +1104,28 @@ public static class TripService
             audit.DisciplineRecommendation ??= dmgAction?.Level;
         }
         if (trip.CargoDamagePct >= 5)
+        {
             audit.EquipmentFindings.Add($"Cargo damage {trip.CargoDamagePct:0.#}% — that shows up as a claim. Secure and slow down in the rough spots.");
+            audit.Notes.Add($"{trip.CargoDamagePct:0.#}% cargo damage: the customer will claim for it.");
+        }
+        if (!string.IsNullOrWhiteSpace(trip.WindowWarning)) audit.Notes.Add(trip.WindowWarning);
 
         // ---- headline
+        var deliveredTo = DispatchEngine.Place(trip.DestCity, trip.DestState);
         audit.Headline = trip.Kind != "Freight"
-            ? $"{trip.Number} closed — {trip.Cargo.ToLowerInvariant()} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}."
-            : late
-                ? $"{trip.Number} delivered LATE — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}. Fault: {Humanize(fault)}."
-                : $"{trip.Number} delivered on time — {trip.Cargo} to {DispatchEngine.Place(trip.DestCity, trip.DestState)}. Driver pay {Units.Money(trip.Pay.Total)}.";
+            ? $"{trip.Number} closed: {trip.Cargo.ToLowerInvariant()} to {deliveredTo}."
+            : !late ? $"{trip.Cargo} delivered to {deliveredTo}, on time."
+            : fault == "Driver" ? $"{trip.Cargo} delivered to {deliveredTo}, late. That one is on you."
+            : fault == "Dispatcher" ? $"{trip.Cargo} delivered to {deliveredTo}, late. That is on dispatch, not you."
+            : $"{trip.Cargo} delivered to {deliveredTo}, late, but not your fault.";
 
         // ---- what happens next
-        audit.Directives.Add("Show me the jobs available here at the receiver before I order you anywhere empty.");
+        audit.Directives.Add("Show me the jobs on offer here before I send you anywhere empty.");
         var hosView = HosEngine.Describe(s, s.Trucks.FirstOrDefault(t => t.Unit == trip.TruckUnit));
         if (!string.IsNullOrWhiteSpace(hosView.ResetWatch)) audit.Directives.Add(hosView.ResetWatch);
         audit.Directives.Add(audit.ClocksReported
-            ? $"Clocks logged at delivery — I have what I need to plan the next load. {hosView.NextRequiredAction}"
-            : $"Re-read your {HosWords.Display} and report the clocks — I am not booking the next load off stale numbers. Current reading: {hosView.NextRequiredAction}");
+            ? hosView.NextRequiredAction
+            : $"Read your clocks off the {HosWords.Display} and report them: the next load is not booked on old figures. {hosView.NextRequiredAction}");
         if (audit.Discovery is { GarageAvailable: true } disc)
             audit.Directives.Add($"{disc.Place} is new to us and ATS sells a garage here. See the note on the Dispatch tab before you leave.");
 
@@ -1166,8 +1180,10 @@ public static class TripService
         // the moment the driver might act on it.
         var fleetDue = FleetOpsService.DueCheck(s);
         if (fleetDue.IsDue)
-            audit.WhatsNext.Add($"Fleet report is due — {fleetDue.Message} File it on the Fleet tab; " +
-                                "your hired drivers' revenue does not post until you do.");
+            audit.WhatsNext.Add($"{fleetDue.Message} File it on the Fleet tab" +
+                                (s.HiredDrivers.Any(d => d.Status == "Active")
+                                    ? "; your hired drivers' revenue does not post until you do."
+                                    : ": it is how the company judges how it is doing."));
         else if (fleetDue.IsSoon)
             audit.WhatsNext.Add($"Fleet report coming due: {fleetDue.Message}");
 
@@ -1187,6 +1203,29 @@ public static class TripService
         // The whole conversation now happens at the one moment it is actually about something — when
         // dispatch sends the driver home, either by putting a load under them that finishes at the yard or
         // by telling them to run it in empty. See DispatchEngine.AskAboutTrailersHome.
+
+        // ---- the screen: figures, not prose. The lists above are the working behind them.
+        audit.Summary = CloseOutSummary.Build(s, trip, audit);
+        var money = new SummarySection { Key = "money", Title = "Money" }
+            .Add("Your pay", Units.Money(trip.Pay.Total))
+            .Add("The load paid", Units.Money(trip.CompanyRevenue),
+                 trip.GameRevenue != trip.CompanyRevenue ? $"The game paid {Units.Money(trip.GameRevenue)}" : "")
+            .Add("Running costs", Units.Money(costs), "Fuel, tolls, repairs and overhead")
+            .Add("The company kept", Units.Money(audit.CompanyMargin), "After costs and your pay",
+                 audit.CompanyMargin < 0 ? "bad" : "");
+        if (trip.ActualMiles + trip.DeadheadMiles > 0)
+        {
+            var perMile = trip.CompanyRevenue / (decimal)(trip.ActualMiles + trip.DeadheadMiles);
+            var (minimum, _, _) = CostModel.Thresholds(s, trip.ActualMiles);
+            money.Add("Per mile, all in", Units.PerDistance(perMile, "0.00"),
+                perMile < minimum ? $"Under the {Units.Money(minimum, "0.00")} floor: dispatch's call, not yours" : "",
+                perMile < minimum ? "warn" : "");
+        }
+        if (trip.FuelGallons > 0)
+            money.Add("Fuel", $"{Units.Volume(trip.FuelGallons, "N0")} for {Units.Money(trip.FuelCost)}",
+                trip.ActualMiles + trip.DeadheadMiles > 0
+                    ? Units.Economy((trip.ActualMiles + trip.DeadheadMiles) / trip.FuelGallons, "0.0") : "");
+        CloseOutSummary.InsertMoney(audit, money);
         return audit;
     }
 
@@ -1278,10 +1317,12 @@ public static class TripService
         if (releasedAt != null && arrivedAt != null && releasedAt.Value > arrivedAt.Value)
         {
             var measured = (releasedAt.Value - arrivedAt.Value).TotalHours;
-            if (spentAtDock > 0 && Math.Abs(measured - spentAtDock) > 0.25)
+            // Only where they typed a dock time. A figure the log worked out is not something they reported, and
+            // the gap between the unload and the whole stay is the wait, which is said with the docks.
+            if (spentAtDock > 0 && (req.UnloadingHours > 0 || req.DetentionHours > 0) && Math.Abs(measured - spentAtDock) > 0.25)
                 audit.ServiceFindings.Add(
-                    $"You reported {Hhmm.Of(spentAtDock)} at the dock but the clock moved {Hhmm.Of(measured)}. " +
-                    "Going with the clock \u2014 it is what the game actually charged.");
+                    $"You put {Hhmm.Of(spentAtDock)} at the dock, but the clock moved {Hhmm.Of(measured)}. " +
+                    "Going with the clock: it is what the game charged.");
             spentAtDock = measured;
             s.Status.GameTime = GameClock.Format(releasedAt.Value);
             audit.CarriedForward.Add(
@@ -1466,14 +1507,15 @@ public static class TripService
         audit.CarriedForward.Add(workedTheDock
             ? $"Clocks carried across the unload: shift {Hhmm.Of(shiftWas)} \u2192 {Hhmm.Of(s.Hos.ShiftRemaining)}, " +
               $"cycle {Hhmm.Of(cycleWas)} \u2192 {Hhmm.Of(s.Hos.CycleRemaining)}. You were on duty for it \u2014 " +
-              $"{TrailerSpec.Describe(trip.TrailerType, null)} work is straps and hoses, not waiting \u2014 so both " +
+              (DropHook.Is(trip.TrailerType) ? "dropping and hooking is on-duty work"
+                  : $"{TrailerSpec.Describe(trip.TrailerType, null)} work is straps and hoses, not waiting") + " \u2014 so both " +
               "clocks paid. Your drive clock is untouched. Worked out, not read; check it " +
               "against your display."
             : $"Clocks carried across the unload: shift {Hhmm.Of(shiftWas)} \u2192 {Hhmm.Of(s.Hos.ShiftRemaining)}, " +
               $"cycle {Hhmm.Of(cycleWas)} \u2192 unchanged. Nothing for you to do behind a " +
               $"{TrailerSpec.Describe(trip.TrailerType, null)} once the doors are open, so that was " +
               $"{Hhmm.Of(spentAtDock)} in the bunk: it comes off your fourteen but not your seventy. " +
-              "<b>In ATS, take that time in the sleeper</b> and your display will match. Worked out, not " +
+              "In ATS, take that time in the sleeper and your display will match. Worked out, not " +
               "read \u2014 check it.");
         CreditTheUnload();
     }
@@ -1543,9 +1585,9 @@ public static class TripService
                 {
                     // Receiver only — said exactly as it always was.
                     if (heldWhy != null) f.Explain.Add(heldWhy);
-                    f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)} — on their clock from " +
+                    f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)}, on their clock from " +
                                   $"{GameClock.Pretty(heldFrom!.Value)}. {Windows(held!.Value, heldWait, free, queueFree)} " +
-                                  "Nothing logged, so this is off the arrival and what they told you.");
+                                  "Nothing was logged at the dock, so this runs from your arrival.");
                     if (typedDetention > 0 && Math.Abs(typedDetention - f.DetentionHours) > 0.25)
                         f.Explain.Add($"You reported {Hhmm.Of(typedDetention)}; their own clock works out to " +
                                       $"{Hhmm.Of(f.DetentionHours)}. I am paying the clock.");
@@ -1561,7 +1603,7 @@ public static class TripService
                     f.Explain.Add($"{Hhmm.Of(heldBillable)} at the receiver, on their clock from " +
                                   $"{GameClock.Pretty(heldFrom!.Value)}. {Windows(held!.Value, heldWait, free, queueFree)}");
                 f.Explain.Add($"Detention {Hhmm.Of(f.DetentionHours)}. " +
-                              "Nothing logged, so this is off the arrivals and what they told you.");
+                              "Nothing was logged at the docks, so this runs from your arrivals.");
                 if (typedDetention > 0 && Math.Abs(typedDetention - f.DetentionHours) > 0.25)
                     f.Explain.Add($"You reported {Hhmm.Of(typedDetention)}; their own clock works out to " +
                                   $"{Hhmm.Of(f.DetentionHours)}. I am paying the clock.");
@@ -1610,10 +1652,10 @@ public static class TripService
         }
         else
         {
-            f.Explain.Add($"No detention — the work came in inside the {Hhmm.Of(free)} free window" +
-                          (waitedAtReceiver > 0.01
-                              ? $" and the {Hhmm.Of(waitedAtReceiver)} you waited inside the {Hhmm.Of(queueFree)} allowed for a queue."
-                              : "."));
+            f.Explain.Add(waitedAtReceiver > 0.01
+                ? $"No detention: the work fit in its {Hhmm.Of(free)} of free time, and the {Hhmm.Of(waitedAtReceiver)} " +
+                  $"of waiting in its {Hhmm.Of(queueFree)}."
+                : $"No detention: the work fit in its {Hhmm.Of(free)} of free time.");
         }
 
         // A typed figure that disagrees with the log is worth saying out loud rather than discarding.
@@ -1666,10 +1708,18 @@ public static class TripService
         var waiting = Math.Clamp(waited, 0, Math.Max(0, onProperty));
         var working = Math.Max(0, onProperty - waiting);
         return waiting > 0.01
-            ? $"{Hhmm.Of(waiting)} of it was waiting, which gets {Hhmm.Of(queueFree)} free rather than the " +
-              $"{Hhmm.Of(workFree)} the work gets — nobody was on the trailer for it."
-            : $"After {Hhmm.Of(workFree)} free on {Hhmm.Of(working)} of work.";
+            ? $"{Hhmm.Of(waiting)} of it was waiting, which gets {Hhmm.Of(queueFree)} free; " +
+              $"the {Hhmm.Of(working)} of work gets {Hhmm.Of(workFree)}."
+            : $"{Hhmm.Of(workFree)} free on {Hhmm.Of(working)} of work.";
     }
+
+    /// <summary>The receiver's time on a closed trip, and how much of it was waiting: for the close-out summary.</summary>
+    internal static double? TimeOnTheirPropertyFor(Trip trip, double unloadingHours, out double waited) =>
+        TimeOnTheirProperty(trip, unloadingHours, out _, out _, out waited);
+
+    /// <summary>The shipper's time on a closed trip, and how much of it was waiting: for the close-out summary.</summary>
+    internal static double? TimeAtShipperFor(Trip trip, double loadingHours, out double waited) =>
+        TimeAtShipper(trip, loadingHours, out _, out _, out waited);
 
     private static double? TimeOnTheirProperty(Trip trip, double unloadingHours,
         out DateTime? from, out string? explain, out double waitedHours)
@@ -1993,11 +2043,10 @@ public static class TripService
             // Name the one it actually took. "You logged Begin unload" on a drop-and-hook load the driver
             // never unloaded would be the app describing something that did not happen.
             var source = GameClock.TryParse(trip.ArrivedGameTime) is { } a && a <= logged
-                ? "that is when you told me you had arrived"
-                : "that is when you logged Begin unload";
-            note = $"Taking {GameClock.Pretty(moved)} as your arrival — {source}. " +
-                   $"You closed the load out at {GameClock.Pretty(said.Value)}, which is after they had you, " +
-                   "and time on their property is the receiver's, not yours.";
+                ? "when you reported arriving"
+                : "when you logged Begin unload";
+            note = $"Arrival taken as {GameClock.Pretty(moved)}, {source}, not the {GameClock.Pretty(said.Value)} " +
+                   "you closed out at. Time spent at the receiver does not count against you.";
         }
         return moved;
     }
@@ -2240,7 +2289,10 @@ public static class TripService
                                          string.Join(", ", owing.Select(d => d.Name.ToLowerInvariant())) +
                                          ". Schedule them at the next terminal.");
                 else if (soon != null && soon.MilesUntilDue <= soon.IntervalMiles * 0.1)
+                {
                     audit.EquipmentFindings.Add($"{soon.Name} due in {Units.Distance(soon.MilesUntilDue)} on unit {truck.Ref}.");
+                    audit.Notes.Add($"{soon.Name} is due in {Units.Distance(soon.MilesUntilDue)} on unit {truck.Ref}.");
+                }
             }
             else
             {
@@ -2248,7 +2300,10 @@ public static class TripService
                 if (sinceService >= truck.ServiceIntervalMiles)
                     audit.Directives.Add($"Unit {truck.Ref} is {Units.Distance(sinceService - truck.ServiceIntervalMiles)} past its {Units.Dist(truck.ServiceIntervalMiles):N0}-{Units.DistSingular} PM. Schedule the service at the next terminal.");
                 else if (sinceService >= truck.ServiceIntervalMiles * 0.9)
+                {
                     audit.EquipmentFindings.Add($"PM due in {Units.Distance(truck.ServiceIntervalMiles - sinceService)} on unit {truck.Ref}.");
+                    audit.Notes.Add($"Unit {truck.Ref} is due its service in {Units.Distance(truck.ServiceIntervalMiles - sinceService)}.");
+                }
             }
         }
 

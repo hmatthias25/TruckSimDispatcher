@@ -48,7 +48,7 @@ async function run(trip, day, loadHours) {
   const r = await api(`/trips/${trip.id}/complete`, 'POST', { deliveredGameTime: plus(trip.dueGameTime, 1),
     endOdometer: 90130, actualMiles: 130, truckDamageAfter: 2, trailerDamageAfter: 2 });
   const done = (un(r).trips || []).find((x) => x.id === trip.id);
-  return { done, call, findings: (r.audit?.serviceFindings || []).join(' || ') };
+  return { done, call, findings: [...(r.audit?.serviceFindings || []), r.audit?.faultRationale || ''].join(' || ') };
 }
 
 (async () => {

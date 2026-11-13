@@ -251,7 +251,8 @@ public static class SafetyService
         // truck was on before. Only derived where it was not reported directly — a driver who knows the
         // delta is a better source than a subtraction across two moments.
         if (inc.DamageIncurredPct < 0 && inc.TruckDamagePctAfter >= 0)
-            inc.DamageIncurredPct = Math.Max(0, inc.TruckDamagePctAfter - s.Status.TruckDamagePct);
+            inc.DamageIncurredPct = Math.Max(0, inc.TruckDamagePctAfter
+                - DamageBefore(s, DispatchEngine.AssignedTruck(s), inc.TruckDamagePctAfter, inc.TripNumber));
 
         // Severity is the company's call on the damage, not the driver's on the form — letting the
         // reporter grade their own wreck is how a rollover got filed as Minor.
@@ -268,6 +269,30 @@ public static class SafetyService
         if (inc.AgesOffAfterLoads <= 0) inc.AgesOffAfterLoads = AgeOffFor(inc.Severity);
         s.Incidents.Insert(0, inc);
         return inc;
+    }
+
+    /// <summary>
+    /// What the truck was on before an event, for grading what the event did.
+    ///
+    /// The reading on file, where it is below what was reported — otherwise it is the wreck itself, already
+    /// typed in, and grading against it measured a 100% rollover as no damage at all. Reported from play: a new
+    /// truck flipped on the first load, filed as Driver and preventable, graded None, and nothing followed. Then
+    /// what the truck was on when the load it was on (or its last) was dispatched, raised by anything already
+    /// filed on that load since.
+    /// </summary>
+    public static double DamageBefore(AppState s, Truck? truck, double after, string tripNumber = "")
+    {
+        var onFile = Math.Min(truck?.DamagePct ?? s.Status.TruckDamagePct, s.Status.TruckDamagePct);
+        if (onFile < after - 0.01) return onFile;
+
+        var trip = (string.IsNullOrWhiteSpace(tripNumber) ? null : s.Trips.FirstOrDefault(t => t.Number == tripNumber))
+                   ?? s.Trips.Where(t => truck != null && t.TruckUnit.Equals(truck.Unit, StringComparison.OrdinalIgnoreCase))
+                       .OrderByDescending(t => t.CreatedUtc).FirstOrDefault();
+        if (trip == null) return onFile;
+        var before = trip.TruckDamageBefore;
+        foreach (var earlier in s.Incidents.Where(i => i.TripNumber == trip.Number && i.TruckDamagePctAfter < after - 0.01))
+            before = Math.Max(before, earlier.TruckDamagePctAfter);
+        return Math.Min(onFile, Math.Max(0, before));
     }
 
     /// <summary>
@@ -431,7 +456,13 @@ public static class SafetyService
         FileAndDecide(AppState s, Incident inc)
     {
         var created = RecordIncident(s, inc);
+        var (action, probation) = Decide(s, created);
+        return (created, action, probation);
+    }
 
+    /// <summary>What follows from an incident already on the record: the probation, then the ladder.</summary>
+    public static (DisciplineAction? Action, ProbationConduct.Outcome? Probation) Decide(AppState s, Incident created)
+    {
         // What it costs the PERIOD, on top of whatever rung the ladder gives it. Judged here, as the
         // incident is filed, against the probation that was actually running at the time.
         var onProbation = ProbationConduct.Assess(s, created);
@@ -449,10 +480,10 @@ public static class SafetyService
         // The period already ended the job. Running the ladder on top of that would issue a suspension
         // against somebody who no longer works here — and worse, applying it overwrites Status, so a
         // termination came out reading "Suspended". The heavier consequence stands.
-        if (onProbation is { Kind: "Terminated" }) return (created, null, onProbation);
+        if (onProbation is { Kind: "Terminated" }) return (null, onProbation);
 
         var level = RecommendDiscipline(s, created);
-        if (level == null) return (created, null, onProbation);
+        if (level == null) return (null, onProbation);
 
         var action = Issue(s, level,
             $"{created.Kind} on {(string.IsNullOrWhiteSpace(created.TripNumber) ? "no trip" : created.TripNumber)} — {created.Description}".Trim(),
@@ -463,7 +494,46 @@ public static class SafetyService
         if (level == "Termination")
             ApplyTermination(s, $"{action.Number}: {created.Kind} — {created.Description}", action.Number);
 
-        return (created, action, onProbation);
+        return (action, onProbation);
+    }
+
+    /// <summary>
+    /// A tractor written off as the driver's fault, with no incident on file for the wreck: filed now, through the same
+    /// decision as one reported on the Safety tab. The write-off only ever set the deductible, so a truck put in a ditch
+    /// and written off from the Maintenance tab reached neither discipline nor probation. Reported from play: a tractor
+    /// recovered from Tirana and written off as driver fault, and the driver on probation heard nothing more of it.
+    /// An incident on file at the write-off line within the week before covers it, whatever fault it was filed under —
+    /// the incident is the record.
+    /// </summary>
+    public static (Incident Incident, DisciplineAction? Action, ProbationConduct.Outcome? Probation)? CoverWriteOff(
+        AppState s, Truck truck, double damageAtWriteOff, double damageBefore)
+    {
+        var now = GameClock.TryParse(s.Status.GameTime);
+        if (WreckOnFile(s, now)) return null;
+        var trip = s.Trips.Where(t => t.TruckUnit.Equals(truck.Unit, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(t => t.CreatedUtc).FirstOrDefault();
+        var after = Math.Max(damageAtWriteOff, s.Settings.Maintenance.TotalLossPct);
+        return FileAndDecide(s, new Incident
+        {
+            Kind = "Collision",
+            TripNumber = trip?.Number ?? "",
+            Description = $"Unit {truck.Ref} written off as a total loss, down to the driver.",
+            FaultAttribution = "Driver",
+            Preventable = true,
+            TruckDamagePctAfter = after,
+            DamageIncurredPct = Math.Max(0, after - damageBefore),
+            LocationCity = s.Status.LocationCity,
+            LocationState = s.Status.LocationState,
+        });
+    }
+
+    /// <summary>An incident at the write-off line in the week before <paramref name="at"/>.</summary>
+    public static bool WreckOnFile(AppState s, DateTime? at)
+    {
+        var line = s.Settings.Maintenance.TotalLossPct;
+        return s.Incidents.Any(i => i.TruckDamagePctAfter >= line - 0.01
+                                    && (at == null || GameClock.TryParse(i.GameTime) is not { } when
+                                        || (when <= at.Value.AddMinutes(1) && (at.Value - when).TotalDays <= 7)));
     }
 
     /// <summary>

@@ -51,6 +51,7 @@ public static class EuCounters
             .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
             .Where(x => x.Start is { } a && x.End is { } b && (b - a).TotalHours >= r.ReducedDailyRest - 0.01 && b <= at)
             .Select(x => x.End!.Value)
+            .Concat(OrderedRests(s).Where(x => (x.End - x.Start).TotalHours >= r.ReducedDailyRest - 0.01 && x.End <= at).Select(x => x.End))
             .DefaultIfEmpty(DateTime.MinValue).Max();
         if (GameClock.TryParse(s.Hos.EuShiftStart) is { } seen && seen <= at && seen > lastRestEnd) lastRestEnd = seen;
         return lastRestEnd > DateTime.MinValue && (at - lastRestEnd).TotalHours < 24 ? lastRestEnd : null;
@@ -97,13 +98,25 @@ public static class EuCounters
                           Counts: e.WeeklyRest is { Length: > 0 } w ? w : e.Kind == "Restart" ? "weekly" : ""))
             .Where(x => x.Start is { } a && x.End is { } b && b > a && b <= now)
             .Select(x => (Start: x.Start!.Value, End: x.End!.Value, Hours: (x.End!.Value - x.Start!.Value).TotalHours, x.Counts))
-            .Concat(s.RestartOrders
-                .Where(o => o.Status == "Completed")
-                .Select(o => (Start: GameClock.TryParse(o.ArrivedGameTime), End: GameClock.TryParse(o.CompletedGameTime)))
-                .Where(x => x.Start is { } a && x.End is { } b && b > a && b <= now)
-                .Select(x => (Start: x.Start!.Value, End: x.End!.Value, Hours: (x.End!.Value - x.Start!.Value).TotalHours, Counts: "weekly")))
+            .Concat(OrderedRests(s)
+                .Where(x => x.End <= now)
+                .Select(x => (x.Start, x.End, Hours: (x.End - x.Start).TotalHours, Counts: x.Daily ? "daily" : "weekly")))
             .OrderBy(x => x.End)
             .ToList();
+
+    /// <summary>
+    /// Rests sat through Restart's two steps — the weekly rests dispatch ordered, and the rests the driver chose —
+    /// other than those written to a trip log that still has them, which the log already counts.
+    /// </summary>
+    private static IEnumerable<(DateTime Start, DateTime End, bool Daily)> OrderedRests(AppState s)
+    {
+        var logged = s.Trips.SelectMany(t => t.Events).Select(e => e.Id).ToHashSet();
+        return s.RestartOrders
+            .Where(o => o.Status == "Completed" && !(o.TripEventId.Length > 0 && logged.Contains(o.TripEventId)))
+            .Select(o => (Start: GameClock.TryParse(o.ArrivedGameTime), End: GameClock.TryParse(o.CompletedGameTime), Daily: o.Kind == "Daily"))
+            .Where(x => x.Start is { } a && x.End is { } b && b > a)
+            .Select(x => (x.Start!.Value, x.End!.Value, x.Daily));
+    }
 
     /// <summary>
     /// The spans that count as weekly rests, oldest first. Twenty-four hours off is a reduced weekly rest only where

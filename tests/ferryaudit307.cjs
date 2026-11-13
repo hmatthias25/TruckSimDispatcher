@@ -108,6 +108,19 @@ const routes = (f) => (f.crossingRoutes || []).join('+') || 'road';
   ok('never run: turned down, not planned as a drive that ends at Tallinn',
     ae.verdict !== 'Accept' && /past anywhere the company runs/.test(JSON.stringify(ae)), azWhy.slice(0, 160));
 
+  head('9. Gothenburg to Bobolice, 608 km: no road squeezed under its straight line');
+  // Reported from play on 2026-11-04: fitted to Gedser – Rostock, Rostock to Bobolice was planned at 273 km, under the
+  // 290 km straight line, where the game drove 640. The listing fits a crossing the app did not know: Świnoujście.
+  f = await plan(['Gothenburg', 'SE'], ['Bobolice', 'PL'], 608, { hours: 60 });
+  const drives = f.timeline.filter((t) => t.kind === 'Drive');
+  const after = drives.filter((t) => /from the port/.test(t.label)).reduce((a, t) => a + t.miles, 0) * KM;
+  console.log('  ..', routes(f), Math.round(f.totalMiles * KM), 'km road;', Math.round(after), 'km from the port');
+  if (routes(f).includes('rostock-gedser'))
+    ok('over Rostock, the far side is at least the straight line to Bobolice', after >= 285, `${Math.round(after)} km`);
+  else
+    ok('over a Świnoujście crossing, the one the listing fits', /swinoujscie/.test(routes(f)), routes(f));
+  ok('the Świnoujście crossings are known', (await api('/bootstrap')).views.ferries.routes.some((r) => r.id === 'swinoujscie-ystad'));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.log('FATAL', e); process.exit(1); });

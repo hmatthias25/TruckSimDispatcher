@@ -49,6 +49,8 @@ app.Use(async (ctx, next) =>
         var why = ex is BadHttpRequestException && ex.InnerException is JsonException je
             ? $"The app could not read what was sent: {je.Message}"
             : ex.Message;
+        // Under the test runner, where it went wrong as well, in the server's error log.
+        if (Environment.GetEnvironmentVariable("TSO_TEST") == "1" && ex is not InvalidOperationException) Console.Error.WriteLine(ex);
         await ctx.Response.WriteAsJsonAsync(new { error = why });
     }
 });
@@ -89,14 +91,53 @@ app.MapPost("/api/reset", (ResetRequest r) =>
     return Results.Ok(Snapshot(store.Career));
 });
 
+// ---------------------------------------------------------------- careers
+//
+// More than one career, as the company-driver app keeps them: the one being played in career.json, the rest parked in
+// oo-data\careers. Each change is made first and the list read after it, so the list never describes the state before.
+
+app.MapGet("/api/careers", () => Results.Ok(new { careers = store.ListCareers() }));
+
+app.MapPost("/api/careers/switch", (CareerSlugRequest r) =>
+{
+    var switched = Snapshot(store.SwitchTo(r.Slug ?? ""));
+    return Results.Ok(new { careers = store.ListCareers(), snapshot = switched });
+});
+
+app.MapPost("/api/careers/new", (CareerNameRequest r) =>
+{
+    var created = Snapshot(store.CreateCareer(r.Name));
+    return Results.Ok(new { careers = store.ListCareers(), snapshot = created });
+});
+
+app.MapPost("/api/careers/rename", (CareerRenameRequest r) =>
+{
+    store.RenameCareer(r.Slug, r.Name ?? "");
+    return Results.Ok(new { careers = store.ListCareers(), snapshot = Snapshot(store.Career) });
+});
+
+// Typed confirmation: the one control that throws a career away, on a list of names that can look alike.
+app.MapPost("/api/careers/delete", (CareerDeleteRequest r) =>
+{
+    if (!string.Equals(r.Confirm, "DELETE", StringComparison.Ordinal))
+        throw new InvalidOperationException("Type DELETE to confirm. A copy is kept in backups either way.");
+    var kept = store.DeleteCareer(r.Slug ?? "");
+    return Results.Ok(new { keptAt = kept, careers = store.ListCareers(), snapshot = Snapshot(store.Career) });
+});
+
 // ---------------------------------------------------------------- where and when
 
 app.MapPost("/api/status", (StatusRequest u) => Results.Ok(store.Mutate(c =>
 {
     RequireStarted(c);
     var s = c.Game;
-    var wasTime = s.Status.GameTime;
-    var wasHome = HomeLife.AtHome(c);
+    // A reading no truck could have reached in the game time since the last is refused before anything moves.
+    if (u.Odometer is { } newOdo && newOdo > 0)
+    {
+        var then = u.Day is > 0 && GameClock.FromDayTime(u.Day.Value, u.Time) is { } t ? GameClock.Format(t) : s.Status.GameTime;
+        var hours = GameClock.HoursBetween(Finance.LastOdometerTime(c) ?? s.Status.GameTime, then) ?? 0;
+        if (Odometer.Implausible(s.Status.AtsOdometer, newOdo, hours) is { } wrong) throw new InvalidOperationException(wrong);
+    }
     var city = (u.LocationCity ?? "").Trim();
     if (city.Length > 0 && !city.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase) && s.Board.Count > 0)
     {
@@ -104,6 +145,8 @@ app.MapPost("/api/status", (StatusRequest u) => Results.Ok(store.Mutate(c =>
         OoStore.Log(c, "board", $"Board of {s.Board.Count} cleared: that was {s.Status.LocationCity}'s freight.");
         s.Board.Clear();
     }
+    // Somewhere else now: off whatever dock the truck was at.
+    if (city.Length > 0 && !city.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase)) { s.Status.LocationKind = "City"; s.Status.LocationDetail = ""; }
     if (city.Length > 0) s.Status.LocationCity = city;
     if (!string.IsNullOrWhiteSpace(u.LocationState)) s.Status.LocationState = u.LocationState.Trim().ToUpperInvariant();
     if (u.Day is > 0 && GameClock.FromDayTime(u.Day.Value, u.Time) is { } at) s.Status.GameTime = GameClock.Format(at);
@@ -120,7 +163,7 @@ app.MapPost("/api/status", (StatusRequest u) => Results.Ok(store.Mutate(c =>
         foreach (var b in BrokerBook.Refresh(c))
             OoStore.Log(c, "broker", $"{b.Name} ({b.Tier.ToLowerInvariant()}, {b.City}, {b.State}) is in your directory now.");
     }
-    HomeLife.Advance(c, wasTime, wasHome);
+    HomeLife.Catch(c);
     Lanes.MaybeRing(c);
     Lanes.RingAtHome(c);
     return Snapshot(c);
@@ -224,7 +267,14 @@ app.MapPost("/api/board/add-many", (List<BoardLoad> loads) => Results.Ok(store.M
         catch (InvalidOperationException ex) { refused.Add(new { cargo = l.Cargo, destCity = l.DestCity, reason = ex.Message }); }
     }
     if (added > 0) OoStore.Log(c, "board", $"{added} load(s) onto the board at {c.Game.Status.LocationCity}, {c.Game.Status.LocationState}.");
-    return new { added, refused, snapshot = Snapshot(c) };
+    // The dock's jobs are in and none fits the lane: the broker says to get the whole city's board, there and then.
+    string? said = null;
+    if (added > 0 && Lanes.Booked(c) is { } lane && Lanes.Board(c) is { AskCity: true })
+    {
+        said = $"{lane.BrokerName}: \"Nothing at {lane.DockName} works for {lane.Number}. Send me the whole {lane.PickupCity} board.\"";
+        OoStore.Log(c, "broker", said, lane.Number);
+    }
+    return new { added, refused, said, snapshot = Snapshot(c) };
 })));
 
 app.MapDelete("/api/board/{id}", (string id) => Results.Ok(store.Mutate(c =>
@@ -269,10 +319,10 @@ app.MapPost("/api/calls/{id}/say", async (string id, SayRequest r, CancellationT
     var call = store.Career.Calls.FirstOrDefault(x => x.Id == id) ?? throw new InvalidOperationException("No such call.");
     var move = new PlayerMove
     {
-        Kind = r.Kind ?? "", Amount = r.Amount, Arguments = r.Arguments ?? new(), Term = r.Term ?? "", Said = r.Text ?? "",
+        Kind = r.Kind ?? "", Amount = r.Amount, Arguments = r.Arguments ?? new(), Term = r.Term ?? "", Said = r.Text ?? "", Where = r.Where ?? "",
     };
     if (string.IsNullOrWhiteSpace(move.Kind) && !string.IsNullOrWhiteSpace(r.Text))
-        move = await PhoneAi.ParseAsync(store.Career, call, r.Text, ct) ?? LocalParse(r.Text);
+        move = await PhoneAi.ParseAsync(store.Career, call, r.Text, ct) ?? LocalParse(store.Career, r.Text);
     var reply = store.Mutate(c => Calls.Respond(c, id, move).Reply);
     await Voice(id, reply, ct);
     return Results.Ok(new { call = Calls.View(store.Career, store.Career.Calls.First(x => x.Id == id)), snapshot = Snapshot(store.Career) });
@@ -304,11 +354,9 @@ app.MapPost("/api/run/loaded", (RunStageRequest r) => Results.Ok(store.Mutate(c 
 
 app.MapPost("/api/run/event", (RunEventRequest r) => Results.Ok(store.Mutate(c =>
 {
-    var wasTime = c.Game.Status.GameTime;
-    var wasHome = HomeLife.AtHome(c);
     Run.Event(c, r);
     Ledger.Advance(c);
-    HomeLife.Advance(c, wasTime, wasHome);
+    HomeLife.Catch(c);
     Lanes.MaybeRing(c);
     return Snapshot(c);
 })));
@@ -359,6 +407,15 @@ app.MapPost("/api/lane/take", (TakeLaneRequest r) => Results.Ok(store.Mutate(c =
 app.MapPost("/api/lane/cancel", (HandBackRequest r) => Results.Ok(store.Mutate(c =>
 {
     var said = Lanes.Cancel(c, r.Why ?? "");
+    return new { said, snapshot = Snapshot(c) };
+})));
+
+/// Off the receiver's dock: the driver has moved on from where they dropped (see Lanes.LeaveDock).
+app.MapPost("/api/dock/leave", () => Results.Ok(store.Mutate(c =>
+{
+    RequireStarted(c);
+    if (!Lanes.AtReceiverDock(c)) throw new InvalidOperationException("Not at a receiver's dock.");
+    var said = Lanes.LeaveDock(c);
     return new { said, snapshot = Snapshot(c) };
 })));
 
@@ -439,9 +496,17 @@ app.MapPost("/api/home/promise", (PromiseRequest r) => Results.Ok(store.Mutate(c
 app.MapPost("/api/bank", (BankRequest r) => Results.Ok(store.Mutate(c =>
 {
     RequireStarted(c);
-    // Any reading of the bank finds what went out unseen since the last, not only the Monday one.
-    Finance.ReportBalance(c, r.Balance, 0, "Balance update", out _);
-    return Snapshot(c);
+    // Any reading of the bank finds what went out unseen since the last, not only the Monday one. Money moved in or out
+    // since (a minus for out) is neither income nor spending.
+    var gap = Finance.ReportBalance(c, r.Balance, r.MovedIn, "Balance update", out _, out var tookBack);
+    var said = gap switch
+    {
+        > 0.5m => $"Game bank {Units.Money(r.Balance)}: {Units.Money(gap.Value)} went out that nothing logged, counted as other spending. Moved it out yourself? Put it in the moved box.",
+        < -0.5m => $"Game bank {Units.Money(r.Balance)}, {Units.Money(-gap.Value)} more than expected: noted, not counted as income.",
+        _ => $"Game bank {Units.Money(r.Balance)}.",
+    } + (tookBack > 0 ? $" {Units.Money(tookBack)} counted as spending earlier was moved out, not spent: taken back off." : "");
+    OoStore.Log(c, "money", said);
+    return new { said, snapshot = Snapshot(c) };
 })));
 
 // ---------------------------------------------------------------- financial health
@@ -456,7 +521,8 @@ app.MapPost("/api/fuel", (FuelRequest r) => Results.Ok(store.Mutate(c =>
     if (GameClock.TryParse(s.Status.GameTime) is { } now && at > now) s.Status.GameTime = GameClock.Format(at);
     if (r.Odometer is { } odo && odo > 0)
     {
-        if (odo + 1 < s.Status.AtsOdometer) throw new InvalidOperationException($"The odometer reads {s.Status.AtsOdometer:N0} already: that one is lower.");
+        var hours = GameClock.HoursBetween(Finance.LastOdometerTime(c) ?? s.Status.GameTime, GameClock.Format(at)) ?? 0;
+        if (Odometer.Implausible(s.Status.AtsOdometer, odo, hours) is { } wrong) throw new InvalidOperationException(wrong);
         s.Status.AtsOdometer = odo;
     }
     if (r.FuelPct is { } pct) s.Status.FuelPct = Math.Clamp(pct, 0, 100);
@@ -493,10 +559,12 @@ app.MapPost("/api/invoices/{id}/{action}", (string id, string action) => Results
     var said = action switch
     {
         "factor" => Receivables.Factor(c, id),
+        "quickpay" => Receivables.QuickPay(c, id),
         "chase" => Receivables.Chase(c, id),
         "writeoff" => Receivables.WriteOff(c, id),
         "argue" => Receivables.Argue(c, id),
-        _ => throw new InvalidOperationException("Factor, chase, write off or argue."),
+        "settle" => BrokerMarket.Settle(c, c.Invoices.FirstOrDefault(i => i.Id == id) ?? throw new InvalidOperationException("No such invoice.")),
+        _ => throw new InvalidOperationException("Quick pay, factor, chase, write off, argue or settle."),
     };
     return new { said, snapshot = Snapshot(c) };
 })));
@@ -507,7 +575,23 @@ app.MapPost("/api/transfers/{id}/done", (string id) => Results.Ok(store.Mutate(c
     return Snapshot(c);
 })));
 
+/// The Friday report read: the popup closes, and the news stays on the Brokers tab.
+app.MapPost("/api/brokers/news/seen", () => Results.Ok(store.Mutate(c =>
+{
+    BrokerMarket.MarkSeen(c);
+    return Snapshot(c);
+})));
+
 // ---------------------------------------------------------------- tests only
+
+/// What the next Friday brings, forced for a test: a broker going bankrupt, closing, or moving credit, or a region getting a
+/// new broker. The rolls are the career's own otherwise. Only there when the test runner sets TSO_TEST=1.
+if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
+    app.MapPost("/api/test/market", (TestMarketRequest r) => Results.Ok(store.Mutate(c =>
+    {
+        BrokerMarket.Forced.Add((r.Target, r.Kind));
+        return Snapshot(c);
+    })));
 
 /// Shaping a broker for a test: credit and personality are rolled per career, and a test of slow payers needs a slow
 /// payer. Only there when the test runner sets TSO_TEST=1.
@@ -518,6 +602,7 @@ if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
         if (!string.IsNullOrWhiteSpace(r.Credit)) b.Credit = r.Credit;
         if (!string.IsNullOrWhiteSpace(r.Personality)) b.Personality = r.Personality;
         if (r.DaysToPay is > 0) b.DaysToPay = r.DaysToPay.Value;
+        if (r.Open == true) { b.RequiresLoads = 0; b.RequiresDays = 0; b.RequiresOnTimePct = 0; }
         return Snapshot(c);
     })));
 if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
@@ -526,7 +611,47 @@ if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
         c.HomeLife.Score = r.Score;
         c.HomeLife.BottomUntilGameTime = "";
         c.HomeLife.Call = null;
+        // A test that is not about home: nothing on the calendar pulling the driver home.
+        if (r.ClearDates == true) c.HomeLife.Dates.RemoveAll(d => d.Status == "Upcoming");
         return Snapshot(c);
+    })));
+// A bad close-out reading planted on a delivered run, then the repair a career gets on load. For the odometer test.
+if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
+    app.MapPost("/api/test/odometer", (TestOdometerRequest r) => Results.Ok(store.Mutate(c =>
+    {
+        var t = c.Game.Trips.First(x => x.Number == r.Number);
+        t.EndOdometer = r.EndOdometer;
+        var repaired = Odometer.Repair(c);
+        return new { repaired, endOdometer = t.EndOdometer, actualMiles = t.ActualMiles, snapshot = Snapshot(c) };
+    })));
+// A career from before 2026-10-22, planted, and the fixes it gets on load: a Monday check's findings dated on the Monday,
+// and a booking still to run with quick pay agreed on the call and no detention. For the finance and terms tests.
+if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
+    app.MapPost("/api/test/legacy", () => Results.Ok(store.Mutate(c =>
+    {
+        foreach (var check in c.Finance.Checks)
+            foreach (var spend in c.Finance.Other.Where(x => x.Source == "Monday check")) spend.GameTime = check.GameTime;
+        if (Calls.ActiveBooking(c) is { } k) { k.QuickPay = true; k.QuickPayFeePct = 4; k.DaysToPay = 2; k.DetentionPerHour = 0; }
+        var moved = Finance.MoveMondayGaps(c);
+        var terms = Calls.MigrateTerms(c);
+        return new { moved, terms, snapshot = Snapshot(c) };
+    })));
+// A career from before home life caught every move: away, with no departure on file. Then the repair it gets on load.
+if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
+    app.MapPost("/api/test/home-departure", () => Results.Ok(store.Mutate(c =>
+    {
+        c.HomeLife.LeftHomeGameTime = "";
+        var repaired = HomeLife.RepairDeparture(c);
+        return new { repaired, leftHome = c.HomeLife.LeftHomeGameTime, snapshot = Snapshot(c) };
+    })));
+// A Monday check from before readings took spending back: money moved out found as "more than expected", with the same
+// money still counted as unseen spending from an earlier reading. Then the repair it gets on load.
+if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
+    app.MapPost("/api/test/legacy-check", (TestCheckRequest r) => Results.Ok(store.Mutate(c =>
+    {
+        c.Finance.Checks.Add(new WeekCheck { Week = r.Week, GameTime = c.Game.Status.GameTime, Reported = r.Reported, MovedIn = r.MovedIn, Gap = r.Gap });
+        var repaired = Finance.RepairTakeBacks(c);
+        return new { repaired, snapshot = Snapshot(c) };
     })));
 // What the boards have taught, for a test to read. Only that: the career file also holds the API key.
 if (Environment.GetEnvironmentVariable("TSO_TEST") == "1")
@@ -573,7 +698,7 @@ async Task Voice(string callId, BrokerReply reply, CancellationToken ct)
 }
 
 /// Typed words without a key: a figure is a counter, "take it" is yes, "pass" is no. The buttons do the rest.
-static PlayerMove LocalParse(string text)
+static PlayerMove LocalParse(OoCareer c, string text)
 {
     var t = text.ToLowerInvariant();
     var m = System.Text.RegularExpressions.Regex.Match(t, @"\$?\s?(\d[\d,]*(\.\d+)?)\s*(k\b)?");
@@ -586,6 +711,7 @@ static PlayerMove LocalParse(string text)
     }
     else if (t.Contains("take it") || t.Contains("deal") || t.Contains("book it") || t.Contains("accept")) move.Kind = "accept";
     else if (t.Contains("pass") || t.Contains("no thanks") || t.Contains("bye")) move.Kind = "decline";
+    else if (PhoneAi.WhereIn(c, text) is { } where) { move.Kind = "where"; move.Where = where; }
     else if (t.Contains("better") || t.Contains("anything else")) move.Kind = "better";
     else if (PhoneAi.TermIn(t) is { } term) { move.Kind = "terms"; move.Term = term; }
     else move.Kind = "unclear";
@@ -601,6 +727,8 @@ static PlayerMove LocalParse(string text)
 
 static object Snapshot(OoCareer c)
 {
+    // Built inside a change: the Friday market, brokers paying and home life catch up first, so it shows them.
+    if (OoStore.Running is { Mutating: true }) OoStore.CatchUp(c);
     var s = c.Game;
     var truck = DispatchEngine.AssignedTruck(s);
     var laneBoard = Lanes.Board(c);
@@ -609,6 +737,8 @@ static object Snapshot(OoCareer c)
     {
         version = OoBuild.Version,
         started = c.Started,
+        careerName = OoStore.LabelFor(c),
+        careerCount = OoStore.Running?.CareerCount ?? 1,
         game = s.Game,
         profile = c.Profile,
         settings = new
@@ -624,6 +754,9 @@ static object Snapshot(OoCareer c)
         {
             city = s.Status.LocationCity,
             state = s.Status.LocationState,
+            // At the dock of the load just delivered: brokers offer its jobs first. See Lanes.LeaveDock.
+            atDock = c.Started && Lanes.AtReceiverDock(c),
+            dock = s.Status.LocationDetail,
             gameTime = s.Status.GameTime,
             day = GameClock.DayOf(s.Status.GameTime),
             pretty = GameClock.Pretty(s.Status.GameTime),
@@ -671,6 +804,7 @@ static object Snapshot(OoCareer c)
         ownableTrailers = Specialties.OwnableTrailers,
         board = c.Started ? LoadDesk.Evaluate(c) : new List<LoadView>(),
         directory = c.Brokers.Where(b => b.Known).Select(b => BrokerBook.View(c, b)).ToList(),
+        market = c.Started ? BrokerMarket.View(c) : null,
         record = c.Started ? BrokerBook.Record(c) : null,
         call = Calls.Open(c) is { } open ? Calls.View(c, open) : null,
         lastCall = c.Calls.LastOrDefault() is { } last ? Calls.View(c, last) : null,
@@ -689,6 +823,8 @@ static object Snapshot(OoCareer c)
         laneFits = laneBoard.Fits,
         laneClose = laneBoard.Close,
         laneWhy = laneBoard.Why,
+        laneAskCity = laneBoard.AskCity,
+        laneWant = Lanes.WantView(c),
         payPerMile = Lanes.PayPerMile(c),
         // The run as Core keeps it, whole: the Active Load tab reads it the way the company-driver app's does.
         trip = Run.Trip(c, Calls.ActiveBooking(c)),
@@ -713,6 +849,8 @@ static object Snapshot(OoCareer c)
         mondayCheck = c.Started ? Finance.CheckView(c) : null,
         holding = Ledger.HoldingView(c),
         owedToYou = c.Invoices.Where(i => i.Status is "Open" or "Overdue" or "Collections").Sum(i => i.Amount),
+        // Owed by brokers who went under: only a settlement claim gets any of it back.
+        owedBankrupt = c.Invoices.Where(i => i.Status is "Bankrupt" or "Claimed").Sum(i => i.Amount),
         home = c.Started ? HomeLife.View(c) : null,
         phoneModel = c.Settings.PhoneModel,
         events = s.Events.Take(30),
@@ -793,6 +931,10 @@ static int FindFreePort(int preferred)
 }
 
 record ResetRequest(string? Confirm);
+record CareerSlugRequest(string? Slug);
+record CareerNameRequest(string? Name);
+record CareerRenameRequest(string? Slug, string? Name);
+record CareerDeleteRequest(string? Slug, string? Confirm);
 record StatusRequest(string? LocationCity, string? LocationState, int? Day, string? Time, double? Odometer, double? FuelPct);
 record HosRequest(double DriveRemaining, double ShiftRemaining, double BreakRemaining, double CycleRemaining, List<RecapDay>? Recap = null);
 record AnswerRequest(HosRequest? Clocks);
@@ -806,8 +948,11 @@ record CallRequest(string? BrokerId, HosRequest? Clocks = null);
 record HandBackRequest(string? Why, bool? GameLost = null);
 record TrailerRequest(string? Type, string? GameId, int? Year);
 record TakeLaneRequest(string? LoadId);
-record TestHomeRequest(double Score);
-record TestBrokerRequest(string Id, string? Credit, string? Personality, int? DaysToPay = null);
-record BankRequest(decimal Balance);
+record TestHomeRequest(double Score, bool? ClearDates = null);
+record TestBrokerRequest(string Id, string? Credit, string? Personality, int? DaysToPay = null, bool? Open = null);
+record TestMarketRequest(string Target, string Kind);
+record TestCheckRequest(int Week, decimal Reported, decimal MovedIn, decimal Gap);
+record BankRequest(decimal Balance, decimal MovedIn = 0);
 record PromiseRequest(int EveryDays, int HomeDays);
-record SayRequest(string? Text, string? Kind, decimal? Amount, List<string>? Arguments, string? Term);
+record SayRequest(string? Text, string? Kind, decimal? Amount, List<string>? Arguments, string? Term, string? Where = null);
+record TestOdometerRequest(string Number, double EndOdometer);

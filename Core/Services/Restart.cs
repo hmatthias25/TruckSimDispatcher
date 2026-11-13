@@ -221,19 +221,20 @@ public static class Restart
 
     public static RestartOrder? Open(AppState s)
     {
-        var open = s.RestartOrders.FirstOrDefault(r => r.Status is "Ordered" or "Arrived");
+        var open = s.RestartOrders.FirstOrDefault(r => r.Status is "Ordered" or "Arrived" && r.Kind != "Daily");
         if (open == null) return null;
 
         // EU: until the driver parks, the length follows the clocks — a report since the order may have
         // spent the week's driving (rest until Monday) or put them at the yard. Fixed once the rest starts.
-        if (IsEu(s) && open.Status == "Ordered" && open.Trigger != "Operational")
+        // A rest the driver chose keeps the length they chose.
+        if (IsEu(s) && open.Status == "Ordered" && open.Trigger is not ("Operational" or "Chosen"))
             open.RequiredHours = EuWeeklyRestPlan(s, open.AtHomeTerminal, GameClock.TryParse(s.Status.GameTime)).Hours;
 
         // Ordered but never parked up, and a restart is no longer called for. Either the cycle came
         // back — the driver re-read their display and it was better than we thought, and their display
         // is authoritative — or recap now covers it, which is the whole point of the recap adviser.
         // Holding them against a problem that no longer exists would be the app being stubborn.
-        if (open.Status == "Ordered" && open.Trigger is not ("Operational" or "Driver") && !Needed(s))
+        if (open.Status == "Ordered" && open.Trigger is not ("Operational" or "Driver" or "Chosen") && !Needed(s))
         {
             open.Status = "Cancelled";
             open.CompletedGameTime = s.Status.GameTime;
@@ -245,8 +246,9 @@ public static class Restart
         // Still ordered, and the driver has moved. The order is a standing instruction, so it has to
         // reflect where the truck actually is — a driver told to sit it in Denver who then ran to Los
         // Angeles should be sent somewhere sensible from Los Angeles, not held to a target four states
-        // behind them. Frozen once they have parked up, because then the clock is running.
-        if (open.Status == "Ordered")
+        // behind them. Frozen once they have parked up, because then the clock is running. A rest the driver
+        // chose is taken where they stop, so there is nowhere to send them.
+        if (open.Status == "Ordered" && open.Trigger != "Chosen")
         {
             var (city, state, isHome, why) = Where(s);
             if (!string.Equals(city, open.TargetCity, StringComparison.OrdinalIgnoreCase)
@@ -449,7 +451,15 @@ public static class Restart
             ? "a truck stop with real parking"
             : DispatchEngine.Place(order.TargetCity, order.TargetState);
 
-        if (order.Status == "Ordered")
+        if (order.Status == "Ordered" && order.Trigger == "Chosen")
+        {
+            lines.Add($"{order.Number}: you are taking a {What(s, order)} — at least {Hhmm.Of(order.RequiredHours)}.");
+            if (IsEu(s) && order.Kind != "Daily" && order.RequiredHours >= (s.Settings.EuHos ?? new EuHosRules()).RegularWeeklyRest - 0.01)
+                lines.Add("Away from the yard a full weekly rest is not taken in the cab (the Mobility Package): the company pays the hotel, " +
+                          "booked when you report it done.");
+            lines.Add("Report in when you have parked up and I will start the clock. Already resting? Give me the time you stopped.");
+        }
+        else if (order.Status == "Ordered")
         {
             if (order.Trigger == "Operational")
             {
@@ -495,10 +505,15 @@ public static class Restart
         }
         else
         {
-            lines.Add($"{order.Number}: you are at {where} and the restart started " +
+            lines.Add($"{order.Number}: you are at {where} and your {What(s, order)} started " +
                       $"{GameClock.Pretty(order.ArrivedGameTime)}.");
-            lines.Add($"Sit the full {order.RequiredHours:0.#} hours, then report your clocks. " +
-                      $"Earliest you can be back on the road is {GameClock.Pretty(order.EligibleGameTime)}.");
+            if (order.Kind == "Daily" && IsEu(s) && (s.Settings.EuHos ?? new EuHosRules()) is var dr
+                && order.RequiredHours < dr.RegularDailyRest - 0.01)
+                lines.Add($"A full daily rest is {dr.RegularDailyRest:0} hours; {Hhmm.Of(order.RequiredHours)} is a reduced one. " +
+                          $"Earliest you can be back on the road is {GameClock.Pretty(order.EligibleGameTime)}.");
+            else
+                lines.Add($"Sit the full {Hhmm.Of(order.RequiredHours)}, then {(order.Kind == "Daily" ? "report it done" : "report your clocks")}. " +
+                          $"Earliest you can be back on the road is {GameClock.Pretty(order.EligibleGameTime)}.");
             if (order.AtHomeTerminal)
                 lines.Add("You are at the yard, so this is your home time as well — the clock on the next one resets here.");
         }
@@ -508,7 +523,7 @@ public static class Restart
     /// <summary>The driver has arrived and is parking up. Starts the clock.</summary>
     public static RestartOrder ReportArrived(AppState s, string gameTime, string city, string state)
     {
-        var order = Open(s) ?? throw new InvalidOperationException("There is no restart on order.");
+        var order = Current(s) ?? throw new InvalidOperationException("There is no rest on order.");
         if (order.Status == "Arrived")
             throw new InvalidOperationException($"{order.Number} already started at {GameClock.Pretty(order.ArrivedGameTime)}.");
 
@@ -517,9 +532,18 @@ public static class Restart
 
         order.Status = "Arrived";
         order.ArrivedGameTime = GameClock.Format(at);
+        if (order.Trigger == "Chosen")
+        {
+            order.TargetCity = string.IsNullOrWhiteSpace(city) ? s.Status.LocationCity : city;
+            order.TargetState = string.IsNullOrWhiteSpace(city) ? s.Status.LocationState : state;
+            order.AtHomeTerminal = order.Kind != "Daily" && HomeTime.HomeTerminal(s) is { } home
+                && string.Equals(home.City, order.TargetCity, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(home.State, order.TargetState, StringComparison.OrdinalIgnoreCase);
+        }
+        if (GameClock.TryParse(s.Status.GameTime) is not { } clock || at > clock) s.Status.GameTime = GameClock.Format(at);
         // EU: the length is settled when the rest starts, off the clocks then — how far Monday is, and whether
         // they are at the yard — not off what was true when it was ordered.
-        if (IsEu(s) && order.Trigger != "Operational")
+        if (IsEu(s) && order.Trigger is not ("Operational" or "Chosen") && order.Kind != "Daily")
         {
             var atYard = order.AtHomeTerminal || (HomeTime.HomeTerminal(s) is { } yard
                 && string.Equals(yard.City, city, StringComparison.OrdinalIgnoreCase)
@@ -540,15 +564,19 @@ public static class Restart
     /// </summary>
     public static (RestartOrder Order, bool Accepted, string Message) ReportComplete(AppState s, string gameTime)
     {
-        var order = Open(s) ?? throw new InvalidOperationException("There is no restart on order.");
+        var order = Current(s) ?? throw new InvalidOperationException("There is no rest on order.");
         if (order.Status != "Arrived")
-            throw new InvalidOperationException($"{order.Number}: report in at the truck stop first so I can start the clock.");
+            throw new InvalidOperationException($"{order.Number}: report in where you have parked first so I can start the clock.");
 
         var when = string.IsNullOrWhiteSpace(gameTime) ? s.Status.GameTime : gameTime;
         var now = GameClock.TryParse(when) ?? throw new InvalidOperationException("I need the game time.");
         var arrived = GameClock.TryParse(order.ArrivedGameTime)!.Value;
 
         var elapsed = (now - arrived).TotalHours;
+        if (order.Kind == "Daily") return CompleteDaily(s, order, arrived, now, elapsed);
+
+        // Clocks reported after the rest ended are the display's own word on them, and stand.
+        var reportedSince = GameClock.TryParse(s.Hos.AsOfGameTime) is { } asOf && asOf > now ? asOf : (DateTime?)null;
 
         // EU: the weekly rest does not refill weekly driving — Monday does — so there is no cycle to check.
         // What it restores is the six days, the reduced-rest allowance and the day's clocks.
@@ -564,17 +592,20 @@ public static class Restart
             if (reduced) s.Hos.EuCompensationOwed = Math.Max(0, s.Hos.EuCompensationOwed) + (r.RegularWeeklyRest - elapsed);
             else s.Hos.EuCompensationOwed = Math.Max(0, s.Hos.EuCompensationOwed - (elapsed - r.RegularWeeklyRest));
             s.Hos.EuLastWeeklyRestReduced = reduced;
-            s.Hos.EuHoursSinceWeeklyRest = 0;
+            s.Hos.EuHoursSinceWeeklyRest = reportedSince is { } later ? Math.Round((later - now).TotalHours, 2) : 0;
             var hotel = MobilityPackage.BookHotel(s, elapsed, reduced, order.AtHomeTerminal, order.Number);
             s.Hos.EuReducedRestsUsed = 0;
-            s.Hos.DriveRemaining = r.DailyDriving;
-            s.Hos.ShiftRemaining = r.Spread;
-            s.Hos.BreakRemaining = r.DrivingBeforeBreak;
-            s.Hos.AsOfGameTime = GameClock.Format(now);
+            if (reportedSince == null)
+            {
+                s.Hos.DriveRemaining = r.DailyDriving;
+                s.Hos.ShiftRemaining = r.Spread;
+                s.Hos.BreakRemaining = r.DrivingBeforeBreak;
+                s.Hos.EuShiftStart = GameClock.Format(now);
+                s.Hos.AsOfGameTime = GameClock.Format(now);
+                s.Hos.Projected = false;
+            }
 
-            order.Status = "Completed";
-            order.CompletedGameTime = GameClock.Format(now);
-            order.ElapsedHours = Math.Round(elapsed, 2);
+            Close(s, order, arrived, now, elapsed);
             order.CycleAfter = s.Hos.CycleRemaining;
             var said = $"{order.Number} complete — {Hhmm.Of(elapsed)} of weekly rest" +
                        (reduced ? $", reduced: {Hhmm.Of(r.RegularWeeklyRest - elapsed)} owed back." : ".") +
@@ -606,9 +637,7 @@ public static class Restart
                 $"{full:0.#}-hour limit. A completed restart puts the whole {full:0.#} back. Re-read your HOS " +
                 "display — if it really has not reset, the break was broken somewhere.");
 
-        order.Status = "Completed";
-        order.CompletedGameTime = GameClock.Format(now);
-        order.ElapsedHours = Math.Round(elapsed, 2);
+        Close(s, order, arrived, now, elapsed);
         order.CycleAfter = cycle;
 
         var msg = $"{order.Number} complete — {Hhmm.Of(elapsed)} parked, cycle back to {Hhmm.Of(cycle)}. " +
@@ -616,4 +645,272 @@ public static class Restart
         if (order.AtHomeTerminal) msg += " That counted as your home time as well.";
         return (order, true, msg);
     }
+
+    // ---------------------------------------------------------------- rests the driver takes
+
+    /// <summary>The driver's own daily rest, while it is on order or running.</summary>
+    public static RestartOrder? OpenDaily(AppState s) =>
+        s.RestartOrders.FirstOrDefault(r => r.Status is "Ordered" or "Arrived" && r.Kind == "Daily");
+
+    /// <summary>
+    /// The rest the parked-up and rest-done steps act on: a daily rest where one is open — taken on the way to a
+    /// weekly rest dispatch has ordered, say — otherwise the weekly one.
+    /// </summary>
+    public static RestartOrder? Current(AppState s) => OpenDaily(s) ?? Open(s);
+
+    /// <summary>What a rest is called, for the driver: "daily rest", "reduced weekly rest", "34-hour restart".</summary>
+    public static string What(AppState s, RestartOrder o)
+    {
+        if (IsEu(s))
+            return o.Kind == "Daily" ? "daily rest"
+                : o.RequiredHours < (s.Settings.EuHos ?? new EuHosRules()).RegularWeeklyRest - 0.01 ? "reduced weekly rest" : "weekly rest";
+        return o.Kind == "Daily" ? $"{s.Settings.Hos.OffDutyReset:0.#}-hour rest" : $"{o.RequiredHours:0.#}-hour restart";
+    }
+
+    /// <summary>The least a daily rest can be: EU, nine where a reduced one is left before the weekly rest, eleven where not; US, ten.</summary>
+    public static double DailyMinimum(AppState s)
+    {
+        if (!IsEu(s)) return s.Settings.Hos.OffDutyReset;
+        var r = s.Settings.EuHos ?? new EuHosRules();
+        return s.Hos.EuReducedRestsUsed < r.ReducedRestsBetweenWeekly ? r.ReducedDailyRest : r.RegularDailyRest;
+    }
+
+    /// <summary>A rest the driver can choose: its key (daily, reduced, weekly), its name, the least it can be, and a word on it.</summary>
+    public record RestChoice(string Key, string Label, double Hours, string Note);
+
+    /// <summary>
+    /// The rests the driver can say they are taking. None while one is already running, or while one they chose is
+    /// on order. A weekly rest dispatch has ordered and they have not started does not stop them choosing one: theirs
+    /// stands in for it (see <see cref="Take"/>). EU: the reduced weekly rest only where the last was a regular one.
+    /// </summary>
+    public static List<RestChoice> Choices(AppState s)
+    {
+        var list = new List<RestChoice>();
+        var weekly = Open(s);
+        if (OpenDaily(s) != null || weekly is { Status: "Arrived" } or { Trigger: "Chosen" }) return list;
+        if (IsEu(s))
+        {
+            var r = s.Settings.EuHos ?? new EuHosRules();
+            var reducedLeft = Math.Max(0, r.ReducedRestsBetweenWeekly - s.Hos.EuReducedRestsUsed);
+            list.Add(new("daily", "Daily rest", DailyMinimum(s), reducedLeft > 0
+                ? $"{r.RegularDailyRest:0} hours, or {r.ReducedDailyRest:0} as a reduced one ({reducedLeft} left before your weekly rest)"
+                : $"{r.RegularDailyRest:0} hours — your reduced daily rests are used until the weekly rest"));
+            var owed = Math.Max(0, s.Hos.EuCompensationOwed);
+            if (r.AllowReducedWeeklyRest && !s.Hos.EuLastWeeklyRestReduced
+                && !(GameClock.TryParse(s.Status.GameTime) is { } now && EuCounters.ReducedWeeklyUsedUp(s, now)))
+                list.Add(new("reduced", "Reduced weekly rest", r.ReducedWeeklyRest,
+                    $"{r.ReducedWeeklyRest:0} hours, in the cab — {Hhmm.Of(r.RegularWeeklyRest - r.ReducedWeeklyRest)} owed back on a later weekly rest"));
+            list.Add(new("weekly", "Weekly rest", r.RegularWeeklyRest,
+                $"a full {r.RegularWeeklyRest:0} hours" + (owed > 0.01 ? $" — anything past it pays back the {Hhmm.Of(owed)} owed" : "")));
+        }
+        else
+        {
+            var h = s.Settings.Hos;
+            list.Add(new("daily", $"{h.OffDutyReset:0.#}-hour rest", h.OffDutyReset, "your drive and shift clocks back"));
+            list.Add(new("weekly", $"{h.CycleRestartHours:0.#}-hour restart", h.CycleRestartHours, $"the {h.CycleLimit:0}-hour cycle back"));
+        }
+        return list;
+    }
+
+    private static string NextNumber(AppState s) =>
+        $"{(string.IsNullOrWhiteSpace(s.Company.Code) ? "SFL" : s.Company.Code)}-RS-{s.RestartOrders.Count + 1:0000}";
+
+    /// <summary>
+    /// The driver is taking a rest of their own choosing. Raised as an order, so it goes through the same two steps
+    /// as one dispatch orders — parked up, which starts the clock, and done, which checks it was long enough — and the
+    /// parked-up time can be one already past, for a rest already under way. A weekly one stands in for a weekly rest
+    /// dispatch has ordered and they have not started. Reported from play: a 45 sat while the truck was in the shop,
+    /// with nowhere to say so, and the app ordered the weekly rest again.
+    /// </summary>
+    public static RestartOrder Take(AppState s, string key)
+    {
+        var choice = Choices(s).FirstOrDefault(c => c.Key == key)
+            ?? throw new InvalidOperationException(Current(s) is { } open
+                ? $"{open.Number} is already {(open.Status == "Arrived" ? "running" : "on order")} — finish that one first."
+                : "That is not a rest you can take now.");
+        var kind = key == "daily" ? "Daily" : "Weekly";
+        if (kind == "Weekly" && Open(s) is { Status: "Ordered" } ordered)
+        {
+            ordered.Status = "Cancelled";
+            ordered.CompletedGameTime = s.Status.GameTime;
+            ordered.Reason = $"Taken as {NextNumber(s)}, the rest you chose. {ordered.Reason}";
+        }
+        var order = new RestartOrder
+        {
+            Number = NextNumber(s),
+            OrderedGameTime = s.Status.GameTime,
+            CycleAtOrder = s.Hos.CycleRemaining,
+            Trigger = "Chosen",
+            Kind = kind,
+            TargetCity = s.Status.LocationCity,
+            TargetState = s.Status.LocationState,
+            Reason = $"Your call: a {choice.Label.ToLowerInvariant()}.",
+            RequiredHours = choice.Hours,
+            Status = "Ordered",
+        };
+        s.RestartOrders.Insert(0, order);
+        return order;
+    }
+
+    /// <summary>A rest the driver chose, called off — before it started, or started by mistake. Not counted.</summary>
+    public static RestartOrder Cancel(AppState s)
+    {
+        var order = Current(s) is { Trigger: "Chosen" } o ? o
+            : throw new InvalidOperationException("Only a rest you chose can be called off. One dispatch ordered has to be sat.");
+        order.Status = "Cancelled";
+        order.CompletedGameTime = s.Status.GameTime;
+        return order;
+    }
+
+    /// <summary>
+    /// Marks a rest sat, and puts it where everything else will see it: the game clock moved on to its end, the trip
+    /// log of the load it was taken during — which is what teaches the planner the driving speed, and the counters
+    /// then read it from there — and a question about a gap in the clock that it answers, dropped.
+    /// </summary>
+    private static void Close(AppState s, RestartOrder order, DateTime arrived, DateTime end, double elapsed)
+    {
+        order.Status = "Completed";
+        order.CompletedGameTime = GameClock.Format(end);
+        order.ElapsedHours = Math.Round(elapsed, 2);
+        if (GameClock.TryParse(s.Status.GameTime) is not { } clock || end > clock) s.Status.GameTime = GameClock.Format(end);
+        if (TripService.Active(s) is { } trip && order.TripEventId.Length == 0)
+        {
+            var ev = new TripEvent
+            {
+                GameTime = GameClock.Format(arrived),
+                EndGameTime = GameClock.Format(end),
+                Kind = order.Kind == "Daily" ? "Rest" : "Restart",
+                City = string.IsNullOrWhiteSpace(order.ArrivedCity) ? s.Status.LocationCity : order.ArrivedCity,
+                State = string.IsNullOrWhiteSpace(order.ArrivedCity) ? s.Status.LocationState : order.ArrivedState,
+                Detail = $"{order.Number}: {What(s, order)}, {Hhmm.Of(elapsed)}.",
+                WeeklyRest = order.Kind == "Daily" ? "daily" : "weekly",
+            };
+            trip.Events.Add(ev);
+            order.TripEventId = ev.Id;
+        }
+        if (GameClock.TryParse(s.Status.RestGapFrom) is { } gapFrom && GameClock.TryParse(s.Status.RestGapTo) is { } gapTo
+            && arrived < gapTo && end > gapFrom)
+            s.Status.RestGapFrom = s.Status.RestGapTo = "";
+    }
+
+    /// <summary>
+    /// A daily rest, done. Long enough is all that is checked — see <see cref="DailyMinimum"/> — and the day's clocks
+    /// come back: EU, D to the day's limit, B to four and a half and a fresh spread; US, the drive clock, the window
+    /// and the break clock. Neither the week nor the cycle moves: a rest is not driving, and only Monday or the 34
+    /// gives those back. Clocks reported after the rest ended are the display's own word, and are left alone.
+    /// </summary>
+    private static (RestartOrder Order, bool Accepted, string Message) CompleteDaily(AppState s, RestartOrder order,
+        DateTime arrived, DateTime now, double elapsed)
+    {
+        if (elapsed + 0.01 < order.RequiredHours)
+            return (order, false,
+                $"That is {Hhmm.Of(elapsed)} since you parked at {GameClock.Pretty(arrived)}. A {What(s, order)} is at least " +
+                $"{Hhmm.Of(order.RequiredHours)} and you are {Hhmm.Of(order.RequiredHours - elapsed)} short — you are eligible at " +
+                $"{GameClock.Pretty(order.EligibleGameTime)}. Sit the rest of it and report again.");
+
+        var fresh = GameClock.TryParse(s.Hos.AsOfGameTime) is not { } reported || now >= reported;
+        Close(s, order, arrived, now, elapsed);
+        if (IsEu(s))
+        {
+            var r = s.Settings.EuHos ?? new EuHosRules();
+            if (fresh)
+            {
+                s.Hos.DriveRemaining = r.ExtendedDailyDriving;
+                s.Hos.BreakRemaining = r.DrivingBeforeBreak;
+            }
+            EuCounters.Derive(s, now, s.Hos.EuWeekDriven, s.Hos.EuDayWeek, report: false);
+            if (fresh)
+            {
+                s.Hos.DriveRemaining = s.Hos.EuDailyLimit > 0 ? s.Hos.EuDailyLimit : r.DailyDriving;
+                s.Hos.EuDriveCapped = false;
+                s.Hos.EuClocksFromRest = true;
+                s.Hos.EuShiftStart = GameClock.Format(now);
+                s.Hos.AsOfGameTime = GameClock.Format(now);
+                s.Hos.Projected = false;
+            }
+            var value = elapsed >= r.ReducedWeeklyRest - 0.01 && elapsed < r.RegularWeeklyRest - 0.01
+                ? "a long daily rest, not your weekly one — your six days run on"
+                : EuCounters.RestValue(s, elapsed, arrived);
+            return (order, true, $"{order.Number} complete — {Hhmm.Of(elapsed)} off: under EU rules that is {value}." +
+                (fresh ? $" A fresh day: {Hhmm.Of(s.Hos.DriveRemaining)} to drive, {Hhmm.Of(s.Hos.BreakRemaining)} before the break." : ""));
+        }
+
+        var h = s.Settings.Hos;
+        if (fresh)
+        {
+            s.Hos.DriveRemaining = h.DriveLimit;
+            s.Hos.ShiftRemaining = h.ShiftLimit;
+            s.Hos.BreakRemaining = h.DrivingBeforeBreak;
+            s.Hos.AsOfGameTime = GameClock.Format(now);
+            s.Hos.Projected = false;
+        }
+        return (order, true, $"{order.Number} complete — {Hhmm.Of(elapsed)} off." +
+            (fresh ? $" Your clocks are back: {Hhmm.Of(h.DriveLimit)} to drive in a {Hhmm.Of(h.ShiftLimit)} window." : "") +
+            (elapsed >= h.CycleRestartHours - 0.01
+                ? $" That is long enough for a restart too — report your clocks so the {h.CycleLimit:0}-hour cycle comes back."
+                : " A rest does not touch the cycle."));
+    }
+
+    /// <summary>
+    /// A status report has moved the game clock on. Where the jump is long enough to have held a rest — after what the
+    /// odometer says was driven is taken off — and nothing logged covers it, it is kept as a question for the driver:
+    /// were you resting? Never assumed, because a long jump is as often a day's driving reported late. Not asked over
+    /// home time, which counts itself, over days the game skipped for a trailer, or while a rest is running.
+    /// </summary>
+    public static void NoteGap(AppState s, DateTime? before, double odometerBefore, bool wentHome)
+    {
+        if (before is not { } from || GameClock.TryParse(s.Status.GameTime) is not { } to || to <= from) return;
+        if (wentHome || EuHomeContract.OnHold(s) || Current(s) is { Status: "Arrived" }
+            || EquipmentService.PendingTrailerWait(s) != null) return;
+        var least = DailyMinimum(s);
+        var miles = odometerBefore > 0 ? Math.Max(0, s.Status.AtsOdometer - odometerBefore) : 0;
+        var mph = HosEngine.EffectiveMph(s.Settings, DispatchEngine.AssignedTruck(s));
+        var driving = mph > 0 ? miles / mph : 0;
+        if ((to - from).TotalHours - driving < least - 0.01) return;
+
+        // Already on the record: a rest on the trip log, or one sat through the steps.
+        var logged = s.Trips.SelectMany(t => t.Events).Where(EuCounters.IsTimeOff)
+            .Select(e => (Start: GameClock.TryParse(e.GameTime), End: GameClock.TryParse(e.EndGameTime)))
+            .Concat(s.RestartOrders.Where(o => o.Status == "Completed")
+                .Select(o => (Start: GameClock.TryParse(o.ArrivedGameTime), End: GameClock.TryParse(o.CompletedGameTime))))
+            .Any(x => x.Start is { } a && x.End is { } b && (b - a).TotalHours >= least - 0.01 && a < to && b > from);
+        if (logged) return;
+
+        // A jump straight on from one already asked about stretches the same question — unless clocks were reported
+        // at its end, which says the driver was back on duty there.
+        var keepFrom = s.Status.RestGapTo == GameClock.Format(from) && GameClock.TryParse(s.Status.RestGapFrom) is { } earlier
+                       && !(GameClock.TryParse(s.Hos.AsOfGameTime) is { } read && read >= from)
+            ? earlier : from;
+        s.Status.RestGapFrom = GameClock.Format(keepFrom);
+        s.Status.RestGapTo = GameClock.Format(to);
+    }
+
+    /// <summary>
+    /// The answer to a gap: yes, a rest — sat from <paramref name="from"/> to <paramref name="to"/>, and checked as one
+    /// reported as it happened would be. Checked before anything is written, so a refusal leaves nothing behind.
+    /// </summary>
+    public static (RestartOrder Order, string Message) LogGap(AppState s, string key, string from, string to)
+    {
+        var start = GameClock.TryParse(from) ?? throw new InvalidOperationException("When did the rest begin?");
+        var end = GameClock.TryParse(to) ?? throw new InvalidOperationException("When did the rest end?");
+        if (end <= start) throw new InvalidOperationException("The rest has to end after it began.");
+        var choice = Choices(s).FirstOrDefault(c => c.Key == key)
+                     ?? throw new InvalidOperationException("That is not a rest you can log now — finish the one that is open first.");
+        var hours = (end - start).TotalHours;
+        if (hours + 0.01 < choice.Hours)
+            throw new InvalidOperationException($"{Hhmm.Of(hours)} is short of a {choice.Label.ToLowerInvariant()} — that is at least {Hhmm.Of(choice.Hours)}.");
+        if (!IsEu(s) && key == "weekly" && s.Hos.CycleRemaining < s.Settings.Hos.CycleLimit - 0.5)
+            throw new InvalidOperationException($"Your cycle is showing {Hhmm.Of(s.Hos.CycleRemaining)}. Report your clocks off the HOS display " +
+                                                "first — a restart puts the whole cycle back — then log it.");
+
+        var order = Take(s, key);
+        ReportArrived(s, GameClock.Format(start), s.Status.LocationCity, s.Status.LocationState);
+        var (_, accepted, message) = ReportComplete(s, GameClock.Format(end));
+        if (!accepted) throw new InvalidOperationException(message);
+        s.Status.RestGapFrom = s.Status.RestGapTo = "";
+        return (order, message);
+    }
+
+    /// <summary>No, not a rest: the question about the gap is dropped.</summary>
+    public static void DismissGap(AppState s) => s.Status.RestGapFrom = s.Status.RestGapTo = "";
 }

@@ -33,7 +33,21 @@ public class Lane
     public string HomeCity { get; set; } = "";
     /// <summary>Set where the lane leans into a busy region: the freight that is busy there, in words.</summary>
     public string LeanedFor { get; set; } = "";
+    /// <summary>
+    /// Asked for on the call: a load that leaves this state (AvoidState), or one into this state (WantState). A wish, not
+    /// a term: at the pickup the jobs that honour it come first and are marked, and where none does, the driver is told
+    /// and may still take one that fits the lane. Asked for from play on 2026-10-30.
+    /// </summary>
+    public string AvoidState { get; set; } = "";
+    public string WantState { get; set; } = "";
     /// <summary>Terms agreed on the call that booked the lane, carried onto the job taken for it.</summary>
+    /// <summary>
+    /// "dock" once the run before it is dropped in the pickup city with the clocks to go straight on: the broker asks for
+    /// what is going out of that dock first, and the city board only if none of it fits. Empty otherwise.
+    /// </summary>
+    public string Stage { get; set; } = "";
+    /// <summary>The receiver the truck was dropped at, for the broker to name.</summary>
+    public string DockName { get; set; } = "";
     public bool QuickPay { get; set; }
     public decimal QuickPayFeePct { get; set; }
     public decimal DetentionPerHour { get; set; }
@@ -88,12 +102,82 @@ public static class Lanes
         c.PaySeen.MapRatioCount >= 5 ? Math.Clamp(c.PaySeen.MapRatioSum / c.PaySeen.MapRatioCount, 0.6, 1.2) : 0.85;
 
     /// <summary>The ATS cities in a region a job out of the pickup could reach inside the lane's band, in the game's miles.</summary>
-    public static int CitiesInReach(OoCareer c, string pickupCity, string pickupState, string region, double minMiles, double maxMiles)
+    public static int CitiesInReach(OoCareer c, string pickupCity, string pickupState, string region, double minMiles, double maxMiles) =>
+        CitiesInReach(c, pickupCity, pickupState, m => Carriers.AtsRegionOf(m.State) == region, minMiles, maxMiles);
+
+    /// <summary>The ATS cities a job out of the pickup could reach inside the band, of those the test lets through.</summary>
+    public static int CitiesInReach(OoCareer c, string pickupCity, string pickupState, Func<MarketCity, bool> where, double minMiles, double maxMiles)
     {
         var factor = MapFactor(c);
-        return Markets.BuiltIn.Count(m => Carriers.AtsRegionOf(m.State) == region
+        return Markets.BuiltIn.Count(m => where(m)
             && Geo.EstimatedMiles(pickupCity, pickupState, m.City, m.State) is { } est
             && est * factor >= minMiles && est * factor <= maxMiles);
+    }
+
+    /// <summary>Whether a job honours what was asked for on the lane's call: out of a state, or into one. True when nothing was.</summary>
+    public static bool Wanted(Lane lane, BoardLoad l) =>
+        (lane.AvoidState.Length == 0 || !l.DestState.Equals(lane.AvoidState, StringComparison.OrdinalIgnoreCase))
+        && (lane.WantState.Length == 0 || l.DestState.Equals(lane.WantState, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>What was asked for on the lane's call, in words: "out of California", "into Nevada". Empty when nothing was.</summary>
+    public static string WantWords(Lane lane)
+    {
+        static string Name(string code) => MapCoverage.All.FirstOrDefault(r => r.Code.Equals(code, StringComparison.OrdinalIgnoreCase))?.Name ?? code;
+        return lane.AvoidState.Length > 0 ? $"out of {Name(lane.AvoidState)}" : lane.WantState.Length > 0 ? $"into {Name(lane.WantState)}" : "";
+    }
+
+    /// <summary>
+    /// Asking on a lane's call for where it goes: out of the state the pickup is in, into a region, or into a state. The lane
+    /// moves where the band can reach it, and what was asked is kept for the pickup (see <see cref="Wanted"/>). Null when the
+    /// band reaches nowhere like it, with what the broker says instead in <paramref name="no"/>.
+    /// </summary>
+    public static string? AskWhere(OoCareer c, Lane lane, string where, out string no)
+    {
+        no = "";
+        var w = (where ?? "").Trim();
+        static string Name(string code) => MapCoverage.All.FirstOrDefault(r => r.Code.Equals(code, StringComparison.OrdinalIgnoreCase))?.Name ?? code;
+        int Reach(Func<MarketCity, bool> test) => CitiesInReach(c, lane.PickupCity, lane.PickupState, test, lane.MinMiles, lane.MaxMiles);
+        if (lane.HomeFor.Length > 0) { no = "This one's taking you home. That's the whole point of it."; return null; }
+
+        if (w.Equals("out", StringComparison.OrdinalIgnoreCase))
+        {
+            var state = lane.PickupState;
+            bool Out(MarketCity m) => !m.State.Equals(state, StringComparison.OrdinalIgnoreCase);
+            if (Reach(m => Out(m) && Carriers.AtsRegionOf(m.State) == lane.DestRegion) == 0)
+            {
+                // Nothing out of the state in the lane's region: the region where most is in reach, if any.
+                var best = Seasons.Regions.Select(r => (Region: r, N: Reach(m => Out(m) && Carriers.AtsRegionOf(m.State) == r)))
+                                          .OrderByDescending(x => x.N).First();
+                if (best.N == 0) { no = $"Nothing out of {Name(state)} is in reach of that run from {lane.PickupCity}. It stays as it is."; return null; }
+                lane.DestRegion = best.Region;
+                lane.LeanedFor = "";
+            }
+            lane.AvoidState = state;
+            lane.WantState = "";
+            return $"out of {Name(state)}";
+        }
+        if (w.Length == 2)
+        {
+            var code = w.ToUpperInvariant();
+            if (Reach(m => m.State == code) == 0) { no = $"Nothing in {Name(code)} is in reach of that run from {lane.PickupCity}. It stays as it is."; return null; }
+            lane.DestRegion = Carriers.AtsRegionOf(code);
+            lane.LeanedFor = "";
+            lane.WantState = code;
+            lane.AvoidState = "";
+            return $"into {Name(code)}";
+        }
+        var region = Seasons.Regions.FirstOrDefault(r => r.Equals(w, StringComparison.OrdinalIgnoreCase));
+        if (region == null) { no = ""; return null; }
+        if (Reach(m => Carriers.AtsRegionOf(m.State) == region) == 0)
+        {
+            no = $"Nothing in the {region} is in reach of that run from {lane.PickupCity}. It stays as it is.";
+            return null;
+        }
+        if (region != lane.DestRegion) lane.LeanedFor = "";
+        lane.DestRegion = region;
+        lane.WantState = "";
+        lane.AvoidState = "";
+        return $"into the {region}";
     }
 
     /// <summary>A region needs at least this many cities in reach before a lane leans into it: fewer, and nothing may fit at the pickup.</summary>
@@ -137,7 +221,7 @@ public static class Lanes
 
         var region = Carriers.AtsRegionOf(trip.DestState);
         var broker = c.Brokers
-            .Where(b => b.Known && b.Regions.Contains(region) && BrokerBook.NotYet(c, b) == null && b.Standing > -30)
+            .Where(b => b.Known && b.IsTrading() && b.Regions.Contains(region) && BrokerBook.NotYet(c, b) == null && b.Standing > -30)
             .OrderByDescending(b => b.Standing)
             .ThenBy(b => BrokerBook.Stable(b.Id + k.Id))
             .FirstOrDefault();
@@ -184,7 +268,7 @@ public static class Lanes
 
         var homeRegion = Carriers.AtsRegionOf(c.Profile.HomeState);
         var broker = c.Brokers
-            .Where(b => b.Known && b.Regions.Contains(homeRegion) && BrokerBook.NotYet(c, b) == null && b.Kind == "Broker")
+            .Where(b => b.Known && b.IsTrading() && b.Regions.Contains(homeRegion) && BrokerBook.NotYet(c, b) == null && b.Kind == "Broker")
             .OrderBy(b => b.City.Equals(c.Profile.HomeCity, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ThenByDescending(b => b.Standing)
             .FirstOrDefault();
@@ -249,6 +333,7 @@ public static class Lanes
         }
         if (BrokerBook.NotYet(c, b) is { } missing) { call.Status = "NotYet"; return Say("notyet", Templates.NotYet(b, p, missing)).Out; }
         if (!b.Regions.Contains(Carriers.AtsRegionOf(trip.DestState))) { call.Status = "Nothing"; return Say("nothing", Templates.NotMyRegion(b, trip.DestCity)).Out; }
+        if (BrokerMarket.Refuses(c, b, Carriers.AtsRegionOf(trip.DestState))) { call.Status = "Refused"; return Say("refused", Templates.Refused(b, p)).Out; }
         if (Reach(c, k, trip) is not { } reach) { call.Status = "Nothing"; return Say("nothing", Templates.NothingFits(b)).Out; }
 
         var lane = Build(c, b, k, trip, reach);
@@ -257,15 +342,21 @@ public static class Lanes
         return (call, new BrokerReply("offer", call.Turns.Last().Text));
     }
 
-    /// <summary>Why a mid-run call cannot be made yet, or null: only from a break or a rest, or at a dock, never at the wheel.</summary>
+    /// <summary>
+    /// Why a mid-run call cannot be made yet, or null: only from a break or a rest, or at a dock, never at the wheel.
+    /// At the shipper counts until the driver pulls away, however it was said: "I am at the shipper", or a load begun or
+    /// ended in the trip log. Asked for from play: ringing for the next load while waiting to be loaded.
+    /// </summary>
     public static string? PullOver(OoCareer c)
     {
         var trip = Run.Trip(c, Calls.ActiveBooking(c));
         if (trip == null) return null;
         var last = trip.Events.OrderBy(e => e.GameTime).LastOrDefault();
+        var atShipper = !trip.LoadedReported
+                        && (!string.IsNullOrWhiteSpace(trip.ShipperArrivedGameTime) || trip.Events.Any(e => e.Kind is "BeginLoad" or "EndLoad"));
         var stopped = last is { Kind: "Break" or "Rest" }
                       || !string.IsNullOrWhiteSpace(trip.ArrivedGameTime)
-                      || (!string.IsNullOrWhiteSpace(trip.ShipperArrivedGameTime) && !trip.LoadedReported);
+                      || atShipper;
         return stopped ? null : "Pull over first: make the call from a break or a rest, not at the wheel. Log the break, then ring.";
     }
 
@@ -409,6 +500,91 @@ public static class Lanes
              .ThenBy(v => Math.Abs(v.Load.LoadedMiles - lane.MidMiles))
              .ToList();
 
+    /// <summary>How far outside the band a job at the dock may run and still count for the lane: no run across town.</summary>
+    public const double DockSlack = 0.3;
+
+    /// <summary>
+    /// The run before the lane, dropped. Where it was dropped in the lane's pickup city and the clocks go straight on (no
+    /// 10-hour or 34-hour reset first), the broker wants what is going out of that dock before anything else, and the
+    /// pickup can be now. Asked for from play: "ideally the job would come from where we dropped off", as the company-driver
+    /// app asks for the jobs at this location first.
+    /// </summary>
+    public static void AtDrop(OoCareer c, Booking k, Trip trip)
+    {
+        if (Booked(c) is not { } lane || lane.ForBookingId != k.Id) return;
+        var sameCity = lane.PickupCity.Equals(trip.DestCity, StringComparison.OrdinalIgnoreCase)
+                       && lane.PickupState.Equals(trip.DestState, StringComparison.OrdinalIgnoreCase);
+        var h = c.Game.Hos;
+        var goesOn = h.DriveRemaining >= DriveToStartHours && h.ShiftRemaining >= ShiftToStartHours && h.CycleRemaining >= 11;
+        if (!sameCity || !goesOn) { lane.Stage = ""; return; }
+        lane.Stage = "dock";
+        lane.DockName = string.IsNullOrWhiteSpace(trip.Receiver) ? "the receiver" : trip.Receiver.Trim();
+        if (GameClock.TryParse(lane.PickupFromGameTime) is { } from && GameClock.TryParse(c.Game.Status.GameTime) is { } now && now < from)
+        {
+            var span = GameClock.TryParse(lane.PickupToGameTime) is { } to ? to - from : TimeSpan.FromHours(8);
+            lane.PickupFromGameTime = GameClock.Format(now);
+            lane.PickupToGameTime = GameClock.Format(now + span);
+        }
+        OoStore.Log(c, "broker", $"{lane.BrokerName}: \"You're at {lane.DockName}. Send me what they've got going out of there.\"", lane.Number);
+    }
+
+    /// <summary>At the dock of the load just delivered, with nothing booked: brokers offer its own jobs first, and a lane asks for them.</summary>
+    public static bool AtReceiverDock(OoCareer c) =>
+        Calls.ActiveBooking(c) == null && c.Game.Status.LocationKind == "Receiver";
+
+    /// <summary>Hours after a drop with nothing booked that the truck is taken to have left the dock: a rest has been had.</summary>
+    public const double OffDockAfterHours = 8;
+
+    /// <summary>
+    /// Off the receiver's dock: no longer standing at its jobs. A lane picking up in the city asks for the whole city's board
+    /// instead. Said by the driver, or taken as read after a rest. Reported from play on 2026-11-01: after a 10 and a 34 the
+    /// app still had the truck at the dock it dropped at, and the broker still asked for that dock's jobs.
+    /// </summary>
+    public static string LeaveDock(OoCareer c, string why = "")
+    {
+        var s = c.Game.Status;
+        var at = s.LocationDetail.Length > 0 ? s.LocationDetail : "the receiver";
+        s.LocationKind = "City";
+        s.LocationDetail = "";
+        var said = $"Off {at}'s dock{why}.";
+        if (Booked(c) is { Stage: "dock" } lane)
+        {
+            lane.Stage = "";
+            said += $" {lane.BrokerName}: \"Then send me the whole {lane.PickupCity} board.\"";
+        }
+        OoStore.Log(c, "run", said);
+        return said;
+    }
+
+    /// <summary>Still at the dock long after the drop, with nothing booked: a rest has been had, so the truck has left it.</summary>
+    public static void ExpireDock(OoCareer c)
+    {
+        if (!AtReceiverDock(c)) return;
+        var dropped = c.Game.Trips.Select(t => GameClock.TryParse(t.DeliveredGameTime)).Where(t => t is not null).Max();
+        if (dropped is null || GameClock.TryParse(c.Game.Status.GameTime) is not { } now) return;
+        if ((now - dropped.Value).TotalHours >= OffDockAfterHours) LeaveDock(c, ": a rest since the drop");
+    }
+
+    /// <summary>Jobs at the dock the truck is standing on that the lane can be taken on: the band loosened, no run across town.</summary>
+    public static List<LoadView> DockFits(OoCareer c, Lane lane, List<LoadView> board) =>
+        board.Where(v => v.Load.AtLocation
+                         && v.Load.OriginCity.Equals(lane.PickupCity, StringComparison.OrdinalIgnoreCase)
+                         && v.Load.OriginState.Equals(lane.PickupState, StringComparison.OrdinalIgnoreCase)
+                         && (lane.HomeFor.Length > 0
+                             ? HomeLife.NearHome(c, v.Load.DestCity, v.Load.DestState)
+                             : Carriers.AtsRegionOf(v.Load.DestState) == lane.DestRegion
+                               && v.Load.LoadedMiles >= lane.MinMiles * (1 - DockSlack) && v.Load.LoadedMiles <= lane.MaxMiles * (1 + DockSlack))
+                         && v.Feasibility.Verdict != "Infeasible" && v.SkillNotes.Count == 0
+                         && (lane.ShipperName.Length > 0 ? Companies.Is(c, lane.ShipperName, v.Load.Shipper)
+                             : lane.Specialty == Specialties.General || Specialties.Of(c, v.Load) == lane.Specialty))
+             .OrderBy(v => Math.Abs(v.Load.LoadedMiles - lane.MidMiles))
+             .ToList();
+
+    /// <summary>The dock's jobs are in and none of them fits: the broker wants the whole city's board.</summary>
+    public static bool AskCity(OoCareer c, Lane lane, List<LoadView> board) =>
+        lane.Stage == "dock" && board.Count > 0 && board.All(v => v.Load.AtLocation) && DockFits(c, lane, board).Count == 0
+        && Fits(c, lane, board).Count == 0;
+
     /// <summary>How many of the nearest jobs the broker puts up when nothing fits the lane exactly.</summary>
     public const int CloseCount = 3;
 
@@ -421,8 +597,13 @@ public static class Lanes
     /// </summary>
     public static (List<LoadView> Jobs, bool Close) Matches(OoCareer c, Lane lane, List<LoadView> board)
     {
-        var exact = Fits(c, lane, board);
-        if (exact.Count > 0) return (exact, false);
+        // The dock first: a job going out of where the truck was dropped, the band loosened. Then the city's exact fits.
+        var dock = DockFits(c, lane, board);
+        var exact = dock.Concat(Fits(c, lane, board).Where(v => dock.All(d => d.Load.Id != v.Load.Id))).ToList();
+        // What was asked for on the call comes first: out of the state, or into one. Never instead of the rest.
+        if (exact.Count > 0) return (exact.OrderBy(v => Wanted(lane, v.Load) ? 0 : 1).ToList(), false);
+        // Only the dock's jobs are in, and none fits: the broker asks for the city before putting up anything near.
+        if (AskCity(c, lane, board)) return (new(), false);
         double Off(double miles) => miles < lane.MinMiles ? lane.MinMiles - miles : miles > lane.MaxMiles ? miles - lane.MaxMiles : 0;
         var close = board
             .Where(v => v.Load.OriginCity.Equals(lane.PickupCity, StringComparison.OrdinalIgnoreCase)
@@ -432,19 +613,37 @@ public static class Lanes
                             : lane.Specialty == Specialties.General || Specialties.Of(c, v.Load) == lane.Specialty))
             .OrderBy(v => lane.HomeFor.Length > 0
                 ? Geo.MilesBetween(v.Load.DestCity, v.Load.DestState, c.Profile.HomeCity, c.Profile.HomeState) ?? 9999
-                : (Carriers.AtsRegionOf(v.Load.DestState) == lane.DestRegion ? 0 : 1) * 100000 + Off(v.Load.LoadedMiles))
+                : (Wanted(lane, v.Load) ? 0 : 1) * 1000000 + (Carriers.AtsRegionOf(v.Load.DestState) == lane.DestRegion ? 0 : 1) * 100000 + Off(v.Load.LoadedMiles))
             .Take(CloseCount)
             .ToList();
         return (close, close.Count > 0);
     }
 
     /// <summary>The booked lane against the board, for the snapshot: the jobs it can be taken on, whether they are only near, and why.</summary>
-    public static (List<string> Fits, bool Close, string? Why) Board(OoCareer c)
+    public static (List<string> Fits, bool Close, string? Why, bool AskCity) Board(OoCareer c)
     {
-        if (!c.Started || Booked(c) is not { } lane) return (new(), false, null);
+        if (!c.Started || Booked(c) is not { } lane) return (new(), false, null, false);
         var board = LoadDesk.Evaluate(c);
         var (jobs, close) = Matches(c, lane, board);
-        return (jobs.Select(v => v.Load.Id).ToList(), close, Why(c, lane, board));
+        return (jobs.Select(v => v.Load.Id).ToList(), close, Why(c, lane, board), AskCity(c, lane, board));
+    }
+
+    /// <summary>
+    /// What was asked for on the lane's call, against the jobs that fit it: which honour it, and what to tell the driver
+    /// when none does. They may still take one; it is their call. Null when nothing was asked for, or nothing fits yet.
+    /// </summary>
+    public static object? WantView(OoCareer c)
+    {
+        if (!c.Started || Booked(c) is not { } lane || WantWords(lane) is not { Length: > 0 } words) return null;
+        var (jobs, _) = Matches(c, lane, LoadDesk.Evaluate(c));
+        var honour = jobs.Where(v => Wanted(lane, v.Load)).Select(v => v.Load.Id).ToList();
+        string? said = jobs.Count == 0 ? null
+            : honour.Count == 0
+                ? $"You asked {lane.BrokerName} for a load {words}: nothing that fits {lane.Number} goes {words}. " +
+                  "You can still take one of these, and stay; or press Nothing fits."
+                : honour.Count == 1 ? $"One of them goes {words}, as you asked: listed first."
+                : $"{honour.Count} of them go {words}, as you asked: listed first.";
+        return new { words, ids = honour, said, none = jobs.Count > 0 && honour.Count == 0 };
     }
 
     /// <summary>Why nothing on the board fit the lane exactly, said once the board is in.</summary>
@@ -452,7 +651,8 @@ public static class Lanes
     {
         var here = board.Where(v => v.Load.OriginCity.Equals(lane.PickupCity, StringComparison.OrdinalIgnoreCase)
                                     && v.Load.OriginState.Equals(lane.PickupState, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (here.Count == 0 || Fits(c, lane, board).Count > 0) return null;
+        if (here.Count == 0 || Fits(c, lane, board).Count > 0 || DockFits(c, lane, board).Count > 0) return null;
+        if (AskCity(c, lane, board)) return $"Nothing at {lane.DockName} fits {lane.Number}.";
         if (lane.HomeFor.Length > 0) return $"Nothing on the {lane.PickupCity} board ends near home.";
         var into = here.Count(v => Carriers.AtsRegionOf(v.Load.DestState) == lane.DestRegion);
         var lo = here.Min(v => v.Load.LoadedMiles);
@@ -484,11 +684,10 @@ public static class Lanes
             Rate = rate,
             GamePay = v.Load.GameRevenue,
             // The terms agreed on the lane's call. Reported from play: quick pay agreed on a lane, then lost on the job.
-            QuickPay = lane.QuickPay,
-            QuickPayFeePct = lane.QuickPay ? lane.QuickPayFeePct : 0,
-            DetentionPerHour = lane.DetentionPerHour,
-            DetentionAfterHours = lane.DetentionPerHour > 0 ? 2 : 0,
-            DaysToPay = lane.QuickPay ? 2 : broker.DaysToPay,
+            // Detention on every rate con; quick pay chosen on the invoice.
+            DetentionPerHour = Receivables.DetentionRate(broker),
+            DetentionAfterHours = 2,
+            DaysToPay = broker.DaysToPay,
             BookedGameTime = c.Game.Status.GameTime,
         };
         c.Bookings.Add(booking);
@@ -509,6 +708,13 @@ public static class Lanes
     public static string NothingFits(OoCareer c)
     {
         var lane = Booked(c) ?? throw new InvalidOperationException("No lane is booked.");
+        // Only the dock's jobs seen: the broker wants the whole city's board before giving up on the lane. Reported from
+        // play on 2026-11-01: a lane cancelled on the four jobs at the receiver, with the city's board never looked at.
+        if (lane.Stage == "dock" && !c.Game.Board.Any(l => !l.AtLocation
+                && l.OriginCity.Equals(lane.PickupCity, StringComparison.OrdinalIgnoreCase)
+                && l.OriginState.Equals(lane.PickupState, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"{lane.BrokerName}: \"Nothing at {lane.DockName}? Then send me the whole {lane.PickupCity} board " +
+                                                "before we give up on it.\" Paste the full city board with Full city board selected.");
         var broker = c.Brokers.First(b => b.Id == lane.BrokerId);
         lane.Status = "Cancelled";
         if (broker.Credit is "A" or "B")
@@ -550,6 +756,9 @@ public static class Lanes
     {
         l.Id, l.Number, l.BrokerName, l.PickupCity, l.PickupState, l.PickupFromGameTime, l.PickupToGameTime,
         l.DestRegion, l.MinMiles, l.MaxMiles, l.RatePerMile, l.Status, l.HomeFor, l.HomeCity, l.LeanedFor,
+        l.AvoidState, l.WantState, want = WantWords(l),
+        l.Stage, l.DockName, rep = c.Brokers.FirstOrDefault(b => b.Id == l.BrokerId)?.Rep ?? "",
+        dockMinMiles = Math.Round(l.MinMiles * (1 - DockSlack)), dockMaxMiles = Math.Round(l.MaxMiles * (1 + DockSlack)),
     };
 }
 

@@ -28,7 +28,9 @@ async function bookAndLoad(day, job, clocks) {
   let r = await api('/calls', 'POST', { brokerId: b.id });
   r = await api(`/calls/${r.call.id}/say`, 'POST', { kind: 'accept' });
   await api('/run/at-shipper', 'POST', { day, time: '06:10' });
-  return (await api('/run/loaded', 'POST', { day, time: '06:30', odometer: 1000 })).snapshot;
+  // The odometer as it reads now: a reading lower than the last is refused.
+  const odo = (await api('/bootstrap')).status.odometer || 1000;
+  return (await api('/run/loaded', 'POST', { day, time: '06:30', odometer: odo })).snapshot;
 }
 
 (async () => {

@@ -98,7 +98,7 @@
     through brokers, negotiating the rate on the phone, planning whether a load can legally be made, and getting paid
     &mdash; with the money kept honest between the game and the GDC Companion App.</p>
   <div class="facts">
-    <div><span>Version</span>0.91 alpha</div>
+    <div><span>Version</span>0.92 alpha</div>
     <div><span>Game</span>American Truck Simulator (Euro Truck Simulator 2 to follow)</div>
     <div><span>Runs beside</span>The GDC Companion App, and TruckSim Dispatcher if you play both</div>
     <div><span>Program</span>TruckSimOwnerOperator.exe &middot; opens in your browser</div>
@@ -185,7 +185,7 @@
 <section>
   <h2><span class="num">2</span>Installing and starting</h2>
   <ol>
-    <li>Unzip <code>TruckSimOwnerOperator-v0.91-alpha.zip</code> into a folder of its own, for example
+    <li>Unzip <code>TruckSimOwnerOperator-v0.92-alpha.zip</code> into a folder of its own, for example
       <code>Documents\TruckSim Owner-Operator</code>.</li>
     <li>Double-click <b>TruckSimOwnerOperator.exe</b>. A small console window opens and your browser opens the app at
       <code>http://127.0.0.1:5273</code>. Nothing needs installing: no .NET, no internet connection.</li>
@@ -196,9 +196,9 @@
     not signed.</p>
 
   <h3>Where your career lives</h3>
-  <p>Beside the exe, in a folder called <code>oo-data</code>: <code>career.json</code> is the career, with dated backups
-    next to it. Back that folder up and you have backed up the career. To move to another PC, copy the exe and the
-    <code>oo-data</code> folder together.</p>
+  <p>Beside the exe, in a folder called <code>oo-data</code>: <code>career.json</code> is the career you are playing, with
+    dated backups next to it, and any others you have started are in <code>oo-data/careers</code>. Back that folder up and
+    you have backed up every career. To move to another PC, copy the exe and the <code>oo-data</code> folder together.</p>
   <div class="warn"><h4>Do not share the career file</h4>
     <p>If you set an Anthropic API key in Settings, it is stored in <code>career.json</code>. Anyone with the file has
       your key.</p></div>
@@ -260,9 +260,11 @@
   <p>You start without a trailer, so you pull the shipper's: the game's <b>Freight Market</b>, not the Cargo Market, which
     needs a trailer of your own. Buying a trailer later is a growth step (Section 15).</p>
 
-  <h3>Starting over</h3>
-  <p>There is no button for it on purpose. Delete or rename the <code>oo-data</code> folder with the app closed, and the
-    next start shows the first screen again.</p>
+  <h3>More than one career</h3>
+  <p>Click your career's name at the top right (or <span class="btn">Careers…</span> in Settings) to switch between them,
+    start another, rename one, or delete one. Switching saves the career you are on and loads the other at once. A new
+    career opens on this first screen, and keeps what describes your game rather than the career: your API key, cost per
+    mile, Long Distance limits and company names. Deleting asks you to type DELETE, and a copy goes in the backups.</p>
 </section>
 
 <!-- ============================================================ 4 -->
@@ -398,7 +400,9 @@
   <p>Your contact book. Each entry shows the broker's tier, where they are based, which regions they work, how they pay
     (net days, and the quick-pay fee), their credit rating, their requirement against your record, and your own notes on
     them, which fill in from your calls (&ldquo;drives a hard bargain&rdquo;, &ldquo;did not pay&rdquo;). The filter
-    shows brokers who work where you are, brokers who will take your call, or everyone you know.</p>
+    shows brokers who work where you are, brokers who will take your call, or everyone you know, including brokers who
+    have closed or gone bankrupt (greyed, with no <span class="btn">Call</span>). A broker who opened in the last four
+    weeks has a <b>New</b> badge.</p>
   <p><b>A broker joins the directory</b> when you reach a city in a region they work. A new career knows the brokers of the
     home region; drive further and the list grows.</p>
 
@@ -419,12 +423,15 @@
     class for fuel), pay better than a general broker, and want a short record first: 20 days, 10 loads, 90% on time.</p>
   <table>
     <tr><th>Trade</th><th>Freight</th><th>Trailer</th></tr>
-    <tr><td>Agriculture</td><td>Grain, feed, fertilizer, produce</td><td>Hopper, dry van, reefer or livestock</td></tr>
+    <tr><td>Agriculture</td><td>Grain, feed, fertilizer, produce, and the farm's liquids: milk, soybean and other
+      vegetable oils, molasses</td><td>Hopper, dry van, reefer, livestock, or a tanker for the liquids</td></tr>
     <tr><td>Fuel and petroleum</td><td>Fuel, oil, chemicals</td><td>Tanker, and ADR for flammable liquids</td></tr>
     <tr><td>Lumber and forest products</td><td>Logs, sawn lumber, pulp</td><td>Log trailer or flatbed</td></tr>
     <tr><td>Construction and steel</td><td>Steel, machinery, building supplies</td><td>Flatbed, step deck or lowboy</td></tr>
   </table>
-  <p>This is how a trailer pays for itself: buying a tanker opens the fuel brokers.</p>
+  <p>This is how a trailer pays for itself: buying a tanker opens the fuel brokers, and the farm's liquids.</p>
+  <p><b>Which trade a job is</b>: the cargo's name first (soybean oil is the farm's even in a tanker; water is anyone's),
+    then the company shipping it, then the trailer (any other tanker load is fuel).</p>
 
   <h3>The shippers themselves</h3>
   <p>Eight of the game's own companies hire owner/operators directly to pull their freight: <b>Wallbert</b> and
@@ -441,16 +448,52 @@
   <h3>Credit ratings</h3>
   <table>
     <tr><th style="width:12%">Credit</th><th>How they really pay</th><th style="width:38%">What they give for it</th></tr>
-    <tr><td>A</td><td>On the day.</td><td>&mdash;</td></tr>
-    <tr><td>B</td><td>A day or two late.</td><td>&mdash;</td></tr>
-    <tr><td>C</td><td>About a week late, sometimes more.</td><td>Keep 4 points less of the game's pay; quick pay while they have any patience left.</td></tr>
-    <tr><td>D</td><td>Two to three weeks late at best, and four times in ten not at all without collections. Only starter brokers are D.</td>
-      <td>Keep 9 points less of the game's pay; quick pay to anyone who asks. No factor buys their invoices.</td></tr>
+    <tr><td>A</td><td>On the day. Very rarely goes bankrupt.</td><td>&mdash;</td></tr>
+    <tr><td>B</td><td>A day or two late. Rarely goes bankrupt.</td><td>&mdash;</td></tr>
+    <tr><td>C</td><td>About a week late, sometimes more. Goes bankrupt now and then.</td><td>Keep 4 points less of the game's pay.</td></tr>
+    <tr><td>D</td><td>Two to three weeks late at best, four times in ten not at all without collections, and by far the likeliest
+      to go bankrupt. Only starter brokers are D.</td>
+      <td>Keep 9 points less of the game's pay. No factor buys their invoices.</td></tr>
   </table>
+  <figure><img src="img/credit-risk.png"><figcaption>Under the directory: what each grade pays you to take the risk.</figcaption></figure>
   <p><b>Why take a D?</b> The money. A D broker pays well over the odds to get a truck at all, so a D load can leave you more
     than a B one, if it is paid. Quick pay does not make them good for it: it brings the date forward, not the certainty.
     Chase an overdue one (twice sends it to collections, for half). On the Brokers tab, hover a broker's credit for what it
-    means; under it is how that broker has really paid you: on time, late and by how much, to collections, never paid.</p>
+    means; under it is how that broker has really paid you: on time, late and by how much, to collections, never paid,
+    lost in a bankruptcy. Open <b>Credit grades: the risk, and what it pays you to take it</b> under the directory for the
+    whole trade-off in one table: on a $2,000 load a starter's C leaves you about $80 more than a B, a D about $180 more.</p>
+
+  <h3>The brokers' week: every Friday</h3>
+  <p>Brokers come and go. Every game <b>Friday at 6 PM</b>, the app looks at every broker:</p>
+  <ul>
+    <li><b>New brokers open</b>, as starters on <b>C or D credit</b> while they get established. They take new authorities.
+      A region with fewer brokers than it started with gets new ones sooner.</li>
+    <li><b>Some go bankrupt</b>: a D far more often than a C, and an A hardly ever. What they owe you is frozen (Section 12:
+      claim a settlement for a little of it). An invoice you factored is the factor's loss, not yours.</li>
+    <li><b>Some close their doors</b>: an established broker retiring. They <b>still pay</b> what they owe you, on their usual
+      terms, but take no more calls.</li>
+    <li><b>Credit grades move</b>, a step up or down. A new broker climbs more often than it falls.</li>
+  </ul>
+  <p>A lane booked with a broker who goes is off; the load on your truck still runs. The game's own companies (above) are
+    exempt: they are always there. And <b>every region always keeps at least one broker who takes new authorities</b>,
+    though it may have fewer brokers than at the start.</p>
+  <p>It happens everywhere, but you only hear about the <b>regions you have reached</b>. The next time you use the app
+    after a Friday evening, a report pops up with that week's news; it stays under <b>The brokers' week</b> on the Brokers
+    tab. A quiet week is reported too: the popup says nothing changed in the regions you know. A broker who opens in a region you have not reached joins your directory when you get
+    there; one who went under there never does.</p>
+  <figure><img src="img/broker-news.png"><figcaption>Friday's report: only the regions you have reached.</figcaption></figure>
+
+  <h3>Your name in a region</h3>
+  <p>The brokers of a region talk to each other. Above the directory, <b>Your name with the brokers</b> shows each region
+    you have reached: Unknown, then Fair, Good or Strong as you haul loads out of it on time and keep your standing with its
+    brokers; Poor or Bad after late loads, damage claims and loads handed back.</p>
+  <h3>Turned away</h3>
+  <p>A broker above the starters, even one whose requirements you meet, does not always give a newcomer a load:
+    &ldquo;Sorry, I gave out my loads to more experienced drivers. Try another broker.&rdquo; Then ring someone else, usually
+    a lower-rated broker. The directory shows the odds under <b>Will take you</b>: about 30% of days with an established
+    broker, 45% with a premium one, falling to nothing by your fortieth load. A good name in the region cuts it; a bad one
+    raises it, and keeps some of it however many loads you have. A broker you have standing of 30 or more with never turns
+    you away, and starters never do. It is decided once a game day: ringing back the same day gets the same answer.</p>
 
   <h3>Personalities</h3>
   <p>Every broker has a fixed personality. It is not printed in the directory: you learn it from the calls.</p>
@@ -458,7 +501,7 @@
     <tr><th>Personality</th><th>On the phone</th></tr>
     <tr><td>The grinder</td><td>Opens low, moves in small steps, patient. &ldquo;That's the rate.&rdquo;</td></tr>
     <tr><td>The friend</td><td>Chatty; moves fast for people they trust, slowly for strangers. Will look for something better.</td></tr>
-    <tr><td>The corporate desk</td><td>Will not move on rate; trades terms instead (quick pay, detention). &ldquo;Per our policy.&rdquo;</td></tr>
+    <tr><td>The corporate desk</td><td>Will not move on rate. &ldquo;Per our policy.&rdquo;</td></tr>
     <tr><td>The hustler</td><td>Opens generous to hook you, then disputes detention.</td></tr>
     <tr><td>The old hand</td><td>Fair from the first offer, little room either way; gives way to a true argument.</td></tr>
     <tr><td>The rookie</td><td>Over-generous by mistake; nervous; checks with the boss.</td></tr>
@@ -472,7 +515,7 @@
     most the broker will ever pay, when they hang up &mdash; is worked out by rules. You cannot talk anyone into paying
     more than the economics allow, and nobody can invent a rate.</p>
   <p>Press <span class="btn">Call</span> on a directory entry. The call opens at the top of the Brokers tab.</p>
-  <figure><img src="img/phone-counter.png"><figcaption>A starter broker's offer, a counter that leaned on a record not yet earned, and detention agreed instead.</figcaption></figure>
+  <figure><img src="img/phone-counter.png"><figcaption>A starter broker's offer, and a counter that leaned on a record not yet earned.</figcaption></figure>
 
   <h3>What the call shows</h3>
   <p>The broker's offer, the job, <b>your cost</b> for it, what the offer <b>leaves you</b>, and the verdict. The badge
@@ -487,11 +530,17 @@
       their personality and margin allow; the true arguments buy more.</td></tr>
     <tr><td><span class="btn">Anything better?</span></td><td>Asks for a different job. Once per call. A friendly broker, or
       one you have standing with, may find one; a starter usually says take it or leave it.</td></tr>
-    <tr><td><span class="btn">Quick pay?</span></td><td>Paid in two days rather than weeks, for the broker's quick-pay fee (2&ndash;5%, 1% at a company that hires you
-      direct), which comes off the invoice: on $350 at 3% you are invoiced $339.50. The broker says the fee and what it
-      leaves, and the call shows <b>Quick pay &check;</b> once it is agreed, before you take it. Credit still decides when it
-      really arrives (Credit ratings, above). Ask in the same breath as a price if you like (&ldquo;$350 and quick pay&rdquo;): you get both, or they say no to the terms and the price waits for your yes, never booked without them. Terms agreed on a lane go onto the job you take for it.</td></tr>
-    <tr><td><span class="btn">Detention?</span></td><td>$40 an hour after 2 hours waiting at either dock, billed from your log (Section 12).</td></tr>
+    <tr><td>Terms</td><td>Not negotiated, and asking costs no patience. <b>Detention</b> is on every rate con, at the
+      broker's rate after 2 free hours ($25 an hour at a starter, $40 established, $50 premium or a company); <b>quick pay</b>
+      you choose on the invoice after delivery (Section 12). The call says both, under the broker's name. Ask about either,
+      even in the same breath as a price (&ldquo;$350 and quick pay&rdquo;), and the broker says how it works; the price is
+      worked as any other.</td></tr>
+    <tr><td><span class="btn">Ask for it</span></td><td>Asks for a load going somewhere, picked beside the button:
+      <b>out of the state you are in</b> (out of California and its fuel, say) or <b>into a region</b>. On a lane's call
+      (Section 10) it is for the load at the pickup. Otherwise the broker offers
+      one from their board going there, or says there is nothing and the first offer stands. A starter only looks among
+      the leftovers; anyone else reaches further. Costs no patience. With or without an AI key you can say it too:
+      &ldquo;anything out of California?&rdquo;, &ldquo;a load to Nevada&rdquo;.</td></tr>
     <tr><td><span class="btn">Pass</span></td><td>Ends the call. Nothing booked, no harm done.</td></tr>
     <tr><td><span class="btn">Can't make it in time</span></td><td>On any job a broker offers. <b>No penalty</b>: no patience, no standing.
       The broker drops that job and offers another, or says there is nothing else, and no broker offers you that job again.</td></tr>
@@ -527,10 +576,9 @@
     pickup is within a day of the offer.</p>
 
   <h3>Talking, with an AI key</h3>
-  <p>Type in the box and press <span class="btn">Say</span>, in your own words: &ldquo;2,150 and you pay detention, Topeka is
-    dead this week&rdquo;. The app reads what you mean (an amount, an acceptance, arguments, a term) and the broker
+  <p>Type in the box and press <span class="btn">Say</span>, in your own words: &ldquo;2,150, Topeka is dead this week&rdquo;. The app reads what you mean (an amount, an acceptance, arguments, a term) and the broker
     answers in their own voice with the figure the app chose. The buttons still work alongside it. Without a key, the box
-    takes a plain figure.</p>
+    takes a plain figure, a yes or a no, and a load asked for out of the state you are in or into a state or region.</p>
 
   <h3>Brokers remember</h3>
   <p>Each broker keeps a <b>standing</b> with you, from &minus;100 to 100 (Section 17). It buys a little of their margin,
@@ -547,7 +595,7 @@
 
   <h3>The load, and its appointment</h3>
   <p>The top panel says the job to take in the game (shipper and city to receiver and city), what the broker pays you, what the
-    game will pay (the shipper's money, Section 11), and the detention terms if you agreed them. Then the receiver's side, set
+    game will pay (the shipper's money, Section 11), and the detention on the rate con. Then the receiver's side, set
     exactly as company dispatch sets it:</p>
   <table>
     <tr><th style="width:24%">It says</th><th>What it means</th></tr>
@@ -592,8 +640,8 @@
   </table>
   <figure><img src="img/triplog.png"><figcaption>The trip log beside the arrival and close-out panels.</figcaption></figure>
   <p>Typed a stamp wrong? Press <b>fix</b> on the entry to correct it or drop it. An AM/PM slip otherwise teaches the planner a
-    dock time that never happened. <b>On a live load, log the Begin and End pairs at each dock if you agreed detention</b>: that is what it is
-    billed from. Every run you log teaches the planner your real speed, your roads and each dock's times.</p>
+    dock time that never happened. <b>On a live load, log the Begin and End pairs at each dock</b>: detention is on every load, and that is what
+    it is billed from. Every run you log teaches the planner your real speed, your roads and each dock's times.</p>
   <div class="note"><h4>The odometer box starts empty on purpose</h4>
     <p>The road from shipper to receiver is learned from the odometer when you pull out and when you deliver, and the next
       job on that road is planned at what you drove. Leave it empty when you pull out and nothing is learned from that run;
@@ -627,10 +675,11 @@
   <p>Press <span class="btn">Delivered: close it out</span>. The app reads back what is about to be filed, and only
     <span class="btn">Yes, it is delivered</span> files it.</p>
   <figure class="md"><img src="img/closeout-confirm.png"><figcaption>The read-back before anything is filed.</figcaption></figure>
-  <p>Then the summary, as TruckSim Dispatcher gives one: whether it was on time and whose fault a late was; the dock times and
-    detention; what the run taught the planner (your speed, the dock times, the road); the plan against what happened; the
-    miles; the invoice, the detention billed and the money to move; and what was carried forward: where you are, the game
-    clock moved across the dock, and your clocks.</p>
+  <p>Then the summary, as figures: when you got there against when it was due, and whose fault a late was; the time at each
+    dock, split into waiting and work (marked as the planned time where you logged nothing), and any detention; the miles
+    against the listing; the invoice, when it is due, the detention billed and the game's pay to move to Broker holding; and
+    where you stand now: the place, the game clock moved across the dock, and your clocks. The working behind it, including
+    what the run taught the planner, is folded away under <b>How it was worked out</b>.</p>
   <figure class="md"><img src="img/closeout-summary.png"><figcaption>The summary after a close-out. It stays on the Active Load tab
     until you dismiss it.</figcaption></figure>
 
@@ -691,7 +740,9 @@
   <h3>Outbound: ringing round</h3>
   <p>On a run, you can call a broker yourself, but <b>only from a break or a rest</b>: not from behind the wheel. Log the
     break in the trip log first (your last entry has to be the break or the rest: log fuel or a note after it and you log the
-    break again), or call while you are at a dock: at the shipper before you pull out, or at the receiver. Then press <span class="btn">Call</span> and tell them your clocks and where you are. The broker offers a lane
+    break again), or call while you are at a dock: at the shipper before you pull out (from <b>I am at the shipper</b>, or a
+    load begun or ended in the trip log, until you report pulling out: ring round for the next load while you wait to be
+    loaded), or at the receiver. Brokers still ring <b>you</b> only once you pull out loaded. Then press <span class="btn">Call</span> and tell them your clocks and where you are. The broker offers a lane
     out of where this run ends, planned off them. It is based on the lane, not on any board.</p>
 
   <h3>At the pickup</h3>
@@ -703,6 +754,34 @@
       make their window. Press <span class="btn">Take for the lane</span> on one.</li>
     <li>It is booked at the lane's rate on the job's miles, <b>never above the game's pay</b>, and the run opens.</li>
   </ol>
+  <h3>Asking where the lane goes</h3>
+  <p>On a lane's call, before you take it, <span class="btn">Ask for it</span> works too: <b>out of the state the pickup is
+    in</b> (out of California, for its fuel), or <b>into a region</b>, or, in words, into a state. The broker moves the lane
+    where the distance band can reach it, or says nothing like it is in reach. The rate does not change.</p>
+  <p>It is a wish, not a promise. At the pickup, the jobs that honour it are marked (&ldquo;out of California&rdquo;) and
+    listed first; the others that fit are marked &ldquo;not out of California&rdquo;. If none of the jobs that fit leaves,
+    the lane says so in bold: you can still take one and stay, or press <span class="btn">Nothing fits</span>.</p>
+
+  <h3>The dock first</h3>
+  <p>Where the lane picks up in the city you have just dropped in, and your clocks let you go straight on (no 10-hour or
+    34-hour reset first), the broker texts in the lane panel: <i>&ldquo;You're at Bolt Supply. Send me what they've got going
+    out of there.&rdquo;</i> As in TruckSim Dispatcher, the Board shows <span class="btn">Jobs at this location</span> and
+    <span class="btn">Full city board</span>:</p>
+  <ol>
+    <li>In ATS, <b>find other load from this location</b> and paste those with <b>Jobs at this location</b> selected. They are
+      marked <b>at this dock</b>: no run to the shipper, and the pickup can be now.</li>
+    <li>A job at the dock counts for the lane with the <b>miles band loosened 30% either way</b> (the lane panel says the
+      range), into the same region, and comes first.</li>
+    <li>If nothing there fits, the broker says so as soon as the dock's jobs are in (it pops up, and the Board switches to
+      <b>Full city board</b>) and asks for the whole city: paste the city board, and it goes on as above (exact fits, then
+      the closest). <span class="btn">Nothing fits</span> waits until the city board is in.</li>
+  </ol>
+  <h3>Leaving the dock</h3>
+  <p>After a drop, with nothing booked, the app has you at the receiver's dock: brokers put that company's own jobs first (no
+    empty miles to them), and a lane picking up there asks for its jobs. Moved on, to a truck stop or for a rest? Press
+    <span class="btn">I've left the dock</span> on the Board (or <span class="btn">I've left</span> the dock in the lane panel):
+    from then on it is the city, and a lane asks for the whole city board. Report a rest of 8 hours or more, or another city,
+    and the app takes it that you have left.</p>
 
   <h3>When nothing fits</h3>
   <ul>
@@ -757,7 +836,12 @@
   <p>Type the balance the game shows and press <span class="btn">Update</span>. From then on the app keeps it current: up by
     each delivery's pay, down by each move you mark done. <b>Allowed to spend</b> is that balance less shipper money still
     waiting to move. That is the figure in the top bar.</p>
-  <p>The app cannot see you spend in the game, on fuel or a repair. Read the balance again after spending.</p>
+  <p>The app cannot see you spend in the game, on fuel or a repair. Read the balance again after spending: whatever went
+    out that nothing logged counts as <b>other spending</b>.</p>
+  <p><b>Moved money in or out?</b> Put it in the second box beside the balance: money in as a plus, money taken out to your
+    Companion App account as a <b>minus</b> (&minus;10000). It is not spending and not income. Forgot, and it was counted
+    as spending? Say it at the next reading or Monday check: when the game bank then shows more than expected, the spending
+    counted earlier is taken back off, as much of it as the difference.</p>
 
   <h3>Broker holding</h3>
   <table>
@@ -778,13 +862,30 @@
     game's pay, the due date, and its status.</p>
   <table>
     <tr><th style="width:16%">Status</th><th>Meaning</th><th style="width:28%">You can</th></tr>
-    <tr><td>Open</td><td>Not yet due.</td><td><span class="btn">Factor</span></td></tr>
+    <tr><td>Open</td><td>Not yet due.</td><td><span class="btn">Quick pay</span> <span class="btn">Factor</span></td></tr>
     <tr><td>Overdue</td><td>More than a day past due.</td><td><span class="btn">Factor</span> <span class="btn">Chase</span> <span class="btn">Write off</span></td></tr>
     <tr><td>Paid</td><td>The broker paid. Move the rate to your account.</td><td>&mdash;</td></tr>
     <tr><td>Factored</td><td>Sold to a factor; the money came early.</td><td>&mdash;</td></tr>
     <tr><td>Collections</td><td>Handed to a collector. Expect half, in about two weeks.</td><td><span class="btn">Write off</span></td></tr>
     <tr><td>WrittenOff</td><td>Given up on.</td><td>&mdash;</td></tr>
+    <tr><td>Bankrupt</td><td>The broker went bankrupt owing it (Section 7). Frozen.</td><td><span class="btn">Claim a settlement</span> <span class="btn">Write off</span></td></tr>
+    <tr><td>Claimed</td><td>A settlement claimed: a small share comes on the date shown.</td><td>&mdash;</td></tr>
+    <tr><td>Settled</td><td>The settlement paid its share. Move it to your account; the rest is lost.</td><td>&mdash;</td></tr>
   </table>
+  <h3>When a broker goes bankrupt</h3>
+  <p>Everything they owe you is frozen, and shown apart from what is outstanding at the top of <b>Owed to you</b>. A load
+    delivered for them after they went under joins it. Press <span class="btn">Claim a settlement</span>: in <b>two to four
+    weeks</b> the estate pays <b>five to twenty cents on the dollar</b>, decided when you claim, and you move that out of
+    Broker holding like any payment. The rest of the game's pay for the load stays in Broker holding. An invoice you had
+    factored is not frozen: the factor carries the loss.</p>
+
+  <h3>Quick pay</h3>
+  <p>Chosen on the invoice, after delivery, as it is in the trade: the broker's fee off the rate (2&ndash;5%, 1% at a company
+    that hires you direct), and due in <b>two days</b>. On $350 at 3% you are owed $339.50. The broker still has to pay it, so
+    their credit still decides when it really comes (a C can still be days late; a D may need chasing). Not once it is
+    overdue, and not on an invoice you have factored.</p>
+  <p><b>Quick pay or factoring?</b> Quick pay is cheaper, but the risk stays with you. Factoring costs more, and the factor
+    takes the risk of the broker not paying.</p>
 
   <h3>Factoring</h3>
   <p>Sell an invoice for cash now, less a fee by the broker's credit: <b>2.5% at A, 3.5% at B, 6% at C</b>. Nobody buys a D.
@@ -798,7 +899,8 @@
     that the broker did not pay.</p>
 
   <h3>Detention</h3>
-  <p>Agreed on the call, at $40 an hour after 2 hours. It is billed from the dock times you logged (Section 9): arrival and
+  <p>On every rate con, at the broker's rate after 2 free hours: $25 an hour at a starter, $40 established, $50 premium
+    or a company. It is billed from the dock times you logged (Section 9): arrival and
     begin/end load at the shipper, arrival and begin/end unload at the receiver. Nothing logged, nothing billed.</p>
   <p>Some brokers, the hustlers especially, <b>dispute</b> it. Press <span class="btn">Argue detention</span>: the times
     in your log win it. It is paid with the invoice, out of the brokers' share in Broker holding.</p>
@@ -825,10 +927,13 @@
   <h3>The Monday check</h3>
   <p>The first time you use the app on or after a game Monday (Day 1 is a Monday), it asks what the game bank shows. It
     knows what to expect: the last reading, plus delivery pay, less the moves to Broker holding and the fuel you logged.
-    <b>What else has gone</b> is tolls, tickets and in-game repairs, and it counts as that week's <b>other spending</b>.</p>
+    <b>What else has gone</b> is tolls, tickets and in-game repairs, and it counts as the <b>week just ended</b>'s <b>other
+    spending</b>: the new week starts at nothing.</p>
   <ul>
-    <li><b>Moved money into the game bank</b> (from your own account, say for fuel)? Put it in the second box: it is not
-      income, and not spending either.</li>
+    <li><b>Moved money into or out of the game bank</b> since the last check? Put it in the second box: money in (from your
+      own account, say for fuel) as a plus, money out (to your Companion App account, say) as a <b>minus</b>, such as
+      &minus;10000. Neither is income or spending, so $10,000 taken out does not show as $10,000 gone unseen. If it was already counted as spending at an earlier reading (the Money tab's balance update), the check finds the
+      bank higher than expected and takes that spending back off.</li>
     <li>A bank <b>higher</b> than expected is noted, not counted as income: money in that you did not enter.</li>
     <li><span class="btn">Later</span> puts it off; the tab keeps a number on it until it is done. A balance typed on the Money
       tab finds unseen spending the same way.</li>
@@ -897,6 +1002,9 @@
     <tr><td>A date at home, made</td><td>+15</td></tr>
     <tr><td>A date at home, missed</td><td>&minus;25</td></tr>
   </table>
+  <p><b>Out or home?</b> You are out from the moment a run pulls out until it is delivered, even from a shipper in your home
+    city: a loaded truck is on the road. Days away count from that pull-out, whichever buttons moved the clock (a status
+    report, &ldquo;I am at the shipper&rdquo;, pulling out, &ldquo;arrived&rdquo; or the close-out).</p>
 
   <h3>Dates at home</h3>
   <p>Two things are always on the calendar, each known at least a week ahead: a birthday, a ballgame, an anniversary. They are
@@ -1005,6 +1113,8 @@
   <h3>Phone alerts</h3>
   <p><span class="btn">Turn on desktop alerts</span> asks the browser to let the app show Windows notifications, so a call
     shows even when the app is on another screen (Section 10).</p>
+  <h3>Careers</h3>
+  <p><span class="btn">Careers…</span> lists every career on file: switch, start another, rename or delete (Section 3).</p>
   <h3>AI</h3>
   <p>Your Anthropic API key (Section 2). Stored in your career file on this PC only. Paste a new one to replace it.</p>
 </section>
@@ -1035,7 +1145,20 @@
     <li>Above 30, an extra point of patience on every call. From 20, &ldquo;anything better?&rdquo; works even with a starter.</li>
     <li>A better chance of the phone ringing with a lane, and the first look when several brokers work the region.</li>
     <li>Below &minus;30 they stop ringing you; at &minus;50 they will not take your calls.</li>
+    <li>At 30 or more, they never give your load to a more experienced driver instead.</li>
   </ul>
+  <h3>Your name in a region</h3>
+  <table>
+    <tr><th style="width:50%">What</th><th>Your name in the region it loaded in</th></tr>
+    <tr><td>A load out of it, on time</td><td>+3</td></tr>
+    <tr><td>Late, your fault</td><td>&minus;6</td></tr>
+    <tr><td>Cargo damaged</td><td>&minus;10 more</td></tr>
+    <tr><td>Handing a booked load back</td><td>&minus;15</td></tr>
+    <tr><td>Your standing with its brokers you have worked for</td><td>a quarter of the average</td></tr>
+  </table>
+  <p>From &minus;100 to 100: Strong from 60, Good from 25, Fair above &minus;20, Poor above &minus;50, Bad below. It changes
+    the odds of being turned away by brokers above the starters there (Section 7): at 50 they are halved; at &minus;50 they
+    are doubled, with a quarter of days turned away even for an old hand.</p>
 </section>
 
 <!-- ============================================================ 17 -->
@@ -1048,7 +1171,7 @@
     <tr><td>Specialists</td><td>20 days, 10 loads, 90%, and the trailer for the trade</td></tr>
     <tr><td>Shippers hiring directly</td><td>120 days, 60 loads, 97%, and the trailer for their freight</td></tr>
     <tr><td>Quick pay fee</td><td>2&ndash;5% at a broker, 1% at a shipper</td></tr>
-    <tr><td>Detention</td><td>$40/h after 2 h, billed from the dock times logged</td></tr>
+    <tr><td>Detention</td><td>On every load: $25/h (starter), $40 (established), $50 (premium, company) after 2 h, billed from the dock times logged</td></tr>
     <tr><td>TONU when nothing fits a lane</td><td>$150 from an A or B broker; nothing from C or D</td></tr>
     <tr><td>Factoring fee</td><td>A 2.5%, B 3.5%, C 6%, D not bought</td></tr>
     <tr><td>Overdue</td><td>More than a day past due</td></tr>
@@ -1086,6 +1209,11 @@
   <h4>I typed a time and it came out wrong.</h4>
   <p>Times of day take AM and PM or the 24-hour clock: <code>6:30 PM</code> and <code>18:30</code> are the same. Check the weekday
     beside the day number: Day 1 is a Monday. A wrong entry in the trip log can be put right with <b>fix</b>.</p>
+  <h4>It refused my odometer.</h4>
+  <p>A reading no run could have put on (more than twice the run, at the close-out), lower than the last one, or further than
+    a truck drives in the game time since the last reading, is refused so it can be put right: usually two digits swapped.
+    Check it against the game, and that the game time is current. A bad reading from before this check was set to the run's
+    own miles when the app was opened, so the books are not thrown by it.</p>
   <h4>The game bank figure is wrong.</h4>
   <p>The app cannot see you spend in the game. Type the balance in again on the Money tab.</p>
   <h4>Nothing on the board fits my lane.</h4>

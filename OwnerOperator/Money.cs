@@ -17,7 +17,10 @@ public class Invoice
     public decimal GamePay { get; set; }
     public string IssuedGameTime { get; set; } = "";
     public string DueGameTime { get; set; } = "";
-    /// <summary>Open, Overdue, Paid, Factored, Collections or WrittenOff.</summary>
+    /// <summary>
+    /// Open, Overdue, Paid, Factored, Collections or WrittenOff; Bankrupt (the broker went under owing it), Claimed (a
+    /// settlement claimed) and Settled (the settlement's share paid). See <see cref="BrokerMarket"/>.
+    /// </summary>
     public string Status { get; set; } = "Open";
     public string PaidGameTime { get; set; } = "";
 
@@ -36,6 +39,8 @@ public class Invoice
     public double DetentionHours { get; set; }
     public decimal DetentionAmount { get; set; }
     public string DetentionStatus { get; set; } = "";
+    /// <summary>On a settlement claim: the share of what was owed that it pays. 0.05 = five cents on the dollar.</summary>
+    public decimal SettlementShare { get; set; }
 }
 
 /// <summary>
@@ -101,13 +106,22 @@ public static class Ledger
         if (r.Odometer is { } odo && odo < s.Status.AtsOdometer)
             throw new InvalidOperationException($"The odometer reads lower than the {s.Status.AtsOdometer:N0} on file. Check the number.");
 
-        var wasTime = s.Status.GameTime;
-        var wasHome = HomeLife.AtHome(c);
 
         // The window is the time to be there by, the same way the company-driver app grades it. With a trip on the
         // log, Core closes it and judges it on the arrival it logged; without one, on the time given here.
         audit = null;
         var moved = !k.Load.DestCity.Equals(s.Status.LocationCity, StringComparison.OrdinalIgnoreCase);
+        // An odometer that cannot be right is refused before anything moves, so it can be put right. Against the run where
+        // the odometer was read at the shipper; otherwise against the game time since it was last read, because a reading
+        // taken at booking can be stale by an empty run nobody reported.
+        if (Run.Trip(c, k) is { } odoTrip && r.Odometer is { } endOdo && endOdo > 0)
+        {
+            var wrong = odoTrip.StartOdometerAtShipper && odoTrip.StartOdometer > 0
+                ? Odometer.ImplausibleForRun(odoTrip.StartOdometer, endOdo, odoTrip.DispatchedMiles, odoTrip.Number)
+                : Odometer.Implausible(c.Game.Status.AtsOdometer, endOdo,
+                    GameClock.HoursBetween(Finance.LastOdometerTime(c) ?? odoTrip.DispatchedGameTime, GameClock.Format(at)) ?? 0);
+            if (wrong != null) throw new InvalidOperationException(wrong);
+        }
         if (Run.Trip(c, k) is { } trip)
         {
             // The close-out moves the truck, the clock across the dock, and the clocks; see Run.Close.
@@ -119,6 +133,8 @@ public static class Ledger
             k.LateExcused = late && !k.Late;
             k.Fault = fault;
             k.CargoDamagePct = trip.CargoDamagePct;
+            // A lane picking up where this dropped: the broker asks for the dock's jobs first.
+            Lanes.AtDrop(c, k, trip);
         }
         else
         {
@@ -146,6 +162,7 @@ public static class Ledger
         {
             broker.Standing = Math.Clamp(broker.Standing - (int)Math.Min(20, 5 + k.CargoDamagePct / 2), -100, 100);
             audit?.EquipmentFindings.Add($"{k.CargoDamagePct:0.#}% cargo damage: a claim on your record, and {k.BrokerName} remembers it.");
+            audit?.Notes.Add($"{k.CargoDamagePct:0.#}% cargo damage: a claim on your record, and {k.BrokerName} remembers it.");
         }
 
         var invoice = new Invoice
@@ -167,6 +184,13 @@ public static class Ledger
         {
             Receivables.SetTerms(c, invoice, broker);
             Receivables.BillDetention(c, invoice, k, Run.Trip(c, k), broker);
+            // Delivered for a broker who went under on the way: the invoice joins what they owe, for a settlement claim.
+            if (broker.Status == BrokerStatus.Bankrupt)
+            {
+                invoice.Status = "Bankrupt";
+                audit?.MoneyFindings.Add($"{broker.Name} is bankrupt: {invoice.Number} goes on what they owe. Claim a settlement on the Money tab.");
+                audit?.Notes.Add($"{broker.Name} is bankrupt, so this invoice joins what they owe. Claim a settlement on the Money tab.");
+            }
         }
 
         // The game has just paid its figure into the game bank. All of it goes to Broker holding, so the game bank
@@ -191,11 +215,30 @@ public static class Ledger
             if (broker != null && broker.Standing != standingWas)
                 audit.MoneyFindings.Add($"Standing with {k.BrokerName}: {standingWas} → {broker.Standing}.");
             foreach (var f in audit.ServiceFindings.Concat(audit.MileageFindings)) OoStore.Log(c, "run", f, k.Number);
+
+            var money = new SummarySection { Key = "money", Title = "Money" }
+                .Add("Invoice", $"{invoice.Number} to {k.BrokerName}")
+                .Add("Amount", Units.Money(invoice.Amount),
+                     invoice.QuickPayFee > 0 ? $"After the {Units.Money(invoice.QuickPayFee)} quick-pay fee" : "")
+                .Add("Due", GameClock.Pretty(invoice.DueGameTime), k.QuickPay ? "Quick pay" : $"Net {k.DaysToPay}");
+            if (invoice.DetentionAmount > 0)
+                money.Add("Detention", Units.Money(invoice.DetentionAmount),
+                    $"{Hhmm.Of(invoice.DetentionHours)} at {Units.Money(k.DetentionPerHour)}/h" +
+                    (invoice.DetentionStatus == "Disputed" ? $". {k.BrokerName} disputes it: argue it on the Money tab" : ", on the invoice"),
+                    invoice.DetentionStatus == "Disputed" ? "warn" : "good");
+            else if (k.DetentionPerHour <= 0 && Run.Trip(c, k) is { DetentionHours: > 0.01 })
+                money.Add("Detention", "Not agreed", "This booking paid no detention");
+            money.Add("The game paid", Units.Money(k.GamePay), "Move all of it to Broker holding, with the game closed", "warn");
+            if (broker != null && broker.Standing != standingWas)
+                money.Add("Broker standing", broker.Standing > standingWas ? $"{broker.Standing} (up {broker.Standing - standingWas})"
+                        : $"{broker.Standing} (down {standingWas - broker.Standing})", $"With {k.BrokerName}",
+                    broker.Standing > standingWas ? "good" : "bad");
+            CloseOutSummary.InsertMoney(audit, money);
         }
         OoStore.Log(c, "money", $"{k.Number} delivered{(k.Late ? " late" : " on time")} at {k.Load.DestCity}, {k.Load.DestState}. " +
                                 $"{invoice.Number} to {k.BrokerName} for {Units.Money(invoice.Amount)}, due {GameClock.Pretty(invoice.DueGameTime)}.", k.Number);
         Advance(c);
-        HomeLife.Advance(c, wasTime, wasHome);
+        HomeLife.Catch(c);
         return invoice;
     }
 
@@ -203,7 +246,11 @@ public static class Ledger
     /// Brokers pay what has come due by the game clock. Called whenever the clock moves. A paid invoice is what the
     /// player may move out of Broker holding into their own account.
     /// </summary>
-    public static void Advance(OoCareer c) => Receivables.Advance(c);
+    public static void Advance(OoCareer c)
+    {
+        BrokerMarket.Advance(c);
+        Receivables.Advance(c);
+    }
 
     /// <summary>
     /// The booked load handed back to the broker: a cancellation on the carrier's record. What the call from home

@@ -40,9 +40,41 @@ public static class Receivables
             avgDaysLate = late > 0 ? Math.Round(daysLate / late, 1) : 0,
             collections = mine.Count(i => i.Collected),
             writtenOff = mine.Count(i => i.Status == "WrittenOff"),
+            bankrupt = mine.Count(i => i.Status is "Bankrupt" or "Claimed" or "Settled"),
             open = mine.Count(i => i.Status is "Open" or "Overdue"),
             overdue = mine.Count(i => i.Status == "Overdue"),
         };
+    }
+
+    /// <summary>
+    /// Detention on every rate con, after two free hours, by the broker: starters pay least. Not negotiated: decided with
+    /// the project owner on 2026-10-22 ("standard on every load"), where asking for it on the call got it refused.
+    /// </summary>
+    public static decimal DetentionRate(Broker b) =>
+        b.Kind == "Shipper" ? 50m : b.Tier switch { BrokerTiers.Starter => 25m, BrokerTiers.Established => 40m, _ => 50m };
+
+    /// <summary>
+    /// Quick pay, chosen on the invoice after delivery as it is in the trade, not on the call: the broker's fee off the
+    /// rate, and due in two days. The broker still has to pay it, so credit still decides when it really comes; factoring
+    /// costs more but takes that off you. Decided with the project owner on 2026-10-22.
+    /// </summary>
+    public static string QuickPay(OoCareer c, string id)
+    {
+        var inv = Find(c, id);
+        if (inv.Status != "Open") throw new InvalidOperationException("Quick pay is for an unpaid invoice that is not yet overdue.");
+        if (inv.QuickPayFee > 0) throw new InvalidOperationException($"{inv.Number} is on quick pay already.");
+        if (inv.GamePay <= 0) throw new InvalidOperationException("Quick pay is for a load's invoice.");
+        var b = c.Brokers.FirstOrDefault(x => x.Id == inv.BrokerId) ?? throw new InvalidOperationException("No such broker.");
+        var fee = Math.Round(inv.Amount * b.QuickPayFeePct / 100m, 2);
+        inv.QuickPayFee = fee;
+        inv.Amount -= fee;
+        var now = GameClock.TryParse(c.Game.Status.GameTime) ?? DateTime.MinValue;
+        inv.DueGameTime = GameClock.Format(now.AddDays(2));
+        SetTerms(c, inv, b);
+        var said = $"{inv.Number} on quick pay: {b.QuickPayFeePct:0.#}% ({Units.Money(fee)}) off, {Units.Money(inv.Amount)} due {GameClock.Pretty(inv.DueGameTime)}." +
+                   (inv.Credit is "A" ? "" : $" {inv.BrokerName} is {inv.Credit} credit: it may still come late.");
+        OoStore.Log(c, "money", said, inv.Number);
+        return said;
     }
 
     /// <summary>What collections keeps of a broker who would not pay.</summary>
@@ -107,8 +139,14 @@ public static class Receivables
     /// <summary>Brokers pay what they will, when they will, by the game clock; anything a day past due is overdue.</summary>
     public static void Advance(OoCareer c)
     {
-        if (GameClock.TryParse(c.Game.Status.GameTime) is not { } now) return;
-        foreach (var inv in c.Invoices.Where(i => i.Status is "Open" or "Overdue" or "Collections" or "Factored").ToList())
+        if (GameClock.TryParse(c.Game.Status.GameTime) is { } now) Advance(c, now);
+    }
+
+    /// <summary>Everything due by this time: the game clock, or a Friday evening on the way to it (see BrokerMarket).</summary>
+    public static void Advance(OoCareer c, DateTime now)
+    {
+        var when = GameClock.Format(now);
+        foreach (var inv in c.Invoices.Where(i => i.Status is "Open" or "Overdue" or "Collections" or "Factored" or "Claimed").ToList())
         {
             var pays = GameClock.TryParse(string.IsNullOrWhiteSpace(inv.PaysGameTime) ? inv.DueGameTime : inv.PaysGameTime);
             if (inv.WillPay && pays is { } p && now >= p)
@@ -116,11 +154,18 @@ public static class Receivables
                 if (inv.Status == "Factored")
                 {
                     inv.Status = "Paid";
-                    inv.PaidGameTime = c.Game.Status.GameTime;
+                    inv.PaidGameTime = when;
                     OoStore.Log(c, "money", $"{inv.BrokerName} paid the factor on {inv.Number}. Nothing more to you: it was sold.", inv.Number);
                     continue;
                 }
-                Pay(c, inv, inv.Status == "Collections" ? CollectionsShare : 1m);
+                if (inv.Status == "Claimed")
+                {
+                    Pay(c, inv, inv.SettlementShare, when, $", a settlement out of their bankruptcy ({inv.SettlementShare:P0})");
+                    inv.Status = "Settled";
+                    continue;
+                }
+                Pay(c, inv, inv.Status == "Collections" ? CollectionsShare : 1m, when,
+                    inv.Status == "Collections" ? $", through collections ({CollectionsShare:P0})" : "");
                 continue;
             }
             if (inv.Status == "Open" && GameClock.TryParse(inv.DueGameTime) is { } due && now > due.AddDays(1))
@@ -132,10 +177,10 @@ public static class Receivables
     }
 
     /// <summary>Paid: the rate is the player's to move out of Broker holding, and agreed detention comes in from the broker.</summary>
-    private static void Pay(OoCareer c, Invoice inv, decimal share)
+    private static void Pay(OoCareer c, Invoice inv, decimal share, string when, string how)
     {
         inv.Status = "Paid";
-        inv.PaidGameTime = c.Game.Status.GameTime;
+        inv.PaidGameTime = when;
         var rate = Math.Round(inv.Amount * share, 2);
         if (inv.GamePay <= 0)
             FromShare(c, rate, $"{inv.BrokerName} paid the {Units.Money(rate)} on {inv.Number} ({inv.BookingNumber}).", inv.Number);
@@ -146,14 +191,15 @@ public static class Receivables
                 $"{inv.BrokerName} paid {inv.Number}. Move {Units.Money(fromHolding)} out of Broker holding into your account." +
                 (inv.GamePay > fromHolding
                     ? share < 1
-                        ? $" The other {Units.Money(inv.GamePay - fromHolding)} of {inv.BookingNumber}'s pay stays in Broker holding: collections kept the rest."
+                        ? $" The other {Units.Money(inv.GamePay - fromHolding)} of {inv.BookingNumber}'s pay stays in Broker holding: " +
+                          (inv.Collected ? "collections kept the rest." : "the rest was lost when they went under.")
                         : $" The other {Units.Money(inv.GamePay - fromHolding)} of {inv.BookingNumber}'s pay is the broker's share: leave it in Broker holding."
                     : ""),
                 inv.Number, false);
         }
         if (inv.DetentionStatus is "Billed" or "Granted" && inv.DetentionAmount > 0)
             FromShare(c, Math.Round(inv.DetentionAmount * share, 2), $"Detention on {inv.Number}, paid by {inv.BrokerName}.", inv.Number);
-        OoStore.Log(c, "money", $"{inv.BrokerName} paid {inv.Number}" + (share < 1 ? $", through collections ({share:P0})" : "") + ".", inv.Number);
+        OoStore.Log(c, "money", $"{inv.BrokerName} paid {inv.Number}{how}.", inv.Number);
     }
 
     /// <summary>
@@ -164,6 +210,7 @@ public static class Receivables
     {
         var inv = Find(c, id);
         if (inv.Status is not ("Open" or "Overdue")) throw new InvalidOperationException("Only an unpaid invoice can be factored.");
+        if (inv.QuickPayFee > 0) throw new InvalidOperationException($"{inv.Number} is on quick pay: it comes in days already.");
         var pct = FactorFeePct(inv.Credit);
         if (pct <= 0) throw new InvalidOperationException($"No factor will buy an invoice on {inv.BrokerName}: their credit is too poor.");
         var fee = Math.Round(inv.Amount * pct / 100m, 2);
@@ -224,7 +271,7 @@ public static class Receivables
     public static string WriteOff(OoCareer c, string id)
     {
         var inv = Find(c, id);
-        if (inv.Status is not ("Overdue" or "Open" or "Collections")) throw new InvalidOperationException("That invoice is settled already.");
+        if (inv.Status is not ("Overdue" or "Open" or "Collections" or "Bankrupt")) throw new InvalidOperationException("That invoice is settled already.");
         inv.Status = "WrittenOff";
         var said = $"{inv.Number} written off: {Units.Money(inv.Amount)} {inv.BrokerName} never paid." +
                    (inv.GamePay > 0 ? " The game's pay for it stays in Broker holding." : "");
@@ -241,7 +288,7 @@ public static class Receivables
     /// </summary>
     public static decimal BrokersShareAvailable(OoCareer c)
     {
-        var settled = c.Invoices.Where(i => i.Status is "Paid" or "Factored" or "WrittenOff").Sum(i => i.GamePay);
+        var settled = c.Invoices.Where(i => i.Status is "Paid" or "Factored" or "WrittenOff" or "Settled").Sum(i => i.GamePay);
         var out_ = c.Transfers.Where(t => t.From == Accounts.Holding).Sum(t => t.Amount);
         return Math.Max(0, settled - out_);
     }

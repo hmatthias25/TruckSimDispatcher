@@ -94,6 +94,8 @@ async function bookAndLoad(S, day) {
   S = r.snapshot;
   const broker = S.directory.find((x) => x.name === S.lane.brokerName);
   r = await api('/deliver', 'POST', { day: 5, time: '12:00', odometer: S.status.odometer + 70 });
+  // At the drop, the broker wants the whole city's board before giving up on the lane: one that fits nothing.
+  await api('/board/add-many', 'POST', [{ cargo: 'TooShort', destCity: 'Lawrence', destState: 'KS', loadedMiles: 20, gameRevenue: 150, deadlineHours: 40 }]);
   r = await api('/lane/nothing-fits', 'POST');
   S = r.snapshot;
   ok('the broker cancels the lane', !S.lane && /cancelled/.test(r.said), r.said);

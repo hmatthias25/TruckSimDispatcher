@@ -108,6 +108,12 @@ const km = async (a, sa, b, sb) => {
   const names = market.map((c) => c.name);
   ok('the carriers are European', names.includes('Girteka') || names.includes('Baltic Line Logistics'), names.slice(0, 5).join(', '));
   ok('and none of them American', !names.includes('Schneider National') && !names.includes('Werner Enterprises'));
+  // Reported from play on 2026-11-01: no flatbed carrier, and no food or farm tanker, on the European board.
+  const runs = (div) => market.filter((c) => (c.divisions || []).includes(div)).map((c) => c.name);
+  ok('carriers that run flatbeds', runs('Flatbed').length >= 2, runs('Flatbed').join(', '));
+  ok('and heavy haul', runs('Heavy Haul').length >= 2, runs('Heavy Haul').join(', '));
+  const foodTank = market.find((c) => c.name === 'Van den Bosch Transporten');
+  ok('a food-grade tanker carrier that needs no ADR', foodTank && foodTank.divisions.includes('Tanker'), JSON.stringify(foodTank && foodTank.divisions));
 
   head('6. Back to ATS, nothing of Europe is left');
   const back = await api('/export');

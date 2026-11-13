@@ -279,7 +279,9 @@ public static class FleetMaintenance
             }
 
             var major = Math.Round(cost * MajorRepairMultiple, 0);
-            LedgerService.Post(s, LedgerService.Operating, -major, "Maintenance",
+            // FleetMaintenance, as the other fleet servicing: "Maintenance" is the player's own truck's, which the
+            // report reads back as their own operations (FleetOpsService.OwnOperations), and would count twice.
+            LedgerService.Post(s, LedgerService.Operating, -major, "FleetMaintenance",
                 $"PM — unit {t.Ref} (major repair)", report.Number);
             report.Findings.Add(
                 $"Unit {t.Ref} needed more than a service — {Units.Money0(major)} all in. Found in the bay rather " +

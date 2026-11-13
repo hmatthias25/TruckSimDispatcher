@@ -255,7 +255,7 @@ public static class EuHomeContract
 
         // A weekly rest order already running at the yard IS this rest: close it with the home time's span
         // rather than counting the same hours twice.
-        var order = s.RestartOrders.FirstOrDefault(o => o.Status is "Ordered" or "Arrived");
+        var order = s.RestartOrders.FirstOrDefault(o => o.Status is "Ordered" or "Arrived" && o.Kind != "Daily");
         if (order == null)
         {
             order = new RestartOrder

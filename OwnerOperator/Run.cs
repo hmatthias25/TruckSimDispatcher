@@ -101,6 +101,14 @@ public static class Run
     public static List<string> Loaded(OoCareer c, double? weight, double? odometer, int? day, string? time)
     {
         var trip = Active(c);
+        // At the shipper: no further than a truck goes in the game time since the odometer was last read. From the last
+        // reading, not the booking: an empty run nobody reported puts real miles on in between.
+        if (odometer is { } odo && c.Game.Status.AtsOdometer > 0)
+        {
+            var since = Finance.LastOdometerTime(c) ?? trip.DispatchedGameTime;
+            var hours = GameClock.HoursBetween(since, day is > 0 ? GameClock.Format(At(c, day, time)) : c.Game.Status.GameTime) ?? 0;
+            if (Odometer.Implausible(c.Game.Status.AtsOdometer, odo, hours) is { } wrong) throw new InvalidOperationException(wrong);
+        }
         var pulled = day is > 0 ? GameClock.Format(At(c, day, time)) : null;
         var (_, notes) = TripService.ReportLoaded(c.Game, trip.Id, weight, null, odometer, pulled);
         OoStore.Log(c, "run", $"{trip.Number} loaded and rolling.", trip.Number);
@@ -342,13 +350,14 @@ public static class Run
         var late = TripService.DetermineLate(s, trip, req, out var serviceNote);
         trip.ServiceResult = late ? "Late" : "OnTime";
         audit.ServiceFindings.Add(serviceNote);
-        if (trip.ReceiverTakesEarly && GameClock.TryParse(trip.DeliveredGameTime) is { } deliveredAt)
+        // On time only: under a late load this read "it counts as on time" beneath "LATE" (reported 2026-11-09).
+        if (trip.ReceiverTakesEarly && !late && GameClock.TryParse(trip.DeliveredGameTime) is { } deliveredAt)
         {
             var against = GameClock.TryParse(trip.AppointmentGameTime) ?? GameClock.TryParse(trip.AppointmentOpensGameTime);
             trip.EarlyTakeHoursSaved = against is { } slot ? Math.Max(0, Math.Round((slot - deliveredAt).TotalHours, 2)) : 0;
             audit.ServiceFindings.Add(trip.EarlyTakeHoursSaved > 0.1
-                ? $"The receiver took this one ahead of the appointment, {Hhmm.Of(trip.EarlyTakeHoursSaved)} early. Their call, so it counts as on time."
-                : "The receiver had agreed to take this one whenever it arrived. It counts as on time.");
+                ? $"The receiver took it {Hhmm.Of(trip.EarlyTakeHoursSaved)} ahead of the appointment. Their call, so it counts as on time."
+                : "The receiver takes this freight whenever it arrives, so it counts as on time.");
         }
         var (fault, why) = Fault(s, trip, req, late, k);
         trip.FaultAttribution = fault;
@@ -370,7 +379,7 @@ public static class Run
         if (trip.FeasibilityAtDispatch is { } f && GameClock.TryParse(trip.DeliveredGameTime) is { } del && DispatchEngine.GateArrivalOf(f) is { } proj)
         {
             var drift = (del - proj).TotalHours;
-            audit.ServiceFindings.Add($"Planned to be at the gate {GameClock.Pretty(proj)}; you got there {GameClock.Pretty(del)} ({drift:+0.#;-0.#;0} h on the plan).");
+            audit.ServiceFindings.Add($"Planned arrival {GameClock.Pretty(proj)}; you got there {GameClock.Pretty(del)} ({drift:+0.#;-0.#;0} h on the plan).");
         }
 
         trip.Status = "Delivered";
@@ -383,9 +392,14 @@ public static class Run
         TripService.CarryForward(s, trip, req, audit);
         s.Status.ActiveTripId = "";
 
-        audit.Headline = !late ? $"{trip.Number} delivered on time."
-            : fault == "Driver" ? $"{trip.Number} delivered late, and it is on your record with {k.BrokerName}."
-            : $"{trip.Number} delivered late, but not on you.";
+        var deliveredTo = DispatchEngine.Place(trip.DestCity, trip.DestState);
+        var cargo = string.IsNullOrWhiteSpace(trip.Cargo) ? "Load" : trip.Cargo;
+        audit.Headline = !late ? $"{cargo} delivered to {deliveredTo}, on time."
+            : fault == "Driver" ? $"{cargo} delivered to {deliveredTo}, late, and that one is on you."
+            : $"{cargo} delivered to {deliveredTo}, late, but not on you.";
+        if (!string.IsNullOrWhiteSpace(trip.WindowWarning)) audit.Notes.Add(trip.WindowWarning);
+        // The screen: figures, not prose. The money goes in when the invoice is raised (Ledger.Deliver).
+        audit.Summary = CloseOutSummary.Build(s, trip, audit, ownerOperator: true);
         return (audit, late, fault);
     }
 

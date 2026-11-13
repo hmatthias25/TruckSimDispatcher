@@ -211,7 +211,7 @@ public static class SpeedLearning
 
         if (string.IsNullOrWhiteSpace(trip.ArrivedGameTime))
             return $"Nothing learned about driving speed from this one: there is no arrival time on it. " +
-                   $"Press <b>I have arrived</b> when you reach the receiver and a run like this " +
+                   $"Press \"I have arrived\" when you reach the receiver and a run like this " +
                    $"({Units.Dist(miles):0} {Units.DistUnit}) teaches the planner what your roads actually average.";
 
         return $"Nothing learned about driving speed from this one — {r.Why}.";

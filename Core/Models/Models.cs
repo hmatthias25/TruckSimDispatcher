@@ -61,7 +61,7 @@ public class AppState
     public int SchemaVersion { get; set; } = Current;
 
     /// <summary>The version this build writes.</summary>
-    public const int Current = 37;
+    public const int Current = 38;
     /// <summary>Build that last wrote this file, so an old career can say where it came from.</summary>
     public string AppVersion { get; set; } = "";
 
@@ -165,6 +165,11 @@ public class AppState
 public class DriverApplication
 {
     public string DriverName { get; set; } = "";
+    /// <summary>
+    /// Real or Fictional: which carriers the job market shows, chosen on the first screen (it is in Settings after). Empty
+    /// leaves the setting as it is. Reported from play on 2026-11-01: there was no way to choose before the first hire.
+    /// </summary>
+    public string CarrierRoster { get; set; } = "";
     public string PreferredDivision { get; set; } = "";
     public string SecondDivision { get; set; } = "";
     /// <summary>
@@ -1237,6 +1242,14 @@ public class DriverStatus
     public string RestFirstNote { get; set; } = "";
     public string RestFirstWhere { get; set; } = "";
     public double RestFirstAtShiftHours { get; set; }
+    /// <summary>
+    /// A jump in the game clock long enough to have held a rest, with none logged across it: where it began and
+    /// ended. The driver is asked whether they were resting, and it is cleared once they answer either way.
+    /// Reported from play: a 45 sat while the truck was in the shop, the new time typed in sixty hours on, and
+    /// the app ordered the weekly rest all over again. See Restart.NoteGap.
+    /// </summary>
+    public string RestGapFrom { get; set; } = "";
+    public string RestGapTo { get; set; } = "";
     /// <summary>
     /// The bank balance shown in ATS. This IS the company's cash â€” the game already deducts fuel,
     /// repairs, garages, trucks and AI driver wages from it, so the app reconciles to it rather than
@@ -2662,6 +2675,13 @@ public class FleetReport
     public decimal Unseen { get; set; }
     /// <summary>What the hired fleet contributed over the period, net. See FleetReportLine.</summary>
     public decimal TotalContribution { get; set; }
+    /// <summary>
+    /// What the company's own truck — the player's — made it over the period, off the books: freight revenue
+    /// less fuel, tolls, fines, the player's pay, repairs and overhead. In <see cref="NetContribution"/>, so a
+    /// company of one has a health to judge. Reported from play on 2026-11-04: with no hired drivers no report
+    /// was ever due, and the company could never grow or change.
+    /// </summary>
+    public decimal OwnOperations { get; set; }
     [Obsolete("Renamed to TotalContribution — the figure was never gross revenue.")]
     public decimal TotalRevenue { get; set; }
     public double TotalMiles { get; set; }
@@ -2982,6 +3002,20 @@ public class RestartOrder
     /// and is emphatically not a performance or safety matter.
     /// </summary>
     public string Trigger { get; set; } = "Cycle";
+
+    /// <summary>
+    /// Weekly | Daily. Weekly is the 34, or the EU weekly rest. Daily is the ten-hour rest (EU: the daily rest),
+    /// which only the driver raises — "I am taking a rest" — and goes through the same two steps: parked up, done.
+    /// A rest the driver chooses carries the trigger "Chosen", and its length is theirs rather than dispatch's.
+    /// </summary>
+    public string Kind { get; set; } = "Weekly";
+
+    /// <summary>
+    /// The trip-log entry this rest was written to, when it was taken during a load. The log then carries the
+    /// span — it is what teaches the planner the driving speed — and the EU counters read it from there rather
+    /// than counting it twice.
+    /// </summary>
+    public string TripEventId { get; set; } = "";
 
     /// <summary>
     /// Why the company parked the driver, on an operational order. Kept separate from

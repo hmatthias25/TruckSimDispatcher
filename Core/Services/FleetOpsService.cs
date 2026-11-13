@@ -195,6 +195,8 @@ public static class FleetOpsService
                                                               || x.DistanceOnJobMi >= 0
                                                               || x.LoadsTransported >= 0
                                                               || x.WeightTransportedLbs >= 0) ?? false);
+        // A company of one: its own loads are on the books already, so the report says something by being filed.
+        if (!saysSomething && !s.HiredDrivers.Any(d => d.Status == "Active")) saysSomething = true;
         if (!saysSomething)
             throw new InvalidOperationException(
                 "A fleet report needs something on it — a driver's figures, or a trailer's.");
@@ -564,8 +566,15 @@ public static class FleetOpsService
                         || ((from == null || at >= from.Value) && (to == null || at <= to.Value)))
             .Sum(e => e.Amount), 2);
 
+        // The company's own truck, off the books over the same window. Its loads post as they close, so this
+        // reads them back rather than asking for anything. See FleetReport.OwnOperations.
+        report.OwnOperations = OwnOperations(s, from, to);
+        if (report.OwnOperations != 0)
+            report.Findings.Add($"Your own loads: {(report.OwnOperations < 0 ? "-" : "")}{Units.Money0(Math.Abs(report.OwnOperations))} " +
+                                "net to the company this period — freight revenue less fuel, tolls, your pay, repairs and overhead.");
+
         report.NetContribution = Math.Round(
-            report.TotalContribution - report.TotalRepairs - report.TotalCapital, 2);
+            report.TotalContribution + report.OwnOperations - report.TotalRepairs - report.TotalCapital, 2);
 
         if (report.TotalCapital > 0)
             report.Findings.Add($"{Units.Money0(report.TotalCapital)} went on equipment and property this period.");
@@ -587,7 +596,7 @@ public static class FleetOpsService
             if (report.TotalCapital > 0) against.Add($"{Units.Money0(report.TotalCapital)} on equipment and property");
 
             report.Findings.Add(
-                $"The hired fleet lost money this period: {Units.Money0(report.TotalContribution)} brought in" +
+                $"The company lost money this period: {Units.Money0(report.TotalContribution + report.OwnOperations)} brought in" +
                 (against.Count > 0 ? $" against {string.Join(" and ", against)}" : "") + ". " +
                 (report.TotalRepairs > 0
                     ? "Look at what went through the shop, and at whether anything is worth keeping on the road."
@@ -2273,6 +2282,21 @@ public static class FleetOpsService
         }).ToList();
     }
 
+    /// <summary>The ledger categories the player's own trucking posts: what their loads earned and cost the company.</summary>
+    private static readonly HashSet<string> OwnCategories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "FreightRevenue", "Fuel", "Tolls", "Fines", "Overhead", "Cancellation", "Payroll", "Repairs", "Maintenance",
+        "Accommodation", "Insurance", "InsuranceDeductible", "InsuranceRecovery", "ScrapRecovery",
+    };
+
+    /// <summary>The company's own truck's result between two times, off the books, every account.</summary>
+    public static decimal OwnOperations(AppState s, DateTime? from, DateTime? to) =>
+        Math.Round(s.Ledger
+            .Where(e => OwnCategories.Contains(e.Category))
+            .Where(e => GameClock.TryParse(e.GameTime) is { } at
+                        && (from == null || at > from.Value) && (to == null || at <= to.Value))
+            .Sum(e => e.Amount), 2);
+
     private static uint Hash(string text)
     {
         unchecked
@@ -2290,16 +2314,22 @@ public static class FleetOpsService
     public static FleetReportDue DueCheck(AppState s)
     {
         var due = new FleetReportDue { IntervalDays = Math.Max(1, s.Settings.FleetReportIntervalDays) };
-        if (s.HiredDrivers.Count(d => d.Status == "Active") == 0) return due;
+        // Due with or without hired drivers: a company of one still earns, still wears its truck and trailer
+        // out, and still needs a health to grow or shrink on. Reported from play on 2026-11-04.
+        if (!s.Onboarded) return due;
+        var hired = s.HiredDrivers.Any(d => d.Status == "Active");
 
         var now = GameClock.TryParse(s.Status.GameTime);
         if (now == null) return due;
 
-        // Count from the last report, or from when the first driver was taken on.
+        // Count from the last report, or from when the first driver was taken on, or from the player's own
+        // start with the company (their hire, else their first load).
         var lastEnd = GameClock.TryParse(s.FleetReports.FirstOrDefault()?.PeriodEndGame)
                       ?? s.HiredDrivers.Where(d => d.Status == "Active")
                            .Select(d => GameClock.TryParse(d.HiredGameDate))
-                           .Where(d => d != null).OrderBy(d => d).FirstOrDefault();
+                           .Where(d => d != null).OrderBy(d => d).FirstOrDefault()
+                      ?? GameClock.TryParse(s.Driver.HiredGameDate)
+                      ?? s.Trips.Select(t => GameClock.TryParse(t.DispatchedGameTime)).Where(t => t != null).OrderBy(t => t).FirstOrDefault();
         if (lastEnd == null) return due;
 
         due.LastPeriodEnd = GameClock.Format(lastEnd.Value);
@@ -2310,9 +2340,13 @@ public static class FleetOpsService
         due.IsSoon = !due.IsDue && due.DaysRemaining <= 3;
 
         if (due.IsDue)
-            due.Message = $"Fleet report is due — {due.DaysSince:0.#} game days since the last one. " +
-                          "Open the ATS company screen and bring me each driver's earnings and their " +
-                          "truck and trailer damage.";
+            due.Message = hired
+                ? $"Fleet report is due — {due.DaysSince:0.#} game days since the last one. " +
+                  "Open the ATS company screen and bring me each driver's earnings and their " +
+                  "truck and trailer damage."
+                : $"Company report is due — {due.DaysSince:0.#} game days since the last one. " +
+                  "Bring me the bank balance and your truck's and trailer's condition: your own loads " +
+                  "are already on the books, and the report is how the company judges how it is doing.";
         else if (due.IsSoon)
             due.Message = $"Fleet report due in {due.DaysRemaining:0.#} day(s) (Day {GameClock.DayOf(GameClock.TryParse(due.NextDueGameTime)!.Value)}).";
         return due;

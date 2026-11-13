@@ -230,8 +230,29 @@ async function shot(name, sel) {
     await sleep(1200);
     await shot('monday-checked', '#modal .modal-box');
     await ev(`closeModal()`);
+    await api('/brokers/news/seen', 'POST');
     await tab('finance');
     await shot('finance', 'nav.tabs, #view');
+
+    // 9. Friday evening among the brokers: the report, then the credit grades laid out on the Brokers tab.
+    S = await api('/bootstrap');
+    const home = S.directory.filter((b) => b.trading && b.kind === 'Broker' && b.regions.includes('Plains & Southwest'));
+    const st = home.filter((b) => b.tier === 'Starter');
+    if (st[1]) await api('/test/market', 'POST', { target: st[1].id, kind: 'Bankrupt' });
+    if (st[2]) await api('/test/market', 'POST', { target: st[2].id, kind: 'Up' });
+    const es = home.find((b) => b.tier === 'Established');
+    if (es) await api('/test/market', 'POST', { target: es.id, kind: 'Down' });
+    await api('/test/market', 'POST', { target: 'Plains & Southwest', kind: 'New' });
+    await api('/status', 'POST', { day: 12, time: '19:00' });
+    await tab('brokers');
+    await sleep(300);
+    await shot('broker-news', '#modal .modal-box');
+    await api('/brokers/news/seen', 'POST');
+    await ev(`closeModal()`);
+    await tab('brokers');
+    await ev(`document.querySelector('.riskbox').open = true`);
+    await sleep(200);
+    await shot('credit-risk', '.riskbox');
   } finally {
     try { ws && ws.close(); } catch {}
     chrome.kill(); app.kill();

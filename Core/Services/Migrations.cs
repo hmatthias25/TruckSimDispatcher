@@ -92,6 +92,94 @@ public static class Migrations
         MeasureRunsOffTheOdometer(s);
         ForgetSpentTrailerWord(s);
         RepairHiredTrucksOnTheCompany(s);
+        GradeWrecksAgainstTheTruckBeforeThem(s);
+    }
+
+    /// <summary>
+    /// Every incident filed with a damage reading was graded against the reading it had just written onto the truck, so
+    /// it measured no damage at all: a 100% rollover, Driver and preventable, went on the record as None, and neither
+    /// discipline nor probation heard of it. And a tractor written off as driver fault from the Maintenance tab never
+    /// became an incident. Reported from play. Each is put right here, oldest first, and decided as it would have been
+    /// — for the driver's current employment, until one of them ends it.
+    /// <list type="bullet">
+    /// <item>An incident graded at nothing against a load named on it is graded again against what the truck was on
+    /// when that load was dispatched (or the last thing filed on the load before it). Without a load there is nothing
+    /// to measure against, and it is left as it stands.</item>
+    /// <item>A driver-fault write-off with no incident at the write-off line in the week before it is filed as one.</item>
+    /// </list>
+    /// </summary>
+    private static void GradeWrecksAgainstTheTruckBeforeThem(AppState s)
+    {
+        if (s.SchemaVersion >= 38) return;
+        s.SchemaVersion = 38;
+        var m = s.Settings.Maintenance;
+        var toDecide = new List<Incident>();
+
+        foreach (var inc in s.Incidents.Where(i => i.Kind != "Late" && i.TruckDamagePctAfter >= m.IncidentNoiseFloorPct
+                                                   && i.DamageIncurredPct is >= 0 and < 0.01).ToList())
+        {
+            var trip = string.IsNullOrWhiteSpace(inc.TripNumber) ? null : s.Trips.FirstOrDefault(t => t.Number == inc.TripNumber);
+            if (trip == null) continue;
+            var before = trip.TruckDamageBefore;
+            foreach (var earlier in s.Incidents.Where(i => i != inc && i.TripNumber == trip.Number
+                                                           && i.TruckDamagePctAfter >= 0 && i.TruckDamagePctAfter < inc.TruckDamagePctAfter - 0.01
+                                                           && string.CompareOrdinal(i.GameTime, inc.GameTime) <= 0))
+                before = Math.Max(before, earlier.TruckDamagePctAfter);
+            var incurred = Math.Max(0, inc.TruckDamagePctAfter - before);
+            if (incurred < 0.01) continue;
+            var was = inc.Severity;
+            inc.DamageIncurredPct = Math.Round(incurred, 2);
+            inc.Severity = SafetyService.SeverityFor(s, incurred);
+            inc.AgesOffAfterLoads = SafetyService.AgeOffFor(inc.Severity);
+            inc.Notes = string.Join(" | ", new[] { inc.Notes,
+                $"Regraded {was} → {inc.Severity}: {incurred:0.#}% against the {before:0.#}% the truck was on before." }
+                .Where(x => !string.IsNullOrWhiteSpace(x)));
+            toDecide.Add(inc);
+        }
+
+        foreach (var e in s.Ledger.Where(e => e.Category == "InsuranceDeductible" && e.Memo.Contains("driver-fault")).ToList())
+        {
+            var at = GameClock.TryParse(e.GameTime);
+            if (SafetyService.WreckOnFile(s, at)) continue;
+            var unit = e.Memo.Split("unit ", 2).ElementAtOrDefault(1)?.Split(" —", 2)[0].Trim() ?? "";
+            var trip = s.Trips.Where(t => t.TruckUnit.Equals(unit, StringComparison.OrdinalIgnoreCase)
+                                          && (at == null || GameClock.TryParse(t.DispatchedGameTime) is not { } d || d <= at.Value))
+                .OrderByDescending(t => t.CreatedUtc).FirstOrDefault();
+            if (trip == null) continue;     // never one of the driver's own
+            var inc = SafetyService.RecordIncident(s, new Incident
+            {
+                Kind = "Collision",
+                GameTime = e.GameTime,
+                TripNumber = trip.Number,
+                Description = $"Unit {unit} written off as a total loss, down to the driver.",
+                FaultAttribution = "Driver",
+                Preventable = true,
+                TruckDamagePctAfter = m.TotalLossPct,
+                DamageIncurredPct = Math.Max(0, m.TotalLossPct - trip.TruckDamageBefore),
+                Notes = "Filed when the safety record was corrected: the write-off never became an incident.",
+            });
+            inc.LoadCountAtIncident = s.Trips.Count(t => t.Status == "Delivered"
+                && (at == null || GameClock.TryParse(t.DeliveredGameTime) is not { } d || d <= at.Value));
+            toDecide.Add(inc);
+        }
+
+        var hired = GameClock.TryParse(s.Driver.HiredGameDate);
+        foreach (var inc in toDecide.OrderBy(i => GameClock.TryParse(i.GameTime) ?? DateTime.MinValue))
+        {
+            s.Events.Insert(0, new LogEvent
+            {
+                Channel = "safety", GameTime = s.Status.GameTime, Ref = inc.Number,
+                Message = $"{inc.Number} corrected: {inc.Description} — {inc.DamageIncurredPct:0.#}% of damage, {inc.Severity.ToLowerInvariant()}.",
+            });
+            if (inc.FaultAttribution != "Driver" || !inc.Preventable || inc.Severity == "None") continue;
+            if (!string.IsNullOrWhiteSpace(inc.ForgivenGameTime) || SafetyService.LoadsToAgeOff(s, inc) <= 0) continue;
+            if (hired is { } h && GameClock.TryParse(inc.GameTime) is { } when && when < h) continue;
+            if (s.Driver.TerminatedForCause || s.Driver.Status == "Terminated") continue;
+            var (action, probation) = SafetyService.Decide(s, inc);
+            if (action != null)
+                s.Events.Insert(0, new LogEvent { Channel = "safety", GameTime = s.Status.GameTime, Ref = action.Number,
+                    Message = $"{action.Number} {action.Level} issued on {inc.Number}." });
+        }
     }
 
     /// <summary>

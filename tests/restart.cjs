@@ -66,7 +66,7 @@ async function place(city, state, day, hm = '08:00', cycle = 70) {
 
   head('4. Completing before arriving is refused');
   let msg = await refuses(() => api('/restart/complete', 'POST', { gameTime: at(4, '10:00') }));
-  ok('you cannot finish a restart you never started', /report in at the truck stop first/i.test(msg || ''), msg);
+  ok('you cannot finish a restart you never started', /report in (at the truck stop|where you have parked) first/i.test(msg || ''), msg);
   ok('and it is still on order', !!S.views.restart?.order, S.views.restart?.order?.status);
 
   head('4b. A cycle that comes back on its own stands the order down');

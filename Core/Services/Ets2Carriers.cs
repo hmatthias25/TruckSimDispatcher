@@ -148,6 +148,48 @@ internal static partial class Ets2Data
             "Dutch bulk carrier from Rijssen, in the east of the Netherlands — silos and tippers for food, feed " +
             "and chemicals.",
             "Experienced drivers."),
+
+        // Food-grade tankers, flatbeds and heavy haul: reported from play on 2026-11-01, "no companies in Europe that run
+        // flatbeds or any kind of ag or food tankers".
+        new("Van den Bosch Transporten", "VDB",
+            new[] { "Tanker", "Bulk" }, "Large",
+            "Eindhoven", "NL", new[] { "Rotterdam,NL", "Duisburg,DE" },
+            0.52m, 0.41m, 1, 20, 90, 3, 9, NoHaz, false, true, 4, 3, 3,
+            "Dutch bulk carrier from Erp, near Eindhoven: food-grade liquids and powders in tank and silo trailers " +
+            "— edible oils, dairy, sugar, flour — with the tank cleaned between every load. Hygiene is the job.",
+            "A year on the road. No ADR: nothing they carry is dangerous."),
+
+        new("Den Hartogh Logistics", "DHG",
+            new[] { "Tanker", "Intermodal" }, "Large",
+            "Rotterdam", "NL", new[] { "Hamburg,DE", "Antwerp,BE" },
+            0.54m, 0.43m, 2, 30, 91, 2, 8, new[] { "3", "8" }, false, true, 4, 3, 4,
+            "Liquid-logistics group from Rotterdam: chemicals, gases and food-grade liquids in road tankers and ISO " +
+            "tank containers across Europe.",
+            "ADR and two years on the road."),
+
+        new("Mammoet", "MAM",
+            new[] { "Heavy Haul", "Flatbed" }, "Large",
+            "Rotterdam", "NL", new[] { "Antwerp,BE", "Hamburg,DE" },
+            0.58m, 0.46m, 2, 40, 92, 2, 8, NoHaz, false, true, 5, 3, 4,
+            "Heavy lifting and transport specialist from Schiedam, beside Rotterdam: refinery modules, transformers " +
+            "and wind-turbine parts on low loaders and modular trailers, under escort.",
+            "Two years, and oversize experience."),
+
+        new("Felbermayr", "FEL",
+            new[] { "Heavy Haul", "Flatbed" }, "Large",
+            "Linz", "AT", new[] { "Salzburg,AT", "Munich,DE" },
+            0.55m, 0.44m, 2, 30, 91, 2, 8, NoHaz, false, true, 4, 3, 4,
+            "Austrian transport and lifting group from Wels, near Linz: machinery, steel and oversize loads on " +
+            "flatbeds and low loaders across Central Europe.",
+            "Two years on the road."),
+
+        new("Collett & Sons", "COL",
+            new[] { "Heavy Haul", "Flatbed" }, "Medium",
+            "Manchester", "UK", new[] { "Liverpool,UK", "Glasgow,UK" },
+            0.54m, 0.43m, 2, 30, 91, 2, 8, NoHaz, false, true, 4, 4, 4,
+            "British heavy-haulage and abnormal-loads specialist from Halifax, West Yorkshire — Manchester is the " +
+            "nearest city in the game: transformers, plant and engineering projects, often under escort.",
+            "Two years, and a clean record."),
     };
 
     internal static readonly Carriers.Spec[] CarriersFictional =
@@ -237,6 +279,39 @@ internal static partial class Ets2Data
             "Small Swiss carrier with new trucks, short runs and the best pay on the board — and the strictest " +
             "standards to go with it.",
             "Three years, a clean record and a spotless trailer."),
+
+        // The farm's freight and the forest's: food tankers, livestock, grain and feed, and timber.
+        new("Zuivel Tank Express", "ZTE",
+            new[] { "Tanker" }, "Medium",
+            "Zwolle", "NL", new[] { "Groningen,NL", "Bremen,DE" },
+            0.48m, 0.38m, 0, 0, 87, 3, 10, NoHaz, true, true, 3, 4, 3,
+            "Dairy and food-grade tanker fleet from the Dutch dairy country: milk from the farms, cream, whey and " +
+            "edible oils to the processors. No ADR, a washout between loads, and home most nights.",
+            "Takes new drivers."),
+
+        new("Breizh Agri Transport", "BAT",
+            new[] { "Bulk", "Tanker" }, "Medium",
+            "Rennes", "FR", new[] { "Nantes,FR", "Brest,FR" },
+            0.46m, 0.36m, 0, 0, 86, 4, 11, NoHaz, true, true, 3, 3, 3,
+            "Breton farm haulier: grain, animal feed and fertiliser in tippers and silos, and milk in food-grade " +
+            "tankers, between the farms, the cooperatives and the ports.",
+            "Takes new drivers."),
+
+        new("Meseta Ganadera", "MGN",
+            new[] { "Livestock" }, "Small",
+            "Salamanca", "ES", new[] { "Badajoz,ES", "Valladolid,ES" },
+            0.47m, 0.37m, 1, 15, 88, 3, 9, NoHaz, false, true, 3, 3, 3,
+            "Livestock haulier from the Spanish plateau: cattle and pigs to markets and abattoirs, on the animal " +
+            "welfare rules. The animals set the clock.",
+            "A year on the road."),
+
+        new("Savotta Puukuljetus", "SPK",
+            new[] { "Log", "Flatbed" }, "Medium",
+            "Kuopio", "FI", new[] { "Joensuu,FI", "Oulu,FI" },
+            0.49m, 0.39m, 1, 20, 89, 3, 10, NoHaz, false, true, 3, 3, 3,
+            "Finnish timber haulier: logs from the forest roads to the sawmills and pulp mills of the lakeland, and " +
+            "sawn timber to the ports.",
+            "A year on the road."),
     };
 
     internal static readonly Carriers.Spec[] CarriersSecondChance =

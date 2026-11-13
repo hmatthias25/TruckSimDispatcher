@@ -60,7 +60,7 @@ async function runTrip({ day, events, typed }) {
   ok('loading derived', Math.abs(r.audit.trip.loadingHours - 1) < 0.01, `${r.audit.trip.loadingHours} h`);
   ok('unloading derived', Math.abs(r.audit.trip.unloadingHours - 1) < 0.01, `${r.audit.trip.unloadingHours} h`);
   ok('no detention', r.audit.trip.detentionHours === 0, `${r.audit.trip.detentionHours} h`);
-  ok('audit explains it', r.audit.serviceFindings.some((x) => /inside the .* free window/.test(x)),
+  ok('audit explains it', r.audit.serviceFindings.some((x) => /No detention: the work fit in its .* of free time/.test(x)),
     r.audit.serviceFindings.find((x) => /free window/.test(x)) || '(none)');
 
   head('Sat 5 h at the shipper, 4 h at the receiver');
