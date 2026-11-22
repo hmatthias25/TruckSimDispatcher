@@ -59,6 +59,7 @@ PLAYER_TITLES = {
     "The board: the dock first, then the city",
     "Pasting the board instead of typing it",
     "Stage two: the city board",
+    "Stage three: nothing in town for your trailer",
     "The other clock: how long the listing lasts",
     "How a load is judged",
     "Reading the decision, and arguing with it",

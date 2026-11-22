@@ -39,7 +39,8 @@ const at = (s) => new Date(s.replace(' ', 'T') + 'Z').getTime();
   let d = await api('/board/add', 'POST', load({ trailerType: 'Reefer' }));
   let e = d.evaluations[0];
   const dockLine = (e.scoreDetail || []).find((x) => /Dock time assumed/.test(x)) || '';
-  ok('the mismatch is said', (e.cons || []).some((c) => /Listed as a Reefer/.test(c)));
+  // v0.89: not said. The game only lists freight the hooked trailer pulls, so the note was clutter; the hooked type is taken.
+  ok('the mismatch is not said: the hooked trailer is taken', !(e.cons || []).some((c) => /Listed as a/.test(c)) && e.load.trailerType === type, e.load.trailerType);
   ok('and the dock time is the hooked trailer\'s, not the reefer default of 3:00', !/3:00 to load/.test(dockLine), dockLine);
 
   head('2. Nothing clears the buffer: the pick dispatch makes is one the driver can take');

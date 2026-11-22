@@ -631,6 +631,14 @@ app.MapPost("/api/board/{id}/pass", (string id, PassRequest? req) => Results.Ok(
     //
     // A listing about to expire is still free at every rank, including on probation — Rejections.Check
     // says so and Record files it as free. That is arithmetic, not preference.
+    // Found by the wider search: free to turn down at any rank, and nothing spent. See LoadSearch.
+    if (LoadSearch.Found(s, load))
+    {
+        load.PassedOver = true;
+        store.Log(s, "dispatch", $"Turned down {load.Cargo} out of {DispatchEngine.Place(load.OriginCity, load.OriginState)}, found by the wider search. Free.");
+        return EvaluateBoard(s);
+    }
+
     var mayRefuse = Rejections.Check(s, load);
     if (!mayRefuse.Allowed) throw new InvalidOperationException(mayRefuse.Reason);
 
@@ -806,6 +814,8 @@ app.MapPost("/api/board/interpret", (List<ExtractedLoad> rows) =>
 app.MapPost("/api/dispatch/authorize", (AuthorizeRequest req) => Results.Ok(store.Mutate(s =>
 {
     var trip = DispatchEngine.Authorize(s, req.LoadId, req.Rationale, req.OverrideTight);
+    // A load found: the search is over.
+    s.Search = null;
     store.Log(s, "dispatch", $"{trip.Number} authorized: {trip.Cargo} {DispatchEngine.Place(trip.OriginCity, trip.OriginState)} → {DispatchEngine.Place(trip.DestCity, trip.DestState)}", trip.Number);
     return new { trip, snapshot = Snapshot(s) };
 })));
@@ -848,12 +858,54 @@ app.MapPost("/api/dispatch/request-alternate", (AlternateRequest req) => Results
 
 app.MapPost("/api/dispatch/reject-all", (RejectRequest req) => Results.Ok(store.Mutate(s =>
 {
+    // During the wider search, turning the board down is turning every load on it down, free: dispatch then picks
+    // the town to run empty to.
+    if (LoadSearch.Current(s) != null && s.Board.Count > 0)
+    {
+        foreach (var l in s.Board.Where(l => LoadSearch.Found(s, l))) l.PassedOver = true;
+        store.Log(s, "dispatch", $"Turned down every load found by the wider search ({s.Board.Count}). Free.");
+        return new { rejected = s.Board.Count, next = (BoardDecision?)EvaluateBoard(s), snapshot = Snapshot(s) };
+    }
     var count = s.Board.Count;
     store.Log(s, "dispatch", $"Board of {count} job(s) rejected: {req.Reason}");
     s.Board.Clear();
     // The dock was rejected and the driver says the city has nothing either: the next step, not silence.
     var next = req.CityChecked ? DispatchEngine.AfterCityBoard(s) : null;
+    if (next?.Search != null) store.Log(s, "dispatch", $"Nothing in {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)} for the trailer: the wider search starts. {next.Headline}");
     return new { rejected = count, next, snapshot = Snapshot(s) };
+})));
+
+// ---------------------------------------------------------------- the wider search (see LoadSearch)
+
+/// "No loads for my trailer in this town": the rest first where the hours are short, otherwise the towns around.
+app.MapPost("/api/search/start", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var decision = DispatchEngine.AfterCityBoard(s);
+    store.Log(s, "dispatch", $"No freight in {DispatchEngine.Place(s.Status.LocationCity, s.Status.LocationState)} for the trailer. {decision.Headline}");
+    return new { decision, snapshot = Snapshot(s) };
+})));
+
+/// "Nothing in these towns either": the next ring out, or past the last, the run home.
+app.MapPost("/api/search/widen", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var decision = LoadSearch.Widen(s);
+    store.Log(s, "dispatch", $"Wider search: {decision.Headline}");
+    return new { decision, snapshot = Snapshot(s) };
+})));
+
+app.MapPost("/api/search/stop", () => Results.Ok(store.Mutate<object>(s =>
+{
+    LoadSearch.Stop(s);
+    store.Log(s, "dispatch", "Wider search called off.");
+    return new { decision = EvaluateBoard(s), snapshot = Snapshot(s) };
+})));
+
+/// The driver acknowledges dispatch's pick: the empty run is booked.
+app.MapPost("/api/search/reposition", () => Results.Ok(store.Mutate<object>(s =>
+{
+    var trip = LoadSearch.BookReposition(s);
+    store.Log(s, "dispatch", $"{trip.Number} — empty to {DispatchEngine.Place(trip.DestCity, trip.DestState)} ({Units.Distance(trip.DeadheadMiles)}): {trip.AuthorizationRationale}", trip.Number);
+    return new { trip, snapshot = Snapshot(s) };
 })));
 
 app.MapPost("/api/moves", (MoveRequest req) => Results.Ok(store.Mutate(s =>
@@ -2988,6 +3040,8 @@ object Snapshot(AppState? given = null)
         restartOrders = s.RestartOrders,
         counters = s.Counters,
         discovered = s.Discovered,
+        // The wider search for freight, where one is running from here. See LoadSearch.
+        search = LoadSearch.View(s),
         events = s.Events.Take(80).ToList(),
         views = new
         {

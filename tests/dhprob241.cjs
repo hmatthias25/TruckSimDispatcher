@@ -90,8 +90,8 @@ async function ontoDropHook() {
   ok('and it is not a hard fail either', (ev?.hardFails || []).length === 0,
     (ev?.hardFails || []).join(' | ') || 'none');
 
-  head('2. A real mismatch on a real trailer is still worth saying');
-  // The check is not deleted. A driver on a flatbed being handed a reefer load should hear about it.
+  head('2. A listing that disagrees with a real trailer: the trailer is taken, and nothing said');
+  // v0.89: the game only lists freight the hooked trailer pulls, so the disagreement is a misread, not news (asked for from play).
   let st = await api('/export');
   st.trailers.push({
     unit: 'F-1', type: 'Flatbed', subtype: '', division: 'Flatbed', year: 2020,
@@ -109,8 +109,9 @@ async function ontoDropHook() {
     gameRevenue: 2100, deadlineHours: 48, weightLbs: 38000,
   });
   const cons2 = ((board2.evaluations || [])[0]?.cons || []).join(' | ');
-  ok('a flatbed handed a reefer load is told',
-    /you are on F-1/i.test(cons2), (cons2.match(/[^|]*you are on[^|]*/i) || ['(not said)'])[0].slice(0, 95));
+  ok('a reefer listing read off a flatbed board is the flatbed, and nothing is said',
+    !/you are on F-1|Listed as a/i.test(cons2) && (board2.evaluations || [])[0]?.load.trailerType === 'Flatbed',
+    (board2.evaluations || [])[0]?.load.trailerType);
 
   head('3. An extended probation reads as the period plus what was added');
   S = await ontoDropHook();

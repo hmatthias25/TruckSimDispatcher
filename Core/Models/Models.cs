@@ -17,6 +17,12 @@ public class AppState
     public string DamageRunHomeSinceGameTime { get; set; } = "";
 
     /// <summary>
+    /// The wider search for freight, when the town the truck is in has nothing for its trailer. Null when no search is
+    /// running. See <see cref="Services.LoadSearch"/>.
+    /// </summary>
+    public LoadSearchState? Search { get; set; }
+
+    /// <summary>
     /// Loads turned down, newest first. Only the current week is ever read.
     ///
     /// Kept as a list rather than a counter so the week can be recomputed from the game clock instead of
@@ -4296,6 +4302,8 @@ public class LoadEvaluation
     public bool PassIsFree { get; set; }
     /// <summary>What passing costs, or why it is refused — the driver sees this before they press it.</summary>
     public string PassNote { get; set; } = "";
+    /// <summary>Off another town's board, found by the wider search: judged on its loaded miles, and free to turn down.</summary>
+    public bool FromSearch { get; set; }
 
     /// <summary>
     /// This receiver will take the load whenever it arrives. On the evaluation and not only on the
@@ -4337,6 +4345,12 @@ public class LoadEvaluation
 
 public class BoardDecision
 {
+    /// <summary>The wider search running from here: the ring and its towns. See <see cref="Services.LoadSearch"/>.</summary>
+    public object? Search { get; set; }
+    /// <summary>The empty run dispatch has picked, when nothing found by the search works: one button books it.</summary>
+    public object? Reposition { get; set; }
+    /// <summary>The town has had its board looked at and nothing works: the wider search is the next step.</summary>
+    public bool OfferSearch { get; set; }
     public List<LoadEvaluation> Evaluations { get; set; } = new();
     public string? AuthorizedLoadId { get; set; }
     public string Headline { get; set; } = "";
@@ -4397,3 +4411,38 @@ public class BoardDecision
     public bool ResetWatch { get; set; }
     public string NextTripNumberPreview { get; set; } = "";
 }
+
+/// <summary>
+/// A search outward for freight, ring by ring, from a town with nothing for the trailer: 100 miles, then 250, 400 and
+/// 800, each ring only the cities the last did not cover. See <see cref="Services.LoadSearch"/>.
+/// </summary>
+public class LoadSearchState
+{
+    public string FromCity { get; set; } = "";
+    public string FromState { get; set; } = "";
+    public string StartedGameTime { get; set; } = "";
+    /// <summary>Index into <see cref="Services.LoadSearch.Rings"/> of the ring being looked at.</summary>
+    public int Ring { get; set; }
+    public double InnerMiles { get; set; }
+    public double OuterMiles { get; set; }
+    /// <summary>Home time is pressing: only cities that leave the truck nearer home are looked at.</summary>
+    public bool HomeBound { get; set; }
+    public double HomeMilesHere { get; set; }
+    public string TrailerType { get; set; } = "";
+    /// <summary>The cities to look at in this ring, discovered ones, nearest first.</summary>
+    public List<SearchCity> Cities { get; set; } = new();
+    /// <summary>Market towns in the ring the app has no record of the driver reaching: named, not counted.</summary>
+    public List<string> NotDiscovered { get; set; } = new();
+    /// <summary>What was said when the ring was opened: rings with nothing in them, skipped.</summary>
+    public List<string> Notes { get; set; } = new();
+}
+
+public class SearchCity
+{
+    public string City { get; set; } = "";
+    public string State { get; set; } = "";
+    public double Miles { get; set; }
+    /// <summary>Miles from home, where home time is pressing.</summary>
+    public double? HomeMiles { get; set; }
+}
+

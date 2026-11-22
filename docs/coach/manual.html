@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TruckSim Coach Driver Manual</title>
+<style>
+  /* Flowing pages, not fixed ones: a page that grows breaks onto the next instead of clipping its last lines. */
+  @page { size: letter; margin: 0.7in 0.78in 0.65in; }
+  @page :first { margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    color: #1a2129; font-size: 10.5pt; line-height: 1.5;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  section { break-before: page; }
+  h1 { font-size: 20pt; margin: 0 0 6pt; letter-spacing: -0.4pt; color: #14324e; }
+  h2 {
+    font-size: 15pt; margin: 0 0 8pt; color: #14324e;
+    border-bottom: 1.5pt solid #d99412; padding-bottom: 4pt; letter-spacing: -0.2pt;
+  }
+  h2 .num { font: 700 11pt Consolas, monospace; color: #d99412; margin-right: 8pt; }
+  h3 { font-size: 11.5pt; margin: 13pt 0 3pt; color: #1f4a70; break-after: avoid; }
+  h4 { font-size: 9.5pt; margin: 9pt 0 3pt; color: #3b4a57; text-transform: uppercase; letter-spacing: 0.6pt; break-after: avoid; }
+  p { margin: 0 0 6pt; }
+  ul, ol { margin: 0 0 7pt; padding-left: 16pt; }
+  li { margin: 0 0 2.5pt; }
+  b, strong { color: #10293d; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background: #eef2f5; padding: 0 3pt; border-radius: 2pt; }
+  .lede { font-size: 11.5pt; color: #3b4a57; margin-bottom: 10pt; }
+  .btn { font: 700 8pt Consolas, monospace; letter-spacing: 0.8pt; text-transform: uppercase; background: #fdf3e0;
+         border: 0.75pt solid #d99412; border-radius: 2pt; padding: 0 3pt; color: #5a3a05; white-space: nowrap; }
+
+  figure { margin: 8pt 0 10pt; break-inside: avoid; }
+  figure img { width: 100%; display: block; border: 0.75pt solid #b9c4cf; border-radius: 3pt; }
+  figure.md img { width: 82%; margin: 0 auto; }
+  figure.sm img { width: 60%; margin: 0 auto; }
+  figcaption { font-size: 8pt; color: #6b7885; margin-top: 4pt; font-style: italic; }
+
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0 9pt; font-size: 8.9pt; break-inside: avoid; }
+  th { background: #14324e; color: #fff; text-align: left; padding: 4pt 6pt; font-size: 8.3pt; letter-spacing: 0.3pt; }
+  td { border: 0.5pt solid #ccd5dd; padding: 3pt 6pt; vertical-align: top; line-height: 1.35; }
+  tr:nth-child(even) td { background: #f5f8fa; }
+
+  .note, .warn, .rule {
+    border-left: 3pt solid #2b6cb0; background: #f2f7fc; padding: 6pt 9pt; margin: 8pt 0;
+    font-size: 9.4pt; border-radius: 0 3pt 3pt 0; line-height: 1.42; break-inside: avoid;
+  }
+  .warn { border-left-color: #b3392f; background: #fdf4f3; }
+  .rule { border-left-color: #2f9c48; background: #f3faf5; }
+  .note p:last-child, .warn p:last-child, .rule p:last-child { margin-bottom: 0; }
+  .note h4, .warn h4, .rule h4 { margin-top: 0; color: #14324e; }
+
+  .flow { display: flex; gap: 6pt; margin: 8pt 0 10pt; break-inside: avoid; }
+  .flow div { flex: 1; border: 0.75pt solid #8fa1b0; background: #f4f7f9; border-radius: 3pt; padding: 5pt 6pt; font-size: 8.6pt; line-height: 1.35; }
+  .flow div b { display: block; font-size: 9pt; color: #14324e; margin-bottom: 2pt; }
+  .flow div.a { border-color: #d99412; background: #fdf3e0; }
+  .flow div.g { border-color: #2f9c48; background: #eff9f2; }
+
+  /* cover */
+  .cover { background: #10222f; color: #e8eef4; height: 11in; padding: 1.1in 0.9in; position: relative; }
+  .cover .kicker { font: 700 9pt/1.3 Consolas, monospace; letter-spacing: 2.4pt; text-transform: uppercase; color: #d99412; margin-bottom: 8pt; }
+  .cover h1 { color: #fff; font-size: 40pt; line-height: 1.02; letter-spacing: -1.2pt; margin: 0 0 10pt; }
+  .cover .sub { font-size: 15pt; color: #a8bccd; margin-bottom: 26pt; }
+  .cover .rulebar { height: 4pt; width: 2.1in; background: #d99412; margin: 0 0 26pt; }
+  .cover .facts { margin-top: 22pt; font-size: 10pt; color: #c3d2de; }
+  .cover .facts div { padding: 3pt 0; border-bottom: 0.5pt solid #22384a; }
+  .cover .facts span { display: inline-block; width: 1.6in; color: #7f97ab; font: 700 8pt Consolas, monospace; letter-spacing: 1pt; text-transform: uppercase; }
+  .alphabox {
+    margin-top: 30pt; background: #3a2410; border: 1.5pt solid #d99412; border-radius: 4pt;
+    padding: 12pt 14pt; display: flex; gap: 12pt; align-items: flex-start; color: #f0dcc0; font-size: 9.5pt; line-height: 1.45;
+  }
+  .alphabox b { color: #ffcf7a; }
+  .cover b { color: #fff; }
+  .cover .alphabox b { color: #ffcf7a; }
+  .ab-tag { flex: none; background: #d99412; color: #241703; font: 700 9pt Consolas, monospace; letter-spacing: 1.4pt;
+            text-transform: uppercase; padding: 3pt 9pt; border-radius: 3pt; }
+  .cover .credit { position: absolute; left: 0.9in; right: 0.9in; bottom: 1.0in; border-top: 1pt solid #2c4356;
+                   padding-top: 12pt; font-size: 10pt; color: #a8bccd; }
+
+  .toc { column-count: 2; column-gap: 22pt; font-size: 10pt; }
+  .toc div { display: flex; gap: 8pt; padding: 2.5pt 0; border-bottom: 0.5pt dotted #cdd6de; break-inside: avoid; }
+  .toc .n { font: 700 9.5pt Consolas, monospace; color: #d99412; width: 18pt; flex: none; }
+  .toc .t b { display: block; }
+  .toc .t span { font-size: 8.5pt; color: #5c6b78; }
+  /* Tall screenshots are held to a page: the figure shrinks rather than leaving a heading alone on a page. */
+  figure img { width: auto !important; max-width: 100%; max-height: 7.2in; margin: 0 auto; }
+  figure.md img { max-width: 82%; }
+  figure.sm img { max-width: 60%; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ COVER -->
+<div class="cover">
+  <div class="kicker">TruckSim Coach Driver</div>
+  <h1>Coach Driver<br>Manual</h1>
+  <div class="sub">On time at every stop, and the passengers happy.</div>
+  <div class="rulebar"></div>
+  <p style="font-size:11.5pt;color:#c3d2de;max-width:5.6in">Driving coaches in Euro Truck Simulator 2's Coaches DLC as an employed
+    driver: hired by a coach company, assigned your duties, judged on keeping the timetable and on how your passengers felt,
+    paid by the hour, and working up from probation and the night lines to the tours.</p>
+  <div class="facts">
+    <div><span>Version</span>0.1 alpha</div>
+    <div><span>Game</span>Euro Truck Simulator 2 with the Coaches DLC</div>
+    <div><span>Runs beside</span>TruckSim Dispatcher and TruckSim Owner-Operator, if you play them</div>
+    <div><span>Program</span>TruckSimCoach.exe &middot; opens in your browser</div>
+  </div>
+  <div class="alphabox"><div class="ab-tag">Alpha</div>
+    <div>The first release, built in the DLC's first days. Everything in this book works and is tested, but the numbers
+      &mdash; the pay rates, the grades, the promotion bars &mdash; are <b>first guesses, to be tuned by playing</b>.
+      The game's job menus are read as they appear today; if they show something the app does not expect, that is worth
+      reporting.</div></div>
+  <div class="credit">A separate app from <b>TruckSim Dispatcher</b> and <b>TruckSim Owner-Operator</b>. It has its own career
+    file, its own window and this, its own manual.</div>
+</div>
+
+<!-- ============================================================ CONTENTS -->
+<section>
+  <h2>Contents</h2>
+  <div class="toc">
+    <div><span class="n">1</span><span class="t"><b>What this app is</b><span>An employed coach driver's career</span></span></div>
+    <div><span class="n">2</span><span class="t"><b>Installing and starting</b><span>One exe, a browser tab, the career file</span></span></div>
+    <div><span class="n">3</span><span class="t"><b>The first screen</b><span>Your skills, a company, a home depot</span></span></div>
+    <div><span class="n">4</span><span class="t"><b>Your coach</b><span>Buying the model you are assigned</span></span></div>
+    <div><span class="n">5</span><span class="t"><b>The board</b><span>Reading the game's job menus in</span></span></div>
+    <div><span class="n">6</span><span class="t"><b>How the company assigns</b><span>What you may run, and getting you home</span></span></div>
+    <div><span class="n">7</span><span class="t"><b>Running a duty</b><span>Stop by stop</span></span></div>
+    <div><span class="n">8</span><span class="t"><b>Two drivers</b><span>Night lines, long lines, handovers</span></span></div>
+    <div><span class="n">9</span><span class="t"><b>The close-out</b><span>The grade and what it means</span></span></div>
+    <div><span class="n">10</span><span class="t"><b>Looking after the coach</b><span>Damage, the shop, the service, inspections</span></span></div>
+    <div><span class="n">11</span><span class="t"><b>Your record</b><span>Bonuses, strikes, warnings, dismissal</span></span></div>
+    <div><span class="n">12</span><span class="t"><b>Ranks and companies</b><span>Probation, promotion, better employers</span></span></div>
+    <div><span class="n">13</span><span class="t"><b>Depots</b><span>Reaching, opening, transferring</span></span></div>
+    <div><span class="n">14</span><span class="t"><b>Pay</b><span>By the hour, and the extras</span></span></div>
+    <div><span class="n">15</span><span class="t"><b>Driving hours</b><span>EU rules for coach drivers</span></span></div>
+    <div><span class="n">16</span><span class="t"><b>Tours</b><span>The top rank's work</span></span></div>
+    <div><span class="n">17</span><span class="t"><b>The route library</b><span>The Routes tab</span></span></div>
+    <div><span class="n">18</span><span class="t"><b>Settings and off duty</b><span>Breaks, the key, resting, positioning</span></span></div>
+    <div><span class="n">19</span><span class="t"><b>Quick reference</b><span>Every number in one place</span></span></div>
+    <div><span class="n">20</span><span class="t"><b>Questions</b><span>When something is not what you expected</span></span></div>
+  </div>
+</section>
+
+<!-- ============================================================ 1 -->
+<section>
+  <h2><span class="num">1</span>What this app is</h2>
+  <p class="lede">You are a coach driver, employed by a coach company. The company assigns your duties from the work the game
+    offers; you drive them in the game and log each stop here; the app judges how it went and pays you for it.</p>
+  <p>The Coaches DLC gives Euro Truck Simulator 2 three kinds of passenger work: <b>Quick Jobs</b>, with a coach supplied;
+    <b>Contract Jobs</b>, timetabled lines between bus stations with stops between, which need a coach of your own; and
+    <b>Tourist Jobs</b>, a day trip to a landmark and back. Passengers each have their own sensitivity, react to harsh braking
+    and sharp turns, and the game shows how satisfied they are as a percentage and in four groups, from very happy to very
+    unhappy.</p>
+  <p>This app wraps a career around that:</p>
+  <ul>
+    <li><b>A company and a rank.</b> Line operators, tour houses and mixed firms, real or invented, budget to premium. You
+      start on probation with the work nobody wants, the night lines, and work up to excursions and multi-day tours.</li>
+    <li><b>Judged on what a passenger company is judged on:</b> keeping the timetable at every stop, and happy passengers.
+      Good duties earn bonuses; bad ones bring warnings, and in the end dismissal.</li>
+    <li><b>Paid like a coach driver:</b> by the hour, with night and Sunday supplements, allowances for days and nights away,
+      and tips on tourist work.</li>
+    <li><b>Hours under the EU rules for coaches,</b> including two-driver night lines and the twelve-day tour rule.</li>
+    <li><b>A route library</b> built from what the game offers, so the company can plan your way home.</li>
+  </ul>
+  <div class="note"><h4>What the game decides and what the app decides</h4>
+    <p>The game decides which jobs exist, what it pays you in the game, and how your passengers react to your driving. The app
+      decides which of those jobs your company gives you, judges how the duty went, and keeps your career: rank, record, pay and
+      hours. The game's own pay is not touched: the app's pay is your career's, not your game bank.</p></div>
+</section>
+
+<!-- ============================================================ 2 -->
+<section>
+  <h2><span class="num">2</span>Installing and starting</h2>
+  <p>Unzip <code>TruckSimCoach.exe</code> anywhere and run it. A console window opens and the app opens in your browser at
+    <code>http://127.0.0.1:5373</code>. Close the console window to stop it. It needs no install and no internet connection,
+    except to read screenshots (section 5).</p>
+  <p>Your career is kept in a folder called <code>coach-data</code> beside the exe, with dated backups. It never reads or
+    writes the other two apps' careers, so all three can sit in the same folder.</p>
+  <h3>Times</h3>
+  <p>The app keeps the game's clock as a <b>day number and a 24-hour time</b>, the way ETS2 shows it. Day 1 is a Monday; the
+    weekday is shown beside every day number so it can be checked by eye.</p>
+</section>
+
+<!-- ============================================================ 3 -->
+<section>
+  <h2><span class="num">3</span>The first screen</h2>
+  <figure class="md"><img src="img/start.png"><figcaption>The first screen: who you are, your coach skills, and a company.</figcaption></figure>
+  <table>
+    <tr><th style="width:28%">Field</th><th>What to put</th></tr>
+    <tr><td>Your name</td><td>As you like.</td></tr>
+    <tr><td>Company names</td><td><b>Real companies</b> by their own names (FlixBus, RegioJet, National Express...) or
+      <b>Invented</b> ones in their place. Changeable later in Settings.</td></tr>
+    <tr><td>Game day and time</td><td>Off the game's clock. A fresh profile is Day 1.</td></tr>
+    <tr><td>Coach level</td><td>The <b>coach</b> level from the game, which is separate from your truck level.</td></tr>
+    <tr><td>Coach skills</td><td>Your points, 0 to 6, in each of the six coach skills: <b>Longer Duties</b>, <b>Demanding
+      Timetables</b>, <b>Premium Service</b>, <b>Cushioned Journey</b>, <b>Passenger Favourite</b>, <b>EcoDriving</b>.</td></tr>
+  </table>
+  <h3>Picking a company</h3>
+  <p>Each company card shows its tier, the work it runs and its starting rate. A company that will not take you yet says what
+    it wants, and as you type your level and skills the list updates. Pick one, then pick your <b>home depot</b> from its
+    depots: where you live, where your duties are planned to bring you back to.</p>
+  <figure class="md"><img src="img/companies.png"><figcaption>Budget companies take a rookie; premium ones want a record first.</figcaption></figure>
+  <table>
+    <tr><th>Tier</th><th>Takes</th><th>Starting rate</th></tr>
+    <tr><td>Budget</td><td>Anyone.</td><td>€14.50/h</td></tr>
+    <tr><td>Mainstream</td><td>Coach level 4, a point in Demanding Timetables, and after five duties passengers at 70% and 90% of stops on time; no dismissal in the last 60 days.</td><td>€16.00/h</td></tr>
+    <tr><td>Premium</td><td>Coach level 10, 2 points each in Premium Service and Cushioned Journey, 30 duties on your record with passengers at 85% and 95% on time, and no warning standing.</td><td>€17.50/h</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ 4 -->
+<section>
+  <h2><span class="num">4</span>Your coach</h2>
+  <p>On joining, the company assigns you a coach model and a fleet number: a Volvo 9700 DD at FlixBus, a Neoplan Skyliner at
+    RegioJet, a MAN Lion's Coach at a budget firm. <b>Buy that model in the game</b>: Contract Jobs need a coach of your own.
+    Then press <span class="btn">It is in my garage</span>. Until you do, the company will not hand you a contract duty.</p>
+  <figure class="md"><img src="img/buy-coach.png"><figcaption>The first thing on the Today tab.</figcaption></figure>
+  <p>Coaches have their own garage area in the game and do not use up truck slots. Money is shared with truck mode, so a
+    few Quick Jobs or truck loads may be needed first.</p>
+  <p>The coach is the company's, and you are held to how you treat it: its damage is read after every run, and it has a
+    service and inspections to keep. See section 10.</p>
+</section>
+
+<!-- ============================================================ 5 -->
+<section>
+  <h2><span class="num">5</span>The board</h2>
+  <p class="lede">Open the game's Contract Jobs and Tourist Jobs menus where you are, and bring what they offer into the app.
+    That is the board the company assigns from.</p>
+  <h3>From screenshots</h3>
+  <p>With an Anthropic API key in Settings, take screenshots of the menus and paste them into the Today tab with
+    <b>Ctrl+V</b>, drop them in, or <span class="btn">Browse</span> for them. The menus scroll, so take one of each screen:
+    up to 24 go in one read. They show as thumbnails you can remove before reading. Press <span class="btn">Read</span>: each is
+    read on its own, six at a time, and a job that appears on two overlapping screenshots is kept once.</p>
+  <p>Contract Jobs and Tourist Jobs can be read together: the app tells them apart by what they name (a destination station,
+    or a landmark). Or say which menu the screenshots are of with <b>These screenshots are of</b>.</p>
+  <h3>Typed in</h3>
+  <p>Without a key, open <b>Type a job in</b>: the menu (Contract or Tourist), the passengers and pay if shown, and the stops
+    in order. The first stop needs its departure time. Leave a time blank where the menu shows none: the app works it out from
+    the distance and marks it so. Give <b>Stops in all</b> as the menu counts them. A tourist job needs only the station it
+    leaves from and the city its landmark is in; the app adds the way back.</p>
+  <figure class="sm"><img src="img/jobform.png"><figcaption>Typing a job in.</figcaption></figure>
+  <h3>Stops the menu counts but does not name</h3>
+  <p>The menu shows how many stops a line makes, ends included, but names only where it starts and ends: <b>2 stops</b> is
+    straight through, <b>3 stops</b> calls at one city on the way, <b>4 stops</b> at two. The app saves the line with its two
+    ends, their times and the count, so it knows where the line goes. The cities between are asked for <b>when the company
+    assigns you that line</b>: open the job's route in the game and put them in, in order. The library keeps them, and reading
+    the same menu again does not lose them, so each line is asked about once.</p>
+  <h3>Every job is kept</h3>
+  <p>Each job read in is saved to the <b>route library</b> (section 17) and taken to run <b>every day at the same times</b>.
+    Seeing it again confirms it. A line through the small hours (any of it between 00:00 and 05:00) is a <b>night line</b>.
+    Place names are kept in one spelling, the English one the game shows: Prague and Praha are the same place.</p>
+</section>
+
+<!-- ============================================================ 6 -->
+<section>
+  <h2><span class="num">6</span>How the company assigns</h2>
+  <figure><img src="img/board.png"><figcaption>The board: the company's choice at the top, the possible ones below, and what is not for you, with why.</figcaption></figure>
+  <p>The company asks two questions, in order.</p>
+  <h3>1. What may you run?</h3>
+  <ul>
+    <li><b>Its kind of work.</b> A tour house never gives you a line. Tourist trips, out and back from the station, any company
+      may give you as charter work.</li>
+    <li><b>Your rank.</b> On probation, day lines are 250 km at most and domestic; night lines are yours. Line drivers run day
+      lines up to 600 km; seniors anything.</li>
+    <li><b>Your skills.</b> Over 500 km needs a point in Longer Duties, over 900 km three. Four or more stops between need 2
+      points in Demanding Timetables, seven or more need 4. A famous landmark needs 2 in Cushioned Journey.</li>
+    <li><b>Your hours.</b> Your own driving against what is left today and this week, the duty against the spread, and the end
+      against the weekly rest (section 15).</li>
+    <li><b>Where it leaves from.</b> Only jobs from where you are.</li>
+  </ul>
+  <h3>2. Which gets you home?</h3>
+  <p>A driver at home costs the company nothing overnight; a driver away costs a hotel and the night allowance. So, of what you
+    may run, the company prefers in order:</p>
+  <div class="flow">
+    <div class="g"><b>Home</b>It ends at your home depot, or is a round trip from it.</div>
+    <div class="g"><b>Turnaround</b>The library knows a line back home the same day, inside the same day's hours.</div>
+    <div><b>A chain home</b>Two known lines bring you home the same day.</div>
+    <div class="a"><b>A depot</b>It ends at an opened depot: the rest room, not a hotel.</div>
+    <div class="a"><b>Away</b>A hotel, and the night allowance.</div>
+  </div>
+  <p>Ending away scores lower still when your weekly rest is close. <b>Night lines go to probationers</b>: the hours nobody
+    wants go to the newest driver. <b>Tourist trips go to the experienced</b>: seldom to a probationer, more often the higher
+    your rank, and more again at a company that runs tours. Pay and length decide only between duties otherwise equal.</p>
+  <p>You take what the company assigns: <span class="btn">Take this duty</span>. Where the line's cities between are not known
+    yet, put them in first.</p>
+  <figure class="md"><img src="img/between.png"><figcaption>A line of three stops: the city it calls at, asked for once.</figcaption></figure>
+  <p> If the job has gone from the game's menu, hand
+    it back, which costs nothing, and read the board in again.</p>
+  <figure class="md"><img src="img/duty.png"><figcaption>An assigned duty on the Today tab.</figcaption></figure>
+</section>
+
+<!-- ============================================================ 7 -->
+<section>
+  <h2><span class="num">7</span>Running a duty</h2>
+  <p class="lede">Confirm the line in the game, drive it, and log each stop here as you reach it and leave it. The Run tab
+    shows the stops as a timeline with the next step open.</p>
+  <figure><img src="img/run.png"><figcaption>Under way: Berlin and Magdeburg done, the arrival at Hanover next.</figcaption></figure>
+  <h3>Leaving a stop</h3>
+  <p>The time you left and <b>how many passengers boarded there</b> (0 if nobody). Book-on is fifteen minutes before the
+    first departure, for the pre-trip check.</p>
+  <div class="warn"><h4>Never leave early</h4><p>Leaving a stop before the timetable says leaves behind passengers who came
+    for the time on their ticket. An <b>early departure</b> (more than a minute early) is worse than arriving late: it is
+    counted against you whatever else happened, and cannot be put down to anything else.</p></div>
+  <h3>Reaching a stop</h3>
+  <p>The time you arrived, <b>how many got off</b> (0 if nobody), and <b>what the game shows for your passengers</b>: the
+    satisfaction % and the count in each of the four groups. The load changes at every stop, so the counts are asked for at
+    every stop: the app keeps the number aboard, shows it on the timeline, refuses more getting off than were aboard, and fills
+    in everyone at the last stop. Arriving early is fine; the coach waits. Up to <b>5 minutes late</b> counts as on time;
+    5 to 15 minutes is late; over 15 is very late.</p>
+  <div class="note"><h4>Every stop is an end</h4><p>The passengers getting off at a stop on the way give their verdict there,
+    just as those riding to the last stop do at the end. So <b>every arrival needs the satisfaction % and all four counts</b>
+    (0 where a group is empty). The duty's satisfaction is <b>every stop's, averaged</b>, each counting the same, and the
+    <b>worst stop</b> is judged on its own as well: passengers made angry at the second stop are not undone by a happy coach at
+    the last. The complaints are the most very unhappy passengers seen at any one stop. The close-out lists each stop's figures, and the last
+    stop's are asked for again in case the game's end-of-trip summary differs.</p></div>
+</section>
+
+<!-- ============================================================ 8 -->
+<section>
+  <h2><span class="num">8</span>Two drivers: night lines and long lines</h2>
+  <p>Two kinds of line run with <b>two drivers</b>, as the big operators run them: a <b>night line</b> with more than 4h30 of
+    driving, and <b>any line with more driving than one driver's day</b> (over 9 hours), day or night. The game has one driver,
+    you, so the app keeps the second one: each leg is marked <b>You drive</b> or <b>Co-driver</b>. Because only your own share
+    counts against your hours, a line too long for one driver can be assigned to you, where your rank and skills allow its
+    length.</p>
+  <figure><img src="img/night.png"><figcaption>A night line with two drivers. You drive every leg in the game; the co-driver's legs are theirs on the clocks.</figcaption></figure>
+  <ul>
+    <li>A <b>probationary</b> driver takes the legs in the small hours (00:00 to 05:00). Otherwise the two take turns,
+      neither driving more than about four hours before the other takes over.</li>
+    <li>Only your own legs count as <b>driving</b>. A co-driver's leg is a break for you: the rules allow a break taken in a
+      vehicle someone else is driving.</li>
+    <li>With two drivers your <b>spread</b> is 21 hours, not 13, as the rules allow a multi-manned crew (9 hours' rest in 30).</li>
+    <li>The driver can change at any stop before the leg starts: <span class="btn">Co-driver takes this leg</span> or
+      <span class="btn">I take this leg</span>.</li>
+    <li><b>A leg too long for one driver</b> (over 4h30) is handed over at a rest area about half way: its driver drives to
+      there, the other on from there. The timeline shows the planned time; on arrival, <b>Handed over on the road at</b> is
+      filled in with it. Put in the time it actually happened, or clear it if one driver drove the whole leg. Each driver's
+      side counts as theirs.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 9 -->
+<section>
+  <h2><span class="num">9</span>The close-out</h2>
+  <p>At the last stop, give the final figures from the game's end-of-trip summary if they changed, and <b>whose doing any
+    lateness was</b>: you, the road (traffic, roadworks, weather), the game (a crash, a reload) or the coach (a breakdown).
+    Lateness that was not yours is not held against you. An early departure always is.</p>
+  <p>Then <b>the coach's damage</b>, as the game shows it now, and whose doing any new damage was: yours, another road
+    user's, or the game's. It is needed every time, even when it is 0 (section 10).</p>
+  <figure><img src="img/close-form.png"><figcaption>Closing a duty out.</figcaption></figure>
+  <figure><img src="img/closeout.png"><figcaption>The close-out: the grade, then figures. Timekeeping at every stop, the passengers, the pay, and where you stand.</figcaption></figure>
+  <h3>The grade</h3>
+  <table>
+    <tr><th style="width:14%">Grade</th><th>When</th><th style="width:26%">What follows</th></tr>
+    <tr><td><b>Excellent</b></td><td>Every stop on time, no early departure, passengers at 85% or better over the duty and 80%
+      at every stop, nobody very unhappy, within the hours, and no damage of yours over 1%.</td><td>A duty bonus on your pay.</td></tr>
+    <tr><td><b>Good</b></td><td>Anything between.</td><td>Nothing; it counts as clean.</td></tr>
+    <tr><td><b>Poor</b></td><td>A stop more than 15 minutes late (yours), an early departure, passengers under 60% over the duty
+      or under 50% at any stop, two or more very unhappy, an hours infringement, or 5% to 15% of damage that was yours.</td><td>A strike.</td></tr>
+    <tr><td><b>Bad</b></td><td>Two of those timekeeping failures, passengers under 45% over the duty or under 35% at any stop, or
+      two infringements, or 15% or more of damage that was yours.</td><td>Two strikes, and a step up the ladder at once. Past 25% of
+      damage, a final warning at once.</td></tr>
+  </table>
+  <p>Each very unhappy passenger is a <b>complaint</b>. The four groups are summed up as how the passengers felt: mostly
+    delighted, mostly content, mixed, or mostly unhappy.</p>
+</section>
+
+<!-- ============================================================ 10 -->
+<section>
+  <h2><span class="num">10</span>Looking after the coach</h2>
+  <p>The coach is held to the same rules as a truck in TruckSim Dispatcher. Its damage is <b>read after every run</b>: at the
+    close-out of a duty, and at the end of every empty run. What a run did to it is the reading after, less the reading
+    before. Give the % the game shows for the coach, and whose doing any new damage was.</p>
+  <figure><img src="img/coach.png"><figcaption>The Coach tab: the damage, the service and inspections, what the company says, and the coach's log.</figcaption></figure>
+  <h3>What the company says about the damage</h3>
+  <table>
+    <tr><th style="width:16%">Damage</th><th>What follows</th></tr>
+    <tr><td>Under 5%</td><td>Nothing. Monitor only.</td></tr>
+    <tr><td>5% and up</td><td>Worth a look the next time the coach stands at a depot anyway: on a rest at home or in a depot. Not a
+      trip on its own. The company leans a little toward work that ends at one of its garages.</td></tr>
+    <tr><td>10% and up</td><td>No more passenger work until it is fixed. Home is the shop: the company's own garage is cheaper and
+      the coach ends up where it is needed. Under 15%, a line that ends at your home depot still carries passengers, and if the
+      board has one, the company puts you on it. Otherwise, run it home empty.</td></tr>
+    <tr><td>15% and up</td><td>Nobody rides in it until it has been looked at. Home, empty, if that is within a day's driving and
+      the damage is under 20%; otherwise the nearest shop on the road.</td></tr>
+    <tr><td>30% and up</td><td>Out of service. The nearest shop and no further.</td></tr>
+  </table>
+  <h3>Damage you caused</h3>
+  <p>Judged as the Dispatcher judges an incident, by what it did. Damage another road user caused, or the game, is put on the
+    record and costs you nothing.</p>
+  <table>
+    <tr><th style="width:16%">On one run</th><th>What follows</th></tr>
+    <tr><td>Under 1%</td><td>Nothing: other people's mirrors are the job.</td></tr>
+    <tr><td>1% to 5%</td><td>Minor. On the record, and the duty cannot be Excellent, so no duty bonus.</td></tr>
+    <tr><td>5% to 15%</td><td>Moderate. A poor duty and a strike.</td></tr>
+    <tr><td>15% to 25%</td><td>Serious. A bad duty: two strikes and a step up the ladder at once.</td></tr>
+    <tr><td>25% and up</td><td>Major. A final warning at once; on probation, or already on a final warning, the end of the job.</td></tr>
+  </table>
+  <p>An empty run has no duty to grade, so damage on one is judged on its own: moderate is a strike, serious a step up the
+    ladder, major a final warning. Small damage adds up too: promotion asks for less than 1.5% of your own damage per 1,000 km
+    over your last 15 duties.</p>
+  <h3>At the shop</h3>
+  <p>Do the work in the game, then log it on the Coach tab under <b>At the shop</b>: a repair (with the damage after it, usually
+    0), the service, the safety inspection or the annual test, or several at once. A repair can be done anywhere; the service and
+    the inspections only in the company's own garage, at your home depot or an opened depot.</p>
+  <figure class="md"><img src="img/coach-shop.png"><figcaption>Logging a visit to the shop.</figcaption></figure>
+  <p>The coach stands in the shop for the work: a repair takes about 8 hours to book in plus 0.9 hours a point of damage, a
+    third quicker in the company's garage; the service takes about 4 hours, an inspection 3. Your rest goes on meanwhile, but no
+    duty books on, and the coach drives nowhere, until it is out.</p>
+  <h3>The service and the inspections</h3>
+  <p>The game has no service schedule, so the app keeps one from real coach practice:</p>
+  <table>
+    <tr><th style="width:22%">What</th><th style="width:20%">How often</th><th>Why that figure</th></tr>
+    <tr><td>Service</td><td>Every 40,000 km</td><td>MAN quotes up to 140,000 km or 18 months between oil changes on its coach
+      engines, but operators check brakes, tyres and lubrication far more often than that, and Scania sets shorter intervals for
+      stop-start and tourist work. 40,000 km sits between, close to the Dispatcher's 25,000-mile service.</td></tr>
+    <tr><td>Safety inspection</td><td>Every 6 weeks</td><td>UK operators declare an inspection interval to the regulator; six weeks
+      is the norm for coaches, and the most for any over twelve years old. Germany asks for a safety check every 3 to 9 months
+      on top of the annual test.</td></tr>
+    <tr><td>Annual test</td><td>Every year</td><td>The German Hauptuntersuchung or the UK annual test: yearly for every bus and coach.</td></tr>
+  </table>
+  <p>Coming up (the service within a tenth of its distance, an inspection within three days), the company leans toward work that
+    ends at one of its garages, so it can be done there. Due, it says so. A service a tenth overdue keeps the coach to work that
+    ends at a garage. <b>Past an inspection or the annual test, the coach carries nobody</b>: that is the operator's licence.
+    The intervals can be changed in Settings.</p>
+  <p>A new company gives you a new coach: whatever happened to the last one stays with the last company.</p>
+</section>
+
+<!-- ============================================================ 11 -->
+<section>
+  <h2><span class="num">11</span>Your record</h2>
+  <p class="lede">Being on time with happy passengers pays. Being late with unhappy ones costs, and in the end costs the job.</p>
+  <h3>Bonuses</h3>
+  <ul>
+    <li><b>A duty bonus</b> for every excellent duty: €15, plus €5 a rank, plus a little for the distance (up to €15).</li>
+    <li><b>A performance bonus</b> every four weeks with at least eight duties: <b>€150</b> for passengers at 85% and 95% of
+      stops on time, <b>€60</b> for 75% and 90%.</li>
+  </ul>
+  <h3>The discipline ladder</h3>
+  <div class="flow">
+    <div class="g"><b>Clean</b>Nothing on file.</div>
+    <div class="a"><b>Verbal warning</b>From the depot manager.</div>
+    <div class="a"><b>Written reprimand</b>On your file.</div>
+    <div class="a"><b>Final warning</b>One more step...</div>
+    <div><b>Dismissed</b>Find another company.</div>
+  </div>
+  <ul>
+    <li>A poor duty is a <b>strike</b>; three strikes take you up a step. A bad duty takes you up a step at once.</li>
+    <li><b>Ten clean duties</b> in a row take you down a step.</li>
+    <li><b>On probation, a written reprimand ends it</b>: you are not kept on.</li>
+    <li>A company that dismissed you will not take you back, and a dismissal in the last 60 days keeps the mainstream and
+      premium companies away.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 12 -->
+<section>
+  <h2><span class="num">12</span>Ranks and companies</h2>
+  <table>
+    <tr><th>Rank</th><th>Work</th><th>Adds to the rate</th></tr>
+    <tr><td>Probationary driver</td><td>Night lines (the small-hours legs), short day lines, Sunday and holiday cover. At a tour
+      house, local excursions.</td><td>&mdash;</td></tr>
+    <tr><td>Line driver</td><td>Day lines up to 600 km.</td><td>+€1.00/h</td></tr>
+    <tr><td>Senior line driver</td><td>Long and international lines.</td><td>+€2.00/h</td></tr>
+    <tr><td>Excursion driver</td><td>Tourist trips become your main work: tips.</td><td>+€2.50/h</td></tr>
+    <tr><td>Tour driver</td><td>Famous landmarks and multi-day tours: the best paid, with tips and allowances.</td><td>+€3.50/h</td></tr>
+  </table>
+  <p>A <b>line operator</b>'s ladder ends at senior line driver. A <b>tour house</b> goes from probation to excursions to tours.
+    A <b>mixed firm</b> has all five.</p>
+  <h3>Probation</h3>
+  <p>90 days for a first job, 30 for a driver who has passed probation before (who also starts a rank up). At the end it
+    is passed with at least eight duties, passengers at 65% on average, and no more than a verbal warning: you move up a rank.
+    Too few duties to judge extends it once, by 30 days.</p>
+  <h3>Promotion</h3>
+  <p>After probation, a review every fortnight. The Career tab lists what still stands between you and the next rank.</p>
+  <table>
+    <tr><th>To</th><th>Duties here</th><th>Last 15: passengers / on time</th><th>Record</th><th>Coach level and skills</th></tr>
+    <tr><td>Line driver</td><td>10</td><td>65% / 85%</td><td>A verbal warning at most</td><td>&mdash;</td></tr>
+    <tr><td>Senior line driver</td><td>25</td><td>78% / 93%</td><td>A verbal warning at most</td><td>Level 8; Longer Duties 2, Demanding Timetables 2</td></tr>
+    <tr><td>Excursion driver</td><td>20</td><td>82% / 92%</td><td>Clean</td><td>Level 6; Passenger Favourite 1, Cushioned Journey 1</td></tr>
+    <tr><td>Tour driver</td><td>25</td><td>88% / 95%</td><td>Clean</td><td>Level 14; Cushioned Journey 3, Premium Service 2, Longer Duties 3</td></tr>
+  </table>
+  <p>Keep your coach level and skills up to date on the Career tab as you level up in the game.</p>
+  <figure class="md"><img src="img/career.png"><figcaption>The Career tab: the company, your rank and what the next one needs, and your record.</figcaption></figure>
+  <h3>Moving to a better company</h3>
+  <p>The Career tab lists every other company with what it wants, or a <span class="btn">Join, based here</span> button
+    and a choice of depot. Joining resigns your current job. Your record goes with you; your discipline starts clean.
+    Get to your new home depot with a positioning run (section 18).</p>
+</section>
+
+<!-- ============================================================ 13 -->
+<section>
+  <h2><span class="num">13</span>Depots</h2>
+  <p>Coach companies run from many bases: from five depots at a regional firm to a dozen at an international network, all on
+    cities the ETS2 map has. Every depot is known from the day you join, but becomes one you can use only once you have been
+    there.</p>
+  <ol>
+    <li><b>Reached</b>: the first time you arrive in a depot city, the app says so.</li>
+    <li><b>Opened</b>: buy the <b>large garage</b> there in the game, then press <span class="btn">Open</span>. Duties can now
+      start and end there, and a night there is in the depot's rest room rather than a hotel.</li>
+    <li><b>Transfer</b>: to an opened depot, from the Career tab. It becomes home, and duties are planned to bring you back
+      to it.</li>
+  </ol>
+  <p>Buy the garage at your home depot first: the Today tab asks.</p>
+  <figure class="md"><img src="img/depots.png"><figcaption>The depots on the Career tab, with the distance to each from where you are.</figcaption></figure>
+</section>
+
+<!-- ============================================================ 14 -->
+<section>
+  <h2><span class="num">14</span>Pay</h2>
+  <p class="lede">By the hour, the way coach drivers are paid, with the trade's extras. Gross figures: tax is yours.</p>
+  <table>
+    <tr><th style="width:30%">Item</th><th>How much</th></tr>
+    <tr><td>Hours</td><td>Book-on to book-off (fifteen minutes before the first departure to fifteen after the last arrival),
+      at the company's rate for your rank.</td></tr>
+    <tr><td>Night supplement</td><td>+25% for every hour between 22:00 and 06:00.</td></tr>
+    <tr><td>Sunday supplement</td><td>+50% for every hour on a Sunday.</td></tr>
+    <tr><td>Daily allowance</td><td>€14 for a duty of more than eight hours.</td></tr>
+    <tr><td>Night allowance</td><td>€28 for a daily or weekly rest away from home, in a hotel the company pays or an opened
+      depot's rest room. A turnaround home the same day earns none: none is needed.</td></tr>
+    <tr><td>Tips</td><td>Tourist jobs and tours only: about €1 a passenger, ×1.5 with passengers at 90%, ×1 at 75%, ×0.5 at 60%,
+      nothing below. +10% for every point in Passenger Favourite.</td></tr>
+    <tr><td>Positioning</td><td>Driving the coach empty to where the work is: the plain rate.</td></tr>
+    <tr><td>Bonuses</td><td>The duty bonus, the four-weekly performance bonus (section 11), and the tour bonus (section 16).</td></tr>
+  </table>
+  <p>Payslips come on <b>Fridays at 18:00</b>, line by line. The Pay tab shows the week so far and every payslip.</p>
+  <figure><img src="img/pay.png"><figcaption>The Pay tab.</figcaption></figure>
+</section>
+
+<!-- ============================================================ 15 -->
+<section>
+  <h2><span class="num">15</span>Driving hours</h2>
+  <p>EU Regulation 561/2006, as it applies to a coach driver, kept from what you log: your legs are driving, time standing at
+    a stop or between duties is rest.</p>
+  <figure class="md"><img src="img/clocks.png"><figcaption>Your hours, on the Today and Run tabs.</figcaption></figure>
+  <table>
+    <tr><th style="width:30%">Rule</th><th>Limit</th></tr>
+    <tr><td>Daily driving</td><td>9 hours, 10 twice a week.</td></tr>
+    <tr><td>Weekly driving</td><td>56 hours; 90 over two weeks.</td></tr>
+    <tr><td>Spread</td><td>13 hours from the end of your last daily rest; 21 with a co-driver.</td></tr>
+    <tr><td>Daily rest</td><td>9 hours or more off counts as a daily rest.</td></tr>
+    <tr><td>Weekly rest</td><td>24 hours or more off, due after six 24-hour periods; after twelve on a tour.</td></tr>
+    <tr><td>Breaks</td><td>45 minutes after 4h30 at the wheel, <b>only with breaks switched on</b> (below).</td></tr>
+  </table>
+  <p>The company will not assign a duty that does not fit. Driving past a limit while on a duty is an <b>hours infringement</b>
+    on the close-out, and counts toward the grade.</p>
+  <div class="note"><h4>Breaks are off by default</h4><p>The game's lines are timed without room for a 45-minute break, and a stop the
+    timetable does not allow cannot be taken without running late. So the break rule is off unless you switch it on in Settings.
+    With it on, a leg over 4h30 is timetabled with its break, the arrival asks for the break taken on the way, and driving past
+    4h30 without one is an infringement.</p></div>
+</section>
+
+<!-- ============================================================ 16 -->
+<section>
+  <h2><span class="num">16</span>Tours</h2>
+  <p>A tour driver at a company that runs tours can take a group on a <b>multi-day tour</b> from the home depot: 3 to 12 days,
+    a city a day, each a day's drive from the last and from home, then back. Start one on the Today tab.</p>
+  <ul>
+    <li>Each day's stage is a contract line to the day's city where the board has one; if not, <span class="btn">Drive the
+      group</span> makes the stage a duty of its own. A tourist job in a tour city is the group's sightseeing.</li>
+    <li>Nights away earn the night allowance in a hotel the company pays; tips come every day; the tour ends with a <b>tour
+      bonus</b> of €40 a day.</li>
+    <li>A tour is a single occasional service, so your <b>weekly rest may wait up to twelve days</b> (EU 561/2006 as amended in
+      2024, at home or abroad). A tour that used it leaves <b>two weekly rests owed</b>: 69 hours off before the next working
+      week.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 17 -->
+<section>
+  <h2><span class="num">17</span>The route library</h2>
+  <p>No source lists the Coaches DLC's lines, so the app builds its own: every job read in is kept, assumed to run every day at
+    the same times. The <b>Routes</b> tab shows it, <b>read only</b>: lines change only when a new screenshot is read.</p>
+  <figure><img src="img/routes.png"><figcaption>The route library, with one line opened and the city view for Berlin.</figcaption></figure>
+  <ul>
+    <li>Each line: its kind, its stops and daily times (marked where worked out from the distance), the distance, how often it
+      has been seen and run, its average delay and how its passengers have taken it, and its <b>return working</b> where the
+      library knows one.</li>
+    <li>Click a line to see its stops. Pick a <b>city view</b> to see everything leaving, arriving and calling at a station:
+      the quickest way to see your way home.</li>
+    <li>The more boards you read in, the better the company plans: turnarounds home, chains home, and the line it expects to
+      bring you back, named on the close-out.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 18 -->
+<section>
+  <h2><span class="num">18</span>Settings and off duty</h2>
+  <figure class="md"><img src="img/settings.png"><figcaption>Settings.</figcaption></figure>
+  <table>
+    <tr><th style="width:30%">Setting</th><th>What it does</th></tr>
+    <tr><td>Company names</td><td>Real or invented.</td></tr>
+    <tr><td>Breaks</td><td>Off by default; on holds you to the 45-minute break after 4h30 (section 15).</td></tr>
+    <tr><td>Anthropic API key</td><td>For reading screenshots of the job menus. Kept in your career file and never shown back.</td></tr>
+    <tr><td>The coach: the company's lines</td><td>The damage lines (5%, 10%, 15%, 30%), the service distance and the inspection
+      interval (section 10). The Dispatcher's figures by default.</td></tr>
+    <tr><td>Start again</td><td>Type RESET. The old career is kept in the backups folder.</td></tr>
+  </table>
+  <h3>Off duty</h3>
+  <p>When the game clock moves on without a duty (a night's sleep, the weekend), enter the new time under <b>The game clock now</b>.
+    Time off counts as rest: nine hours or more is a daily rest, 24 or more a weekly one.</p>
+  <h3>Positioning</h3>
+  <p>Driving the coach empty, to where the work is, to a new home depot or home for a repair: where to, when you left, when you
+    arrived, and the coach's damage at the end. It counts as driving and is paid at the plain rate.</p>
+</section>
+
+<!-- ============================================================ 19 -->
+<section>
+  <h2><span class="num">19</span>Quick reference</h2>
+  <table>
+    <tr><th style="width:42%">What</th><th>Number</th></tr>
+    <tr><td>On time / late / very late at a stop</td><td>up to 5 min / 5 to 15 min / over 15 min</td></tr>
+    <tr><td>Early departure</td><td>More than 1 minute before the timetable</td></tr>
+    <tr><td>Excellent</td><td>All on time, passengers 85%+ over the duty and 80%+ at every stop, nobody very unhappy</td></tr>
+    <tr><td>Poor / Bad passengers</td><td>Under 60% / 45% over the duty, or under 50% / 35% at any stop</td></tr>
+    <tr><td>Strikes to a step / clean duties to step down</td><td>3 / 10</td></tr>
+    <tr><td>Probation</td><td>90 days (30 after a first passed); 8 duties, 65%</td></tr>
+    <tr><td>Rates: budget / mainstream / premium</td><td>€14.50 / €16.00 / €17.50 an hour, plus the rank</td></tr>
+    <tr><td>Night / Sunday supplement</td><td>+25% / +50%</td></tr>
+    <tr><td>Daily / night allowance</td><td>€14 / €28</td></tr>
+    <tr><td>Tips</td><td>€1 a passenger × satisfaction × Passenger Favourite</td></tr>
+    <tr><td>Performance bonus (4 weeks)</td><td>€150 or €60</td></tr>
+    <tr><td>Rookie day lines / line driver day lines</td><td>250 km / 600 km</td></tr>
+    <tr><td>Longer Duties needed</td><td>1 over 500 km, 3 over 900 km</td></tr>
+    <tr><td>Demanding Timetables needed</td><td>2 for 4+ stops between, 4 for 7+</td></tr>
+    <tr><td>Two drivers</td><td>A night line with more than 4h30 of driving, or any line with more than 9 hours</td></tr>
+    <tr><td>Handover on the road</td><td>Half way along a leg over 4h30, with two drivers</td></tr>
+    <tr><td>Daily / weekly / fortnight driving</td><td>9 h (10 twice) / 56 h / 90 h</td></tr>
+    <tr><td>Spread</td><td>13 h; 21 h with a co-driver</td></tr>
+    <tr><td>Weekly rest due</td><td>After 6 days; 12 on a tour; 69 h after a long tour</td></tr>
+    <tr><td>Coach damage: a look / shop / review / out of service</td><td>5% / 10% / 15% / 30%</td></tr>
+    <tr><td>Run home for a repair</td><td>Under 15% always; under 20% if within 9 hours</td></tr>
+    <tr><td>Your damage on a run: minor / moderate / serious / major</td><td>1% / 5% / 15% / 25%</td></tr>
+    <tr><td>Repair time</td><td>8 h + 0.9 h a point; ×0.7 in the company's garage</td></tr>
+    <tr><td>Service / safety inspection / annual test</td><td>40,000 km / 6 weeks / a year</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ 20 -->
+<section>
+  <h2><span class="num">20</span>Questions</h2>
+  <h4>Nothing on the board is assigned to me.</h4>
+  <p>Each job says why it is not for you. Most often: your rank, a skill, your hours (take a rest: move the clock on), or the
+    weekly rest falling due. Read in more of the menu, or a board somewhere else.</p>
+  <h4>The company keeps giving me night lines.</h4>
+  <p>On probation, that is the job. Pass it and they go to the next newcomer.</p>
+  <h4>The job I was given has gone from the game's menu.</h4>
+  <p>Hand it back on the Today tab, or at the foot of the Run tab. It costs nothing. Read the board in again.</p>
+  <h4>The game crashed during a duty.</h4>
+  <p>At the foot of the Run tab, open <b>The game lost this job</b> (or press <span class="btn">The game lost it</span> on the
+    Today tab, which takes you there). Give the time it was lost and the coach's damage, and give the duty up. Nothing goes on
+    your record, and the time you worked from book-on until then is paid at the plain rate. The leg you were driving counts as
+    driving. The coach is left at the last stop you logged: log a positioning run from there to wherever the game put you, or
+    to the next job.</p>
+  <h4>A time I entered was wrong.</h4>
+  <p>The clock only goes forward, so a time before the last one entered is refused. Check the day number against the weekday.</p>
+  <h4>I was late because of traffic.</h4>
+  <p>Say so at the close-out: lateness put down to the road, the game or the coach is not held against you. An early departure
+    always is.</p>
+  <h4>Somebody drove into my coach.</h4>
+  <p>Say so when you give the damage: "another road user hit me". It goes on the coach's record and costs you nothing. The
+    coach still needs fixing if it is over 10%.</p>
+  <h4>I repaired the coach in the game, but the app still shows the damage.</h4>
+  <p>Log the repair on the Coach tab. If you have already driven on and given a lower reading, the app notices the coach came
+    back better than it went out, and says so.</p>
+  <h4>Nothing is assigned and the coach is at 12%.</h4>
+  <p>Only a line that ends at your home depot carries passengers now. If the board has none, run the coach home empty
+    (positioning on the Today tab) and repair it there.</p>
+  <h4>The arrival times in the library look wrong.</h4>
+  <p>Times the menu did not show are worked out from the distance, and marked "worked out". Read the line in again from a
+    screenshot that shows them: shown times replace worked-out ones.</p>
+</section>
+
+</body>
+</html>

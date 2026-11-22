@@ -136,6 +136,16 @@ async function offer(type, cargo, extra = {}) {
     dry.push(`Cardboard lot ${i}`);
   }
 
+  // A reefer behind the truck: the game only lists reefer freight to a reefer, and since v0.89 a listing that disagrees
+  // with the hooked trailer takes the hooked trailer's type.
+  {
+    const st = await api('/export');
+    st.trailers.push({ unit: 'R-1', type: 'Reefer', subtype: '', division: 'Reefer', year: 2020, status: 'InService',
+      inGameGarage: true, homeTerminalId: st.company.terminals[0].id, damagePct: 0, stars: 5 });
+    st.driver.assignedTrailerUnit = 'R-1';
+    if (!st.company.divisions.includes('Reefer')) st.company.divisions.push('Reefer');
+    S = un(await api('/import', 'POST', st));
+  }
   await at('09:00');
   let coldBooked = 0, dryBooked = 0;
   for (const c of cold) {

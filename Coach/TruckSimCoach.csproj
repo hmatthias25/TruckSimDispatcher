@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- TruckSim Coach Driver: the third app over the shared Core, for the ETS2 Coaches DLC. Its own exe, its own career
+       file and its own manual, beside the Dispatcher and the Owner-Operator. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TruckSimCoach</AssemblyName>
+    <RootNamespace>TruckSimCoach</RootNamespace>
+    <AssemblyTitle>TruckSim Coach Driver</AssemblyTitle>
+    <Product>TruckSim Coach Driver</Product>
+    <Version>0.1.0</Version>
+
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="ui\index.html" LogicalName="ui/index.html" />
+    <EmbeddedResource Include="ui\styles.css" LogicalName="ui/styles.css" />
+    <EmbeddedResource Include="ui\app.js" LogicalName="ui/app.js" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Remove="ui\**;coach-data\**;publish\**" />
+    <None Remove="ui\**;coach-data\**;publish\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\TruckSim.Core.csproj" />
+  </ItemGroup>
+
+</Project>

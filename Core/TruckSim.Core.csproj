@@ -22,6 +22,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="TruckSimDispatcher" />
     <InternalsVisibleTo Include="TruckSimOwnerOperator" />
+    <InternalsVisibleTo Include="TruckSimCoach" />
   </ItemGroup>
 
   <!-- The data tables live with the code that reads them: Geo and RoadTable load these from their own

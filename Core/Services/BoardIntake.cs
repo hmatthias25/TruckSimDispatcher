@@ -44,6 +44,12 @@ public static class BoardIntake
         // arrangement, and the fit check does not gate on it at all.
         var hooked = DispatchEngine.AssignedTrailer(s)?.Type ?? "";
         if (string.IsNullOrWhiteSpace(l.TrailerType) && !DropHook.Is(hooked)) l.TrailerType = hooked;
+        // A type that disagrees with the trailer behind the truck is a misread, not a mismatch: the game only lists
+        // freight the hooked trailer can pull, so there is no way to be given the wrong job. The trailer is the truth.
+        // Asked for from play: "this load is usually for a flatbed but you have a dry van" on loads the game had
+        // shown for the dry van, which is clutter about nothing. Not on drop and hook, where the freight decides the box.
+        else if (hooked.Length > 0 && !DropHook.Is(hooked) && !DropHook.Is(l.TrailerType)
+                 && !EquipmentService.TypeCovers(hooked, l.TrailerType)) l.TrailerType = hooked;
         if (DropHook.Is(l.TrailerType)) l.TrailerType = "";
 
         // How long the listing itself has left. Anchored to the game clock here rather than trusted as a

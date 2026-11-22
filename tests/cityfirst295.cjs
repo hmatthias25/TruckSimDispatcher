@@ -51,9 +51,11 @@ async function story(name, here, sideways) {
   await board(here, sideways, true);
   const r = await api('/dispatch/reject-all', 'POST', { reason: 'fixture', cityChecked: true });
   const next = r.next;
-  ok('there is a next step, not silence', !!next && next.rejectAll === true, next?.headline);
-  ok('saying where to go', /Run it in empty|check what is loading out of|take your rest/i.test(notes(next || {})), notes(next || {}).slice(0, 260));
-  ok('and the run home brings its days-off question with it', next?.askHomeDays === true, `askHomeDays=${next?.askHomeDays}`);
+  // v0.89: "nothing in the city" starts the wider search, on the way home where home time is pressing (see widersearch).
+  ok('there is a next step, not silence', !!next && (next.rejectAll === true || !!next.search), next?.headline);
+  ok('saying where to go', /Run it in empty|check what is loading out of|take your rest|on the way home|run it home/i.test(notes(next || {})), notes(next || {}).slice(0, 260));
+  ok('and it looks on the way home, or runs home asking the days off', next?.search ? next.search.homeBound === true : next?.askHomeDays === true,
+    `search=${!!next?.search}, askHomeDays=${next?.askHomeDays}`);
 }
 
 (async () => {

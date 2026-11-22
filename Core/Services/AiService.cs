@@ -271,6 +271,9 @@ public static class AiService
         - Set "confidence" per row: "high" when every field was crisp, "medium" when you had to
           work at it, "low" when you are unsure of the row at all.
         - Do not merge or deduplicate rows. If the same lane appears twice, return it twice.
+        - trailerType comes only from what the listing itself shows (a trailer icon or label). Never work
+          it out from the cargo name, and leave it empty rather than guess. Do not comment, in "notes" or
+          anywhere else, on whether a cargo suits a trailer: the game only lists jobs the trailer can take.
         - Ignore UI chrome, the player's own truck info, buttons, and any row that is cut off at
           the edge of the image so badly you cannot read its cargo and payout.
         - Use "notes" to mention anything the operator should know: rows you skipped, a column you

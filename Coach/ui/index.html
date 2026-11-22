@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TruckSim Coach Driver</title>
+<link rel="stylesheet" href="/styles.css">
+
+<div id="boot" class="boot">Starting up…</div>
+
+<!-- ============================================================ FIRST SCREEN -->
+<div id="start" class="hidden">
+  <div class="wrap narrow">
+    <div class="hero">
+      <div class="kicker">Coach Driver</div>
+      <h1>Your first duty starts here</h1>
+      <p>Who you are, what the game says about your coach skills, and which company you are joining. Start
+        Euro Truck Simulator 2 with the Coaches DLC, and fill this in from it.</p>
+    </div>
+    <div class="panel">
+      <div class="grid2">
+        <label>Your name<input id="st-name" placeholder="e.g. Jana Novak"></label>
+        <label>Company names
+          <select id="st-roster"><option value="Real">Real companies</option><option value="Invented">Invented companies</option></select></label>
+        <label>Game day<input id="st-day" type="number" min="1" value="1"><span class="hint">Day 1 is a Monday.</span></label>
+        <label>Time of day<input id="st-time" value="07:00" placeholder="07:00"><span class="hint">24-hour, as the game shows it.</span></label>
+        <label>Coach level<input id="st-level" type="number" min="0" value="0"><span class="hint">The coach level, not the truck one.</span></label>
+      </div>
+      <h3 class="sect">Coach skills</h3>
+      <p class="hint">Points in each, 0 to 6. Better companies want more of them.</p>
+      <div class="skills" id="st-skills"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Pick a company</h2></div>
+      <p class="hint">Line operators run timetabled lines and night lines. Tour houses run excursions and tours. Mixed firms run
+        both. A rookie starts at a budget company; the premium ones want a record first.</p>
+      <div id="st-companies" class="companies"></div>
+    </div>
+    <div class="row-actions"><div class="spacer"></div><button class="btn big go" id="st-go">Join and start</button></div>
+  </div>
+</div>
+
+<!-- ============================================================ THE TABLET -->
+<div id="app" class="hidden">
+  <header class="bar" id="bar"></header>
+  <nav class="tabs" id="tabs"></nav>
+  <main class="wrap" id="view"></main>
+</div>
+
+<div id="modal" class="modal hidden"><div class="modal-box" id="modal-box"></div></div>
+<div id="toast" class="toast hidden"></div>
+
+<script src="/app.js"></script>

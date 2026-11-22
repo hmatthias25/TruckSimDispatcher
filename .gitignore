@@ -4,11 +4,13 @@ obj/
 publish/
 publish-ship/
 publish-oo/
+publish-coach/
 
 # Career files are runtime state, not source — and they hold your API key if you set one.
 # Back them up with Settings -> Data instead.
 data/
 oo-data/
+coach-data/
 
 # IDE / tooling
 .vs/
@@ -31,6 +33,9 @@ docs/manual/*.pdf
 docs/owner-operator/*.pdf
 docs/owner-operator/pages/
 docs/owner-operator/printprof/
+docs/coach/*.pdf
+docs/coach/pages/
+docs/coach/printprof/
 docs/manual/chromeprof/
 docs/manual/printprof/
 docs/manual/demodata*/

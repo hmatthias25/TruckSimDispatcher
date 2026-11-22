@@ -35,6 +35,8 @@ $root = Split-Path -Parent $PSScriptRoot
 $dll = Join-Path $root 'bin\Release\net10.0\win-x64\TruckSimDispatcher.dll'
 # Suites named oo-*.cjs test the owner/operator app: its own exe, and its own data folder variable.
 $ooDll = Join-Path $root 'OwnerOperator\bin\Release\net10.0\win-x64\TruckSimOwnerOperator.dll'
+# Suites named co-*.cjs test the coach driver app, the same way.
+$coDll = Join-Path $root 'Coach\bin\Release\net10.0\win-x64\TruckSimCoach.dll'
 $work = Join-Path $env:TEMP 'tsd-tests'
 
 $runStarted = Get-Date
@@ -56,6 +58,11 @@ try {
         if ($LASTEXITCODE -ne 0) {
             $out | Where-Object { $_ -match 'error' } | ForEach-Object { Write-Host $_ -ForegroundColor Red }
             throw 'owner/operator build failed'
+        }
+        $out = dotnet build Coach\TruckSimCoach.csproj -c Release -r win-x64 --self-contained -v q --nologo 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $out | Where-Object { $_ -match 'error' } | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+            throw 'coach build failed'
         }
     }
     if (-not (Test-Path $dll)) { throw "no binary at $dll - build first" }
@@ -187,12 +194,14 @@ try {
 
             $env:TSD_DATA_DIR = $data
             $env:TSO_DATA_DIR = $data
+            $env:TSC_DATA_DIR = $data
             # Every run gets its inbound call in the tests; the chance itself is the app's to decide in play.
             $env:TSO_RING_CHANCE = '100'
             # Lets a suite shape a broker (credit, personality) through /api/test/broker. Never set in play.
             $env:TSO_TEST = '1'
+            $env:TSC_TEST = '1'
             $env:TSD_PORT = $port
-            $suiteDll = if ($suite.BaseName -like 'oo-*') { $ooDll } else { $dll }
+            $suiteDll = if ($suite.BaseName -like 'oo-*') { $ooDll } elseif ($suite.BaseName -like 'co-*') { $coDll } else { $dll }
 
             $log = Join-Path $work "$($suite.BaseName).server.log"
             $err = Join-Path $work "$($suite.BaseName).server.err"
@@ -262,7 +271,7 @@ try {
         $results += $r
     }
 
-    Remove-Item Env:\TSD_DATA_DIR, Env:\TSO_DATA_DIR, Env:\TSO_RING_CHANCE, Env:\TSO_TEST, Env:\TSD_PORT -ErrorAction SilentlyContinue
+    Remove-Item Env:\TSD_DATA_DIR, Env:\TSO_DATA_DIR, Env:\TSC_DATA_DIR, Env:\TSC_TEST, Env:\TSO_RING_CHANCE, Env:\TSO_TEST, Env:\TSD_PORT -ErrorAction SilentlyContinue
 
     $totalPass = ($results | Measure-Object -Property Pass -Sum).Sum
     $totalFail = ($results | Measure-Object -Property Fail -Sum).Sum

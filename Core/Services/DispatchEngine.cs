@@ -140,10 +140,15 @@ public static class DispatchEngine
         var truck = AssignedTruck(s);
         var trailer = AssignedTrailer(s);
 
+        // The wider search runs from where it started. A truck that has moved has left it behind.
+        if (s.Search != null && LoadSearch.Current(s) == null) s.Search = null;
+        var searching = LoadSearch.Current(s) != null;
+
         foreach (var load in s.Board)
             decision.Evaluations.Add(Evaluate(s, load, truck, trailer));
 
         decision.Evaluations = Ranked(decision.Evaluations);
+        decision.Search = LoadSearch.View(s);
 
         if (s.Board.Count == 0)
         {
@@ -174,6 +179,8 @@ public static class DispatchEngine
                                            "rest. Take the hours, report your clocks, then send me a fresh one.");
                 return decision;
             }
+
+            if (searching) return LoadSearch.Decision(s, decision);
 
             decision.Headline = "No board submitted.";
             decision.Rationale = "Send me the jobs you can see and I will pick one.";
@@ -282,7 +289,7 @@ public static class DispatchEngine
         // A hold, not a rejection. The board stays up, the load it would have taken is named as the
         // backup, and authorizing that load directly is the override for when a dock really is all there
         // is — which happens, and the driver can see their own game.
-        if (clear.Count > 0 && (HomeTime.WantCityBoardFirst(s, clear) ?? WeakDockBoard(s, clear)) is { } ask)
+        if (clear.Count > 0 && !searching && (HomeTime.WantCityBoardFirst(s, clear) ?? WeakDockBoard(s, clear)) is { } ask)
         {
             decision.RejectAll = false;
             decision.WantCityBoard = true;
@@ -432,6 +439,10 @@ public static class DispatchEngine
                 "actual weight, trailer damage as hooked, and the odometer pulling out.");
             return decision;
         }
+
+        // The wider search: nothing found works, or the driver turned it all down. Dispatch picks a town with freight
+        // and the empty run there is one button away.
+        if (searching) return LoadSearch.Proposal(s, decision);
 
         // Out of hours is not the same as a bad board. If every load fails on the clock rather than on
         // rate, routing or equipment, the freight is fine and the driver simply cannot legally run it.
@@ -605,6 +616,7 @@ public static class DispatchEngine
 
         if (HomeTime.RepositionOffers(s).Any(o => o.IsHomeRun))
             AskAboutTrailersHome(s, decision);
+        decision.OfferSearch = restFirst == null;
 
         // The board is rejected and the search has to move. Where to move it is a question the app can
         // actually answer when home time is close, because it knows which way home is and how far the
@@ -621,7 +633,7 @@ public static class DispatchEngine
         else
             decision.DispatchNotes.Add(decision.ResetWatch && !Restart.IsEu(s)
                 ? $"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Reposition toward a restart location rather than chasing this board — see the reset-capable markets below."
-                : "Reposition and pull a fresh board. I would rather run empty a short distance than tie the truck to bad freight.");
+                : "Nothing here works. Say there is nothing in this town for your trailer, and I will name the towns around to look at.");
 
         return decision;
     }
@@ -647,10 +659,8 @@ public static class DispatchEngine
             ResetWatch = s.Hos.CycleRemaining > 0 && s.Hos.CycleRemaining <= s.Settings.Scoring.ResetWatchCycleHours,
             Headline = $"Nothing in {Place(s.Status.LocationCity, s.Status.LocationState)} either.",
         };
-        if (HomeTime.RepositionOffers(s).Any(o => o.IsHomeRun)) AskAboutTrailersHome(s, d);
-        if (HomeTime.WhereToLookForHome(s) is { } lookThere)
-            d.DispatchNotes.Add(lookThere);
-        else if (Restart.IsEu(s) && EuWeekEndAdvice(s) is { } weekEnd)
+        // The rest first, where the hours are what is short: the listings turn over while the driver sleeps.
+        if (Restart.IsEu(s) && EuWeekEndAdvice(s) is { } weekEnd)
         {
             d.DispatchNotes.Add(weekEnd);
             d.OfferWeeklyRestHere = true;
@@ -658,9 +668,8 @@ public static class DispatchEngine
         else if ((RememberedRestFirst(s) ?? LowClocksNote(s)) is { } rest)
             d.DispatchNotes.Add(rest);
         else
-            d.DispatchNotes.Add(d.ResetWatch && !Restart.IsEu(s)
-                ? $"Cycle is down to {Hhmm.Of(s.Hos.CycleRemaining)}. Reposition toward a restart location rather than chasing this board."
-                : "Reposition and pull a fresh board somewhere better placed. I would rather run empty a short distance than sit here.");
+            // Otherwise the towns around, ring by ring; on the way home where home time is pressing. See LoadSearch.
+            return LoadSearch.Start(s);
         d.Rationale = d.DispatchNotes[0];
         return d;
     }
@@ -848,7 +857,7 @@ public static class DispatchEngine
     /// what the questions are for; where there is nothing to ask, it is made immediately because there is
     /// nothing to wait for.</para>
     /// </summary>
-    private static void AskAboutTrailersHome(AppState s, BoardDecision d)
+    internal static void AskAboutTrailersHome(AppState s, BoardDecision d)
     {
         // Every path out of this method is a run that ends at the yard, so every one of them wants to
         // know how long the driver is staying — before any of the trailer reasoning, which returns early
@@ -1530,6 +1539,14 @@ public static class DispatchEngine
         e.MayPass = mayRefuse.Allowed;
         e.PassIsFree = Rejections.IsFreeRefusal(s, load);
         e.PassNote = mayRefuse.Reason;
+        // Found by the wider search: turning it down costs nothing, at any rank, probation included.
+        if (LoadSearch.Found(s, load))
+        {
+            e.FromSearch = true;
+            e.MayPass = true;
+            e.PassIsFree = true;
+            e.PassNote = "Found by the wider search: turning it down is free, whatever your rank.";
+        }
 
         if (load.PassedOver)
             e.HardFails.Add(
@@ -1590,14 +1607,11 @@ public static class DispatchEngine
         // TrailerMatches has said so for a long time; this check went through TypeCovers instead, which
         // does not know, so a drop-and-hook driver was told "listed as a Dry Van and you are on DH-1
         // (Drop & Hook)" on every single load. Reported from play, and it was on all of them.
-        if (trailer != null && !DropHook.Is(trailer.Type) && !string.IsNullOrWhiteSpace(load.TrailerType) &&
-            !EquipmentService.TypeCovers(trailer.Type, load.TrailerType))
-        {
-            e.Cons.Add($"Listed as a {load.TrailerType} and you are on {trailer.Ref} ({trailer.Type}). " +
-                       "Taking it anyway — ATS only shows you freight your trailer can pull, so if it was on " +
-                       $"your board it fits, and the dock time is planned on the {trailer.Type.ToLowerInvariant()}. " +
-                       "Worth a second look at the trailer type if you typed it by hand.");
-        }
+        //
+        // And not said either. It was a con on the card ("Listed as a Flatbed and you are on..."), and the driver can do
+        // nothing about it: the game showed them the load for the trailer they have. Reported from play as clutter.
+        // BoardIntake now takes the hooked trailer's type over a listing that disagrees, and DockTrailerType plans the
+        // dock on what is hooked for anything entered before that.
 
         // ---- HOS feasibility: the plan itself, shared with the owner/operator app. See LoadPlanner.
         var planned = LoadPlanner.Plan(s, load, truck, trailer, e);
@@ -1612,6 +1626,11 @@ public static class DispatchEngine
         // yard when the rest falls due. See HomeTime.WeeklyRestRefusal.
         if (HomeTime.WeeklyRestRefusal(s, load, e.Feasibility) is { } notHomeInTime)
             e.HomeTimeFails.Add(notHomeInTime);
+
+        // Any arrangement, due soon or not: a load that finishes where the driver cannot get home from by the date is
+        // refused. See HomeTime.HomeByDateRefusal.
+        else if (HomeTime.HomeByDateRefusal(s, load, e.Feasibility) is { } missesDate)
+            e.HomeTimeFails.Add(missesDate);
 
         // ---- economics
         // Said on the card, before the load is picked. A receiver taking it early is worth hours, and
@@ -1942,11 +1961,19 @@ public static class DispatchEngine
             e.Pros.Add($"Comfortable window — {Hhmm.Of(e.Feasibility.SlackHours)} of slack.");
         if (e.EstimatedMargin > 0) e.Pros.Add($"Contributes ~{Units.Money0(e.EstimatedMargin)} after fuel, wages and overhead.");
 
-        if (e.AllInRpm < floorRpm)
-            e.Cons.Add($"{Units.PerDistance(e.AllInRpm, "0.00")} all-in is under our {Units.Money(floorRpm, "0.00")} break-even — fuel, wages and overhead come to more than the load pays.");
-        else if (e.AllInRpm < targetRpm)
+        // Found by the wider search: the run to the pickup is the empty run the truck makes either way, so the load is
+        // judged on what it pays for its own loaded miles. See LoadSearch.
+        var found = LoadSearch.Found(s, load);
+        var rateRpm = found ? e.LoadedRpm : e.AllInRpm;
+        var rateWord = found ? "loaded" : "all-in";
+        if (found)
+            e.Pros.Add($"Judged on its loaded miles, {Units.PerDistance(e.LoadedRpm, "0.00")}: the run to {Place(load.OriginCity, load.OriginState)} " +
+                       "is the empty run you would make anyway, and it is paid as empty miles.");
+        if (rateRpm < floorRpm)
+            e.Cons.Add($"{Units.PerDistance(rateRpm, "0.00")} {rateWord} is under our {Units.Money(floorRpm, "0.00")} break-even — fuel, wages and overhead come to more than the load pays.");
+        else if (rateRpm < targetRpm && !found)
             e.Cons.Add($"{Units.PerDistance(e.AllInRpm, "0.00")} clears break-even but is below our {Units.Money(targetRpm, "0.00")} target.");
-        if (e.DeadheadRatio > w.MaxDeadheadRatio)
+        if (e.DeadheadRatio > w.MaxDeadheadRatio && !found)
             e.Cons.Add($"{Units.Dist(load.DeadheadMiles):0} {Units.DistUnit} of deadhead is {e.DeadheadRatio * 100:0}% of the loaded miles — over our {w.MaxDeadheadRatio * 100:0}% limit.");
         if (e.DestTier == 3)
             e.Cons.Add($"{Place(load.DestCity, load.DestState)} is a thin market — expect deadhead or a cheap reload getting out.");
@@ -1958,7 +1985,7 @@ public static class DispatchEngine
         if (load.IsFragile) e.Cons.Add("Fragile freight — damage will show up on your record.");
 
         // Below-floor freight is a hard reject unless it buys us something the rate does not measure.
-        if (e.AllInRpm < floorRpm)
+        if (rateRpm < floorRpm)
         {
             var currentTier = Markets.Find(s, s.Status.LocationCity, s.Status.LocationState)?.Tier ?? 2;
             var escapes = currentTier == 3 && e.DestTier <= 2;

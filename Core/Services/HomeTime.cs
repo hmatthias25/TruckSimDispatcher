@@ -1086,6 +1086,71 @@ public static class HomeTime
     }
 
     /// <summary>
+    /// Hours to run empty from a town to the home yard, planned the way an empty move is (rests and all). Zero when the
+    /// town is the yard; null when there is no yard or the distance cannot be measured.
+    /// </summary>
+    public static double? HoursHomeFrom(AppState s, string city, string state)
+    {
+        if (HomeTerminal(s) is not { } home) return null;
+        if (Geo.MilesBetween(city, state, home.City, home.State) is not { } miles) return null;
+        if (miles <= AtYardMiles) return 0;
+        var run = DispatchEngine.PlanEmptyMove(s, home.City, home.State, Math.Round(miles), city, state);
+        return run?.ElapsedHours ?? miles / Math.Max(1, MilesPerDay(s)) * 24;
+    }
+
+    /// <summary>
+    /// When home time falls due, on the game clock. Null when there is no arrangement to keep, or it is already broken —
+    /// past the date, the outbound ceiling (<see cref="OutboundRefusal"/>) is the rule instead.
+    /// </summary>
+    public static DateTime? DueAt(AppState s, HomeStatus st)
+    {
+        if (!st.Tracked || st.Overdue || st.Granted) return null;
+        return GameClock.TryParse(s.Status.GameTime) is { } now ? now.AddDays(st.DaysUntilDue) : null;
+    }
+
+    /// <summary>
+    /// Hours in hand a finish needs before the date, given the empty run home from it: what running freight home instead
+    /// costs over driving straight in (<see cref="FreightProgressShare"/>), capped at <see cref="TightSlackDays"/>.
+    /// </summary>
+    public static double HomeSlackHours(double hoursHome) =>
+        Math.Min(TightSlackDays * 24, hoursHome * (1 / FreightProgressShare - 1));
+
+    /// <summary>
+    /// Whether a load finishes somewhere the driver cannot get home from by the date, run home empty straight after it.
+    ///
+    /// Checked on every board while there is an arrangement to keep, not only once home time is "due soon". Reported
+    /// from play: Bowling Green, KY, four days from home time in Chicago — under the three-quarters mark and half a day
+    /// from the yard, so none of the home-time rules had switched on — and dispatch authorised Tucson, 1,645 miles west,
+    /// with another 1,750 back. There was time on the clock for freight, just not for that much of it.
+    ///
+    /// The run home is the best case (empty, straight there), so it has to leave room to run freight home instead — see
+    /// <see cref="HomeSlackHours"/>. Landing home on the morning it falls due after a thousand-mile deadhead is not keeping
+    /// the date; it is the company paying for an empty run. From the same board: Raton, NM made Chicago by a few hours,
+    /// empty all the way. A load into the yard, or a few hours short of it, needs no slack and gets none asked of it.
+    /// </summary>
+    public static string? HomeByDateRefusal(AppState s, BoardLoad load, FeasibilityResult plan)
+    {
+        var st = Status(s);
+        if (st.ForTheWeeklyRest) return null;               // WeeklyRestRefusal says it in its own words
+        if (DueAt(s, st) is not { } due || GameClock.TryParse(s.Status.GameTime) is not { } now) return null;
+        var done = plan.Timeline.Count > 0 && GameClock.TryParse(plan.Timeline[^1].EndGameTime) is { } end ? end
+            : GameClock.TryParse(plan.ProjectedArrivalGameTime) ?? now;
+        if (done <= now) return null;                       // nothing planned to judge
+        if (HoursHomeFrom(s, load.DestCity, load.DestState) is not { } hoursHome) return null;
+        var home = done.AddHours(hoursHome);
+        if (home <= due.AddHours(-HomeSlackHours(hoursHome))) return null;
+
+        var where = DispatchEngine.Place(load.DestCity, load.DestState);
+        var gap = (home - due).TotalHours;
+        var when = gap > 0
+            ? $"home {(gap >= 24 ? $"{gap / 24:0.#} days" : Hhmm.Of(gap))} after your home time falls due"
+            : $"home only {Hhmm.Of(-gap)} before your home time falls due, and that is empty all the way";
+        return $"Finishes at {where} {GameClock.Pretty(GameClock.Format(done))}" +
+               (hoursHome > 0 ? $", and {st.TerminalLabel} is about {Hhmm.Of(hoursHome)} on from there run straight in" : "") +
+               $" — {when} ({GameClock.Pretty(GameClock.Format(due))}). There is time for freight before then, not for this much of it.";
+    }
+
+    /// <summary>
     /// Whether this load runs so far the wrong way that dispatch declines it outright.
     ///
     /// The scorer argues; this refuses. The two are different jobs and the difference matters, because a

@@ -45,9 +45,8 @@ async function offer(cargo, trailerType) {
   let r = await offer('Fertilizer', 'Flatbed');
   ok('NOT rejected for the trailer', !/Needs a Flatbed/i.test(r.fails), r.fails || '(no hard fails)');
   ok('no hard fails at all', r.fails === '', r.fails || '(clear)');
-  ok('but the mismatch is noted', /Listed as a Flatbed/i.test(r.cons), r.cons || '(nothing said)');
-  ok('and it explains why it is taken anyway',
-    /only shows you freight your trailer can pull/i.test(r.cons), r.cons);
+  // v0.89: nothing said about it. The game only lists freight the hooked trailer pulls, so the note was clutter.
+  ok('and nothing is said about the trailer', !/Listed as a/i.test(r.cons), r.cons || '(quiet)');
 
   head('3. It can actually be authorized');
   const auth = await api('/dispatch/authorize', 'POST', { loadId: r.eval.load.id });

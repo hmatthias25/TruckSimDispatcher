@@ -57,12 +57,12 @@
   </ItemGroup>
 
   <!-- Models and services are in the shared Core library (see docs/owner-operator-plan.md). The owner/operator
-       app is a project of its own in OwnerOperator/. Neither folder is this project's source. -->
+       app is a project of its own in OwnerOperator/, the coach driver app in Coach/. None of those folders is this project's source. -->
   <ItemGroup>
-    <Compile Remove="Core\**;OwnerOperator\**" />
-    <Content Remove="Core\**;OwnerOperator\**" />
-    <None Remove="Core\**;OwnerOperator\**" />
-    <EmbeddedResource Remove="Core\**;OwnerOperator\**" />
+    <Compile Remove="Core\**;OwnerOperator\**;Coach\**" />
+    <Content Remove="Core\**;OwnerOperator\**;Coach\**" />
+    <None Remove="Core\**;OwnerOperator\**;Coach\**" />
+    <EmbeddedResource Remove="Core\**;OwnerOperator\**;Coach\**" />
   </ItemGroup>
 
   <ItemGroup>

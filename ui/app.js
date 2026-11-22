@@ -599,6 +599,33 @@ function nothingWillRun() {
   return (S?.views?.dispatchBlockers || [])[0] || '';
 }
 
+/** No load or empty move under way: the board is the next thing. */
+function noActiveTrip() {
+  const t = (S?.trips || []).find((x) => x.id === S?.status?.activeTripId);
+  return !t || t.status === 'Delivered' || t.status === 'Cancelled';
+}
+
+/** The wider search: the ring, its towns, and the two ways on. See LoadSearch. */
+function searchPanelHtml() {
+  const x = S.search;
+  if (!x) return '';
+  return `<div class="callout info">
+    <h4>Wider search from ${esc(x.from)}: ${esc(x.words)}${x.homeBound ? ', on the way home' : ''}</h4>
+    <p>Check the freight board in each of these towns in the game:</p>
+    <ul>${x.cities.map((c) => `<li><b>${esc(c.place)}</b> — ${dist(c.miles)}${c.homeMiles != null ? `, ${dist(c.homeMiles)} from home` : ''}</li>`).join('')}</ul>
+    ${x.notDiscovered.length ? `<p class="hint">Also in range but not on my list of towns you have reached: ${esc(x.notDiscovered.join(', '))}.
+      ATS makes no freight in a town you have not discovered; if you have been there, their boards count too.</p>` : ''}
+    <p>Then one of two things:</p>
+    <p><b>These towns have loads for ${esc(x.trailer ? 'a ' + x.trailer.toLowerCase() : 'your trailer')}:</b> enter them below as one board,
+      each job with the town it leaves from. I will assign one that works, or pick a town for you to run empty to.</p>
+    <div class="row-actions" style="align-items:center">
+      <b>None of them has anything for your trailer:</b>
+      <button class="btn primary" data-act="search-widen">${x.lastRing ? 'Send me home' : 'Look further out'}</button>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-act="search-stop">Call off the search</button>
+    </div></div>`;
+}
+
 function atCustomer() {
   return S?.status?.locationKind === 'Shipper' || S?.status?.locationKind === 'Receiver';
 }
@@ -611,6 +638,8 @@ function atCustomer() {
  * is offered at a truck stop, so the stage goes back to the city board on its own.
  */
 function fixBoardStage() {
+  // The wider search: every job is off another town's board, entered with the town it leaves from.
+  if (S?.search) { BOARD_STAGE = 'city'; return; }
   if (BOARD_STAGE === 'local' && !atCustomer()) { BOARD_STAGE = 'city'; return; }
 
   // And back again, which it never did. This was one-way: a stage flipped to city at a truck stop
@@ -1782,13 +1811,19 @@ function viewDispatch() {
           <p style="margin:0">${esc(nothingWillRun())}</p>
         </div>` : ''}
 
-        <div class="row-actions" style="margin:0 0 10px"${nothingWillRun() ? ' hidden' : ''}>
+        ${searchPanelHtml()}
+        <div class="row-actions" style="margin:0 0 10px"${nothingWillRun() || S.search ? ' hidden' : ''}>
           ${atCustomer() ? `<button class="btn ${BOARD_STAGE === 'local' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="local">
             Jobs at this location</button>` : ''}
           <button class="btn ${BOARD_STAGE === 'city' ? 'primary' : 'ghost'}" data-act="board-stage" data-stage="city">
             Full city board</button>
+          ${noActiveTrip() ? `<div class="spacer"></div><button class="btn ghost" data-act="search-start"
+            title="Nothing for your trailer here: dispatch names the towns around to look at, ring by ring.">
+            No loads for my trailer in ${esc(st.locationCity || 'this town')}</button>` : ''}
         </div>
-        <p class="hint">${BOARD_STAGE === 'local'
+        <p class="hint">${S.search
+          ? `Enter the jobs from the towns above, each with the town it leaves from as its origin, as one board.`
+          : BOARD_STAGE === 'local'
           ? `In ATS: <b>find other load from this location</b>. Just the handful going out from where you are
              standing — origin is filled in and there is no deadhead. Show me these first; if none of them
              work I will ask for the whole city.`
@@ -2391,6 +2426,16 @@ function decisionHtml() {
       ${d.offerWeeklyRestHere ? `<div class="row-actions">
         <button class="btn primary" data-act="rest-here">Take my weekly rest here</button></div>` : ''}
     </div>
+    ${d.reposition && !d.reposition.booked ? `<div class="callout warn">
+      <h4>Dispatch's call: run empty to ${esc(d.reposition.place)}</h4>
+      <p>${dist(d.reposition.miles)}${d.reposition.homeMiles != null && d.search && d.search.homeBound ? `, leaving you ${dist(d.reposition.homeMiles)} from home` : ''}.
+        Pull the board when you get there. Booking it puts the empty run on your pay.</p>
+      <div class="row-actions"><button class="btn primary" data-act="search-reposition">Book the run to ${esc(d.reposition.place)}</button></div></div>` : ''}
+    ${d.reposition && d.reposition.booked ? `<div class="callout info">
+      <h4>${esc(d.reposition.booked)} booked: ${esc(d.reposition.place)}, ${dist(d.reposition.miles)}</h4>
+      <p>It is on the Active tab. Close it out when you get there.</p></div>` : ''}
+    ${d.offerSearch && !S.search && noActiveTrip() ? `<div class="row-actions">
+      <button class="btn primary" data-act="search-start">No loads for my trailer here — look around</button></div>` : ''}
     ${d.infoNeeded.length ? `<div class="callout warn"><h4>I need this before committing freight</h4>
       <ul>${d.infoNeeded.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''}
     ${d.outOfHours ? `<div class="callout stop">
@@ -2410,7 +2455,7 @@ function decisionHtml() {
     </div>` : ''}
     ${d.evaluations.map((e) => loadCardHtml(e, d)).join('')}
     ${/* Not off one dock's board: the city comes first (see AfterCityBoard). */ ''}
-    ${d.rejectAll && !d.localOnly && (S.views.repositionOffers || []).length ? `<div class="callout info">
+    ${d.rejectAll && !d.localOnly && !d.search && !d.reposition && (S.views.repositionOffers || []).length ? `<div class="callout info">
       <h4>Running empty from here</h4>
       <p>Nothing on this board is worth the truck. These are the empty moves I would raise — to the yard
         for home time, or to wherever the ${num(S.settings.hos.cycleRestartHours, 0)} is being sat. The
@@ -2540,7 +2585,7 @@ function loadCardHtml(e, d) {
         ? `<span class="hint" style="align-self:center">${esc(e.passNote)}</span>` : ''}
       ${e.mayPass && !e.load.passedOver && !e.hardFails.length
         ? `<button class="btn ghost" data-act="board-pass" data-id="${e.load.id}"
-             title="${esc(e.passNote || '')}">${e.passIsFree
+             title="${esc(e.passNote || '')}">${e.fromSearch ? 'Turn it down (free)' : e.passIsFree
                ? 'Cannot make the pickup — pass (free)'
                : 'Turn this load down'}</button>` : ''}
       ${e.mayPass && !e.load.passedOver && !e.hardFails.length && !e.passIsFree && e.passNote
@@ -8506,6 +8551,25 @@ async function handleAction(act, d, ev) {
         absorb(await api('/bootstrap'));
       });
     }
+
+    /* ---- the wider search */
+    case 'search-start': return run(async () => {
+      const r = absorb(await api('/search/start', 'POST', {}));
+      DECISION = r.decision;
+    }, 'Nothing here: the towns around are on the board panel.');
+    case 'search-widen': return run(async () => {
+      const r = absorb(await api('/search/widen', 'POST', {}));
+      DECISION = r.decision;
+    });
+    case 'search-stop': return run(async () => {
+      const r = absorb(await api('/search/stop', 'POST', {}));
+      DECISION = r.decision;
+    }, 'Search called off.');
+    case 'search-reposition': return run(async () => {
+      const r = absorb(await api('/search/reposition', 'POST', {}));
+      DECISION = null;
+      toast(`${r.trip.number}: empty to ${r.trip.destCity}, ${r.trip.destState}. Pull the board when you get there.`, 'ok');
+    });
 
     // The dock board was rejected and the city has nothing either: log it, and show where to go next.
     case 'city-empty': return run(async () => {

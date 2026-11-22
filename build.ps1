@@ -1,15 +1,15 @@
 <#
     Builds the portable, single-file TruckSim Dispatcher executable, or with -App OwnerOperator the
-    separate TruckSim Owner-Operator one.
+    separate TruckSim Owner-Operator one, or with -App Coach the TruckSim Coach Driver one.
 
-    Output:  publish\TruckSimDispatcher.exe        (publish-oo\TruckSimOwnerOperator.exe)
+    Output:  publish\TruckSimDispatcher.exe        (publish-oo\TruckSimOwnerOperator.exe, publish-coach\TruckSimCoach.exe)
     Copy that one file to the machine running American Truck Simulator and run it.
     No .NET install, no dependencies, no internet connection required.
 #>
 [CmdletBinding()]
 param(
     # Which app. The two share Core but ship apart: their own exe, zip, version and manual.
-    [ValidateSet('Dispatcher', 'OwnerOperator')]
+    [ValidateSet('Dispatcher', 'OwnerOperator', 'Coach')]
     [string]$App = 'Dispatcher',
 
     [string]$Runtime = 'win-x64',
@@ -29,10 +29,11 @@ $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
 $oo = $App -eq 'OwnerOperator'
-if (-not $OutDir) { $OutDir = if ($oo) { 'publish-oo' } else { 'publish' } }
-$project = if ($oo) { 'OwnerOperator\TruckSimOwnerOperator.csproj' } else { 'TruckSimDispatcher.csproj' }
-$exeName = if ($oo) { 'TruckSimOwnerOperator.exe' } else { 'TruckSimDispatcher.exe' }
-$title   = if ($oo) { 'TruckSim Owner-Operator' } else { 'TruckSim Dispatcher' }
+$co = $App -eq 'Coach'
+if (-not $OutDir) { $OutDir = if ($oo) { 'publish-oo' } elseif ($co) { 'publish-coach' } else { 'publish' } }
+$project = if ($oo) { 'OwnerOperator\TruckSimOwnerOperator.csproj' } elseif ($co) { 'Coach\TruckSimCoach.csproj' } else { 'TruckSimDispatcher.csproj' }
+$exeName = if ($oo) { 'TruckSimOwnerOperator.exe' } elseif ($co) { 'TruckSimCoach.exe' } else { 'TruckSimDispatcher.exe' }
+$title   = if ($oo) { 'TruckSim Owner-Operator' } elseif ($co) { 'TruckSim Coach Driver' } else { 'TruckSim Dispatcher' }
 
 Write-Host ''
 Write-Host "  Building $title (portable single file)" -ForegroundColor Yellow
@@ -63,7 +64,7 @@ Write-Host ''
 Write-Host "  Done: $exe  ($size MB)" -ForegroundColor Green
 Write-Host ''
 Write-Host '  Copy that single file anywhere and double-click it.' -ForegroundColor Gray
-Write-Host "  It creates a folder called `"$(if ($oo) { 'oo-data' } else { 'data' })`" beside itself for the career file." -ForegroundColor Gray
+Write-Host "  It creates a folder called `"$(if ($oo) { 'oo-data' } elseif ($co) { 'coach-data' } else { 'data' })`" beside itself for the career file." -ForegroundColor Gray
 Write-Host ''
 
 if ($Package) {
@@ -71,6 +72,9 @@ if ($Package) {
     # not a thin zip somebody notices after downloading it.
     $shipped = if ($oo) { @(
         'docs\owner-operator\TruckSim-Owner-Operator-Manual.pdf'
+    ) } elseif ($co) { @(
+        'docs\coach\TruckSim-Coach-Driver-Manual.pdf',
+        'docs\coach\README.md'
     ) } else { @(
         'docs\manual\TruckSim-Dispatcher-FAQ.pdf',
         'docs\manual\TruckSim-Dispatcher-User-Manual.pdf',
@@ -91,6 +95,9 @@ if ($Package) {
     if ($oo) {
         $version = (Select-String -Path 'OwnerOperator\OoModels.cs' -Pattern 'Version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
         $name    = "TruckSimOwnerOperator-v$version-$stage.zip"
+    } elseif ($co) {
+        $version = (Select-String -Path 'Coach\CoachModels.cs' -Pattern 'Version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+        $name    = "TruckSimCoach-v$version-$stage.zip"
     } else {
         $version = (Select-String -Path 'Core\Services\Build.cs' -Pattern 'Version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
         $name    = "TruckSimDispatcher-v$version-$stage.zip"

@@ -64,7 +64,8 @@ const head = (t) => console.log(`\n=== ${t} ===`);
   });
   ok('rejected', dec.rejectAll === true, dec.headline);
   ok('NOT local-only', dec.localOnly === false);
-  ok('and now it does talk about repositioning', dec.dispatchNotes.some((n) => /Reposition|reset/i.test(n)),
+  // v0.89: the next step from a rejected city board is the wider search (see widersearch).
+  ok('and now it does talk about repositioning', dec.offerSearch === true && dec.dispatchNotes.some((n) => /Reposition|reset|towns around/i.test(n)),
     dec.dispatchNotes.find((n) => /Reposition|reset/i.test(n)) || '(none)');
 
   head('A mixed board is judged as a city board');
